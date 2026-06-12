@@ -340,8 +340,13 @@ def _safe_name(name: str) -> str:
 
 
 class MainWindow(QMainWindow):
+    _open_windows: list[MainWindow] = []
+
     def __init__(self) -> None:
         super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._open_windows.append(self)
+        self.destroyed.connect(self._remove_window_reference)
         self.session = Session()
         self._always_hex = False
         self._pending_open: tuple[VFSNode, VFS] | None = None
@@ -491,6 +496,9 @@ class MainWindow(QMainWindow):
         menu = self.menuBar()
 
         file_menu = menu.addMenu("File")
+        new_window_action = file_menu.addAction("New Window", self._new_window)
+        new_window_action.setShortcut("Ctrl+N")
+        file_menu.addSeparator()
         file_menu.addAction("Open file…", self._open_file)
         file_menu.addAction("Open ZIP archive…", self._open_zip)
         file_menu.addAction("Open TAR archive…", self._open_tar)
@@ -499,6 +507,8 @@ class MainWindow(QMainWindow):
         self._recent_menu = file_menu.addMenu("Open Recent")
         self._rebuild_recent_menu()
         file_menu.addSeparator()
+        self._close_window_action = file_menu.addAction("Close Window", self.close)
+        self._close_window_action.setShortcut("Ctrl+W")
         exit_action = file_menu.addAction("Exit", self.close)
         exit_action.setShortcut("Ctrl+Q")
 
@@ -543,6 +553,26 @@ class MainWindow(QMainWindow):
         help_menu.addAction("Format Reference…", self._show_format_reference)
         help_menu.addSeparator()
         help_menu.addAction("About Crush", self._about)
+
+    def _new_window(self) -> None:
+        window = MainWindow()
+        window.resize(self.size())
+        offset = 32
+        target = self.frameGeometry().topLeft()
+        target.setX(target.x() + offset)
+        target.setY(target.y() + offset)
+
+        available = self.screen().availableGeometry()
+        max_x = max(available.left(), available.right() - window.width() + 1)
+        max_y = max(available.top(), available.bottom() - window.height() + 1)
+        target.setX(min(max(target.x(), available.left()), max_x))
+        target.setY(min(max(target.y(), available.top()), max_y))
+        window.move(target)
+        window.show()
+
+    @classmethod
+    def _remove_window_reference(cls, destroyed: QObject | None = None) -> None:
+        cls._open_windows = [window for window in cls._open_windows if isValid(window)]
 
     # ------------------------------------------------------------------
     # Actions
@@ -625,6 +655,7 @@ class MainWindow(QMainWindow):
             self._fs_panel.append_vfs(vfs)
         else:
             self._fs_panel.load_vfs(vfs)
+        self._update_window_title()
         QTimer.singleShot(0, self._ensure_tree_loaded)
 
     def _on_load_failed(self, message: str) -> None:
@@ -1172,8 +1203,22 @@ class MainWindow(QMainWindow):
         closed_tabs = self._close_tabs_for_vfs(vfs)
         self._fs_panel.close_vfs(vfs)
         self.session.remove_source(vfs)
+        self._update_window_title()
         name = vfs.root().name
         self._status.showMessage(f"Closed source: {name} ({closed_tabs} tabs closed)")
+
+    def _update_window_title(self) -> None:
+        sources = self._fs_panel._vfs_list
+        app_title = f"Crush {crush.display_version()}"
+        if not sources:
+            self.setWindowTitle(app_title)
+            return
+
+        source_name = sources[-1].root().name
+        if len(sources) == 1:
+            self.setWindowTitle(f"{source_name} — {app_title}")
+        else:
+            self.setWindowTitle(f"{source_name} (+{len(sources) - 1}) — {app_title}")
 
     def _enrich_with_format_info(self, parser: object, node: VFSNode, vfs: VFS, result: object) -> object:
         """Prepend format knowledge-base metadata to a ParseResult without overriding parser data."""
