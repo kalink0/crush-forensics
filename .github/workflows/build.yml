@@ -222,7 +222,6 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --windowed --onefile --name crush `
             --icon crush.ico `
-            --collect-all PySide6 `
             --collect-all magic `
             --collect-all pillow_heif `
             --collect-all pillow_jxl `
@@ -287,7 +286,7 @@ jobs:
 
       - name: Package artifact (macOS → ZIP)
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc dist/crush.app "${MACOS_ARTIFACT}"
+        run: ditto -c -k --sequesterRsrc --keepParent dist/crush.app "${MACOS_ARTIFACT}"
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows'
