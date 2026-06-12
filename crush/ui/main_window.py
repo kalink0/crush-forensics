@@ -28,11 +28,13 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QProgressDialog,
     QStatusBar,
+    QStackedWidget,
     QTabBar,
     QTabWidget,
     QTextEdit,
     QWidget,
     QHBoxLayout,
+    QVBoxLayout,
     QPushButton,
 )
 
@@ -373,7 +375,38 @@ class MainWindow(QMainWindow):
         self._viewer_tabs.setTabsClosable(True)
         self._viewer_tabs.setDocumentMode(True)
         self._viewer_tabs.tabCloseRequested.connect(self._close_tab)
-        self.setCentralWidget(self._viewer_tabs)
+
+        self._empty_view = QWidget()
+        empty_layout = QVBoxLayout(self._empty_view)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.setSpacing(12)
+
+        empty_title = QLabel("Open something to begin")
+        empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_font = empty_title.font()
+        title_font.setPointSize(title_font.pointSize() + 6)
+        title_font.setBold(True)
+        empty_title.setFont(title_font)
+        empty_layout.addWidget(empty_title)
+
+        empty_subtitle = QLabel("Choose a file, archive, or folder.")
+        empty_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(empty_subtitle)
+
+        button_row = QHBoxLayout()
+        open_file_button = QPushButton("Open File…")
+        open_file_button.clicked.connect(self._open_file)
+        button_row.addWidget(open_file_button)
+        open_folder_button = QPushButton("Open Folder…")
+        open_folder_button.clicked.connect(self._open_folder)
+        button_row.addWidget(open_folder_button)
+        empty_layout.addLayout(button_row)
+
+        self._central_stack = QStackedWidget()
+        self._central_stack.addWidget(self._empty_view)
+        self._central_stack.addWidget(self._viewer_tabs)
+        self.setCentralWidget(self._central_stack)
+        self._show_empty_view()
 
         # Left dock: filesystem panel
         self._fs_panel = FilesystemPanel(self.session, self)
@@ -385,6 +418,8 @@ class MainWindow(QMainWindow):
         self._fs_panel.export_multi_requested.connect(self._export_multi_nodes)
         self._fs_panel.export_logarchive_requested.connect(self._export_logarchive_node)
         self._fs_panel.close_source_requested.connect(self._close_source)
+        self._fs_panel.close_source_requested.connect(self._show_empty_view_if_no_sources)
+        self._fs_panel.load_finished.connect(self._show_viewer_tabs)
         self._fs_panel.background_status.connect(self._on_background_status)
         self._fs_panel.format_info_requested.connect(self._show_format_info)
         self._fs_dock = QDockWidget("Filesystem", self)
@@ -1174,6 +1209,16 @@ class MainWindow(QMainWindow):
         self.session.remove_source(vfs)
         name = vfs.root().name
         self._status.showMessage(f"Closed source: {name} ({closed_tabs} tabs closed)")
+
+    def _show_empty_view(self) -> None:
+        self._central_stack.setCurrentWidget(self._empty_view)
+
+    def _show_empty_view_if_no_sources(self, _vfs: VFS) -> None:
+        if not self._fs_panel._vfs_list:
+            self._show_empty_view()
+
+    def _show_viewer_tabs(self) -> None:
+        self._central_stack.setCurrentWidget(self._viewer_tabs)
 
     def _enrich_with_format_info(self, parser: object, node: VFSNode, vfs: VFS, result: object) -> object:
         """Prepend format knowledge-base metadata to a ParseResult without overriding parser data."""
