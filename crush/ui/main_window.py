@@ -427,6 +427,7 @@ class MainWindow(QMainWindow):
         self._fs_panel.load_finished.connect(self._show_viewer_tabs)
         self._fs_panel.background_status.connect(self._on_background_status)
         self._fs_panel.format_info_requested.connect(self._show_format_info)
+        self._fs_panel.open_in_new_window_requested.connect(self._open_in_new_window)
         self._fs_dock = QDockWidget("Filesystem", self)
         self._fs_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._fs_dock.setFeatures(
@@ -535,8 +536,6 @@ class MainWindow(QMainWindow):
         new_window_action.setShortcut("Ctrl+N")
         file_menu.addSeparator()
         file_menu.addAction("Open file…", self._open_file)
-        file_menu.addAction("Open ZIP archive…", self._open_zip)
-        file_menu.addAction("Open TAR archive…", self._open_tar)
         file_menu.addAction("Open folder…", self._open_folder)
         file_menu.addSeparator()
         self._recent_menu = file_menu.addMenu("Open Recent")
@@ -605,6 +604,12 @@ class MainWindow(QMainWindow):
         window.move(target)
         window.show()
 
+    def _open_in_new_window(self, path: str) -> None:
+        window = MainWindow()
+        window.resize(self.size())
+        window.show()
+        window._load_source(path)
+
     @classmethod
     def _remove_window_reference(cls, destroyed: QObject | None = None) -> None:
         cls._open_windows = [window for window in cls._open_windows if isValid(window)]
@@ -612,23 +617,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
-
-    def _open_zip(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Open ZIP extraction", "", "ZIP archives (*.zip);;All files (*)"
-        )
-        if path:
-            self._load_source(path)
-    
-    def _open_tar(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open TAR archive",
-            "",
-            "TAR archives (*.tar *.tar.gz *.tgz *.tar.bz2 *.tbz2 *.tar.xz *.txz);;All files (*)",
-        )
-        if path:
-            self._load_source(path)
 
     def _open_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Open folder")

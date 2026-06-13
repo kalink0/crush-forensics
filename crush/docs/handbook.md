@@ -14,12 +14,10 @@ Use the **File** menu to load a source:
 
 | Menu item | When to use |
 |---|---|
-| **Open file…** | Single file — image, database, plist, etc. Opens directly in a viewer tab |
-| **Open ZIP archive…** | iOS full-filesystem acquisitions, IPA files, any `.zip` |
-| **Open TAR archive…** | Android ADB acquisitions, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz` |
+| **Open file…** | Any single file — image, database, plist, ZIP, TAR, etc. Crush detects the type automatically. ZIP and TAR archives are opened as browsable trees; other files open directly in a viewer tab. |
 | **Open folder…** | Already-extracted acquisition or any folder of files on disk |
 
-Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a ZIP, TAR, or folder replaces the current tree.
+Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
 
 ---
 

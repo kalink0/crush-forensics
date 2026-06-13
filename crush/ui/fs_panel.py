@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 
 from crush.core.session import Session
-from crush.core.vfs import VFS, VFSNode
+from crush.core.vfs import VFS, VFSNode, DirectoryVFS
 from crush.core.magic import detect_fast_label
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
@@ -89,6 +89,7 @@ class FilesystemPanel(QWidget):
     export_logarchive_requested = Signal(object, object)  # (VFSNode, VFS)
     format_info_requested = Signal(object, object)  # (VFSNode, VFS)
     close_source_requested = Signal(object)  # (VFS)
+    open_in_new_window_requested = Signal(str)  # (path)
     load_finished = Signal()
     background_status = Signal(str)
     _search_results_ready = Signal(object)  # internal: list of result dicts
@@ -424,6 +425,9 @@ class FilesystemPanel(QWidget):
     ) -> None:
         menu = QMenu(self)
         open_action = menu.addAction("Open")
+        open_in_new_window_action = None
+        if not node.is_dir and isinstance(vfs, DirectoryVFS):
+            open_in_new_window_action = menu.addAction("Open in New Window")
         open_hex_action = menu.addAction("Open in Hex")
         open_text_action = menu.addAction("Open as Plain Text")
         open_logs_folder_action = None
@@ -469,7 +473,9 @@ class FilesystemPanel(QWidget):
         action = menu.exec(global_pos)
         if action is None:
             return
-        if action == open_action:
+        if action == open_in_new_window_action:
+            self.open_in_new_window_requested.emit(node.path)
+        elif action == open_action:
             self.open_requested.emit(node, vfs, "default")
         elif action == open_hex_action:
             self.open_requested.emit(node, vfs, "hex")
