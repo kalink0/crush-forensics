@@ -709,10 +709,12 @@ class MainWindow(QMainWindow):
         self._tree_loaded_connected = True
         self._loading_vfs = vfs
         self._tree_loaded = False
-        self._logger.debug("Dispatching to FilesystemPanel (%s)", "append" if getattr(self, "_append_to_tree", False) else "load")
-        if getattr(self, "_append_to_tree", False):
+        append = getattr(self, "_append_to_tree", False) and not vfs.root().is_dir
+        self._logger.debug("Dispatching to FilesystemPanel (%s)", "append" if append else "load")
+        if append:
             self._fs_panel.append_vfs(vfs)
         else:
+            self._close_all_tabs()
             self._fs_panel.load_vfs(vfs)
         self._update_window_title()
         QTimer.singleShot(0, self._ensure_tree_loaded)
@@ -1243,9 +1245,11 @@ class MainWindow(QMainWindow):
 
     def _close_tab(self, index: int) -> None:
         self._viewer_tabs.removeTab(index)
+        self._props_panel.clear()
 
     def _close_all_tabs(self) -> None:
         self._viewer_tabs.clear()
+        self._props_panel.clear()
 
     def _close_tabs_for_vfs(self, vfs: VFS) -> int:
         closed = 0
@@ -1260,11 +1264,14 @@ class MainWindow(QMainWindow):
 
     def _close_source(self, vfs: VFS) -> None:
         closed_tabs = self._close_tabs_for_vfs(vfs)
+        self._props_panel.clear()
         self._fs_panel.close_vfs(vfs)
         self.session.remove_source(vfs)
         self._update_window_title()
         name = vfs.root().name
         self._status.showMessage(f"Closed source: {name} ({closed_tabs} tabs closed)")
+        if not self.session.sources:
+            self._show_empty_view()
 
     def _show_empty_view(self) -> None:
         self._rebuild_welcome_recent()

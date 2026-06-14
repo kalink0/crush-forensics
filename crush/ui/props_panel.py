@@ -32,11 +32,13 @@ class PropertiesPanel(QScrollArea):
         self._layout.setSpacing(4)
         self.setWidget(self._container)
 
-    def update_properties(self, node: VFSNode, metadata: dict[str, Any]) -> None:
-        """Repopulate the panel with metadata for the given node."""
-        # Clear all existing rows
+    def clear(self) -> None:
         while self._layout.rowCount():
             self._layout.removeRow(0)
+
+    def update_properties(self, node: VFSNode, metadata: dict[str, Any]) -> None:
+        """Repopulate the panel with metadata for the given node."""
+        self.clear()
 
         # File name as header
         header = QLabel(f"<b>{node.name}</b>")
