@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS
 from crush.core.magic import detect_fast_label
+from crush.core.work_priority import background_io
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
     "image", "heic", "heif", "avif", "jxl",
@@ -884,7 +885,8 @@ class FilesystemPanel(QWidget):
             for node, vfs in chunk:
                 if self._prescan_gen != gen:
                     return processed
-                self._detect_type_label(node, vfs)
+                with background_io():
+                    self._detect_type_label(node, vfs)
                 processed += 1
             return processed
 

@@ -9,10 +9,22 @@ import csv
 import re
 import sqlite3
 import struct
+import time
 from collections import Counter
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, QObject, QRegularExpression, QSortFilterProxyModel, QStringListModel, Qt, Signal
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QEvent,
+    QModelIndex,
+    QObject,
+    QRegularExpression,
+    QSortFilterProxyModel,
+    QStringListModel,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -41,6 +53,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QTableView,
@@ -61,9 +74,95 @@ from crush.core.sqlite_wal import (
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
 from crush.core.ts_decode import decode_ts as _decode_ts
+from crush.core.work_priority import (
+    acquire_foreground_io,
+    foreground_io,
+    release_foreground_io,
+)
 
 
 _MAX_COL_WIDTH = 400
+_QUERY_ROW_LIMIT = 10_000
+_COLUMN_SIZE_SAMPLE = 250
+
+
+class _QueryResultModel(QAbstractTableModel):
+    """Virtual SQL result model that creates cell values only when requested."""
+
+    def __init__(
+        self,
+        columns: list[str],
+        rows: list[list[Any]],
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._headers = ["Row"] + columns
+        self._rows = rows
+        self._ts_formats: dict[int, str] = {}
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._headers)
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
+        if orientation != Qt.Orientation.Horizontal or role != Qt.ItemDataRole.DisplayRole:
+            return None
+        header = self._headers[section]
+        fmt = self._ts_formats.get(section)
+        if fmt is None:
+            return header
+        suffix = next(s for key, _, s in _TS_FORMATS if key == fmt)
+        return f"{header} [{suffix}]"
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if not index.isValid():
+            return None
+        col = index.column()
+        value: Any = index.row() + 1 if col == 0 else self._rows[index.row()][col - 1]
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if value is None:
+                return ""
+            if isinstance(value, (bytes, bytearray, memoryview)):
+                return f"<BLOB {len(value):,} B>"
+            fmt = self._ts_formats.get(col)
+            if fmt is not None and isinstance(value, (int, float)):
+                decoded = _decode_ts(value, fmt)
+                if decoded is not None:
+                    return decoded
+            return str(value)
+        if role == Qt.ItemDataRole.UserRole:
+            if isinstance(value, memoryview):
+                return value.tobytes()
+            if isinstance(value, bytearray):
+                return bytes(value)
+            return value
+        if role == Qt.ItemDataRole.ForegroundRole:
+            if value is None:
+                return Qt.GlobalColor.gray
+            if isinstance(value, (bytes, bytearray, memoryview)):
+                return Qt.GlobalColor.blue
+        return None
+
+    def set_timestamp_format(self, col: int, fmt: str | None) -> None:
+        if fmt is None:
+            self._ts_formats.pop(col, None)
+        else:
+            self._ts_formats[col] = fmt
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, col, col)
+        if self._rows:
+            self.dataChanged.emit(
+                self.index(0, col),
+                self.index(len(self._rows) - 1, col),
+                [Qt.ItemDataRole.DisplayRole],
+            )
 
 
 def _cap_columns(view: QTableView) -> None:
@@ -272,7 +371,14 @@ class _SqlEditor(QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_F5:
+        run_modifiers = (
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.MetaModifier
+        )
+        if event.key() == Qt.Key.Key_F5 or (
+            event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and event.modifiers() & run_modifiers
+        ):
             self.run_requested.emit()
             return
 
@@ -433,6 +539,7 @@ class TableViewer(QWidget):
         self._wal_frames_cache: list[dict] | None = None
         self._wal_page_size: int = 0
         self._page_table_map: dict[int, str] = {}  # page_num → table_name
+        self._table_interaction_active = False
         self._build_ui()
         if data:
             table_names = [k for k in data.keys() if not k.startswith("__")]
@@ -532,20 +639,48 @@ class TableViewer(QWidget):
         self._sql_input.setMinimumHeight(line_h * 6 + 8)
         self._sql_highlighter = _SqlHighlighter(self._sql_input.document())
         sql_layout.addWidget(self._sql_input, stretch=1)
+
+        run_controls = QWidget()
+        run_controls_layout = QVBoxLayout(run_controls)
+        run_controls_layout.setContentsMargins(0, 0, 0, 0)
+        run_controls_layout.setSpacing(4)
         self._run_sql_btn = QPushButton("Run")
+        self._run_sql_btn.setToolTip("Run query (F5 or Command+Enter / Ctrl+Enter)")
         self._run_sql_btn.clicked.connect(self._run_sql)
-        sql_layout.addWidget(self._run_sql_btn)
+        run_controls_layout.addWidget(self._run_sql_btn)
+        self._auto_limit = QCheckBox("Auto limit")
+        self._auto_limit.setChecked(True)
+        self._auto_limit.setToolTip(
+            f"Cap query results at {_QUERY_ROW_LIMIT:,} rows. Turn off to fetch every row."
+        )
+        run_controls_layout.addWidget(self._auto_limit)
+        run_controls_layout.addStretch()
+        sql_layout.addWidget(run_controls)
+
+        export_controls = QWidget()
+        export_controls_layout = QVBoxLayout(export_controls)
+        export_controls_layout.setContentsMargins(0, 0, 0, 0)
+        export_controls_layout.setSpacing(4)
         self._export_btn = QPushButton("Export CSV…")
         self._export_btn.clicked.connect(self._export_csv)
-        sql_layout.addWidget(self._export_btn)
+        export_controls_layout.addWidget(self._export_btn)
+        export_controls_layout.addStretch()
+        sql_layout.addWidget(export_controls)
         sql_outer.addWidget(sql_row)
 
         self._sql_status = QLabel("")
         self._sql_status.setContentsMargins(4, 0, 0, 2)
+        self._sql_status.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._sql_status.setMinimumWidth(0)
         sql_outer.addWidget(self._sql_status)
 
         # Table view
         self._source_model = QStandardItemModel()
+        self._query_model: _QueryResultModel | None = None
+        self._query_results_active = False
         self._proxy_model = _NumericSortProxy()
         self._proxy_model.setSourceModel(self._source_model)
         self._proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -566,6 +701,16 @@ class TableViewer(QWidget):
         self._table_view.verticalHeader().setDefaultSectionSize(22)
         self._table_view.doubleClicked.connect(self._on_table_double_clicked)
         self._table_view.viewport().installEventFilter(self)
+        self._table_view.verticalScrollBar().valueChanged.connect(
+            self._on_table_scroll_activity
+        )
+        self._table_view.horizontalScrollBar().valueChanged.connect(
+            self._on_table_scroll_activity
+        )
+        self._table_interaction_timer = QTimer(self)
+        self._table_interaction_timer.setSingleShot(True)
+        self._table_interaction_timer.setInterval(250)
+        self._table_interaction_timer.timeout.connect(self._end_table_interaction)
 
         # Cell detail panel — shown below the table, updates on selection
         cell_detail = QWidget()
@@ -596,6 +741,7 @@ class TableViewer(QWidget):
 
     def _load_table(self, table_name: str) -> None:
         """Populate the model with the selected table's data."""
+        self._activate_standard_model()
         if table_name == self._summary_label:
             self._load_summary()
             return
@@ -1132,6 +1278,25 @@ class TableViewer(QWidget):
         """Double-click handler: navigate to table from summary, open WAL page in hex viewer, or inspect bytes cell."""
         current = self._table_combo.currentText()
 
+        if self._query_results_active:
+            model_index = self._proxy_model.index(index.row(), index.column())  # type: ignore[union-attr]
+            raw = self._proxy_model.data(model_index, Qt.ItemDataRole.UserRole)
+            display = self._proxy_model.data(model_index, Qt.ItemDataRole.DisplayRole)
+            blob = _coerce_blob(raw)
+            display_text = str(display) if display is not None else ""
+            if blob is not None:
+                is_placeholder = display_text.startswith("<BLOB ") and display_text.endswith(" B>")
+                self._preview_blob(
+                    blob,
+                    display_text=display_text if display_text and not is_placeholder else None,
+                )
+            elif display_text:
+                self._preview_blob(
+                    display_text.encode("utf-8", errors="replace"),
+                    display_text=display_text,
+                )
+            return
+
         if current in (self._summary_label, self._summary_nav_table):
             src_row = self._proxy_model.mapToSource(
                 self._proxy_model.index(index.row(), 0)  # type: ignore[union-attr]
@@ -1290,7 +1455,8 @@ class TableViewer(QWidget):
     def _apply_filter(self, text: str) -> None:
         self._proxy_model.setFilterFixedString(text)
         visible = self._proxy_model.rowCount()
-        total = self._source_model.rowCount()
+        source = self._proxy_model.sourceModel()
+        total = source.rowCount() if source is not None else 0
         if text:
             self._row_count_label.setText(f"({visible:,} of {total:,} rows)")
         else:
@@ -1338,69 +1504,98 @@ class TableViewer(QWidget):
         if not sql:
             self._sql_status.setStyleSheet("color: red;")
             self._sql_status.setText("Enter a SELECT or PRAGMA query")
+            self._sql_status.setToolTip("")
             return
         lowered = sql.lstrip().lower()
         if not (lowered.startswith("select") or lowered.startswith("with") or lowered.startswith("pragma")):
             self._sql_status.setStyleSheet("color: red;")
             self._sql_status.setText("Only SELECT and PRAGMA queries are allowed")
+            self._sql_status.setToolTip("")
             return
         conn = self._ensure_db()
         if conn is None:
             return
+        started = time.perf_counter()
         try:
-            cur = conn.execute(sql)
-            rows = cur.fetchall()
-            columns = [desc[0] for desc in cur.description or []]
+            with foreground_io():
+                priority_wait_elapsed = time.perf_counter() - started
+                execute_started = time.perf_counter()
+                cur = conn.cursor()
+                cur.execute(sql)
+                execute_elapsed = time.perf_counter() - execute_started
+                columns = [desc[0] for desc in cur.description or []]
+                fetch_started = time.perf_counter()
+                fetch_cpu_started = time.process_time()
+                if self._auto_limit.isChecked():
+                    rows = cur.fetchmany(_QUERY_ROW_LIMIT + 1)
+                else:
+                    rows = cur.fetchall()
+                fetch_cpu_elapsed = time.process_time() - fetch_cpu_started
+                fetch_elapsed = time.perf_counter() - fetch_started
         except sqlite3.Error as exc:
+            elapsed = time.perf_counter() - started
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText(str(exc))
+            self._sql_status.setText(f"{exc} (failed after {elapsed:.2f} s)")
+            self._sql_status.setToolTip("")
             return
 
-        self._sql_status.setStyleSheet("")
-        word = "row" if len(rows) == 1 else "rows"
-        self._sql_status.setText(f"{len(rows):,} {word} returned")
+        was_truncated = self._auto_limit.isChecked() and len(rows) > _QUERY_ROW_LIMIT
+        if was_truncated:
+            rows = rows[:_QUERY_ROW_LIMIT]
+        prepare_started = time.perf_counter()
         data = {
             "columns": columns,
             "rows": [list(row) for row in rows],
+            "truncated": was_truncated,
         }
-        self._load_table_from_query(data)
+        prepare_elapsed = time.perf_counter() - prepare_started
+        model_elapsed, resize_elapsed = self._load_table_from_query(data)
+        elapsed = time.perf_counter() - started
 
-    def _load_table_from_query(self, table: dict[str, Any]) -> None:
+        self._sql_status.setStyleSheet("")
+        word = "row" if len(rows) == 1 else "rows"
+        status = f"{len(rows):,} {word} returned in {elapsed:.2f} s"
+        timing_details = (
+            f"Index wait: {priority_wait_elapsed:.2f} s\n"
+            f"Execute: {execute_elapsed:.2f} s\n"
+            f"Fetch: {fetch_elapsed:.2f} s wall / {fetch_cpu_elapsed:.2f} s CPU\n"
+            f"Rows: {prepare_elapsed:.2f} s\n"
+            f"Model: {model_elapsed:.2f} s\n"
+            f"Column sizing: {resize_elapsed:.2f} s\n"
+            f"Total: {elapsed:.2f} s"
+        )
+        if was_truncated:
+            status = f"First {status}"
+            timing_details += (
+                f"\n\nAuto limit capped the result at {_QUERY_ROW_LIMIT:,} rows. "
+                "Add filters or turn off Auto limit to fetch more."
+            )
+        self._sql_status.setText(status)
+        self._sql_status.setToolTip(timing_details)
+
+    def _load_table_from_query(self, table: dict[str, Any]) -> tuple[float, float]:
         self._col_ts_formats.clear()
         columns: list[str] = table["columns"]
         rows: list[list[Any]] = table["rows"]
 
-        self._source_model.clear()
-        self._source_model.setHorizontalHeaderLabels(["Row"] + columns)
+        model_started = time.perf_counter()
+        old_query_model = self._query_model
+        self._query_model = _QueryResultModel(columns, rows, self)
+        self._query_results_active = True
+        self._proxy_model.setDynamicSortFilter(False)
+        self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
+        self._proxy_model.setSourceModel(self._query_model)
+        if old_query_model is not None:
+            old_query_model.deleteLater()
+        model_elapsed = time.perf_counter() - model_started
 
-        for row_index, row_data in enumerate(rows, start=1):
-            items: list[QStandardItem] = []
-            row_item = QStandardItem(str(row_index))
-            row_item.setEditable(False)
-            row_item.setData(row_index, Qt.ItemDataRole.UserRole)
-            items.append(row_item)
-            for val in row_data:
-                if val is None:
-                    cell = QStandardItem("")
-                    cell.setForeground(Qt.GlobalColor.gray)
-                elif isinstance(val, bytes):
-                    cell = QStandardItem(f"<BLOB {len(val):,} B>")
-                    cell.setForeground(Qt.GlobalColor.blue)
-                    cell.setData(val, Qt.ItemDataRole.UserRole)
-                else:
-                    cell = QStandardItem(str(val))
-                if isinstance(val, (int, float)):
-                    try:
-                        cell.setData(val, Qt.ItemDataRole.UserRole)
-                    except (OverflowError, Exception):
-                        pass
-                cell.setEditable(False)
-                items.append(cell)
-            self._source_model.appendRow(items)
-
+        resize_started = time.perf_counter()
         self._resize_and_cap()
+        resize_elapsed = time.perf_counter() - resize_started
         row_word = "row" if len(rows) == 1 else "rows"
-        self._row_count_label.setText(f"({len(rows):,} {row_word})")
+        prefix = "first " if table.get("truncated", False) else ""
+        self._row_count_label.setText(f"({prefix}{len(rows):,} {row_word})")
+        return model_elapsed, resize_elapsed
 
     def _export_csv(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV (*.csv)")
@@ -1410,8 +1605,8 @@ class TableViewer(QWidget):
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 headers = [
-                    self._source_model.headerData(i, Qt.Orientation.Horizontal)
-                    for i in range(self._source_model.columnCount())
+                    self._proxy_model.headerData(i, Qt.Orientation.Horizontal)
+                    for i in range(self._proxy_model.columnCount())
                 ]
                 writer.writerow(headers)
                 for row in range(self._proxy_model.rowCount()):
@@ -1526,6 +1721,9 @@ class TableViewer(QWidget):
         fmt = self._col_ts_formats.get(col)
         if fmt is None:
             return
+        if self._query_results_active and self._query_model is not None:
+            self._query_model.set_timestamp_format(col, fmt)
+            return
         for row in range(self._source_model.rowCount()):
             item = self._source_model.item(row, col)
             if item is None:
@@ -1544,6 +1742,9 @@ class TableViewer(QWidget):
             h_item.setText(f"{base} [{suffix}]")
 
     def _revert_col_ts_format(self, col: int) -> None:
+        if self._query_results_active and self._query_model is not None:
+            self._query_model.set_timestamp_format(col, None)
+            return
         for row in range(self._source_model.rowCount()):
             item = self._source_model.item(row, col)
             if item is None:
@@ -1594,8 +1795,31 @@ class TableViewer(QWidget):
         BlobInspector(blob, self, display_text=display_text).show()
 
     def _resize_and_cap(self) -> None:
-        self._table_view.resizeColumnsToContents()
-        _cap_columns(self._table_view)
+        model = self._table_view.model()
+        if model.rowCount() <= _COLUMN_SIZE_SAMPLE:
+            self._table_view.resizeColumnsToContents()
+            _cap_columns(self._table_view)
+            return
+
+        metrics = self._table_view.fontMetrics()
+        for col in range(model.columnCount()):
+            header = model.headerData(col, Qt.Orientation.Horizontal) or ""
+            width = metrics.horizontalAdvance(str(header)) + 28
+            for row in range(_COLUMN_SIZE_SAMPLE):
+                value = model.data(model.index(row, col), Qt.ItemDataRole.DisplayRole)
+                width = max(width, metrics.horizontalAdvance(str(value or "")) + 20)
+            self._table_view.setColumnWidth(col, min(width, _MAX_COL_WIDTH))
+
+    def _activate_standard_model(self) -> None:
+        if not self._query_results_active:
+            return
+        old_query_model = self._query_model
+        self._proxy_model.setSourceModel(self._source_model)
+        self._proxy_model.setDynamicSortFilter(True)
+        self._query_model = None
+        self._query_results_active = False
+        if old_query_model is not None:
+            old_query_model.deleteLater()
 
     def _on_current_cell_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if not current.isValid():
@@ -1629,11 +1853,24 @@ class TableViewer(QWidget):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.Wheel:
+            self._on_table_scroll_activity()
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:  # type: ignore[union-attr]
                 hbar = self._table_view.horizontalScrollBar()
                 hbar.setValue(hbar.value() - event.angleDelta().y() // 2)  # type: ignore[union-attr]
                 return True
         return super().eventFilter(watched, event)
+
+    def _on_table_scroll_activity(self, _value: int = 0) -> None:
+        if not self._table_interaction_active:
+            acquire_foreground_io()
+            self._table_interaction_active = True
+        self._table_interaction_timer.start()
+
+    def _end_table_interaction(self) -> None:
+        if not self._table_interaction_active:
+            return
+        self._table_interaction_active = False
+        release_foreground_io()
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "matches") and event.matches(QKeySequence.StandardKey.Copy):
@@ -1646,6 +1883,8 @@ class TableViewer(QWidget):
         super().keyPressEvent(event)  # type: ignore[arg-type]
 
     def closeEvent(self, event: object) -> None:  # type: ignore[override]
+        self._table_interaction_timer.stop()
+        self._end_table_interaction()
         if self._db_conn is not None:
             self._db_conn.close()
             self._db_conn = None
