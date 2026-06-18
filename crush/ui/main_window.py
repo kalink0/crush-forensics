@@ -374,6 +374,11 @@ def _safe_name(name: str) -> str:
 
 class MainWindow(QMainWindow):
     _open_windows: list[MainWindow] = []
+    _AMERICA_INTRO_MS = 650
+    _AMERICA_FINALE_MS = 1000
+    _AMERICA_CHILL_TICK_MS = 50
+    _AMERICA_HOLD_MS = 1800
+    _AMERICA_FADE_MS = 450
 
     def __init__(self) -> None:
         super().__init__()
@@ -562,6 +567,14 @@ class MainWindow(QMainWindow):
         self._rainbow_snapshot_btn.clicked.connect(self._snapshot_rainbow)
         self._status.addPermanentWidget(self._rainbow_snapshot_btn)
 
+        self._america_show_btn = QPushButton("")
+        self._america_show_btn.setMinimumWidth(150)
+        self._america_show_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._america_show_btn.setToolTip("Replay the U-S-A theme show")
+        self._america_show_btn.setVisible(False)
+        self._america_show_btn.clicked.connect(self._replay_america_show)
+        self._status.addPermanentWidget(self._america_show_btn)
+
         self._build_menus()
 
     def _build_menus(self) -> None:
@@ -604,6 +617,7 @@ class MainWindow(QMainWindow):
         theme_menu.addAction("Purple", self._set_theme_purple)
         theme_menu.addAction("Ocean", self._set_theme_ocean)
         theme_menu.addAction("Rainbow", self._set_theme_rainbow)
+        theme_menu.addAction("'Merica", self._set_theme_america)
         theme_menu.addSeparator()
         self._custom_theme_action = theme_menu.addAction("", self._set_theme_custom)
         self._custom_theme_action.setVisible(False)
@@ -1585,7 +1599,7 @@ class MainWindow(QMainWindow):
         self._log_view.ensureCursorVisible()
 
     def _set_theme_system(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1656,17 +1670,21 @@ class MainWindow(QMainWindow):
                 self._logger.warning("Failed to read hex bytes for %s: %s", node.path, exc)
             return None
 
-    def _stop_rainbow_timer(self) -> None:
+    def _stop_animated_themes(self) -> None:
         for window in self._open_windows:
             if not isValid(window):
                 continue
             if hasattr(window, "_rainbow_timer"):
                 window._rainbow_timer.stop()
+            if hasattr(window, "_america_timer"):
+                window._america_timer.stop()
             if hasattr(window, "_rainbow_snapshot_btn"):
                 window._rainbow_snapshot_btn.setVisible(False)
+            if hasattr(window, "_america_show_btn"):
+                window._america_show_btn.setVisible(False)
 
     def _set_theme_light(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1675,7 +1693,7 @@ class MainWindow(QMainWindow):
         self._logger.info("Theme set to light")
 
     def _set_theme_dark(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1726,6 +1744,8 @@ class MainWindow(QMainWindow):
             self._set_theme_ocean()
         elif theme == "rainbow":
             self._set_theme_rainbow()
+        elif theme == "america":
+            self._set_theme_america()
         elif theme == "custom":
             self._set_theme_custom()
         elif theme == "system":
@@ -1816,7 +1836,7 @@ class MainWindow(QMainWindow):
         return pal
 
     def _set_theme_geek(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1856,7 +1876,7 @@ class MainWindow(QMainWindow):
         return pal
 
     def _set_theme_purple(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1896,7 +1916,7 @@ class MainWindow(QMainWindow):
         return pal
 
     def _set_theme_ocean(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1936,6 +1956,7 @@ class MainWindow(QMainWindow):
         return pal
 
     def _set_theme_rainbow(self) -> None:
+        self._stop_animated_themes()
         app = QApplication.instance()
         if app is None:
             return
@@ -1987,8 +2008,147 @@ class MainWindow(QMainWindow):
         pal.setColor(QPalette.ColorRole.HighlightedText, base)
         return pal
 
+    def _set_theme_america(self) -> None:
+        self._stop_animated_themes()
+        app = QApplication.instance()
+        if app is None:
+            return
+        self._settings.setValue("theme", "america")
+        self._logger.info("Theme set to 'Merica")
+        if not hasattr(self, "_america_timer"):
+            self._america_timer = QTimer(self)
+            self._america_timer.timeout.connect(self._step_america)
+        self._start_america_show()
+
+    def _replay_america_show(self) -> None:
+        self._start_america_show()
+
+    def _start_america_show(self) -> None:
+        self._america_intro_step = 0
+        self._america_chill_elapsed_ms = 0
+        self._america_timer.setInterval(self._AMERICA_INTRO_MS)
+        self._america_show_btn.setVisible(True)
+        self._step_america()
+        self._america_timer.start()
+
+    def _step_america(self) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        chant = (
+            ("U", QColor(178, 34, 52), "white"),
+            ("S", QColor(245, 245, 240), "#172554"),
+            ("A", QColor(35, 71, 143), "white"),
+        )
+        if self._america_intro_step < 9:
+            letter, color, text_color = chant[self._america_intro_step % len(chant)]
+            app.setPalette(self._america_show_palette(letter))
+            self._america_show_btn.setText(f" ★ ★ ★   {letter}   ★ ★ ★ ")
+            self._america_show_btn.setStyleSheet(
+                f"color: {text_color}; background-color: {color.name()};"
+                " font-weight: bold; padding: 2px 8px; border-radius: 3px;"
+            )
+            self._america_intro_step += 1
+            return
+
+        if self._america_intro_step == 9:
+            self._america_show_btn.setText(" ★  'MERICA  ★ ")
+            self._america_show_btn.setStyleSheet(
+                "color: white; background-color: #233f88;"
+                " font-weight: bold; padding: 2px 8px; border-radius: 3px;"
+            )
+            self._america_intro_step += 1
+            self._america_timer.setInterval(self._AMERICA_FINALE_MS)
+            app.setPalette(self._america_palette(0.0))
+            return
+        elif self._america_intro_step == 10:
+            self._america_show_btn.setText(" ★  Replay Show  ★ ")
+            self._america_show_btn.setStyleSheet(
+                "color: white; background-color: #233f88;"
+                " font-weight: bold; padding: 2px 8px; border-radius: 3px;"
+            )
+            self._america_intro_step += 1
+            self._america_timer.setInterval(self._AMERICA_CHILL_TICK_MS)
+
+        self._america_chill_elapsed_ms += self._america_timer.interval()
+        phase = self._america_chill_phase(self._america_chill_elapsed_ms)
+        app.setPalette(self._america_palette(phase))
+
+    @classmethod
+    def _america_chill_phase(cls, elapsed_ms: int) -> float:
+        segment_ms = cls._AMERICA_HOLD_MS + cls._AMERICA_FADE_MS
+        color_index = (elapsed_ms // segment_ms) % 3
+        segment_elapsed = elapsed_ms % segment_ms
+        if segment_elapsed < cls._AMERICA_HOLD_MS:
+            return float(color_index)
+        fade_progress = (
+            segment_elapsed - cls._AMERICA_HOLD_MS
+        ) / cls._AMERICA_FADE_MS
+        return color_index + fade_progress
+
+    def _america_show_palette(self, letter: str) -> QPalette:
+        if letter == "U":
+            pal = self._america_palette(0.0)
+            pal.setColor(QPalette.ColorRole.Window, QColor(72, 8, 20))
+            pal.setColor(QPalette.ColorRole.Button, QColor(92, 12, 28))
+            return pal
+        if letter == "S":
+            pal = self._light_palette()
+            pal.setColor(QPalette.ColorRole.Highlight, QColor(178, 34, 52))
+            pal.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
+            pal.setColor(QPalette.ColorRole.BrightText, QColor(35, 71, 143))
+            return pal
+        pal = self._america_palette(2.0)
+        pal.setColor(QPalette.ColorRole.Window, QColor(8, 22, 62))
+        pal.setColor(QPalette.ColorRole.Button, QColor(12, 32, 82))
+        return pal
+
+    def _america_palette(self, phase: float) -> QPalette:
+        colors = (
+            QColor(224, 55, 70),
+            QColor(245, 245, 240),
+            QColor(72, 112, 210),
+        )
+        index = int(phase) % len(colors)
+        progress = phase - int(phase)
+        accent = self._blend_color(colors[index], colors[(index + 1) % len(colors)], progress)
+        pal = QPalette()
+        pal.setColor(QPalette.ColorRole.Window, QColor(16, 22, 42))
+        pal.setColor(QPalette.ColorRole.WindowText, accent)
+        pal.setColor(QPalette.ColorRole.Base, QColor(9, 13, 28))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor(21, 28, 52))
+        pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(245, 245, 240))
+        pal.setColor(QPalette.ColorRole.ToolTipText, QColor(16, 22, 42))
+        pal.setColor(QPalette.ColorRole.Text, accent)
+        pal.setColor(QPalette.ColorRole.Button, QColor(25, 34, 64))
+        pal.setColor(QPalette.ColorRole.ButtonText, accent)
+        if hasattr(QPalette.ColorRole, "Menu"):
+            pal.setColor(QPalette.ColorRole.Menu, QColor(16, 22, 42))
+        if hasattr(QPalette.ColorRole, "MenuText"):
+            pal.setColor(QPalette.ColorRole.MenuText, accent)
+        if hasattr(QPalette.ColorRole, "MenuBar"):
+            pal.setColor(QPalette.ColorRole.MenuBar, QColor(16, 22, 42))
+        if hasattr(QPalette.ColorRole, "MenuBarText"):
+            pal.setColor(QPalette.ColorRole.MenuBarText, accent)
+        pal.setColor(QPalette.ColorRole.Mid, QColor(130, 138, 160))
+        pal.setColor(QPalette.ColorRole.Dark, QColor(7, 10, 22))
+        pal.setColor(QPalette.ColorRole.Shadow, QColor(3, 5, 12))
+        pal.setColor(QPalette.ColorRole.BrightText, QColor(224, 55, 70))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor(72, 112, 210))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor(245, 245, 240))
+        return pal
+
+    @staticmethod
+    def _blend_color(start: QColor, end: QColor, progress: float) -> QColor:
+        progress = max(0.0, min(1.0, progress))
+        return QColor(
+            round(start.red() + (end.red() - start.red()) * progress),
+            round(start.green() + (end.green() - start.green()) * progress),
+            round(start.blue() + (end.blue() - start.blue()) * progress),
+        )
+
     def _snapshot_rainbow(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         hue = getattr(self, "_rainbow_hue", 0.0)
         name, ok = QInputDialog.getText(
             self, "Save Custom Theme", "Name for your theme:", text="My Theme"
@@ -2009,7 +2169,7 @@ class MainWindow(QMainWindow):
             self._rainbow_snapshot_btn.setVisible(True)
 
     def _set_theme_custom(self) -> None:
-        self._stop_rainbow_timer()
+        self._stop_animated_themes()
         hue = self._settings.value("custom_theme_hue", 0.0, type=float)
         app = QApplication.instance()
         if app:

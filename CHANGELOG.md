@@ -6,6 +6,7 @@ All notable changes to Crush will be documented in this file.
 
 ### New Features
 
+- **'Merica theme** — a deliberately over-the-top red-white-blue U-S-A intro settles into a calmer hold-and-fade patriotic palette, with a status-bar button to replay the show. The intro uses an accessibility-conscious cadence below three colour changes per second.
 - **Open in New Window** — right-clicking any file in a folder source now shows *Open in New Window*; the file is loaded into a fresh Crush window without affecting the current session. Addresses [#15](https://github.com/kalink0/crush-forensics/issues/15).
 - **Multiple windows** — *File → New Window* (Ctrl+N) opens an additional Crush window; *File → Close Window* (Ctrl+W) closes the current window without exiting the application. The window title shows the loaded source name to help distinguish windows. ([@JamesHabben](https://github.com/JamesHabben), [#17](https://github.com/kalink0/crush-forensics/pull/17))
 - **Welcome screen** — an *Open something to begin* screen with *Open File* and *Open Folder* buttons is shown when no source is loaded. ([@JamesHabben](https://github.com/JamesHabben), [#18](https://github.com/kalink0/crush-forensics/pull/18))
@@ -18,7 +19,7 @@ All notable changes to Crush will be documented in this file.
 ### Bug Fixes
 
 - **Dangling content view and stale properties after source change** — opening a folder or archive while files were already open left the previous file's content and metadata visible. The content tabs and properties panel are now cleared whenever a source replaces the current one; closing the last source returns to the welcome screen. Closes [#16](https://github.com/kalink0/crush-forensics/issues/16). ([#20](https://github.com/kalink0/crush-forensics/pull/20))
-- **Theme switching broken with multiple windows** — each new window started its own rainbow timer; switching the theme in one window stopped only that window's timer while the others kept overwriting the application palette every 50 ms. `_stop_rainbow_timer` now stops the timer in all open windows.
+- **Theme switching broken with multiple windows** — each new window started its own rainbow timer; switching the theme in one window stopped only that window's timer while the others kept overwriting the application palette every 50 ms. Animated theme cleanup now stops timers in all open windows.
 - **Ctrl+Q exits the application** — previously called `close()` on the current window only; now calls `QApplication.quit()` so all open windows are closed.
 - **macOS build — app bundle not launching** — `--collect-all PySide6` caused a `pkg_resources.NullProvider` error at startup; removed in favour of PyInstaller's built-in PySide6 hook. The `ditto` packaging step now passes `--keepParent` so the `.app` bundle is preserved inside the ZIP. ([@JamesHabben](https://github.com/JamesHabben), [#14](https://github.com/kalink0/crush-forensics/pull/14), closes [#8](https://github.com/kalink0/crush-forensics/issues/8))
 
