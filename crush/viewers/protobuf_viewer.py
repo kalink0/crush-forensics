@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.tree_viewer import TreeViewer
 
 
@@ -226,6 +227,7 @@ class ProtobufTreeWidget(QWidget):
         self._tree.setModel(self._model)
         self._tree.setAlternatingRowColors(True)
         self._tree.setAnimated(True)
+        install_horizontal_wheel_scroll(self._tree)
         self._tree.header().setStretchLastSection(False)
         self._tree.setColumnWidth(0, 140)
         self._tree.setColumnWidth(1, 340)

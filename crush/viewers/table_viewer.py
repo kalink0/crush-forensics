@@ -15,7 +15,6 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QAbstractTableModel,
-    QEvent,
     QModelIndex,
     QObject,
     QRegularExpression,
@@ -67,6 +66,7 @@ from crush.core.work_priority import (
     foreground_io,
     release_foreground_io,
 )
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
 
 
@@ -689,7 +689,9 @@ class TableViewer(QWidget):
         self._table_view.horizontalHeader().customContextMenuRequested.connect(self._on_header_context_menu)
         self._table_view.verticalHeader().setDefaultSectionSize(22)
         self._table_view.doubleClicked.connect(self._on_table_double_clicked)
-        self._table_view.viewport().installEventFilter(self)
+        install_horizontal_wheel_scroll(
+            self._table_view, on_wheel=self._on_table_scroll_activity
+        )
         self._table_view.verticalScrollBar().valueChanged.connect(
             self._on_table_scroll_activity
         )
@@ -1839,15 +1841,6 @@ class TableViewer(QWidget):
                 self._cell_detail_view.setPlainText(preview)
         else:
             self._cell_detail_view.setPlainText(display_str)
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.Wheel:
-            self._on_table_scroll_activity()
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:  # type: ignore[union-attr]
-                hbar = self._table_view.horizontalScrollBar()
-                hbar.setValue(hbar.value() - event.angleDelta().y() // 2)  # type: ignore[union-attr]
-                return True
-        return super().eventFilter(watched, event)
 
     def _on_table_scroll_activity(self, _value: int = 0) -> None:
         if not self._table_interaction_active:

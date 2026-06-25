@@ -33,6 +33,7 @@ from crush.core.formatters import (
     try_plist_text,
     try_xml_text,
 )
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 # Column layout of bytes_to_hexview output, e.g. "0000000a: 48 65 6c  Hel"
 _BLOB_HEX_START = 10
@@ -389,11 +390,13 @@ class _BlobPanel(QWidget):
         self._viewer = _BlobViewerEdit(self)
         self._viewer.setReadOnly(True)
         self._viewer.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        install_horizontal_wheel_scroll(self._viewer, smooth_item_scroll=False)
         self._stack.addWidget(self._viewer)
 
         self._img_scroll = QScrollArea()
         self._img_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._img_scroll.setWidgetResizable(False)
+        install_horizontal_wheel_scroll(self._img_scroll, smooth_item_scroll=False)
         self._img_label = QLabel()
         self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._img_scroll.setWidget(self._img_label)

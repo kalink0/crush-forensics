@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.vfs import VFS, VFSNode
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _ROLE_NODE = Qt.ItemDataRole.UserRole + 1
 _ROLE_VFS = Qt.ItemDataRole.UserRole + 2
@@ -217,6 +218,7 @@ class SearchPanel(QWidget):
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        install_horizontal_wheel_scroll(self._table)
         self._table.verticalHeader().setDefaultSectionSize(20)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(False)

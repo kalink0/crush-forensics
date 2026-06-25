@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QContextMenuEvent, QFont
 
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+
 
 _BYTES_PER_ROW = 16
 _PAGE_BYTES = 1024 * 256  # 256 KB per page
@@ -120,6 +122,7 @@ class HexViewer(QWidget):
         self._text = _HexPlainTextEdit(self)
         self._text.setReadOnly(True)
         self._text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        install_horizontal_wheel_scroll(self._text, smooth_item_scroll=False)
 
         font = QFont("Courier New", 10)
         font.setStyleHint(QFont.StyleHint.Monospace)

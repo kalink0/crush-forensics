@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from crush.core.encodings import detect_encoding as _detect_encoding
 from crush.core.formatters import pretty_json
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 
 class _LineNumberArea(QWidget):
@@ -200,6 +201,7 @@ class TextView(QWidget):
         self._editor = _CodeEditor()
         self._editor.setReadOnly(True)
         self._editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        install_horizontal_wheel_scroll(self._editor, smooth_item_scroll=False)
 
         font = QFont("Courier New", 10)
         font.setStyleHint(QFont.StyleHint.Monospace)

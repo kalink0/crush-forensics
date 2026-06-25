@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+
 
 _exotic_registered = False
 
@@ -115,6 +117,7 @@ class ImageViewer(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._scroll.setWidgetResizable(False)
+        install_horizontal_wheel_scroll(self._scroll, smooth_item_scroll=False)
         self._scroll.viewport().setMouseTracking(True)
 
         self._image_label = QLabel()

@@ -28,6 +28,7 @@ from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
     "image", "heic", "heif", "avif", "jxl",
@@ -163,6 +164,7 @@ class FilesystemPanel(QWidget):
         self._tree.setUniformRowHeights(True)
         self._tree.setAlternatingRowColors(True)
         self._tree.setSortingEnabled(False)
+        install_horizontal_wheel_scroll(self._tree)
         self._tree.setColumnWidth(0, 160)
         self._tree.setColumnWidth(1, 65)
         self._tree.setColumnWidth(2, 60)
@@ -181,6 +183,7 @@ class FilesystemPanel(QWidget):
         self._search_view.setUniformRowHeights(True)
         self._search_view.setAlternatingRowColors(True)
         self._search_view.setSortingEnabled(True)
+        install_horizontal_wheel_scroll(self._search_view)
         self._search_view.setColumnWidth(0, 160)
         self._search_view.setColumnWidth(1, 200)
         self._search_view.setColumnWidth(2, 65)

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector
 from crush.viewers.tree_viewer import TreeViewer
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 # Raw bytes stored alongside display text via custom item data roles
 _KEY_BYTES_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -177,6 +178,7 @@ class LevelDbRecordsWidget(QWidget):
         self._table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         self._table.setSortingEnabled(True)
+        install_horizontal_wheel_scroll(self._table)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.resizeColumnsToContents()
         self._table.selectionModel().currentRowChanged.connect(self._on_row_changed)
@@ -405,6 +407,7 @@ class LevelDbViewer(QWidget):
         table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         table.setSortingEnabled(True)
+        install_horizontal_wheel_scroll(table)
         table.horizontalHeader().setStretchLastSection(True)
         table.resizeColumnsToContents()
 
@@ -438,6 +441,7 @@ class LevelDbViewer(QWidget):
         text_view = QPlainTextEdit()
         text_view.setReadOnly(True)
         text_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        install_horizontal_wheel_scroll(text_view, smooth_item_scroll=False)
         text_view.document().setDefaultFont(QFont("Monospace", 9))
         text_view.setPlainText(content)
         layout.addWidget(text_view)

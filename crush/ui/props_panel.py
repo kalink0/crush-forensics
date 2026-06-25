@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.vfs import VFSNode
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _SELECTABLE = (
     Qt.TextInteractionFlag.TextSelectableByMouse
@@ -31,6 +32,7 @@ class PropertiesPanel(QScrollArea):
         self._layout.setContentsMargins(8, 8, 8, 8)
         self._layout.setSpacing(4)
         self.setWidget(self._container)
+        install_horizontal_wheel_scroll(self, smooth_item_scroll=False)
 
     def clear(self) -> None:
         while self._layout.rowCount():

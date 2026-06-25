@@ -86,6 +86,7 @@ import time
 from crush.core.log_db import FilterSpec, LogDatabase, _INSERT_SQL, _ts_to_unix, _unix_to_ts
 
 from crush.core.vfs import VFS, VFSNode
+from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _log = logging.getLogger("crush")
 
@@ -315,6 +316,7 @@ class DefineFormatDialog(QDialog):
         self._preview = QTextEdit()
         self._preview.setReadOnly(True)
         self._preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        install_horizontal_wheel_scroll(self._preview, smooth_item_scroll=False)
         font = self._preview.font()
         font.setFamily("monospace")
         font.setPointSize(10)
@@ -1301,6 +1303,7 @@ class MultiLogViewer(QWidget):
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        install_horizontal_wheel_scroll(self._table)
         self._table.horizontalHeader().setStretchLastSection(False)
         self._table.horizontalHeader().setSectionResizeMode(
             _COL_MSG, QHeaderView.ResizeMode.Stretch
@@ -1402,6 +1405,7 @@ class MultiLogViewer(QWidget):
         scroll.setWidgetResizable(False)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        install_horizontal_wheel_scroll(scroll, smooth_item_scroll=False)
         scroll.setFixedHeight(32)
         scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
