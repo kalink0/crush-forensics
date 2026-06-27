@@ -17,7 +17,11 @@ from PySide6.QtGui import (
     QKeySequence,
 )
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QPlainTextEdit,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
     QHBoxLayout,
@@ -127,6 +131,7 @@ class TextView(QWidget):
         super().__init__(parent)
         self._raw_text = ""
         self._search_hits: list[QTextCursor] = []
+        self._current_hit_index: int = -1
         self._build_ui()
 
         if isinstance(data, bytes):
@@ -196,7 +201,14 @@ class TextView(QWidget):
         sb_layout.addWidget(self._search_next)
         self._search_count = QLabel("")
         sb_layout.addWidget(self._search_count)
+        self._show_all_btn = QToolButton()
+        self._show_all_btn.setText("Show all")
+        self._show_all_btn.setCheckable(True)
+        self._show_all_btn.toggled.connect(self._toggle_result_panel)
+        sb_layout.addWidget(self._show_all_btn)
         layout.addWidget(search_bar)
+
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
 
         self._editor = _CodeEditor()
         self._editor.setReadOnly(True)
@@ -208,7 +220,28 @@ class TextView(QWidget):
         self._editor.setFont(font)
 
         self._highlighter = _SyntaxHighlighter(self._editor.document())
-        layout.addWidget(self._editor)
+        self._splitter.addWidget(self._editor)
+
+        self._result_panel = QWidget()
+        rp_layout = QVBoxLayout(self._result_panel)
+        rp_layout.setContentsMargins(0, 0, 0, 0)
+        rp_layout.setSpacing(0)
+        self._result_table = QTableWidget(0, 3)
+        self._result_table.setHorizontalHeaderLabels(["Line", "Col", "Preview"])
+        self._result_table.horizontalHeader().setStretchLastSection(True)
+        self._result_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._result_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._result_table.cellActivated.connect(self._jump_to_result_row)
+        self._result_table.cellDoubleClicked.connect(self._jump_to_result_row)
+        rp_layout.addWidget(self._result_table)
+        self._result_panel.setVisible(False)
+        self._splitter.addWidget(self._result_panel)
+
+        layout.addWidget(self._splitter)
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "matches") and event.matches(QKeySequence.StandardKey.Find):
@@ -242,9 +275,11 @@ class TextView(QWidget):
     def _refresh_search(self) -> None:
         pattern = self._search_input.text() if hasattr(self, "_search_input") else ""
         self._search_hits = []
+        self._current_hit_index = -1
         self._search_count.setText("")
         self._apply_search_highlights([])
         if not pattern:
+            self._update_result_panel()
             return
         regex = self._build_search_regex(pattern)
         if regex is None:
@@ -266,6 +301,7 @@ class TextView(QWidget):
             self._search_count.setText(f"{len(self._search_hits)}+")
         else:
             self._search_count.setText(f"{len(self._search_hits)}")
+        self._update_result_panel()
 
     def _build_search_regex(self, pattern: str) -> QRegularExpression | None:
         if not self._search_regex.isChecked():
@@ -296,23 +332,69 @@ class TextView(QWidget):
         if not self._search_hits:
             return
         current = self._editor.textCursor()
-        for hit in self._search_hits:
+        for i, hit in enumerate(self._search_hits):
             if hit.selectionStart() > current.position():
+                self._current_hit_index = i
                 self._editor.setTextCursor(hit)
+                self._sync_result_selection()
                 return
         # wrap
+        self._current_hit_index = 0
         self._editor.setTextCursor(self._search_hits[0])
+        self._sync_result_selection()
 
     def _find_prev(self) -> None:
         if not self._search_hits:
             return
         current = self._editor.textCursor()
-        for hit in reversed(self._search_hits):
+        for i, hit in enumerate(reversed(self._search_hits)):
             if hit.selectionEnd() < current.position():
-                self._editor.setTextCursor(hit)
+                self._current_hit_index = len(self._search_hits) - 1 - i
+                self._editor.setTextCursor(self._search_hits[self._current_hit_index])
+                self._sync_result_selection()
                 return
         # wrap
+        self._current_hit_index = len(self._search_hits) - 1
         self._editor.setTextCursor(self._search_hits[-1])
+        self._sync_result_selection()
+
+    def _toggle_result_panel(self, checked: bool) -> None:
+        self._result_panel.setVisible(checked)
+        if checked:
+            self._update_result_panel()
+
+    def _update_result_panel(self) -> None:
+        if not self._result_panel.isVisible():
+            return
+        self._result_table.setRowCount(0)
+        for cursor in self._search_hits:
+            row = self._result_table.rowCount()
+            self._result_table.insertRow(row)
+            block = cursor.block()
+            line = block.blockNumber() + 1
+            col = cursor.selectionStart() - block.position() + 1
+            preview = block.text().strip()
+            self._result_table.setItem(row, 0, QTableWidgetItem(str(line)))
+            self._result_table.setItem(row, 1, QTableWidgetItem(str(col)))
+            self._result_table.setItem(row, 2, QTableWidgetItem(preview))
+        self._sync_result_selection()
+
+    def _sync_result_selection(self) -> None:
+        if not self._result_panel.isVisible():
+            return
+        idx = self._current_hit_index
+        if 0 <= idx < self._result_table.rowCount():
+            self._result_table.selectRow(idx)
+            item = self._result_table.item(idx, 0)
+            if item is not None:
+                self._result_table.scrollToItem(item)
+
+    def _jump_to_result_row(self, row: int, _col: int = 0) -> None:
+        if row < 0 or row >= len(self._search_hits):
+            return
+        self._current_hit_index = row
+        self._editor.setTextCursor(self._search_hits[row])
+        self._editor.centerCursor()
 
 
 class _SyntaxHighlighter(QSyntaxHighlighter):

@@ -216,10 +216,18 @@ Displays raw bytes as offset + hex + ASCII. 256 KB is shown per page.
 |---|---|
 | **◀ Prev / Next ▶** | Navigate pages for files larger than 256 KB |
 | **Page N / M** | Shows current position and total pages |
-| **Search (ASCII)** | Find a text string — jumps to the correct page automatically |
-| **Search (Hex)** | Find a byte pattern, e.g. `FF D8 FF` or `ffd8ff` |
+| **Search as:** dropdown | Choose between **ASCII** (text string) and **Hex** (byte pattern, e.g. `FF D8 FF`) |
+| **Find** button / Enter | Run search — collects all matches, jumps to first hit. All matches are highlighted in yellow, the current match in orange. |
+| **↑ / ↓** | Navigate to previous / next match |
+| **N / M** counter | Shows current match position and total count |
+| **Show all** | Toggle a result panel below showing every match with its offset, hex bytes, and ASCII preview. Click a row to jump to it. |
 | **Copy Hex** | Copy current page as space-separated hex bytes |
 | **Copy ASCII** | Copy current page as ASCII (non-printable → `.`) |
+
+**Right-click on a selection:**
+- **Search Selected as ASCII** — uses the bytes covered by the selection as a text search pattern
+- **Search Selected as Hex** — uses the same bytes as a hex byte-pattern search
+- **Copy Selected Hex / ASCII** — copies only the selected region
 
 ### Text Viewer
 
@@ -230,11 +238,13 @@ Displays text files with line numbers, syntax highlighting, and search.
 **Highlighting** is applied automatically based on content. You can override it with the **Highlight** dropdown: JSON, XML, SQL, INI/CONF, YAML, LOG, CSV, or None.
 
 **Search:**
-- Type in the search bar and matches are highlighted inline
-- Use **Up / Down** to navigate between hits
+- Type in the search bar — matches are highlighted inline as you type
+- Press Enter or **Down** to jump to the next hit; **Up** for the previous
+- The match counter shows the total number of hits
 - Enable **Regex** for regular expression patterns
 - Enable **Case** for case-sensitive matching
 - `*` wildcard is supported in non-regex mode
+- **Show all** opens a result panel listing every match with its line, column, and a line preview — click a row to jump to it
 
 ### Image Viewer
 

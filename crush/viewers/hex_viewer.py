@@ -3,7 +3,17 @@
 """Hex viewer — displays raw bytes as hex + ASCII, 16 bytes per row."""
 from __future__ import annotations
 
+from PySide6.QtCore import QRegularExpression, Qt
+from PySide6.QtGui import (
+    QColor,
+    QContextMenuEvent,
+    QFont,
+    QRegularExpressionValidator,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QComboBox,
     QHBoxLayout,
@@ -11,10 +21,14 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtGui import QContextMenuEvent, QFont
 
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
@@ -31,6 +45,9 @@ _PAGE_BYTES = 1024 * 256  # 256 KB per page
 _HEX_START = 10
 _HEX_END = 58
 _ASCII_START = 60
+
+_COLOR_HIT = QColor(255, 230, 80)     # yellow — all matches
+_COLOR_CURRENT = QColor(255, 140, 0)  # orange — current match
 
 
 class _HexPlainTextEdit(QPlainTextEdit):
@@ -51,18 +68,28 @@ class _HexPlainTextEdit(QPlainTextEdit):
             menu.addAction("Copy Selected ASCII").triggered.connect(
                 self._viewer._copy_selected_ascii
             )
+            menu.addSeparator()
+            menu.addAction("Search Selected as ASCII").triggered.connect(
+                self._viewer._search_selected_as_ascii
+            )
+            menu.addAction("Search Selected as Hex").triggered.connect(
+                self._viewer._search_selected_as_hex
+            )
         menu.addSeparator()
         menu.addAction("Copy All").triggered.connect(self._viewer._copy_all)
         menu.exec(event.globalPos())
 
 
 class HexViewer(QWidget):
-    """Simple hex + ASCII dump viewer."""
+    """Simple hex + ASCII dump viewer with search, highlights, and result panel."""
 
     def __init__(self, data: bytes, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._data = data
         self._page = 0
+        self._search_hits: list[int] = []   # byte offsets of all matches
+        self._current_hit: int = -1          # index into _search_hits
+        self._match_len: int = 0
         self._build_ui()
         self._load_page()
 
@@ -74,18 +101,45 @@ class HexViewer(QWidget):
         toolbar.setContentsMargins(6, 6, 6, 0)
         toolbar.setSpacing(8)
 
+        toolbar.addWidget(QLabel("Search as:"))
         self._search_mode = QComboBox()
         self._search_mode.addItems(["ASCII", "Hex"])
+        self._search_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         toolbar.addWidget(self._search_mode)
 
+        self._hex_validator = QRegularExpressionValidator(
+            QRegularExpression(r"[0-9a-fA-F\s:]*")
+        )
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search…")
-        self._search_input.returnPressed.connect(self._search)
+        self._search_input.setPlaceholderText("Search text…")
+        self._search_input.returnPressed.connect(self._do_search)
         toolbar.addWidget(self._search_input, stretch=1)
 
-        self._search_btn = QPushButton("Find")
-        self._search_btn.clicked.connect(self._search)
-        toolbar.addWidget(self._search_btn)
+        self._find_btn = QPushButton("Find")
+        self._find_btn.clicked.connect(self._do_search)
+        toolbar.addWidget(self._find_btn)
+
+        self._search_prev_btn = QToolButton()
+        self._search_prev_btn.setText("↑")
+        self._search_prev_btn.setToolTip("Previous match")
+        self._search_prev_btn.clicked.connect(self._find_prev)
+        toolbar.addWidget(self._search_prev_btn)
+
+        self._search_next_btn = QToolButton()
+        self._search_next_btn.setText("↓")
+        self._search_next_btn.setToolTip("Next match")
+        self._search_next_btn.clicked.connect(self._find_next)
+        toolbar.addWidget(self._search_next_btn)
+
+        self._count_label = QLabel("")
+        self._count_label.setMinimumWidth(90)
+        toolbar.addWidget(self._count_label)
+
+        self._show_all_btn = QToolButton()
+        self._show_all_btn.setText("Show all")
+        self._show_all_btn.setCheckable(True)
+        self._show_all_btn.toggled.connect(self._toggle_result_panel)
+        toolbar.addWidget(self._show_all_btn)
 
         self._status = QLabel("")
         toolbar.addWidget(self._status)
@@ -119,6 +173,8 @@ class HexViewer(QWidget):
 
         layout.addLayout(toolbar)
 
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
+
         self._text = _HexPlainTextEdit(self)
         self._text.setReadOnly(True)
         self._text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -128,7 +184,33 @@ class HexViewer(QWidget):
         font.setStyleHint(QFont.StyleHint.Monospace)
         self._text.setFont(font)
 
-        layout.addWidget(self._text)
+        self._splitter.addWidget(self._text)
+
+        # Result panel — hidden until user clicks "Show all"
+        self._result_panel = QWidget()
+        rp_layout = QVBoxLayout(self._result_panel)
+        rp_layout.setContentsMargins(0, 0, 0, 0)
+        rp_layout.setSpacing(0)
+        self._result_table = QTableWidget(0, 3)
+        self._result_table.setHorizontalHeaderLabels(["Offset", "Hex", "ASCII"])
+        self._result_table.horizontalHeader().setStretchLastSection(True)
+        self._result_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._result_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._result_table.cellActivated.connect(self._jump_to_result_row)
+        self._result_table.cellDoubleClicked.connect(self._jump_to_result_row)
+        rp_layout.addWidget(self._result_table)
+        self._result_panel.setVisible(False)
+        self._splitter.addWidget(self._result_panel)
+
+        layout.addWidget(self._splitter)
+
+    # ------------------------------------------------------------------
+    # Page navigation
+    # ------------------------------------------------------------------
 
     def _page_count(self) -> int:
         return max(1, (len(self._data) + _PAGE_BYTES - 1) // _PAGE_BYTES)
@@ -153,6 +235,7 @@ class HexViewer(QWidget):
             lines.append(f"{off_str}  {hex_str}  {ascii_str}")
 
         self._text.setPlainText("\n".join(lines))
+        self._update_highlights()
 
         pages = self._page_count()
         self._page_label.setText(f"Page {self._page + 1} / {pages}")
@@ -166,6 +249,10 @@ class HexViewer(QWidget):
         """Replace the displayed bytes and reset to page 0."""
         self._data = data
         self._page = 0
+        self._search_hits = []
+        self._current_hit = -1
+        self._match_len = 0
+        self._count_label.setText("")
         self._load_page()
 
     def _prev_page(self) -> None:
@@ -178,36 +265,6 @@ class HexViewer(QWidget):
             self._page += 1
             self._load_page()
 
-    def _search(self) -> None:
-        query = self._search_input.text().strip()
-        if not query:
-            self._status.setText("Enter a search term")
-            return
-
-        mode = self._search_mode.currentText()
-        if mode == "Hex":
-            pattern = _parse_hex_query(query)
-            if pattern is None:
-                self._status.setText("Invalid hex pattern")
-                return
-            idx = self._data.find(pattern)
-        else:
-            idx = self._data.decode("latin-1").find(query)
-
-        if idx < 0:
-            self._status.setText("Not found")
-            return
-
-        # Jump to the page containing the match
-        target_page = idx // _PAGE_BYTES
-        if target_page != self._page:
-            self._page = target_page
-            self._load_page()
-
-        page_offset = idx - self._page * _PAGE_BYTES
-        self._scroll_to_offset(page_offset)
-        self._status.setText(f"Found at 0x{idx:08X}")
-
     def _scroll_to_offset(self, page_offset: int) -> None:
         line = page_offset // _BYTES_PER_ROW
         block = self._text.document().findBlockByNumber(line)
@@ -217,6 +274,225 @@ class HexViewer(QWidget):
         cursor.setPosition(block.position())
         self._text.setTextCursor(cursor)
         self._text.centerCursor()
+
+    # ------------------------------------------------------------------
+    # Search — collect / navigate
+    # ------------------------------------------------------------------
+
+    def _on_search_mode_changed(self) -> None:
+        self._search_input.clear()
+        self._search_hits = []
+        self._current_hit = -1
+        self._count_label.setText("")
+        self._update_highlights()
+        if self._search_mode.currentText() == "Hex":
+            self._search_input.setPlaceholderText("Hex pattern… (e.g. de ad be ef)")
+            self._search_input.setValidator(self._hex_validator)
+        else:
+            self._search_input.setPlaceholderText("Search text…")
+            self._search_input.setValidator(None)
+
+    def _collect_hits(self) -> bool:
+        """Find all matches for the current query. Returns True if any found."""
+        self._search_hits = []
+        self._match_len = 0
+        query = self._search_input.text().strip()
+        if not query:
+            self._count_label.setText("")
+            return False
+
+        mode = self._search_mode.currentText()
+        if mode == "Hex":
+            pattern = _parse_hex_query(query)
+            if pattern is None:
+                self._count_label.setText("Invalid hex")
+                return False
+            self._match_len = len(pattern)
+            offset = 0
+            while True:
+                idx = self._data.find(pattern, offset)
+                if idx < 0:
+                    break
+                self._search_hits.append(idx)
+                offset = idx + 1
+        else:
+            text = self._data.decode("latin-1")
+            self._match_len = len(query)
+            offset = 0
+            while True:
+                idx = text.find(query, offset)
+                if idx < 0:
+                    break
+                self._search_hits.append(idx)
+                offset = idx + 1
+
+        return len(self._search_hits) > 0
+
+    def _do_search(self) -> None:
+        """Re-collect all hits for the current query and jump to the first."""
+        if not self._collect_hits():
+            self._count_label.setText("Not found")
+            self._update_highlights()
+            self._update_result_panel()
+            return
+        self._current_hit = 0
+        self._jump_to_hit(0)
+        self._update_count_label()
+        self._update_highlights()
+        self._update_result_panel()
+        self._sync_result_selection()
+
+    def _find_next(self) -> None:
+        if not self._search_hits:
+            return
+        self._current_hit = (self._current_hit + 1) % len(self._search_hits)
+        self._jump_to_hit(self._current_hit)
+        self._update_count_label()
+        self._update_highlights()
+        self._sync_result_selection()
+
+    def _find_prev(self) -> None:
+        if not self._search_hits:
+            return
+        self._current_hit = (self._current_hit - 1) % len(self._search_hits)
+        self._jump_to_hit(self._current_hit)
+        self._update_count_label()
+        self._update_highlights()
+        self._sync_result_selection()
+
+    def _jump_to_hit(self, hit_idx: int) -> None:
+        byte_idx = self._search_hits[hit_idx]
+        target_page = byte_idx // _PAGE_BYTES
+        if target_page != self._page:
+            self._page = target_page
+            self._load_page()
+        page_offset = byte_idx - self._page * _PAGE_BYTES
+        self._scroll_to_offset(page_offset)
+
+    def _update_count_label(self) -> None:
+        n = len(self._search_hits)
+        if n == 0:
+            self._count_label.setText("Not found")
+        elif self._current_hit >= 0:
+            self._count_label.setText(f"{self._current_hit + 1} / {n}")
+        else:
+            self._count_label.setText(f"{n} found")
+
+    # ------------------------------------------------------------------
+    # Highlights
+    # ------------------------------------------------------------------
+
+    def _update_highlights(self) -> None:
+        fmt_hit = QTextCharFormat()
+        fmt_hit.setBackground(_COLOR_HIT)
+        fmt_current = QTextCharFormat()
+        fmt_current.setBackground(_COLOR_CURRENT)
+
+        page_start = self._page * _PAGE_BYTES
+        page_end = page_start + len(self._page_data())
+
+        selections: list[QTextEdit.ExtraSelection] = []
+        for i, hit_offset in enumerate(self._search_hits):
+            hit_end = hit_offset + self._match_len
+            if hit_end <= page_start or hit_offset >= page_end:
+                continue
+            fmt = fmt_current if i == self._current_hit else fmt_hit
+            clip_start = max(hit_offset, page_start) - page_start
+            clip_end = min(hit_end, page_end) - page_start
+            self._append_match_selections(selections, fmt, clip_start, clip_end)
+
+        self._text.setExtraSelections(selections)
+
+    def _append_match_selections(
+        self,
+        selections: list[QTextEdit.ExtraSelection],
+        fmt: QTextCharFormat,
+        byte_start: int,
+        byte_end: int,
+    ) -> None:
+        doc = self._text.document()
+        start_line = byte_start // _BYTES_PER_ROW
+        end_line = (byte_end - 1) // _BYTES_PER_ROW
+        for line_num in range(start_line, end_line + 1):
+            line_start_byte = line_num * _BYTES_PER_ROW
+            seg_start = max(byte_start, line_start_byte) - line_start_byte
+            seg_end = min(byte_end, line_start_byte + _BYTES_PER_ROW) - line_start_byte
+            block = doc.findBlockByNumber(line_num)
+            if not block.isValid():
+                continue
+            line_pos = block.position()
+            # ASCII column
+            sel = QTextEdit.ExtraSelection()
+            sel.format = fmt
+            c = QTextCursor(doc)
+            c.setPosition(line_pos + _ASCII_START + seg_start)
+            c.setPosition(line_pos + _ASCII_START + seg_end, QTextCursor.MoveMode.KeepAnchor)
+            sel.cursor = c
+            selections.append(sel)
+            # Hex column — each byte individually (gap between groups at cols 33–34)
+            for b in range(seg_start, seg_end):
+                hpos = (line_pos + _HEX_START + b * 3) if b < 8 else (line_pos + 35 + (b - 8) * 3)
+                sel_h = QTextEdit.ExtraSelection()
+                sel_h.format = fmt
+                ch = QTextCursor(doc)
+                ch.setPosition(hpos)
+                ch.setPosition(hpos + 2, QTextCursor.MoveMode.KeepAnchor)
+                sel_h.cursor = ch
+                selections.append(sel_h)
+
+    # ------------------------------------------------------------------
+    # Result panel
+    # ------------------------------------------------------------------
+
+    def _toggle_result_panel(self, checked: bool) -> None:
+        self._result_panel.setVisible(checked)
+        if checked:
+            self._update_result_panel()
+
+    def _update_result_panel(self) -> None:
+        if not self._result_panel.isVisible():
+            return
+        self._result_table.setRowCount(0)
+        for i, offset in enumerate(self._search_hits):
+            row = self._result_table.rowCount()
+            self._result_table.insertRow(row)
+            off_item = QTableWidgetItem(f"0x{offset:08X}")
+            off_item.setData(Qt.ItemDataRole.UserRole, i)
+            self._result_table.setItem(row, 0, off_item)
+            chunk = self._data[offset : offset + self._match_len]
+            self._result_table.setItem(
+                row, 1, QTableWidgetItem(" ".join(f"{b:02X}" for b in chunk))
+            )
+            self._result_table.setItem(
+                row, 2,
+                QTableWidgetItem(
+                    "".join(chr(b) if 0x20 <= b < 0x7F else "." for b in chunk)
+                ),
+            )
+        self._sync_result_selection()
+
+    def _sync_result_selection(self) -> None:
+        if not self._result_panel.isVisible():
+            return
+        if 0 <= self._current_hit < self._result_table.rowCount():
+            self._result_table.selectRow(self._current_hit)
+            item = self._result_table.item(self._current_hit, 0)
+            if item is not None:
+                self._result_table.scrollToItem(item)
+
+    def _jump_to_result_row(self, row: int, _col: int = 0) -> None:
+        off_item = self._result_table.item(row, 0)
+        if off_item is None:
+            return
+        hit_idx = off_item.data(Qt.ItemDataRole.UserRole)
+        self._current_hit = hit_idx
+        self._jump_to_hit(hit_idx)
+        self._update_count_label()
+        self._update_highlights()
+
+    # ------------------------------------------------------------------
+    # Copy helpers
+    # ------------------------------------------------------------------
 
     def _copy_hex(self) -> None:
         QApplication.clipboard().setText(
@@ -231,13 +507,63 @@ class HexViewer(QWidget):
     def _copy_all(self) -> None:
         QApplication.clipboard().setText(self._text.toPlainText())
 
+    def _selection_byte_range(self) -> tuple[int, int] | None:
+        cursor = self._text.textCursor()
+        if not cursor.hasSelection():
+            return None
+        doc = self._text.document()
+
+        def col_to_byte(col: int) -> int:
+            if col <= _HEX_START:
+                return 0
+            if col <= 32:                       # hex left (bytes 0–7)
+                return min((col - _HEX_START) // 3, 7)
+            if col <= 34:                       # gap between hex groups
+                return 7
+            if col < _HEX_END:                  # hex right (bytes 8–15)
+                return min(8 + (col - 35) // 3, 15)
+            if col < _ASCII_START:              # gap before ASCII
+                return 15
+            return min(col - _ASCII_START, 15)  # ASCII column
+
+        page_start = self._page * _PAGE_BYTES
+        s_block = doc.findBlock(cursor.selectionStart())
+        s_byte = s_block.blockNumber() * _BYTES_PER_ROW + col_to_byte(
+            cursor.selectionStart() - s_block.position()
+        )
+        e_block = doc.findBlock(cursor.selectionEnd())
+        e_byte = e_block.blockNumber() * _BYTES_PER_ROW + col_to_byte(
+            cursor.selectionEnd() - e_block.position()
+        )
+        return page_start + s_byte, page_start + e_byte
+
+    def _search_selected_as_ascii(self) -> None:
+        rng = self._selection_byte_range()
+        if rng is None:
+            return
+        chunk = self._data[rng[0] : rng[1] + 1]
+        query = chunk.decode("latin-1")
+        if query:
+            self._search_mode.setCurrentText("ASCII")
+            self._search_input.setText(query)
+            self._do_search()
+
+    def _search_selected_as_hex(self) -> None:
+        rng = self._selection_byte_range()
+        if rng is None:
+            return
+        chunk = self._data[rng[0] : rng[1] + 1]
+        if chunk:
+            self._search_mode.setCurrentText("Hex")
+            self._search_input.setText(" ".join(f"{b:02X}" for b in chunk))
+            self._do_search()
+
     def _copy_selected_hex(self) -> None:
         text = _selected_text(self._text)
         if not text:
             return
         tokens: list[str] = []
-        for line in text.split("\u2029"):
-            # Extract the hex section from the fixed-column layout
+        for line in text.split(" "):
             hex_section = line[_HEX_START:_HEX_END]
             for part in hex_section.split():
                 if len(part) == 2 and all(c in "0123456789ABCDEFabcdef" for c in part):
@@ -249,7 +575,7 @@ class HexViewer(QWidget):
         if not text:
             return
         parts: list[str] = []
-        for line in text.split("\u2029"):
+        for line in text.split(" "):
             if len(line) > _ASCII_START:
                 parts.append(line[_ASCII_START:])
         QApplication.clipboard().setText("".join(parts))
