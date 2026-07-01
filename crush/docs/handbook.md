@@ -64,6 +64,7 @@ The left panel shows the loaded archive or folder as a tree.
 - **Single-click** selects a file and updates the Properties panel
 - **Right-click** a file or folder for options:
   - **Open** — best viewer for the format
+  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR archive — the file is transparently extracted to a temp location for the new window
   - **Open in Hex** — force raw hex view
   - **Open as Plain Text** — force text view
   - **Open in Multi-Log Studio** — structured log viewer with level/time/text filtering and multi-source support

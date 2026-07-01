@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 
 from crush.core.session import Session
-from crush.core.vfs import VFS, VFSNode, DirectoryVFS
+from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
@@ -91,7 +91,7 @@ class FilesystemPanel(QWidget):
     export_logarchive_requested = Signal(object, object)  # (VFSNode, VFS)
     format_info_requested = Signal(object, object)  # (VFSNode, VFS)
     close_source_requested = Signal(object)  # (VFS)
-    open_in_new_window_requested = Signal(str)  # (path)
+    open_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
     load_finished = Signal()
     background_status = Signal(str)
     _search_results_ready = Signal(object)  # internal: list of result dicts
@@ -430,7 +430,7 @@ class FilesystemPanel(QWidget):
         menu = QMenu(self)
         open_action = menu.addAction("Open")
         open_in_new_window_action = None
-        if not node.is_dir and isinstance(vfs, DirectoryVFS):
+        if not node.is_dir:
             open_in_new_window_action = menu.addAction("Open in New Window")
         open_hex_action = menu.addAction("Open in Hex")
         open_text_action = menu.addAction("Open as Plain Text")
@@ -478,7 +478,7 @@ class FilesystemPanel(QWidget):
         if action is None:
             return
         if action == open_in_new_window_action:
-            self.open_in_new_window_requested.emit(node.path)
+            self.open_in_new_window_requested.emit(node, vfs)
         elif action == open_action:
             self.open_requested.emit(node, vfs, "default")
         elif action == open_hex_action:

@@ -7,6 +7,7 @@ All notable changes to Crush will be documented in this file.
 ### Bug Fixes
 
 - **SQLite temp companion files not deleted on close** — when a SQLite database with WAL or SHM companions was opened, `SQLiteParser` correctly extracted all three files (`-wal`, `-shm`) to the OS temp directory, but `TableViewer.closeEvent` only deleted the main `.db` file. The companion files are now also deleted on close.
+- **"Open in New Window" missing inside archives** — the context menu entry only appeared for files with a real path on disk, so a SQLite database or nested archive found inside an opened ZIP/TAR was stuck without it. The file is now extracted to a temp file and loaded into the new window regardless of source type; the extracted file's cleanup is now owned by the new window rather than the source window, so closing the archive window first no longer deletes the file out from under the still-open new window. If Integrity Mode is on, the original archive-relative path is hashed and logged before extraction, so the chain-of-custody log still reflects where the file actually came from. Re-addresses [#15](https://github.com/kalink0/crush-forensics/issues/15).
 
 ## v0.12.1 - 2026-06-22
 

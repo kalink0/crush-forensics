@@ -655,11 +655,24 @@ class MainWindow(QMainWindow):
         window.move(target)
         window.show()
 
-    def _open_in_new_window(self, path: str) -> None:
+    def _open_in_new_window(self, node: VFSNode, vfs: VFS) -> None:
+        self._hash_node_if_integrity(node, vfs)
+        path = self._materialize_node_for_external(node, vfs)
+        if path is None:
+            QMessageBox.warning(
+                self, "Open in New Window", f"Unable to materialize {node.name!r} for a new window."
+            )
+            return
         window = MainWindow()
         window.resize(self.size())
         window.show()
-        window._load_source(path)
+        if not isinstance(vfs, DirectoryVFS):
+            # The temp file was materialized in this (source) window's
+            # tracking list; transfer ownership to the new window so its
+            # cleanup runs when that window closes, not this one.
+            self._external_temp_paths.remove(path)
+            window._external_temp_paths = [path]
+        window._load_source(str(path))
 
     @classmethod
     def _remove_window_reference(cls, destroyed: QObject | None = None) -> None:
