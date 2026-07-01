@@ -753,7 +753,32 @@ class MainWindow(QMainWindow):
             self._progress.close()
         self._status.showMessage(f"Error loading source: {message}")
         self._logger.error("Load error: %s", message)
-        QMessageBox.critical(self, "Load error", message)
+
+        path = getattr(self, "_loading_path", None)
+        offer_hex = bool(path) and Path(path).is_file()
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Critical)
+        box.setWindowTitle("Load error")
+        box.setText(message)
+        box.addButton(QMessageBox.StandardButton.Ok)
+        hex_button = (
+            box.addButton("Open as Hex", QMessageBox.ButtonRole.ActionRole) if offer_hex else None
+        )
+        box.exec()
+        if hex_button is not None and box.clickedButton() is hex_button:
+            self._open_failed_source_as_hex(path)
+
+    def _open_failed_source_as_hex(self, path: str) -> None:
+        try:
+            data = Path(path).read_bytes()
+        except Exception as exc:
+            QMessageBox.warning(self, "Open as Hex", f"Could not read {path!r}: {exc}")
+            return
+        from crush.viewers.hex_viewer import HexViewer
+        viewer = HexViewer(data, self)
+        idx = self._viewer_tabs.addTab(viewer, f"{Path(path).name} [Hex]")
+        self._viewer_tabs.setCurrentIndex(idx)
 
     def _on_tree_loaded(self) -> None:
         self._logger.debug("Tree load finished")

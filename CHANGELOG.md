@@ -4,6 +4,10 @@ All notable changes to Crush will be documented in this file.
 
 ## [Unreleased]
 
+### Improvements
+
+- **"Open as Hex" fallback on load error** — when a source fails to load (e.g. a corrupt or truncated ZIP), the error dialog now offers an "Open as Hex" button that opens the raw file bytes in the hex viewer instead of leaving the file completely inaccessible. Addresses [#31](https://github.com/kalink0/crush-forensics/issues/31).
+
 ### Bug Fixes
 
 - **SQLite temp companion files not deleted on close** — when a SQLite database with WAL or SHM companions was opened, `SQLiteParser` correctly extracted all three files (`-wal`, `-shm`) to the OS temp directory, but `TableViewer.closeEvent` only deleted the main `.db` file. The companion files are now also deleted on close.
