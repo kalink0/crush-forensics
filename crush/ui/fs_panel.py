@@ -851,10 +851,10 @@ class FilesystemPanel(QWidget):
         are thread-safe (DirectoryVFS opens independent handles; ZipVFS uses
         thread-local ZipFile handles; TarVFS serialises via a per-instance lock).
         """
-        from crush.core.vfs import DirectoryVFS, FileVFS, ZipVFS
-        # Archive VFS types (ZIP, tar) serialize on a lock anyway — extra threads
-        # only add overhead.  Use parallel workers only when every source is a
-        # plain directory or single-file VFS.
+        from crush.core.vfs import DirectoryVFS, FileVFS, SevenZipVFS, ZipVFS
+        # Archive VFS types (ZIP, tar, 7z) serialize on a lock anyway — extra
+        # threads only add overhead.  Use parallel workers only when every
+        # source is a plain directory or single-file VFS.
         if all(isinstance(vfs, (DirectoryVFS, FileVFS)) for vfs in vfs_list):
             n_workers = self._prescan_workers
         else:
@@ -865,17 +865,22 @@ class FilesystemPanel(QWidget):
 
         # Collect all file nodes up-front so we can split them evenly.
         # For ZIP sources use storage order so reads are sequential (no random seeks).
+        # For 7z, batch-extract every entry in one archive pass first (bounded by
+        # size — see SevenZipVFS.prefetch_all) so the per-file peek() below hits
+        # an in-memory cache instead of re-decompressing shared solid blocks.
         all_nodes: list[tuple[VFSNode, VFS]] = []
         for vfs in vfs_list:
             if isinstance(vfs, ZipVFS):
                 all_nodes.extend((node, vfs) for node in vfs.storage_ordered_files())
-            else:
-                stack: deque[VFSNode] = deque([vfs.root()])
-                while stack:
-                    node = stack.popleft()
-                    if not node.is_dir:
-                        all_nodes.append((node, vfs))
-                    stack.extend(node.children)
+                continue
+            if isinstance(vfs, SevenZipVFS):
+                vfs.prefetch_all()
+            stack: deque[VFSNode] = deque([vfs.root()])
+            while stack:
+                node = stack.popleft()
+                if not node.is_dir:
+                    all_nodes.append((node, vfs))
+                stack.extend(node.children)
 
         total = len(all_nodes)
         _logger.info("Type pre-scan: %d files to index", total)

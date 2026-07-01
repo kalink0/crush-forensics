@@ -4,6 +4,10 @@ All notable changes to Crush will be documented in this file.
 
 ## [Unreleased]
 
+### New Features
+
+- **7z archive support** — `.7z` files now open as browsable trees, same as ZIP and TAR, via a new `SevenZipVFS` backed by `py7zr`. No password/encrypted-archive support yet. Type-detection scanning batch-extracts the whole archive in one pass (archives up to 1 GiB) instead of re-decompressing shared solid-compression blocks once per file — ~13x faster in testing on a 40-file archive; larger archives fall back to the previous per-file extraction. Addresses [#28](https://github.com/kalink0/crush-forensics/issues/28).
+
 ### Improvements
 
 - **"Open as Hex" fallback on load error** — when a source fails to load (e.g. a corrupt or truncated ZIP), the error dialog now offers an "Open as Hex" button that opens the raw file bytes in the hex viewer instead of leaving the file completely inaccessible. Addresses [#31](https://github.com/kalink0/crush-forensics/issues/31).

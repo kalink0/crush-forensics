@@ -2,7 +2,7 @@
 
 ## What is Crush?
 
-Crush is a Digital Forensic Analysis Workbench for examining iOS and Android acquisitions. It lets you open archives (ZIP, TAR), folders, and individual files, then navigate and inspect their contents using format-aware viewers — without extracting anything to disk first.
+Crush is a Digital Forensic Analysis Workbench for examining iOS and Android acquisitions. It lets you open archives (ZIP, TAR, 7z), folders, and individual files, then navigate and inspect their contents using format-aware viewers — without extracting anything to disk first.
 
 Crush includes a built-in **file format database** covering forensically relevant formats across iOS and Android. For every file you select or open, Crush identifies the format by magic bytes (not by extension), then shows its name, platform, forensic relevance, and a link to the format specification — even for formats that have no dedicated viewer yet. The database is a work in progress — more formats and references will be added over time.
 
@@ -14,7 +14,7 @@ Use the **File** menu to load a source:
 
 | Menu item | When to use |
 |---|---|
-| **Open file…** | Any single file — image, database, plist, ZIP, TAR, etc. Crush detects the type automatically. ZIP and TAR archives are opened as browsable trees; other files open directly in a viewer tab. |
+| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. |
 | **Open folder…** | Already-extracted acquisition or any folder of files on disk |
 
 Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
@@ -64,7 +64,7 @@ The left panel shows the loaded archive or folder as a tree.
 - **Single-click** selects a file and updates the Properties panel
 - **Right-click** a file or folder for options:
   - **Open** — best viewer for the format
-  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR archive — the file is transparently extracted to a temp location for the new window
+  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z archive — the file is transparently extracted to a temp location for the new window
   - **Open in Hex** — force raw hex view
   - **Open as Plain Text** — force text view
   - **Open in Multi-Log Studio** — structured log viewer with level/time/text filtering and multi-source support
@@ -603,7 +603,7 @@ Crush includes a growing set of parsers and viewers, with documented limitations
 The right panel updates whenever you select or open a file. It shows:
 
 - **File name and path**
-- **MACB timestamps** — Modified, Accessed, Changed, Birth. Fields unavailable in the source format (ZIP and TAR only store mtime) are shown as **—** with an explanatory note
+- **MACB timestamps** — Modified, Accessed, Changed, Birth. Fields unavailable in the source format (ZIP, TAR, and 7z only store a single timestamp) are shown as **—** with an explanatory note
 - **Format** — identified format name from the knowledge base (e.g. "SQLite Database", "Android Binary XML")
 - **Forensic relevance** — what kind of data this format typically contains
 - **Platforms** — which platforms this format originates from
@@ -686,7 +686,7 @@ All pipeline steps and interpretations available in the BLOB Inspector (Base64, 
 Integrity mode adds hashing and traceability to file access:
 
 - When enabled, files opened or exported are hashed (SHA-256) and written to the log.
-- Opening a ZIP/TAR/file triggers the calculation of the hash (SHA-256) of the file.
+- Opening a ZIP/TAR/7z/file triggers the calculation of the hash (SHA-256) of the file.
 - Opening a folder does not hash the full directory.
 - Exports also create a `crush-export-hashes.txt` file next to the exported data.
 - The bottom-right status badge shows the current mode. Click the badge to toggle it, or right-click it for a quick menu and a short explanation.
@@ -705,7 +705,7 @@ Integrity mode adds hashing and traceability to file access:
 
 ## Tips for Forensic Workflows
 
-- **Large archives:** Crush loads ZIP and TAR indexes immediately and reads file content on demand — you do not need to wait for a full extraction before browsing.
+- **Large archives:** Crush loads ZIP, TAR, and 7z indexes immediately and reads file content on demand — you do not need to wait for a full extraction before browsing. 7z's solid compression blocks multiple files together, so reading any single file from a solid 7z can be slower than the equivalent ZIP/TAR read.
 - **SQLite WAL files:** if a `-wal` or `-shm` companion file is present alongside a `.db`, Crush automatically includes it so you see the most recent state of the database. Use **WAL Frames (generated)** for a full frame inventory with forensic classification (Active / Superseded / Uncommitted / WAL slack), and enable **Show WAL history** in any table view to surface rows from historical frames — potentially recovering data from before the last UPDATE or DELETE.
 - **BLOB chaining:** SQLite cells containing embedded plists, images, or other binary data can be opened directly as a new viewer tab via right-click → **Open as new tab**.
 - **Unknown files:** even if Crush cannot parse a file, the Properties panel will show the identified format name and forensic relevance based on magic bytes — so you know what you are looking at before deciding to export and open it externally.

@@ -488,6 +488,154 @@ class TarVFS(VFS):
         return total
 
 
+# py7zr has no way to write directly into a caller-supplied buffer of unknown
+# size, so BytesIOFactory needs a byte cap up front. Set it absurdly high so it
+# never truncates a real file — see feedback_no_silent_limits in project memory.
+_SEVENZIP_EXTRACT_LIMIT = 1 << 40  # 1 TiB
+
+# Bounds peak memory for prefetch_all() (bulk decompression of every entry in
+# one pass, to avoid re-decompressing shared solid blocks once per file).
+# Archives above this size fall back to extracting one entry at a time —
+# slower but bounded to whatever the caller actually reads, never skipped or
+# truncated, just a different (still fully correct) code path.
+_SEVENZIP_PREFETCH_SIZE_LIMIT = 1 << 30  # 1 GiB
+
+
+class SevenZipVFS(VFS):
+    """VFS backed by a 7z archive.
+
+    Unlike zipfile/tarfile, py7zr cannot open an arbitrary entry as an
+    independent stream — solid compression blocks mean extracting any file
+    requires a full pass over the archive, and the archive object must be
+    reset() before the next operation. Reads are therefore fully serialized
+    under a per-instance lock (the whole extract+reset cycle, not just the
+    file object as in ZipVFS).
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        import py7zr
+
+        self._path = Path(path)
+        self._zf = py7zr.SevenZipFile(self._path, "r")
+        self._zf_lock = threading.Lock()
+        self._entry_names: dict[str, str] = {}
+        self._read_cache: dict[str, bytes] = {}
+        self._tree = self._build_tree()
+        self._file_counts: dict[str, int] = {}
+        self._total_sizes: dict[str, int] = {}
+        self._compute_file_counts(self._tree)
+        self._compute_total_sizes(self._tree)
+
+    def _build_tree(self) -> VFSNode:
+        root = VFSNode(name=self._path.name, path="/", is_dir=True)
+        nodes: dict[str, VFSNode] = {"/": root}
+
+        infos = self._zf.list()
+        self._zf.reset()
+
+        for info in sorted(infos, key=lambda i: i.filename):
+            parts = [p for p in info.filename.rstrip("/").split("/") if p and p != "."]
+            if not parts:
+                continue
+            for depth, _ in enumerate(parts, 1):
+                virtual_path = "/" + "/".join(parts[:depth])
+                if virtual_path not in nodes:
+                    is_dir = depth < len(parts) or info.is_directory
+                    ts = info.creationtime.timestamp() if info.creationtime else 0.0
+                    node = VFSNode(
+                        name=parts[depth - 1],
+                        path=virtual_path,
+                        is_dir=is_dir,
+                        size=info.uncompressed if not is_dir else 0,
+                        modified=ts,
+                    )
+                    parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
+                    nodes[parent_path].children.append(node)
+                    nodes[virtual_path] = node
+                if depth == len(parts) and not info.is_directory:
+                    self._entry_names[virtual_path] = info.filename
+
+        for node in nodes.values():
+            node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
+        return root
+
+    def root(self) -> VFSNode:
+        return self._tree
+
+    def read(self, node: VFSNode) -> bytes:
+        name = self._entry_names.get(node.path, node.path.lstrip("/"))
+        cached = self._read_cache.get(name)
+        if cached is not None:
+            return cached
+        from py7zr.io import BytesIOFactory
+
+        with self._zf_lock:
+            factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
+            self._zf.extract(targets=[name], factory=factory)
+            buf = factory.get(name)  # type: ignore[no-untyped-call]
+            data = buf.read() if buf is not None else b""
+            self._zf.reset()
+        self._read_cache[name] = data
+        return data
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        return BytesIO(self.read(node))
+
+    def prefetch_all(self) -> bool:
+        """Batch-extract every not-yet-cached entry in a single archive pass.
+
+        A solid 7z block gets decompressed once total instead of once per file
+        it contains, which is what the type-detection prescan needs (it peeks
+        every file). Skipped when the archive's total size exceeds
+        _SEVENZIP_PREFETCH_SIZE_LIMIT — callers keep working either way since
+        read() falls back to extracting one entry at a time.
+        """
+        if self.total_size(self._tree) > _SEVENZIP_PREFETCH_SIZE_LIMIT:
+            return False
+        missing = [name for name in self._entry_names.values() if name not in self._read_cache]
+        if not missing:
+            return True
+        from py7zr.io import BytesIOFactory
+
+        with self._zf_lock:
+            factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
+            self._zf.extract(targets=missing, factory=factory)
+            for name in missing:
+                buf = factory.get(name)  # type: ignore[no-untyped-call]
+                self._read_cache[name] = buf.read() if buf is not None else b""
+            self._zf.reset()
+        return True
+
+    def close(self) -> None:
+        self._zf.close()
+
+    def file_count(self, node: VFSNode) -> int:
+        return self._file_counts.get(node.path, 0)
+
+    def total_size(self, node: VFSNode) -> int:
+        return self._total_sizes.get(node.path, 0)
+
+    def _compute_file_counts(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._file_counts[node.path] = 1
+            return 1
+        total = 0
+        for child in node.children:
+            total += self._compute_file_counts(child)
+        self._file_counts[node.path] = total
+        return total
+
+    def _compute_total_sizes(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._total_sizes[node.path] = node.size
+            return node.size
+        total = 0
+        for child in node.children:
+            total += self._compute_total_sizes(child)
+        self._total_sizes[node.path] = total
+        return total
+
+
 class BytesVFS(VFS):
     """VFS backed by a single in-memory bytes object (for artifact chaining)."""
 
@@ -542,6 +690,8 @@ def open_vfs(path: str | Path) -> VFS:
     name_lower = p.name.lower()
     if p.suffix.lower() == ".zip":
         return ZipVFS(p)
+    if p.suffix.lower() == ".7z":
+        return SevenZipVFS(p)
     if (
         p.suffix.lower() in (".tar", ".tgz", ".tbz2", ".txz")
         or name_lower.endswith(".tar.gz")

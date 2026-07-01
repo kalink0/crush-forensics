@@ -2699,6 +2699,46 @@ FORMATS: list[dict[str, Any]] = [
         "status": "reviewed",
     },
     {
+        "name": "7-Zip Archive",
+        "short_name": "7Z",
+        "category": "archive",
+        "forensic_relevance": (
+            "General-purpose archive format with high compression ratios (LZMA/LZMA2), "
+            "increasingly seen as a container for forensic tool output and exfiltrated "
+            "data due to strong optional AES-256 encryption of both file contents and, "
+            "with header encryption enabled, the file listing itself — an encrypted-header "
+            "7z gives no visibility into archive contents (names, sizes, timestamps) "
+            "without the password. "
+            "Solid compression (default) groups multiple files into shared compression "
+            "blocks, meaning a single corrupted block can affect the recoverability of "
+            "several unrelated files at once — a mitigating vs. ZIP's per-file compression. "
+            "Seen in the wild bundling malware droppers (compression ratio + optional "
+            "encryption both help evade signature-based and content-inspection scanning), "
+            "as well as legitimate acquisition tool exports."
+        ),
+        "platforms": ["Windows", "Linux", "macOS", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x37\x7a\xbc\xaf\x27\x1c",
+                "description": "7z signature",
+            }
+        ],
+        "extensions": [".7z"],
+        "links": [
+            (
+                "7z format specification (7-Zip)",
+                "https://www.7-zip.org/7z.html",
+            ),
+            (
+                "7z format overview (Wikipedia)",
+                "https://en.wikipedia.org/wiki/7z",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
         "name": "Apple Keychain",
         "short_name": "Keychain",
         "category": "database",
