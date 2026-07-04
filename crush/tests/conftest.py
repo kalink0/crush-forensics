@@ -164,6 +164,364 @@ def tar_fixture(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def android_backup_fixture(tmp_path: Path) -> Path:
+    """Synthetic unencrypted `adb backup` (.ab) container in tmp_path.
+
+    Built on the fly rather than checked into fixtures/ — an .ab is just a
+    header plus a deflated tar stream, and forensic tooling shouldn't ship
+    even a fake device backup if a few lines of code can produce one.
+    """
+    import io
+    import tarfile
+    import zlib
+
+    tar_buf = io.BytesIO()
+    with tarfile.open(fileobj=tar_buf, mode="w") as tf:
+        data = b"SQLite format 3\x00"
+        info = tarfile.TarInfo(name="apps/com.example.app/db/sample.db")
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+
+    dst = tmp_path / "backup.ab"
+    dst.write_bytes(
+        b"ANDROID BACKUP\n5\n1\nnone\n" + zlib.compress(tar_buf.getvalue())
+    )
+    return dst
+
+
+@pytest.fixture
+def android_backup_encrypted_fixture(tmp_path: Path) -> Path:
+    """Synthetic password-protected `adb backup` (.ab) container, password
+    "hunter2" — built with the same primitives crush.core.android_backup_crypto
+    uses (mirror-image of the decrypt path: PBKDF2 derive, AES-CBC encrypt
+    the master-key blob and the payload) so the test exercises the real
+    cryptographic pipeline, not a stub.
+    """
+    import io
+    import os
+    import tarfile
+    import zlib
+
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    from crush.core.android_backup_crypto import _key_checksum, _password_to_bytes, _pbkdf2
+
+    password = "hunter2"
+    version = 5
+    rounds = 10_000
+
+    tar_buf = io.BytesIO()
+    with tarfile.open(fileobj=tar_buf, mode="w") as tf:
+        data = b"SQLite format 3\x00"
+        info = tarfile.TarInfo(name="apps/com.example.app/db/sample.db")
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    compressed_payload = zlib.compress(tar_buf.getvalue())
+
+    user_salt = os.urandom(64)
+    checksum_salt = os.urandom(64)
+    user_iv = os.urandom(16)
+    master_key = os.urandom(32)
+    master_iv = os.urandom(16)
+
+    user_key = _pbkdf2(_password_to_bytes(password), user_salt, rounds)
+    checksum = _key_checksum(master_key, checksum_salt, rounds, use_utf8=version >= 2)
+    mk_blob = (
+        bytes([len(master_iv)]) + master_iv
+        + bytes([len(master_key)]) + master_key
+        + bytes([len(checksum)]) + checksum
+    )
+    mk_pad = 16 - (len(mk_blob) % 16)
+    mk_blob_padded = mk_blob + bytes([mk_pad]) * mk_pad
+    mk_encryptor = Cipher(algorithms.AES(user_key), modes.CBC(user_iv)).encryptor()
+    master_key_blob_ct = mk_encryptor.update(mk_blob_padded) + mk_encryptor.finalize()
+
+    payload_pad = 16 - (len(compressed_payload) % 16)
+    payload_padded = compressed_payload + bytes([payload_pad]) * payload_pad
+    payload_encryptor = Cipher(algorithms.AES(master_key), modes.CBC(master_iv)).encryptor()
+    payload_ct = payload_encryptor.update(payload_padded) + payload_encryptor.finalize()
+
+    header = (
+        b"ANDROID BACKUP\n" + str(version).encode() + b"\n1\nAES-256\n"
+        + user_salt.hex().encode() + b"\n"
+        + checksum_salt.hex().encode() + b"\n"
+        + str(rounds).encode() + b"\n"
+        + user_iv.hex().encode() + b"\n"
+        + master_key_blob_ct.hex().encode() + b"\n"
+    )
+
+    dst = tmp_path / "backup_encrypted.ab"
+    dst.write_bytes(header + payload_ct)
+    return dst
+
+
+@pytest.fixture
+def sevenzip_encrypted_content_fixture(tmp_path: Path) -> Path:
+    """Password-protected 7z archive, content encrypted but the file listing
+    itself is not (py7zr's `header_encryption` left at its default False).
+    Password: "secret123"."""
+    import py7zr
+
+    dst = tmp_path / "content_encrypted.7z"
+    with py7zr.SevenZipFile(dst, "w", password="secret123") as zf:
+        zf.writestr(b"SQLite format 3\x00", "sample.db")
+    return dst
+
+
+@pytest.fixture
+def sevenzip_encrypted_header_fixture(tmp_path: Path) -> Path:
+    """Password-protected 7z archive with header encryption enabled — even
+    listing file names requires the password. Password: "secret123"."""
+    import py7zr
+
+    dst = tmp_path / "header_encrypted.7z"
+    with py7zr.SevenZipFile(dst, "w", password="secret123", header_encryption=True) as zf:
+        zf.writestr(b"SQLite format 3\x00", "sample.db")
+    return dst
+
+
+@pytest.fixture
+def legacy_encrypted_zip_fixture(tmp_path: Path) -> Path:
+    """Writable copy of minimal_legacy_encrypted.zip (password "secret123"), placed in tmp_path.
+
+    Checked into fixtures/ rather than built inline like the other synthetic
+    fixtures in this file — legacy ZipCrypto is a write-only-by-nobody format
+    among our dependencies: stdlib zipfile can only read it, and pyzipper
+    refuses to write it at all (deliberately, since it's cryptographically
+    weak). Built once with the system `zip -P` tool.
+    """
+    src = FIXTURES_DIR / "minimal_legacy_encrypted.zip"
+    dst = tmp_path / src.name
+    dst.write_bytes(src.read_bytes())
+    return dst
+
+
+@pytest.fixture
+def aes_encrypted_zip_fixture(tmp_path: Path) -> Path:
+    """Synthetic WinZip-AES-encrypted ZIP (password "secret123") in tmp_path,
+    built with pyzipper (our own AES-ZIP dependency, so no checked-in binary
+    is needed the way legacy_encrypted_zip_fixture requires)."""
+    import pyzipper
+
+    dst = tmp_path / "aes_encrypted.zip"
+    with pyzipper.AESZipFile(dst, "w", encryption=pyzipper.WZ_AES) as zf:
+        zf.setpassword(b"secret123")
+        zf.writestr("sample.db", b"SQLite format 3\x00")
+    return dst
+
+
+@pytest.fixture
+def itunes_backup_fixture(tmp_path: Path) -> Path:
+    """Synthetic unencrypted iTunes/Finder iOS backup directory in tmp_path.
+
+    Built on the fly (Manifest.db + one sharded file) rather than checked
+    into fixtures/, for the same reason as android_backup_fixture.
+    """
+    import plistlib
+    import sqlite3
+
+    backup_dir = tmp_path / "00008030-000A2D6E3601C01E"
+    backup_dir.mkdir()
+
+    conn = sqlite3.connect(backup_dir / "Manifest.db")
+    conn.execute(
+        "CREATE TABLE Files (fileID TEXT PRIMARY KEY, domain TEXT, "
+        "relativePath TEXT, flags INTEGER, file BLOB)"
+    )
+    file_id = "3d0d7e5fb2ce288813306e4d0f11ac329e64a91d"
+    conn.execute(
+        "INSERT INTO Files VALUES (?, ?, ?, ?, ?)",
+        (file_id, "HomeDomain", "Library/SMS/sms.db", 1, b""),
+    )
+    conn.commit()
+    conn.close()
+
+    shard_dir = backup_dir / file_id[:2]
+    shard_dir.mkdir()
+    (shard_dir / file_id).write_bytes(b"SQLite format 3\x00")
+
+    (backup_dir / "Info.plist").write_bytes(plistlib.dumps({"Product Name": "iPhone"}))
+    (backup_dir / "Manifest.plist").write_bytes(plistlib.dumps({"IsEncrypted": False}))
+    (backup_dir / "Status.plist").write_bytes(plistlib.dumps({"BackupState": "new"}))
+
+    return backup_dir
+
+
+def _build_backup_keybag_tlv(salt: bytes, iterations: int, dpsl: bytes, dpic: int,
+                              class_num: int, wrapped_class_key: bytes) -> bytes:
+    """Build a minimal BackupKeyBag TLV blob (header + one class-key group)."""
+    import os
+    import struct
+
+    def tlv(tag: str, value: bytes | int) -> bytes:
+        if isinstance(value, int):
+            value = struct.pack(">I", value)
+        return tag.encode("ascii") + struct.pack(">I", len(value)) + value
+
+    return (
+        tlv("UUID", os.urandom(16))
+        + tlv("WRAP", 0)
+        + tlv("SALT", salt)
+        + tlv("ITER", iterations)
+        + tlv("DPSL", dpsl)
+        + tlv("DPIC", dpic)
+        + tlv("UUID", os.urandom(16))
+        + tlv("CLAS", class_num)
+        + tlv("WRAP", 2)  # WRAP_PASSCODE
+        + tlv("KTYP", 0)
+        + tlv("WPKY", wrapped_class_key)
+    )
+
+
+def _build_nska_file_metadata(protection_class: int, encryption_key_entry: bytes) -> bytes:
+    """Build a minimal NSKeyedArchiver bplist matching `Files.file`'s real shape
+    (ProtectionClass + EncryptionKey, the two fields crush.core.ios_keybag reads)."""
+    import plistlib
+
+    objects = [
+        "$null",
+        {"$class": plistlib.UID(3), "ProtectionClass": protection_class, "EncryptionKey": plistlib.UID(2)},
+        {"$class": plistlib.UID(4), "NS.data": encryption_key_entry},
+        {"$classes": ["MBFile", "NSObject"], "$classname": "MBFile"},
+        {"$classes": ["NSMutableData", "NSData", "NSObject"], "$classname": "NSMutableData"},
+    ]
+    archive = {
+        "$archiver": "NSKeyedArchiver",
+        "$version": 100000,
+        "$top": {"root": plistlib.UID(1)},
+        "$objects": objects,
+    }
+    return plistlib.dumps(archive, fmt=plistlib.FMT_BINARY)
+
+
+@pytest.fixture
+def itunes_backup_keybag_fixture(tmp_path: Path) -> Path:
+    """Synthetic iOS-10.2+-style iTunes backup: Manifest.db is KeyBag/AES
+    encrypted (as real backups always are since iOS 10.2), but the backup
+    itself has no password (`IsEncrypted: False` — the common, real-world
+    case exercised against Josh Hickman's iOS 14.3 sample by the user).
+
+    Built with the same primitives `crush.core.ios_keybag` uses (mirror-image
+    of the decrypt path: PBKDF2 derive, AES key-wrap, AES-CBC encrypt) so the
+    test exercises the real cryptographic pipeline, not a stub.
+    """
+    import os
+    import plistlib
+    import sqlite3
+    import struct
+
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.keywrap import aes_key_wrap
+
+    from crush.core.ios_keybag import _pbkdf2
+
+    password = ""
+    class_num = 3
+    class_key = os.urandom(32)
+    manifest_key = os.urandom(32)
+    salt, iterations = os.urandom(20), 10_000
+    dpsl, dpic = os.urandom(20), 100_000
+
+    passcode_key = _pbkdf2(password.encode(), dpsl, dpic, "sha256")
+    passcode_key = _pbkdf2(passcode_key, salt, iterations, "sha1")
+
+    keybag = _build_backup_keybag_tlv(
+        salt, iterations, dpsl, dpic, class_num, aes_key_wrap(passcode_key, class_key)
+    )
+    manifest_key_entry = struct.pack("<I", class_num) + aes_key_wrap(class_key, manifest_key)
+
+    backup_dir = tmp_path / "00008030-000A2D6E3601C01F"
+    backup_dir.mkdir()
+
+    file_id = "3d0d7e5fb2ce288813306e4d0f11ac329e64a91d"
+
+    # A second, per-file-encrypted file (real backups with IsEncrypted=False
+    # still leave file contents in the clear — this shape only shows up once
+    # a backup password is set — but the fixture builds it regardless so the
+    # per-file decrypt path in ITunesBackupVFS.read()/ios_keybag.py is covered
+    # without needing a real password-protected sample in the test suite).
+    protected_file_id = "aa11bb22cc33dd44ee55ff667788990011223344"
+    protected_plaintext = b"protected note content" * 4
+    file_key = os.urandom(32)
+    encryption_key_entry = struct.pack("<I", class_num) + aes_key_wrap(class_key, file_key)
+    protected_file_blob = _build_nska_file_metadata(class_num, encryption_key_entry)
+
+    # Built as a real on-disk WAL-mode database, then checkpointed and read back
+    # as bytes — real-world Manifest.db files are WAL-mode (SQLite header format
+    # version 2), which sqlite3.Connection.deserialize() can't open directly
+    # (see _clear_wal_header_flag in crush.core.vfs). Using plain serialize()
+    # here would produce a rollback-journal-mode header and silently skip that
+    # code path, as an earlier version of this fixture did.
+    plain_path = tmp_path / "_plaintext_manifest.db"
+    plain = sqlite3.connect(plain_path)
+    plain.execute("PRAGMA journal_mode=WAL")
+    plain.execute(
+        "CREATE TABLE Files (fileID TEXT PRIMARY KEY, domain TEXT, "
+        "relativePath TEXT, flags INTEGER, file BLOB)"
+    )
+    plain.execute(
+        "INSERT INTO Files VALUES (?, ?, ?, ?, ?)",
+        (file_id, "HomeDomain", "Library/SMS/sms.db", 1, b""),
+    )
+    plain.execute(
+        "INSERT INTO Files VALUES (?, ?, ?, ?, ?)",
+        (protected_file_id, "HomeDomain", "Library/Notes/notes.sqlite", 1, protected_file_blob),
+    )
+    plain.commit()
+    plain.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    plain.close()
+    plaintext_manifest_db = plain_path.read_bytes()
+    plain_path.unlink()
+    for sidecar in (f"{plain_path}-wal", f"{plain_path}-shm"):
+        Path(sidecar).unlink(missing_ok=True)
+
+    pad_len = 16 - (len(plaintext_manifest_db) % 16)
+    padded = plaintext_manifest_db + bytes([pad_len]) * pad_len
+    encryptor = Cipher(algorithms.AES(manifest_key), modes.CBC(b"\x00" * 16)).encryptor()
+    encrypted_manifest_db = encryptor.update(padded) + encryptor.finalize()
+    (backup_dir / "Manifest.db").write_bytes(encrypted_manifest_db)
+
+    shard_dir = backup_dir / file_id[:2]
+    shard_dir.mkdir()
+    (shard_dir / file_id).write_bytes(b"SQLite format 3\x00")
+
+    protected_pad_len = 16 - (len(protected_plaintext) % 16)
+    protected_padded = protected_plaintext + bytes([protected_pad_len]) * protected_pad_len
+    protected_encryptor = Cipher(algorithms.AES(file_key), modes.CBC(b"\x00" * 16)).encryptor()
+    protected_ciphertext = protected_encryptor.update(protected_padded) + protected_encryptor.finalize()
+    protected_shard_dir = backup_dir / protected_file_id[:2]
+    protected_shard_dir.mkdir(exist_ok=True)
+    (protected_shard_dir / protected_file_id).write_bytes(protected_ciphertext)
+
+    (backup_dir / "Info.plist").write_bytes(plistlib.dumps({"Product Name": "iPhone"}))
+    (backup_dir / "Manifest.plist").write_bytes(
+        plistlib.dumps(
+            {"IsEncrypted": False, "BackupKeyBag": keybag, "ManifestKey": manifest_key_entry}
+        )
+    )
+    (backup_dir / "Status.plist").write_bytes(plistlib.dumps({"BackupState": "new"}))
+
+    return backup_dir
+
+
+@pytest.fixture
+def itunes_backup_zip_fixture(tmp_path: Path, itunes_backup_keybag_fixture: Path) -> Path:
+    """The keybag-encrypted backup fixture, wrapped in a `.zip` under a single
+    top-level folder — mirrors how the user's real-world sample (a zipped
+    iTunes backup with one wrapper directory before Manifest.db) is shaped.
+    """
+    import zipfile
+
+    zip_path = tmp_path / "backup_export.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for path in itunes_backup_keybag_fixture.rglob("*"):
+            if path.is_file():
+                arcname = f"wrapper/{path.relative_to(itunes_backup_keybag_fixture)}"
+                zf.write(path, arcname)
+    return zip_path
+
+
+@pytest.fixture
 def segb_fixture(tmp_path: Path) -> Path:
     """Writable copy of minimal.segb2 placed in tmp_path."""
     src = FIXTURES_DIR / "minimal.segb2"

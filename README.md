@@ -15,7 +15,9 @@ Crush — Digital Forensic Analysis Workbench
 
 ## Features
 
-Open and navigate ZIP and TAR archives, folders, and individual files without extracting anything to disk first.
+Open and navigate ZIP, TAR, 7z, Android `adb backup` (`.ab`), and iTunes/Finder iOS backup archives, folders, and individual files without extracting anything to disk first. Mobile backups are reconstructed as the original device filesystem — iOS backups rebuild the `domain/relativePath` tree from `Manifest.db` instead of the flat, hash-named layout on disk; Android backups unpack as a regular filesystem tree.
+
+**Password-protected archives** — ZIP (both legacy ZipCrypto and WinZip AES), 7z, encrypted Android backups, and password-protected iTunes backups all prompt for a password when opened, with a retry on a wrong one.
 
 **Built-in file format database** — Crush identifies forensically relevant formats by magic bytes and extension, and shows format name, platform, forensic relevance, and a link to the specification for every selected file, including formats without a dedicated viewer.
 

@@ -26,7 +26,15 @@ _OUT = Path(__file__).parent / "formats.db"
 #                   memory | network | uncategorized
 #   forensic_relevance  What an investigator would find here
 #   platforms       List of strings: "iOS", "macOS", "Android", "Windows", "Linux"
-#   parser_class    Class name in crush/parsers/ that handles this, or None
+#   parser_class    Class name that handles this — either a crush/parsers/
+#                   AbstractParser subclass (per-file content parser, looked
+#                   up via FormatDatabase.by_parser_class() from a running
+#                   parser instance), or a crush/core/vfs.py VFS backend
+#                   (whole-container support, e.g. ZipVFS/TarVFS/
+#                   AndroidBackupVFS — never looked up that way, but still
+#                   drives the "Supported" vs "Not yet supported" label in
+#                   the Format Reference / Format Info dialogs). None if
+#                   Crush doesn't support this format at all yet.
 #   magic           List of dicts: {"offset": int | None, "value": bytes,
 #                                   "description": str}
 #                   All entries must match for a hit. Use offset=None for
@@ -92,7 +100,7 @@ FORMATS: list[dict[str, Any]] = [
             "Can reveal installed app data, preferences, and media for apps that permit backup."
         ),
         "platforms": ["Android"],
-        "parser_class": None,
+        "parser_class": "AndroidBackupVFS",
         "magic": [
             {
                 "offset": 0,
@@ -2523,7 +2531,7 @@ FORMATS: list[dict[str, Any]] = [
             "mtime in headers may reveal original file timestamps from the source system."
         ),
         "platforms": ["Android", "Linux", "macOS", "iOS"],
-        "parser_class": None,
+        "parser_class": "TarVFS",
         "magic": [
             {
                 "offset": 257,
@@ -2665,7 +2673,7 @@ FORMATS: list[dict[str, Any]] = [
             "Standard ZIP limited to 4GB — ZIP64 extension required for larger archives."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
-        "parser_class": None,
+        "parser_class": "ZipVFS",
         "magic": [
             {
                 "offset": 0,
@@ -2717,7 +2725,7 @@ FORMATS: list[dict[str, Any]] = [
             "as well as legitimate acquisition tool exports."
         ),
         "platforms": ["Windows", "Linux", "macOS", "Android"],
-        "parser_class": None,
+        "parser_class": "SevenZipVFS",
         "magic": [
             {
                 "offset": 0,
@@ -2856,16 +2864,21 @@ FORMATS: list[dict[str, Any]] = [
             "Manifest.plist (backup keybag, encryption flag, WasPasscodeSet, app list), "
             "Status.plist (backup state, creation start date), "
             "Manifest.db (SQLite index mapping fileIDs to domain/relativePath/metadata). "
-            "Unencrypted backups: all files directly accessible. "
-            "Encrypted backups: Manifest.db is AES-encrypted using ManifestKey "
-            "from Manifest.plist; individual files re-encrypted with backup class keys. "
-            "Encryption password required for decryption — not tied to device passcode. "
+            "Since iOS 10.2, Manifest.db is ALWAYS KeyBag/AES-encrypted (ManifestKey "
+            "in Manifest.plist), independent of whether a backup password is set — "
+            "unencrypted backups just use an empty-password-derived KeyBag key, so "
+            "no prompt is needed to read the file index. Individual file CONTENT is "
+            "only additionally per-file encrypted (protection-class keys from the "
+            "same KeyBag) when IsEncrypted=true (a real backup password was set); "
+            "unencrypted backups leave file contents in the clear. "
+            "Encryption password required for decryption of encrypted-backup file "
+            "contents — not tied to device passcode. "
             "Keychain data (keychain-backup.plist) only present in encrypted backups. "
             "Manifest.plist's WasPasscodeSet and RestoreApplications may reveal "
             "jailbreak history even after device restoration."
         ),
         "platforms": ["iOS"],
-        "parser_class": None,
+        "parser_class": "ITunesBackupVFS",
         "magic": [],
         "extensions": [],
         "links": [

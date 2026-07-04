@@ -41,8 +41,14 @@ class Session:
                 USING fts5(path, content, content='artifact', content_rowid='id');
         """)
 
-    def add_source(self, path: str | Path) -> VFS:
-        vfs = open_vfs(path)
+    def add_source(self, path: str | Path, *, password: str = "") -> VFS:
+        vfs = open_vfs(path, password=password)
+        self.sources.append(vfs)
+        return vfs
+
+    def add_source_vfs(self, vfs: VFS) -> VFS:
+        """Attach an already-constructed VFS (e.g. built outside open_vfs() after a
+        user confirmation, like opening a zipped iTunes backup as such)."""
         self.sources.append(vfs)
         return vfs
 

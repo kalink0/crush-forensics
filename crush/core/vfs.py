@@ -6,16 +6,25 @@ through a single interface so viewers never need to know the origin.
 from __future__ import annotations
 
 import os
+import plistlib
+import re
+import shutil
+import sqlite3
 import sys
 import tarfile
+import tempfile
 import threading
 import zipfile
+import zlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import io
 from io import BytesIO
 from pathlib import Path
-from typing import IO, Iterator, cast
+from typing import IO, Any, Iterator, cast
+
+from crush.core import android_backup_crypto, ios_keybag
+from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 
 
 class _AtimeRestoringIO:
@@ -280,23 +289,66 @@ class DirectoryVFS(VFS):
 
 
 class ZipVFS(VFS):
-    """VFS backed by a ZIP archive (iOS/Android full-fs extractions).
+    """VFS backed by a ZIP archive (iOS/Android full-fs extractions), encrypted or not.
 
     A single ZipFile handle is shared across threads and protected by
     _zf_lock.  open() returns a BytesIO so callers never hold the lock
     while processing file content.
+
+    Two unrelated encryption schemes exist for ZIP: legacy "ZipCrypto"
+    (weak, stdlib zipfile already reads it natively via pwd=) and WinZip
+    AES (strong, marked by compress_type == 99 — stdlib can list such
+    entries but has no decompressor for that type at all). Rather than
+    replacing the well-tested stdlib zipfile — this is the single most
+    heavily used VFS backend in the app — a `pyzipper.AESZipFile` handle is
+    constructed lazily and only used for the specific entries that need it.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    _WZ_AES_COMPRESS_TYPE = 99
+
+    def __init__(self, path: str | Path, *, password: str = "") -> None:
         self._zip_path = Path(path)
         self._zf = zipfile.ZipFile(self._zip_path, "r")
+        self._password = password
+        self._aes_zf: Any = None  # pyzipper.AESZipFile, constructed on first need
         self._zf_lock = threading.Lock()
         self._zip_names: dict[str, str] = {}
         self._tree = self._build_tree()
+        self._validate_password_if_needed()
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
         self._compute_file_counts(self._tree)
         self._compute_total_sizes(self._tree)
+
+    def _validate_password_if_needed(self) -> None:
+        """Header-level metadata (flag_bits) is readable without a password
+        even for encrypted entries, so check upfront and fail immediately at
+        open time — matching every other password-protected VFS in this
+        module — rather than only when the user later opens a specific file.
+        """
+        encrypted_names = [info.filename for info in self._zf.infolist() if info.flag_bits & 0x1]
+        if not encrypted_names:
+            return
+        if not self._password:
+            raise PasswordRequiredError(f"ZIP archive is password-protected: {self._zip_path}")
+        try:
+            with self._open_entry(encrypted_names[0]) as f:
+                f.read()
+        except RuntimeError as exc:
+            raise WrongPasswordError("Incorrect ZIP archive password") from exc
+
+    def _aes_zip(self) -> Any:
+        if self._aes_zf is None:
+            import pyzipper
+
+            self._aes_zf = pyzipper.AESZipFile(self._zip_path, "r")
+        return self._aes_zf
+
+    def _open_entry(self, name: str) -> IO[bytes]:
+        pwd = self._password.encode("utf-8") if self._password else None
+        if self._zf.getinfo(name).compress_type == self._WZ_AES_COMPRESS_TYPE:
+            return cast(IO[bytes], self._aes_zip().open(name, pwd=pwd))
+        return self._zf.open(name, pwd=pwd)
 
     def _build_tree(self) -> VFSNode:
         root = VFSNode(name=self._zip_path.name, path="/", is_dir=True)
@@ -349,12 +401,19 @@ class ZipVFS(VFS):
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
         with self._zf_lock:
-            with self._zf.open(self._zip_name(node)) as f:
-                return f.read(n)
+            try:
+                with self._open_entry(self._zip_name(node)) as f:
+                    return f.read(n)
+            except RuntimeError as exc:
+                raise WrongPasswordError("Incorrect ZIP archive password") from exc
 
     def read(self, node: VFSNode) -> bytes:
         with self._zf_lock:
-            return self._zf.read(self._zip_name(node))
+            try:
+                with self._open_entry(self._zip_name(node)) as f:
+                    return f.read()
+            except RuntimeError as exc:
+                raise WrongPasswordError("Incorrect ZIP archive password") from exc
 
     def open(self, node: VFSNode) -> IO[bytes]:
         return BytesIO(self.read(node))
@@ -364,6 +423,8 @@ class ZipVFS(VFS):
 
     def close(self) -> None:
         self._zf.close()
+        if self._aes_zf is not None:
+            self._aes_zf.close()
 
     def file_count(self, node: VFSNode) -> int:
         return self._file_counts.get(node.path, 0)
@@ -488,6 +549,243 @@ class TarVFS(VFS):
         return total
 
 
+class AndroidBackupVFS(TarVFS):
+    """VFS backed by an `adb backup` container (.ab), encrypted or not.
+
+    The .ab format is a text header (magic, version, compressed flag,
+    encryption flag) followed by a single tar stream, optionally
+    deflate-compressed and/or AES-256 encrypted (see
+    `crush.core.android_backup_crypto` for the password-based key unwrap).
+
+    The tar stream is decompressed fully upfront (backups are app-data
+    sized, not full-disk images) and then handled identically to a plain
+    TarVFS by reusing its tree-building and read logic.
+    """
+
+    def __init__(self, path: str | Path, *, password: str = "") -> None:
+        self._tar_path = Path(path)
+        self._tf = tarfile.open(
+            fileobj=BytesIO(self._extract_tar_bytes(self._tar_path, password)), mode="r:"
+        )
+        self._tf_lock = threading.Lock()
+        self._members: dict[str, tarfile.TarInfo] = {}
+        self._tree = self._build_tree()
+        self._file_counts: dict[str, int] = {}
+        self._total_sizes: dict[str, int] = {}
+        self._compute_file_counts(self._tree)
+        self._compute_total_sizes(self._tree)
+
+    @staticmethod
+    def _extract_tar_bytes(path: Path, password: str = "") -> bytes:
+        with open(path, "rb") as f:
+            magic = f.readline().strip()
+            if magic != b"ANDROID BACKUP":
+                raise ValueError(f"Not an Android backup: {path}")
+            version = int(f.readline().strip())
+            compressed = f.readline().strip()
+            encryption = f.readline().strip()
+
+            if encryption == b"none":
+                payload = f.read()
+                return zlib.decompress(payload) if compressed == b"1" else payload
+
+            if encryption != b"AES-256":
+                raise ValueError(f"Unsupported Android backup encryption: {encryption!r}")
+            if not password:
+                raise PasswordRequiredError(f"Android backup is password-protected: {path}")
+
+            user_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
+            checksum_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
+            rounds = int(f.readline().strip())
+            user_iv = bytes.fromhex(f.readline().strip().decode("ascii"))
+            master_key_blob = bytes.fromhex(f.readline().strip().decode("ascii"))
+            ciphertext = f.read()
+
+        master_key, master_iv = android_backup_crypto.unwrap_master_key(
+            password, user_salt, checksum_salt, rounds, user_iv, master_key_blob, version
+        )
+        payload = android_backup_crypto.decrypt_payload(master_key, master_iv, ciphertext)
+        return zlib.decompress(payload) if compressed == b"1" else payload
+
+
+def _clear_wal_header_flag(manifest_db: bytes) -> bytes:
+    """Clear the WAL flag in a SQLite header so sqlite3's deserialize() can open it.
+
+    Real-world Manifest.db files are commonly checkpointed WAL databases (file
+    format read/write version = 2 at header offsets 18/19). sqlite3.Connection
+    .deserialize() opens the buffer as a plain in-memory database and can't
+    handle that mode — but since Manifest.db always travels without its `-wal`
+    file, everything is already checkpointed into the main pages, so flipping
+    the version bytes back to 1 (rollback journal) is safe and doesn't touch
+    any actual table data.
+    """
+    if len(manifest_db) >= 20 and manifest_db[18] == 2 and manifest_db[19] == 2:
+        manifest_db = manifest_db[:18] + b"\x01\x01" + manifest_db[20:]
+    return manifest_db
+
+
+class ITunesBackupVFS(VFS):
+    """VFS backed by an iTunes/Finder iOS backup directory.
+
+    A backup directory holds `Manifest.db` (SQLite table `Files`: fileID,
+    domain, relativePath, flags) plus the actual file contents stored flat
+    under the backup root, named by fileID (a SHA1 hash) — sharded into 256
+    two-character subdirectories since iOS 10, flat before that. The virtual
+    tree is built from `domain/relativePath` so it reads like the on-device
+    filesystem instead of the flat on-disk fileID layout.
+
+    Since iOS 10.2, `Manifest.db` itself is always AES encrypted (see
+    `crush.core.ios_keybag`) regardless of whether the backup has a password;
+    `password` only needs to be non-empty for backups with `IsEncrypted=True`.
+    """
+
+    _FLAG_DIR = 2  # iOS backup Files.flags: 1 = file, 2 = directory, 4 = symlink.
+
+    def __init__(
+        self, path: str | Path, *, password: str = "", _cleanup_dir: Path | None = None
+    ) -> None:
+        self._backup_path = Path(path)
+        self._password = password
+        self._cleanup_dir = _cleanup_dir
+        self._keybag: ios_keybag.BackupKeyBag | None = None
+
+        self._file_locations: dict[str, Path] = {}
+        self._file_protection: dict[str, tuple[int, bytes]] = {}
+        self._tree = self._build_tree()
+        self._file_counts: dict[str, int] = {}
+        self._total_sizes: dict[str, int] = {}
+        self._compute_file_counts(self._tree)
+        self._compute_total_sizes(self._tree)
+
+    def _load_manifest_db_bytes(self) -> bytes:
+        manifest_plist_path = self._backup_path / "Manifest.plist"
+        manifest_plist: dict[str, object] = {}
+        if manifest_plist_path.is_file():
+            manifest_plist = plistlib.loads(manifest_plist_path.read_bytes())
+
+        if manifest_plist.get("IsEncrypted", False) and not self._password:
+            raise PasswordRequiredError(
+                f"iTunes backup is password-protected: {self._backup_path}"
+            )
+
+        raw = (self._backup_path / "Manifest.db").read_bytes()
+        if "BackupKeyBag" not in manifest_plist:
+            return raw  # Pre-iOS-10.2 backup: Manifest.db was never encrypted.
+
+        self._keybag = ios_keybag.BackupKeyBag(
+            cast(bytes, manifest_plist["BackupKeyBag"]), self._password
+        )
+        manifest_key = self._keybag.unwrap_manifest_key(cast(bytes, manifest_plist["ManifestKey"]))
+        return ios_keybag.aes_cbc_decrypt_and_unpad(manifest_key, raw)
+
+    def close(self) -> None:
+        if self._cleanup_dir is not None:
+            shutil.rmtree(self._cleanup_dir, ignore_errors=True)
+
+    def _build_tree(self) -> VFSNode:
+        root = VFSNode(name=self._backup_path.name, path="/", is_dir=True)
+        nodes: dict[str, VFSNode] = {"/": root}
+
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.deserialize(_clear_wal_header_flag(self._load_manifest_db_bytes()))
+            rows = conn.execute(
+                "SELECT fileID, domain, relativePath, flags, file FROM Files"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        for file_id, domain, relative_path, flags, file_blob in rows:
+            raw_path = f"{domain}/{relative_path}" if relative_path else domain
+            parts = [p for p in raw_path.split("/") if p]
+            if not parts:
+                continue
+            is_leaf_dir = flags == self._FLAG_DIR
+            virtual_path = "/"
+            for depth, _ in enumerate(parts, 1):
+                virtual_path = "/" + "/".join(parts[:depth])
+                if virtual_path not in nodes:
+                    is_dir = depth < len(parts) or is_leaf_dir
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=is_dir)
+                    parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
+                    nodes[parent_path].children.append(node)
+                    nodes[virtual_path] = node
+            if not is_leaf_dir and self._keybag is not None and file_blob:
+                try:
+                    protection = ios_keybag.extract_file_protection(file_blob)
+                except Exception:
+                    protection = None  # Malformed per-file metadata; read back raw bytes.
+                if protection is not None:
+                    self._file_protection[virtual_path] = protection
+            if not is_leaf_dir:
+                located = self._locate_file(file_id)
+                if located is not None:
+                    nodes[virtual_path].size = located.stat().st_size
+                    self._file_locations[virtual_path] = located
+
+        for node in nodes.values():
+            node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
+        return root
+
+    def _locate_file(self, file_id: str) -> Path | None:
+        sharded = self._backup_path / file_id[:2] / file_id
+        if sharded.is_file():
+            return sharded
+        flat = self._backup_path / file_id
+        if flat.is_file():
+            return flat
+        return None
+
+    def root(self) -> VFSNode:
+        return self._tree
+
+    def read(self, node: VFSNode) -> bytes:
+        located = self._file_locations.get(node.path)
+        if located is None:
+            raise FileNotFoundError(f"Not backed by a file in the backup: {node.path}")
+        raw = _read_noatime(located)
+        protection = self._file_protection.get(node.path)
+        if protection is None or self._keybag is None:
+            return raw
+        protection_class, encryption_key_entry = protection
+        file_key = self._keybag.unwrap_file_key(protection_class, encryption_key_entry)
+        return ios_keybag.aes_cbc_decrypt_and_unpad(file_key, raw)
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        if node.path in self._file_protection:
+            return BytesIO(self.read(node))
+        located = self._file_locations.get(node.path)
+        if located is None:
+            raise FileNotFoundError(f"Not backed by a file in the backup: {node.path}")
+        return _open_noatime(located)
+
+    def file_count(self, node: VFSNode) -> int:
+        return self._file_counts.get(node.path, 0)
+
+    def total_size(self, node: VFSNode) -> int:
+        return self._total_sizes.get(node.path, 0)
+
+    def _compute_file_counts(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._file_counts[node.path] = 1
+            return 1
+        total = 0
+        for child in node.children:
+            total += self._compute_file_counts(child)
+        self._file_counts[node.path] = total
+        return total
+
+    def _compute_total_sizes(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._total_sizes[node.path] = node.size
+            return node.size
+        total = 0
+        for child in node.children:
+            total += self._compute_total_sizes(child)
+        self._total_sizes[node.path] = total
+        return total
+
+
 # py7zr has no way to write directly into a caller-supplied buffer of unknown
 # size, so BytesIOFactory needs a byte cap up front. Set it absurdly high so it
 # never truncates a real file — see feedback_no_silent_limits in project memory.
@@ -502,7 +800,7 @@ _SEVENZIP_PREFETCH_SIZE_LIMIT = 1 << 30  # 1 GiB
 
 
 class SevenZipVFS(VFS):
-    """VFS backed by a 7z archive.
+    """VFS backed by a 7z archive, encrypted or not.
 
     Unlike zipfile/tarfile, py7zr cannot open an arbitrary entry as an
     independent stream — solid compression blocks mean extracting any file
@@ -510,21 +808,62 @@ class SevenZipVFS(VFS):
     reset() before the next operation. Reads are therefore fully serialized
     under a per-instance lock (the whole extract+reset cycle, not just the
     file object as in ZipVFS).
+
+    py7zr handles the AES/PBKDF2 decryption itself; this class only needs to
+    pass the password through and translate its exceptions to the shared
+    PasswordRequiredError/WrongPasswordError contract. Two cases:
+    - Header encryption (file listing itself is encrypted): py7zr raises
+      PasswordRequired() at construction with no password, or a bare
+      TypeError ("Unknown field: ...") with a wrong one — decrypting the
+      header with the wrong AES key yields garbage that fails to parse as a
+      valid 7z header structure, so py7zr has no way to tell "wrong
+      password" apart from "corrupt file" there.
+    - Content-only encryption: construction/listing always succeeds; a
+      missing password raises PasswordRequired() at extract() time, a wrong
+      one raises lzma.LZMAError ("Corrupt input data") since AES-CBC has no
+      built-in integrity check the way RFC 3394 key-wrap does.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, password: str = "") -> None:
         import py7zr
 
         self._path = Path(path)
-        self._zf = py7zr.SevenZipFile(self._path, "r")
+        try:
+            self._zf = py7zr.SevenZipFile(self._path, "r", password=password or None)
+        except py7zr.exceptions.PasswordRequired as exc:
+            raise PasswordRequiredError(f"7z archive is password-protected: {path}") from exc
+        except TypeError as exc:
+            if password:
+                raise WrongPasswordError("Incorrect 7z archive password") from exc
+            raise
         self._zf_lock = threading.Lock()
         self._entry_names: dict[str, str] = {}
         self._read_cache: dict[str, bytes] = {}
         self._tree = self._build_tree()
+        self._validate_password_against_content()
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
         self._compute_file_counts(self._tree)
         self._compute_total_sizes(self._tree)
+
+    def _validate_password_against_content(self) -> None:
+        """Header encryption already failed at construction if the password
+        was missing/wrong. Content-only encryption doesn't block listing, so
+        without this check a missing/wrong password would only surface later
+        — confusingly, from a background type-detection prescan or when the
+        user opens a specific file — instead of immediately at open time like
+        every other password-protected VFS in this module.
+        """
+        if not self._entry_names:
+            return
+        from py7zr.io import BytesIOFactory
+
+        name = next(iter(self._entry_names.values()))
+        with self._zf_lock:
+            factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
+            self._extract([name], factory)
+            buf = factory.get(name)  # type: ignore[no-untyped-call]
+            self._read_cache[name] = buf.read() if buf is not None else b""
 
     def _build_tree(self) -> VFSNode:
         root = VFSNode(name=self._path.name, path="/", is_dir=True)
@@ -562,6 +901,20 @@ class SevenZipVFS(VFS):
     def root(self) -> VFSNode:
         return self._tree
 
+    def _extract(self, targets: list[str], factory: Any) -> None:
+        import lzma
+
+        import py7zr
+
+        try:
+            self._zf.extract(targets=targets, factory=factory)
+        except py7zr.exceptions.PasswordRequired as exc:
+            raise PasswordRequiredError(f"7z archive is password-protected: {self._path}") from exc
+        except lzma.LZMAError as exc:
+            raise WrongPasswordError("Incorrect 7z archive password") from exc
+        finally:
+            self._zf.reset()
+
     def read(self, node: VFSNode) -> bytes:
         name = self._entry_names.get(node.path, node.path.lstrip("/"))
         cached = self._read_cache.get(name)
@@ -571,10 +924,9 @@ class SevenZipVFS(VFS):
 
         with self._zf_lock:
             factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
-            self._zf.extract(targets=[name], factory=factory)
+            self._extract([name], factory)
             buf = factory.get(name)  # type: ignore[no-untyped-call]
             data = buf.read() if buf is not None else b""
-            self._zf.reset()
         self._read_cache[name] = data
         return data
 
@@ -682,16 +1034,18 @@ def _find_node_by_path(node: VFSNode, path: str) -> "VFSNode | None":
     return None
 
 
-def open_vfs(path: str | Path) -> VFS:
+def open_vfs(path: str | Path, *, password: str = "") -> VFS:
     """Factory — open the right VFS type based on the source path."""
     p = Path(path)
     if p.is_dir():
+        if _is_itunes_backup_dir(p):
+            return ITunesBackupVFS(p, password=password)
         return DirectoryVFS(p)
     name_lower = p.name.lower()
     if p.suffix.lower() == ".zip":
-        return ZipVFS(p)
+        return ZipVFS(p, password=password)
     if p.suffix.lower() == ".7z":
-        return SevenZipVFS(p)
+        return SevenZipVFS(p, password=password)
     if (
         p.suffix.lower() in (".tar", ".tgz", ".tbz2", ".txz")
         or name_lower.endswith(".tar.gz")
@@ -699,9 +1053,105 @@ def open_vfs(path: str | Path) -> VFS:
         or name_lower.endswith(".tar.xz")
     ):
         return TarVFS(p)
+    if p.suffix.lower() == ".ab" or _is_android_backup(p):
+        return AndroidBackupVFS(p, password=password)
     if p.is_file():
         return FileVFS(p)
     raise ValueError(f"Unsupported source type: {p}")
+
+
+def _is_android_backup(path: Path) -> bool:
+    """Magic-byte sniff for extensionless Android backup containers."""
+    if not path.is_file():
+        return False
+    with open(path, "rb") as f:
+        return f.readline().strip() == b"ANDROID BACKUP"
+
+
+def _is_itunes_backup_dir(path: Path) -> bool:
+    """A backup folder has Manifest.db plus an Info.plist or Manifest.plist sibling."""
+    return (path / "Manifest.db").is_file() and (
+        (path / "Info.plist").is_file() or (path / "Manifest.plist").is_file()
+    )
+
+
+_HEX_SHARD_RE = re.compile(r"^[0-9a-fA-F]{2}$")
+
+
+def _has_hex_shard_sibling(names: set[str], prefix: str) -> bool:
+    """True if a two-hex-character subdirectory (the "ab/ab123..." fileID
+    sharding real backups use since iOS 10) sits directly alongside
+    Manifest.db — not just anywhere in the archive, but as an immediate
+    sibling at the same directory level."""
+    for name in names:
+        if not name.startswith(prefix):
+            continue
+        top = name[len(prefix):].split("/", 1)[0]
+        if _HEX_SHARD_RE.match(top):
+            return True
+    return False
+
+
+def _manifest_plist_has_backup_keybag(zf: zipfile.ZipFile, manifest_plist_name: str) -> bool:
+    """Every real Manifest.plist (encrypted backup or not) has a BackupKeyBag
+    since iOS 10.2 — a name collision with some unrelated app's own
+    Manifest.db/Info.plist won't also happen to have this exact key."""
+    try:
+        data = plistlib.loads(zf.read(manifest_plist_name))
+    except Exception:
+        return False
+    return isinstance(data, dict) and "BackupKeyBag" in data
+
+
+def detect_itunes_backup_in_zip(path: str | Path) -> str | None:
+    """Return the in-zip directory prefix of a wrapped iTunes backup, or None.
+
+    Filename matching alone is not enough — a full filesystem extraction can
+    easily contain an unrelated app with its own "Manifest.db" sitting next
+    to the "Info.plist" every app bundle has, which used to be a false
+    positive here. Four signals are now required together: the three backup
+    metadata files (Info.plist, Manifest.plist, Status.plist — not just one
+    of two), a hex-sharded fileID subdirectory as an immediate sibling of
+    Manifest.db, and Manifest.plist actually containing a BackupKeyBag (the
+    one content check, cheap since it's a single small file).
+    """
+    with zipfile.ZipFile(path) as zf:
+        names = set(zf.namelist())
+        for name in names:
+            if not name.endswith("Manifest.db"):
+                continue
+            prefix = name[: -len("Manifest.db")]
+            if not (
+                f"{prefix}Info.plist" in names
+                and f"{prefix}Manifest.plist" in names
+                and f"{prefix}Status.plist" in names
+            ):
+                continue
+            if not _has_hex_shard_sibling(names, prefix):
+                continue
+            if not _manifest_plist_has_backup_keybag(zf, f"{prefix}Manifest.plist"):
+                continue
+            return prefix
+    return None
+
+
+def open_itunes_backup_from_zip(
+    path: str | Path, prefix: str, *, password: str = ""
+) -> ITunesBackupVFS:
+    """Extract a wrapped iTunes backup out of a zip and open it.
+
+    Only called once the user has confirmed they want this (see
+    detect_itunes_backup_in_zip); the extracted copy is removed again when
+    the returned VFS is closed.
+    """
+    tmp_dir = Path(tempfile.mkdtemp(prefix="crush-itunes-backup-"))
+    try:
+        with zipfile.ZipFile(path) as zf:
+            zf.extractall(tmp_dir)
+        return ITunesBackupVFS(tmp_dir / prefix, password=password, _cleanup_dir=tmp_dir)
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
 
 
 class FileVFS(VFS):

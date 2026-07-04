@@ -5,5 +5,6 @@
   "minimal.sqlite": "d08c9ffb45e236178f9ab1ef788dba656f1dbcb17a08dc1bc9f2ed93c67c147e",
   "minimal.tar.gz": "3b34965e57881bdc6edb249513bf661d87b7094677f51165fef79ab80bf09a9d",
   "minimal.zip": "2c22c124405429159b4b33a6901a869b605989efedc13c04723d75e4949cdb35",
-  "minimal_binary.plist": "443dc0605f199a4af2976f79991c96e24697111e2adcfac04f13eab8288e7ca4"
+  "minimal_binary.plist": "443dc0605f199a4af2976f79991c96e24697111e2adcfac04f13eab8288e7ca4",
+  "minimal_legacy_encrypted.zip": "052aee3d9dbc3d7ba2152abdbe8a1310b0fe1ed00bafba287d224aa13aacc4bd"
 }

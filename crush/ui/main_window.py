@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -50,18 +51,45 @@ from crush.ui.loading_dialog import LoadingDialog
 class _LoadSourceWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
+    password_required = Signal(bool)  # True = a previously supplied password was wrong
 
-    def __init__(self, session: Session, path: str, integrity: bool) -> None:
+    def __init__(
+        self,
+        session: Session,
+        path: str,
+        integrity: bool,
+        itunes_zip_prefix: str | None = None,
+        password: str = "",
+    ) -> None:
         super().__init__()
         self._session = session
         self._path = path
         self._integrity = integrity
+        self._itunes_zip_prefix = itunes_zip_prefix
+        self._password = password
 
     def run(self) -> None:
+        from crush.core.passwords import PasswordRequiredError, WrongPasswordError
+
         try:
-            vfs = self._session.add_source(self._path)
+            if self._itunes_zip_prefix is not None:
+                from crush.core.vfs import open_itunes_backup_from_zip
+
+                vfs = self._session.add_source_vfs(
+                    open_itunes_backup_from_zip(
+                        self._path, self._itunes_zip_prefix, password=self._password
+                    )
+                )
+            else:
+                vfs = self._session.add_source(self._path, password=self._password)
             if self._integrity:
                 self._log_source_hash()
+        except WrongPasswordError:
+            self.password_required.emit(True)
+            return
+        except PasswordRequiredError:
+            self.password_required.emit(False)
+            return
         except Exception as exc:
             self.failed.emit(str(exc))
             return
@@ -388,7 +416,7 @@ class MainWindow(QMainWindow):
         self.session = Session()
         self._always_hex = False
         self._pending_open: tuple[VFSNode, VFS] | None = None
-        self._load_queue: list[tuple[str, bool, bool]] = []
+        self._load_queue: list[tuple[str, bool, bool, str | None]] = []
         self._settings = QSettings("Crush DFIR", "Crush")
         self._multi_log_windows: list[QWidget] = []
         self.setWindowTitle(f"Crush {crush.display_version()}")
@@ -692,9 +720,21 @@ class MainWindow(QMainWindow):
         for path in paths:
             self._load_source(path, open_after_load=True, append_to_tree=True)
 
-    def _load_source(self, path: str, open_after_load: bool = False, append_to_tree: bool = False) -> None:
+    def _load_source(
+        self,
+        path: str,
+        open_after_load: bool = False,
+        append_to_tree: bool = False,
+        itunes_zip_prefix: str | None = None,
+        password: str = "",
+    ) -> None:
+        if itunes_zip_prefix is None and Path(path).suffix.lower() == ".zip":
+            itunes_zip_prefix = self._maybe_confirm_itunes_backup_zip(path)
+
         if self._thread_is_running(getattr(self, "_load_thread", None)):
-            self._load_queue.append((path, open_after_load, append_to_tree))
+            self._load_queue.append(
+                (path, open_after_load, append_to_tree, itunes_zip_prefix, password)
+            )
             self._status.showMessage("Queued source for loading…")
             self._logger.debug("Load queued: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
             return
@@ -702,6 +742,7 @@ class MainWindow(QMainWindow):
         self._logger.info("Loading source: %s", path)
         self._logger.debug("Load start: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
         self._loading_path = path
+        self._loading_itunes_zip_prefix = itunes_zip_prefix
         self._open_after_load = open_after_load
         self._append_to_tree = append_to_tree
         self._tree_build_started = time.monotonic()
@@ -710,13 +751,17 @@ class MainWindow(QMainWindow):
         self._progress.show()
 
         self._load_thread = QThread(self)
-        self._load_worker = _LoadSourceWorker(self.session, path, self.session.integrity_mode)
+        self._load_worker = _LoadSourceWorker(
+            self.session, path, self.session.integrity_mode, itunes_zip_prefix, password
+        )
         self._load_worker.moveToThread(self._load_thread)
         self._load_thread.started.connect(self._load_worker.run)
         self._load_worker.finished.connect(self._on_load_finished)
         self._load_worker.failed.connect(self._on_load_failed)
+        self._load_worker.password_required.connect(self._on_password_required)
         self._load_worker.finished.connect(self._load_thread.quit)
         self._load_worker.failed.connect(self._load_thread.quit)
+        self._load_worker.password_required.connect(self._load_thread.quit)
         self._load_thread.finished.connect(self._load_worker.deleteLater)
         self._load_thread.finished.connect(self._on_load_thread_finished)
         self._load_thread.start()
@@ -779,6 +824,7 @@ class MainWindow(QMainWindow):
         viewer = HexViewer(data, self)
         idx = self._viewer_tabs.addTab(viewer, f"{Path(path).name} [Hex]")
         self._viewer_tabs.setCurrentIndex(idx)
+        self._show_viewer_tabs()
 
     def _on_tree_loaded(self) -> None:
         self._logger.debug("Tree load finished")
@@ -1547,8 +1593,57 @@ class MainWindow(QMainWindow):
     def _on_load_thread_finished(self) -> None:
         self._load_thread = None
         if self._load_queue:
-            path, open_after_load, append_to_tree = self._load_queue.pop(0)
-            self._load_source(path, open_after_load=open_after_load, append_to_tree=append_to_tree)
+            path, open_after_load, append_to_tree, itunes_zip_prefix, password = self._load_queue.pop(0)
+            self._load_source(
+                path,
+                open_after_load=open_after_load,
+                append_to_tree=append_to_tree,
+                itunes_zip_prefix=itunes_zip_prefix,
+                password=password,
+            )
+
+    def _on_password_required(self, was_wrong: bool) -> None:
+        if hasattr(self, "_progress"):
+            self._progress.close()
+
+        title = "Incorrect Password" if was_wrong else "Password Required"
+        prompt = (
+            "Incorrect password. Please try again:"
+            if was_wrong
+            else "This backup is password-protected. Enter the backup password:"
+        )
+        password, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
+        if not ok or not password:
+            self._status.showMessage("Load cancelled: password required")
+            return
+
+        self._load_source(
+            self._loading_path,
+            open_after_load=self._open_after_load,
+            append_to_tree=self._append_to_tree,
+            itunes_zip_prefix=getattr(self, "_loading_itunes_zip_prefix", None),
+            password=password,
+        )
+
+    def _maybe_confirm_itunes_backup_zip(self, path: str) -> str | None:
+        from crush.core.vfs import detect_itunes_backup_in_zip
+
+        try:
+            prefix = detect_itunes_backup_in_zip(path)
+        except Exception:
+            return None
+        if prefix is None:
+            return None
+
+        answer = QMessageBox.question(
+            self,
+            "iTunes Backup Detected",
+            "An iTunes backup structure was detected inside this ZIP file.\n\n"
+            "Open it as an iTunes backup (reconstructed filesystem tree)?\n"
+            "Choosing \"No\" opens the file as a regular ZIP archive instead.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return prefix if answer == QMessageBox.StandardButton.Yes else None
 
     def _on_export_thread_finished(self) -> None:
         self._export_thread = None

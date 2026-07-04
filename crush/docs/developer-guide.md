@@ -261,7 +261,10 @@ class ParseResult:
 | `crush/parsers/base.py` | `AbstractParser`, `ParseResult`, `ViewerType` |
 | `crush/parsers/__init__.py` | parser registration (priority order) |
 | `crush/core/registry.py` | `ParserRegistry` — `register`, `best`, `candidates` |
-| `crush/core/vfs.py` | `VFSNode`, `VFS` ABC, `DirectoryVFS`, `ZipVFS`, `TarVFS`, `BytesVFS` |
+| `crush/core/vfs.py` | `VFSNode`, `VFS` ABC, `DirectoryVFS`, `ZipVFS`, `TarVFS`, `AndroidBackupVFS`, `ITunesBackupVFS`, `BytesVFS` |
+| `crush/core/ios_keybag.py` | Apple backup KeyBag parsing + `Manifest.db`/per-file decrypt (iOS 10.2+) |
+| `crush/core/android_backup_crypto.py` | Android `adb backup` master-key unwrap + payload decrypt (PBKDF2/AES-256) |
+| `crush/core/passwords.py` | `PasswordRequiredError`, `WrongPasswordError` — shared contract for any password-protected source/parser |
 | `crush/viewers/__init__.py` | viewer factory registration |
 | `crush/core/viewer_registry.py` | `ViewerRegistry` — `register`, `get` |
 | `crush/ui/viewer_factory.py` | `make_viewer()` — wires `ParseResult` to a viewer widget |

@@ -21,7 +21,15 @@ from pathlib import Path
 
 import pytest
 
-from crush.core.vfs import DirectoryVFS, TarVFS, VFSNode, ZipVFS
+from crush.core.vfs import (
+    AndroidBackupVFS,
+    DirectoryVFS,
+    ITunesBackupVFS,
+    SevenZipVFS,
+    TarVFS,
+    VFSNode,
+    ZipVFS,
+)
 from crush.parsers.media_parser import MediaParser
 from crush.parsers.plist_parser import PlistParser
 from crush.parsers.realm_parser import RealmParser
@@ -193,6 +201,197 @@ def test_tar_vfs_does_not_change_timestamps(tar_fixture: Path) -> None:
     vfs.close()
 
     _assert_timestamps_unchanged(ts_before, _timestamps(tar_fixture), "TarVFS")
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Exhaustively reading every entry of an Android backup (.ab) must leave it byte-identical",
+)
+def test_android_backup_vfs_does_not_modify_archive(android_backup_fixture: Path) -> None:
+    digest_before = _sha256_file(android_backup_fixture)
+
+    vfs = AndroidBackupVFS(android_backup_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(android_backup_fixture) == digest_before, "AndroidBackupVFS modified the source archive"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="AndroidBackupVFS must not change mtime or ctime of the archive file",
+)
+def test_android_backup_vfs_does_not_change_timestamps(android_backup_fixture: Path) -> None:
+    ts_before = _timestamps(android_backup_fixture)
+
+    vfs = AndroidBackupVFS(android_backup_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(android_backup_fixture), "AndroidBackupVFS")
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Decrypting a password-protected Android backup must leave the source .ab byte-identical",
+)
+def test_android_backup_vfs_encrypted_does_not_modify_source(
+    android_backup_encrypted_fixture: Path,
+) -> None:
+    digest_before = _sha256_file(android_backup_encrypted_fixture)
+    ts_before = _timestamps(android_backup_encrypted_fixture)
+
+    vfs = AndroidBackupVFS(android_backup_encrypted_fixture, password="hunter2")
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(android_backup_encrypted_fixture) == digest_before, (
+        "Decrypting an encrypted Android backup modified the source .ab"
+    )
+    _assert_timestamps_unchanged(
+        ts_before, _timestamps(android_backup_encrypted_fixture), "AndroidBackupVFS (encrypted)"
+    )
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Decrypting a password-protected 7z archive must leave the source file byte-identical",
+)
+def test_sevenzip_encrypted_does_not_modify_source(
+    sevenzip_encrypted_header_fixture: Path,
+) -> None:
+    digest_before = _sha256_file(sevenzip_encrypted_header_fixture)
+    ts_before = _timestamps(sevenzip_encrypted_header_fixture)
+
+    vfs = SevenZipVFS(sevenzip_encrypted_header_fixture, password="secret123")
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(sevenzip_encrypted_header_fixture) == digest_before, (
+        "Decrypting an encrypted 7z archive modified the source file"
+    )
+    _assert_timestamps_unchanged(
+        ts_before, _timestamps(sevenzip_encrypted_header_fixture), "SevenZipVFS (encrypted)"
+    )
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Decrypting a legacy-ZipCrypto-encrypted ZIP must leave the source file byte-identical",
+)
+def test_zip_legacy_encrypted_does_not_modify_source(legacy_encrypted_zip_fixture: Path) -> None:
+    digest_before = _sha256_file(legacy_encrypted_zip_fixture)
+    ts_before = _timestamps(legacy_encrypted_zip_fixture)
+
+    vfs = ZipVFS(legacy_encrypted_zip_fixture, password="secret123")
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(legacy_encrypted_zip_fixture) == digest_before, (
+        "Decrypting a legacy-encrypted ZIP modified the source file"
+    )
+    _assert_timestamps_unchanged(
+        ts_before, _timestamps(legacy_encrypted_zip_fixture), "ZipVFS (legacy encrypted)"
+    )
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Decrypting a WinZip-AES-encrypted ZIP must leave the source file byte-identical",
+)
+def test_zip_aes_encrypted_does_not_modify_source(aes_encrypted_zip_fixture: Path) -> None:
+    digest_before = _sha256_file(aes_encrypted_zip_fixture)
+    ts_before = _timestamps(aes_encrypted_zip_fixture)
+
+    vfs = ZipVFS(aes_encrypted_zip_fixture, password="secret123")
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(aes_encrypted_zip_fixture) == digest_before, (
+        "Decrypting an AES-encrypted ZIP modified the source file"
+    )
+    _assert_timestamps_unchanged(
+        ts_before, _timestamps(aes_encrypted_zip_fixture), "ZipVFS (AES encrypted)"
+    )
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Reading every entry of an iTunes backup must leave the backed file bytes unchanged",
+)
+def test_itunes_backup_vfs_does_not_modify_source(itunes_backup_fixture: Path) -> None:
+    sms_db = itunes_backup_fixture / "3d" / "3d0d7e5fb2ce288813306e4d0f11ac329e64a91d"
+    digest_before = _sha256_file(sms_db)
+
+    vfs = ITunesBackupVFS(itunes_backup_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+
+    assert _sha256_file(sms_db) == digest_before, "ITunesBackupVFS modified the backed file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Reading every entry of an iTunes backup must not change mtime or ctime of the backed file",
+)
+def test_itunes_backup_vfs_does_not_change_timestamps(itunes_backup_fixture: Path) -> None:
+    sms_db = itunes_backup_fixture / "3d" / "3d0d7e5fb2ce288813306e4d0f11ac329e64a91d"
+    ts_before = _timestamps(sms_db)
+
+    vfs = ITunesBackupVFS(itunes_backup_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(sms_db), "ITunesBackupVFS")
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Decrypting a per-file-encrypted entry must leave the encrypted-on-disk bytes unchanged",
+)
+def test_itunes_backup_vfs_per_file_decrypt_does_not_modify_source(
+    itunes_backup_keybag_fixture: Path,
+) -> None:
+    protected_file = itunes_backup_keybag_fixture / "aa" / "aa11bb22cc33dd44ee55ff667788990011223344"
+    digest_before = _sha256_file(protected_file)
+    ts_before = _timestamps(protected_file)
+
+    vfs = ITunesBackupVFS(itunes_backup_keybag_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+
+    assert _sha256_file(protected_file) == digest_before, (
+        "Per-file decryption modified the encrypted source file"
+    )
+    _assert_timestamps_unchanged(ts_before, _timestamps(protected_file), "ITunesBackupVFS (per-file decrypt)")
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="Opening a zip-wrapped iTunes backup must leave the source ZIP byte-identical "
+         "(extraction happens in a temp directory, never in place)",
+)
+def test_open_itunes_backup_from_zip_does_not_modify_source(itunes_backup_zip_fixture: Path) -> None:
+    from crush.core.vfs import open_itunes_backup_from_zip
+
+    digest_before = _sha256_file(itunes_backup_zip_fixture)
+    ts_before = _timestamps(itunes_backup_zip_fixture)
+
+    vfs = open_itunes_backup_from_zip(itunes_backup_zip_fixture, "wrapper/")
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(itunes_backup_zip_fixture) == digest_before, (
+        "open_itunes_backup_from_zip modified the source ZIP"
+    )
+    _assert_timestamps_unchanged(ts_before, _timestamps(itunes_backup_zip_fixture), "ITunesBackupVFS (zip)")
 
 
 # ---------------------------------------------------------------------------

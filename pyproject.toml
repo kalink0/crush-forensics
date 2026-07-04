@@ -37,6 +37,8 @@ dependencies = [
     "pyliblzfse>=0.4.1",
     "astc_decomp_faster>=1.1.0",
     "py7zr>=0.21",
+    "cryptography>=42.0",
+    "pyzipper>=0.3.6",
 ]
 
 [project.optional-dependencies]
@@ -79,3 +81,7 @@ module = [
     "crush.tests.*",
 ]
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["pyzipper", "pyzipper.*"]
+ignore_missing_imports = true
