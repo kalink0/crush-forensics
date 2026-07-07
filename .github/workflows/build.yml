@@ -33,7 +33,7 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             echo "MACOS_UL_BINARY=unifiedlog_iterator-aarch64-apple-darwin" >> $GITHUB_ENV
-            echo "MACOS_ARTIFACT=crush-macos-${{ github.ref_name }}.zip" >> $GITHUB_ENV
+            echo "MACOS_ARTIFACT=crush-macos-arm-${{ github.ref_name }}.zip" >> $GITHUB_ENV
           else
             echo "MACOS_UL_BINARY=unifiedlog_iterator-x86_64-apple-darwin" >> $GITHUB_ENV
             echo "MACOS_ARTIFACT=crush-macos-intel-${{ github.ref_name }}.zip" >> $GITHUB_ENV
