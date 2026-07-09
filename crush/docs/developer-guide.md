@@ -86,6 +86,39 @@ class MyFormatParser(AbstractParser):
 - Populate `text_index` with a reasonable amount of extracted text (a few KB max) so the
   filesystem panel's filter works across content.
 
+### Decoding internal structure: no shape-based guessing
+
+Once a format is identified (`can_parse` has already decided that), decode its **internal**
+structure — field types, record boundaries, row counts — deterministically from a spec-defined
+tag, type byte, or schema. Never infer a field's type or meaning from what the bytes *look
+like*: byte-length heuristics, magic-number thresholds not present in the actual format
+documentation, try-this-then-that cascades used to *determine* structure, or "assume the most
+plausible shape is right." This is how the Realm parser silently misread rows as tree
+bookkeeping data for years — it guessed a column's shape instead of reading its declared type —
+until it was rewritten from scratch against the real Realm Core source (see the CHANGELOG entry
+for details). A parser audit that fixed the same failure pattern across the rest of
+`crush/parsers/` is documented in the CHANGELOG too.
+
+- Use a heuristic only when there genuinely is no declared type to dispatch from — an
+  undocumented/reverse-engineered format, or a value the format itself doesn't tag (e.g.
+  protobuf's wire-type-2 length-delimited fields, which are legitimately ambiguous between
+  string/bytes/nested-message at the wire level).
+- When a heuristic is unavoidable, it must never be presented as an authoritative decoded
+  value. The reference pattern is `proto_interp.py` / the Protobuf Viewer: instead of silently
+  picking one interpretation, it computes and shows *every* plausible reading side by side
+  (dimmed "interpretations" rows), so nothing is hidden and nothing is asserted as fact.
+  Apply the same shape to new heuristics — prefer showing all candidates. If only one value can
+  be shown (e.g. a single rendered table cell), label it as inferred/possible and keep the raw
+  bytes reachable alongside it.
+- A heuristic used purely as **post-corruption recovery** (the spec-driven read already failed,
+  e.g. a damaged file) is a different, more tolerable case than guessing on well-formed data —
+  but still mark the recovered value as estimated in the UI/metadata rather than showing it like
+  a normal, certain result.
+- Genuine top-level format-detection heuristics (deciding *which* parser/branch applies to an
+  already-unidentified blob, e.g. file-type sniffing) are out of scope for this rule — they're
+  inherently probabilistic by nature of the problem. This rule is about decoding structure
+  *within* a format that's already been identified.
+
 ### Directory-based formats (e.g. LevelDB)
 
 If the format is detected from a directory rather than a single file, skip `can_parse` and
