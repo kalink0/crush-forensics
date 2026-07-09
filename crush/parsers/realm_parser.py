@@ -1,9 +1,50 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 - now Marco Neumann (kalink0)
-"""Realm database parser — header + array structure decoding."""
+"""Realm database parser — header + array structure decoding.
+
+Column value decoding is dispatched deterministically from each column's
+declared type/nullable/collection flags, read directly off its ColKey
+(spec child[5], the colkeys array) — not inferred by trying multiple
+candidate shapes and seeing which one "looks right". The on-disk formats
+implemented here (Cluster/ClusterTree, ArrayIntNull, ArrayBool[Null],
+ArrayString/ArrayBinary in all three sub-formats, ArrayTimestamp,
+ArrayFixedBytes, ArrayDecimal128, ArrayKey, BasicArray<float/double>) are
+taken from the Realm Core C++ source (github.com/realm/realm-core,
+Apache-2.0): spec.hpp, keys.hpp, column_type.hpp, cluster.hpp/.cpp,
+cluster_tree.cpp, array_integer.hpp, array_bool.hpp, array_string*.hpp,
+array_blobs_*.hpp, array_timestamp.hpp/.cpp, array_fixed_bytes.hpp,
+array_decimal128.hpp, array_key.hpp, array_basic*.hpp,
+column_type_traits.hpp, bplustree.hpp/.cpp, collection_parent.hpp,
+list.hpp, lnklst.hpp, array_typed_link.hpp, array_mixed.hpp/.cpp,
+data_type.hpp. File-relative citations are in each function's docstring.
+
+List and Set columns (including LinkList — Realm's on-disk type code 13,
+a pre-Collections marker that predates the modern ColumnType enum but
+still appears in real colkeys) are decoded by walking each row's own
+BPlusTree<T> (a differently-laid-out inner node than ClusterNodeInner —
+see _walk_bplustree_leaves) and reusing the same per-type leaf decoders
+as regular columns.
+
+Mixed and TypedLink are decoded too (_read_array_mixed,
+_read_array_typed_link), including as a List/Set element type, though
+_read_array_mixed carries an extra caveat in its own docstring: unlike
+everything else in this module it has not been cross-checked against a
+real Realm-produced sample (none existed in the file this parser was
+diagnosed against).
+
+Not yet decoded: Dictionary<K,V> columns — a genuinely different
+structure (two independent BPlusTrees, for keys and values, whose exact
+linking layout was not confirmed from source) with no sample file
+available to validate against. Their column name/type is still shown;
+values are left as None rather than guessed.
+"""
 from __future__ import annotations
 
+import decimal
+import math
 import re
+import struct
+import uuid as _uuid_mod
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,7 +58,8 @@ _MNEMONIC = b"T-DB"
 # Scheme 0: width is in bits.  Scheme 1: width is in bytes.
 _WIDTH_TABLE = [0, 1, 2, 4, 8, 16, 32, 64]
 
-# Realm ColumnType codes stored in spec→child[0]
+# Realm ColumnType codes stored in the low 6 bits of each ColKey (keys.hpp
+# ColKey::get_type, column_type.hpp ColumnType::Type).
 _REALM_COL_TYPES: dict[int, str] = {
     0: "int",
     1: "bool",
@@ -36,8 +78,16 @@ _REALM_COL_TYPES: dict[int, str] = {
     17: "uuid",
 }
 
-# Column types that are hidden (no user-visible name) and must be skipped
+# Column types that are hidden (no user-visible name) and must be skipped.
+# BackLink columns exist only as the reverse side of a Link and are not
+# part of Table's public column set (mirrors Spec::get_public_column_count).
 _HIDDEN_COL_TYPES: frozenset[int] = frozenset({14})  # BackLink
+
+# ColumnAttr bits packed into ColKey bits [22:30) (column_type.hpp).
+_COL_ATTR_NULLABLE = 0x10
+_COL_ATTR_LIST = 0x20
+_COL_ATTR_DICTIONARY = 0x40
+_COL_ATTR_SET = 0x80
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +142,7 @@ def _parse_realm_header(data: bytes) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# Array header (8 bytes) — see TODO.md §3 for the full spec
+# Array header (8 bytes)
 # ---------------------------------------------------------------------------
 
 def _parse_array_header(data: bytes, offset: int = 0) -> dict[str, Any] | None:
@@ -347,7 +397,464 @@ def _extract_schema(data: bytes, root_offset: int, file_size: int) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Table data extraction
+# ClusterTree traversal
+# ---------------------------------------------------------------------------
+#
+# Realm's Cluster leaf (cluster.hpp) stores: child[0] = key array (tagged
+# integer -> compact sequential keys, row count = raw >> 1; or a ref to an
+# explicit ArrayUnsigned of local key values), child[1..] = column data,
+# one slot per column at index (colkey.index + 1) (s_first_col_index=1).
+#
+# Once a table outgrows one leaf, its ClusterTree root becomes a
+# ClusterNodeInner (cluster_tree.cpp) with a *fixed* layout:
+#   child[0] = key-offsets ref, or 0 for "compact" (uniformly-sized) children
+#   child[1] = tagged sub_tree_depth
+#   child[2] = tagged sub_tree_size (total row count of this subtree)
+#   child[3..] = child node refs (each may itself be a leaf or inner node —
+#                determined by that child's own is_inner_bptree_node flag)
+# Child key-space offsets: explicit (child[0] ref) values are absolute
+# per-child offsets; compact form computes offset = child_index << shift,
+# shift = sub_tree_depth * node_shift_factor. node_shift_factor is 8 for the
+# default REALM_MAX_BPNODE_SIZE > 256 build (true for all mainstream Realm
+# SDKs); the alternate value (2) is a debug-only build config and is not
+# handled here.
+
+_NODE_SHIFT_FACTOR = 8
+
+
+def _walk_cluster_leaves(
+    data: bytes,
+    root_ref: int,
+    file_size: int,
+    _visited: set[int] | None = None,
+    _depth: int = 0,
+    _base_offset: int = 0,
+) -> list[tuple[int, int]]:
+    """Recursively resolve a ClusterTree root to its ordered leaf Clusters.
+
+    Returns a list of (leaf_ref, key_offset) pairs, in key order. key_offset
+    is the absolute base to add to each leaf row's local key value to
+    recover its real ObjKey (cluster.hpp Cluster::get_real_key).
+    """
+    if _depth > 32 or root_ref <= 0 or root_ref >= file_size:
+        return []
+    if _visited is None:
+        _visited = set()
+    if root_ref in _visited:
+        return []
+    _visited.add(root_ref)
+
+    hdr = _parse_array_header(data, root_ref)
+    if hdr is None or not hdr["has_refs"]:
+        return []
+    if not hdr["is_inner_bptree_node"]:
+        return [(root_ref, _base_offset)]
+
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return []
+    count = hdr["Element count (size)"]
+
+    keys_ref = _read_ref(data, root_ref + 8, 0, eb)
+    explicit_offsets: list[int] | None = _read_uint_array(data, keys_ref) if keys_ref > 0 else None
+
+    depth_raw = _read_ref(data, root_ref + 8, 1, eb)
+    sub_tree_depth = (depth_raw >> 1) if depth_raw >= 0 else 1
+    shift = max(sub_tree_depth, 0) * _NODE_SHIFT_FACTOR
+
+    leaves: list[tuple[int, int]] = []
+    for i in range(3, count):
+        child_ref = _read_ref(data, root_ref + 8, i, eb)
+        if child_ref <= 0 or child_ref >= file_size:
+            continue
+        child_idx = i - 3
+        if explicit_offsets is not None and child_idx < len(explicit_offsets):
+            child_rel_offset = explicit_offsets[child_idx]
+        else:
+            child_rel_offset = child_idx << shift
+        leaves.extend(
+            _walk_cluster_leaves(
+                data, child_ref, file_size, _visited, _depth + 1,
+                _base_offset + child_rel_offset,
+            )
+        )
+    return leaves
+
+
+def _read_cluster_key_info(
+    data: bytes, cluster_ref: int, cluster_eb: int, file_size: int,
+) -> tuple[int | None, list[int] | None]:
+    """Decode a leaf Cluster's child[0] key slot.
+
+    Returns (row_count, local_key_values). child[0] is either a tagged
+    integer (RefOrTagged compact form — row count = raw >> 1, local keys are
+    implicitly 0..row_count-1) or a ref to a real ArrayUnsigned of explicit
+    local key values (cluster.hpp Cluster::init, node_size_from_header).
+    """
+    raw = _read_ref(data, cluster_ref + 8, 0, cluster_eb)
+    if raw < 0:
+        return None, None
+    if raw & 1:
+        count = raw >> 1
+        return count, list(range(count))
+    if raw == 0 or raw >= file_size:
+        return None, None
+    hdr = _parse_array_header(data, raw)
+    if hdr is None or hdr["has_refs"]:
+        return None, None
+    count = hdr["Element count (size)"]
+    values = _read_scalar_leaf(data, raw, file_size)
+    if values is None:
+        return count, None
+    return count, [v if v is not None else 0 for v in values]
+
+
+def _derive_row_count(
+    data: bytes,
+    col_data_ref: int,
+    num_cols: int,
+    cd_eb: int,
+    file_size: int,
+) -> int | None:
+    """Fallback row-count heuristic, used only when a leaf's key slot
+    (child[0], handled by _read_cluster_key_info) cannot be read at all —
+    e.g. a corrupt or partially-overwritten file. Takes the most common
+    element count across the leaf's non-ref (scalar) column children.
+    """
+    from collections import Counter
+    counts: list[int] = []
+    for c_idx in range(num_cols):
+        col_ref = _read_ref(data, col_data_ref + 8, c_idx, cd_eb)
+        if col_ref <= 0 or col_ref >= file_size:
+            continue
+        hdr = _parse_array_header(data, col_ref)
+        if hdr and not hdr["has_refs"]:
+            counts.append(hdr["Element count (size)"])
+    if not counts:
+        return None
+    return Counter(counts).most_common(1)[0][0]
+
+
+# ---------------------------------------------------------------------------
+# BPlusTree traversal — List / Set (and LinkList) columns
+# ---------------------------------------------------------------------------
+#
+# Each row of a List/Set column owns an *independent* BPlusTree<T> holding
+# its elements (list.hpp: Lst<T>::m_tree; collection_parent.hpp:
+# CollectionParent::get_collection_ref — a plain ref per row, 0 = empty
+# collection, read directly from the cluster's column-data array like any
+# other flat ref array).
+#
+# BPlusTree<T>'s own inner-node layout (bplustree.cpp: BPlusTreeInner) is
+# *not* the same as ClusterNodeInner:
+#   element[0]        = tagged "elements per child" (compact form), or a
+#                        ref to an m_offsets array of per-child start
+#                        offsets (general form) — distinguished by the
+#                        RefOrTagged tag bit, not by zero/nonzero
+#   element[1..N]      = child node refs (get_bp_node_ref(ndx)=get(ndx+1))
+#   element[N+1] (last) = tagged total subtree size (get_tree_size=back()>>1)
+# i.e. get_node_size() = Array::size() - 2 (2 bookkeeping slots, not 3).
+
+def _walk_bplustree_leaves(
+    data: bytes,
+    root_ref: int,
+    file_size: int,
+    _visited: set[int] | None = None,
+    _depth: int = 0,
+    _base_offset: int = 0,
+) -> list[tuple[int, int]]:
+    """Recursively resolve a BPlusTree<T> root to its ordered leaf arrays.
+
+    Returns (leaf_ref, offset) pairs; leaf_ref points directly to a leaf
+    array in the *same* per-type format used for regular cluster columns
+    (e.g. ArrayKey for a List<Link>'s elements), so leaves are decoded by
+    reusing _decode_column_values with the collection's element type.
+    """
+    if _depth > 32 or root_ref <= 0 or root_ref >= file_size:
+        return []
+    if _visited is None:
+        _visited = set()
+    if root_ref in _visited:
+        return []
+    _visited.add(root_ref)
+
+    hdr = _parse_array_header(data, root_ref)
+    if hdr is None:
+        return []
+    if not hdr["is_inner_bptree_node"]:
+        return [(root_ref, _base_offset)]
+
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return []
+    count = hdr["Element count (size)"]
+    if count < 2:
+        return []
+    num_children = count - 2
+
+    elem0_raw = _read_ref(data, root_ref + 8, 0, eb)
+    is_compact = elem0_raw >= 0 and (elem0_raw & 1) != 0
+    elems_per_child = (elem0_raw >> 1) if is_compact else 0
+    explicit_offsets: list[int] | None = None
+    if not is_compact and elem0_raw > 0:
+        explicit_offsets = _read_uint_array(data, elem0_raw)
+
+    leaves: list[tuple[int, int]] = []
+    for i in range(num_children):
+        child_ref = _read_ref(data, root_ref + 8, i + 1, eb)
+        if child_ref <= 0 or child_ref >= file_size:
+            continue
+        if explicit_offsets is not None:
+            child_rel_offset = explicit_offsets[i - 1] if i > 0 and (i - 1) < len(explicit_offsets) else 0
+        else:
+            child_rel_offset = i * elems_per_child
+        leaves.extend(
+            _walk_bplustree_leaves(
+                data, child_ref, file_size, _visited, _depth + 1,
+                _base_offset + child_rel_offset,
+            )
+        )
+    return leaves
+
+
+def _read_collection_column(
+    data: bytes,
+    col_ref: int,
+    file_size: int,
+    element_type: int,
+    nullable: bool,
+) -> list[list[Any]] | None:
+    """Decode a List/Set column: a flat ref array, one ref per row, each
+    pointing to that row's own BPlusTree<T> root (0 = empty collection).
+    Each row's elements are decoded by reusing _decode_column_values on
+    every leaf of that row's tree, with the collection's element type.
+    """
+    hdr = _parse_array_header(data, col_ref)
+    if hdr is None or not hdr["has_refs"]:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    count = hdr["Element count (size)"]
+
+    element_info = {
+        "type_code": element_type,
+        "nullable": nullable,
+        "is_list": False,
+        "is_dictionary": False,
+        "is_set": False,
+    }
+
+    results: list[list[Any]] = []
+    for i in range(count):
+        row_ref = _read_ref(data, col_ref + 8, i, eb)
+        if row_ref <= 0 or row_ref >= file_size:
+            results.append([])
+            continue
+        values: list[Any] = []
+        for leaf_ref, _off in _walk_bplustree_leaves(data, row_ref, file_size):
+            leaf_vals = _decode_column_values(data, leaf_ref, file_size, element_info)
+            if leaf_vals:
+                values.extend(leaf_vals)
+        results.append(values)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Spec / column metadata
+# ---------------------------------------------------------------------------
+
+def _extract_column_names(
+    data: bytes,
+    table_ref: int,
+    table_eb: int,
+    file_size: int,
+) -> list[str]:
+    """Read public column names from the spec at child[0] of the table node.
+
+    Path: table_ref → child[0] (spec) → child[1] (names Data Array).
+    The names array holds one fixed-width null-terminated ASCII entry per
+    *public* column only (spec.hpp s_names_ndx=1; hidden BackLink columns
+    have no name slot — confirmed empirically: a table with N declared
+    columns has fewer name entries than colkey/type entries whenever it is
+    the target of a Link elsewhere in the schema).
+    Returns an empty list on any failure.
+    """
+    spec_ref = _read_ref(data, table_ref + 8, 0, table_eb)
+    if spec_ref <= 0 or spec_ref >= file_size:
+        return []
+    spec_hdr = _parse_array_header(data, spec_ref)
+    if spec_hdr is None or not spec_hdr["has_refs"] or spec_hdr["Element count (size)"] < 2:
+        return []
+    spec_eb = _elem_bytes(spec_hdr)
+    if spec_eb < 1:
+        return []
+
+    names_ref = _read_ref(data, spec_ref + 8, 1, spec_eb)
+    if names_ref <= 0 or names_ref >= file_size:
+        return []
+    names_hdr = _parse_array_header(data, names_ref)
+    if names_hdr is None or names_hdr["has_refs"]:
+        return []
+
+    entry_bytes = _elem_bytes(names_hdr)
+    count = names_hdr["Element count (size)"]
+    if entry_bytes < 1 or count == 0:
+        return []
+
+    payload_start = names_ref + 8
+    names: list[str] = []
+    for i in range(count):
+        entry_off = payload_start + i * entry_bytes
+        if entry_off + entry_bytes > len(data):
+            break
+        entry = data[entry_off : entry_off + entry_bytes]
+        null_pos = entry.find(b"\x00")
+        raw = entry[:null_pos] if null_pos >= 0 else entry
+        try:
+            name = raw.decode("ascii").strip()
+        except Exception:
+            name = f"col_{i}"
+        names.append(name if name else f"col_{i}")
+    return names
+
+
+def _extract_column_info(
+    data: bytes,
+    table_ref: int,
+    table_eb: int,
+    file_size: int,
+) -> list[dict[str, Any]] | None:
+    """Build the per-user-column decode plan directly from the colkeys array
+    (spec child[5]) — the single source of truth for column dispatch.
+
+    Each 64-bit ColKey packs index[0:16) | type[16:22) | attrs[22:30) |
+    tag[30:62) (keys.hpp ColKey::get_index/get_type/get_attrs). attrs bit
+    0x10=nullable, 0x20=list, 0x40=dictionary, 0x80=set (column_type.hpp
+    ColumnAttr). This replaces separately reading and cross-referencing the
+    spec's type-code array — the type is already embedded in the colkey.
+
+    Hidden BackLink columns (type 14) are skipped, matching the public
+    column order used by _extract_column_names. Returns None on failure.
+    """
+    spec_ref = _read_ref(data, table_ref + 8, 0, table_eb)
+    if spec_ref <= 0 or spec_ref >= file_size:
+        return None
+    spec_hdr = _parse_array_header(data, spec_ref)
+    if spec_hdr is None or not spec_hdr["has_refs"] or spec_hdr["Element count (size)"] < 6:
+        return None
+    spec_eb = _elem_bytes(spec_hdr)
+    if spec_eb < 1:
+        return None
+
+    colkeys_ref = _read_ref(data, spec_ref + 8, 5, spec_eb)
+    if colkeys_ref <= 0 or colkeys_ref >= file_size:
+        return None
+    colkeys = _read_scalar_leaf(data, colkeys_ref, file_size)
+    if not colkeys:
+        return None
+
+    infos: list[dict[str, Any]] = []
+    user_col_idx = 0
+    for colkey in colkeys:
+        if colkey is None:
+            continue
+        colkey = int(colkey)
+        type_code = (colkey >> 16) & 0x3F
+        if type_code in _HIDDEN_COL_TYPES:
+            continue
+        attrs = (colkey >> 22) & 0xFF
+        infos.append({
+            "user_col_idx": user_col_idx,
+            "col_index": colkey & 0xFFFF,
+            "cluster_idx": (colkey & 0xFFFF) + 1,
+            "type_code": type_code,
+            "nullable": bool(attrs & _COL_ATTR_NULLABLE),
+            "is_list": bool(attrs & _COL_ATTR_LIST),
+            "is_dictionary": bool(attrs & _COL_ATTR_DICTIONARY),
+            "is_set": bool(attrs & _COL_ATTR_SET),
+        })
+        user_col_idx += 1
+    return infos if infos else None
+
+
+# TableKey::null_value (keys.hpp) — "no opposite table" sentinel.
+_TABLE_KEY_NULL = 0x7FFFFFFF
+
+
+def _read_table_own_key(
+    data: bytes, table_ref: int, table_eb: int, file_size: int,
+) -> int | None:
+    """Read a table's own TableKey (table.hpp top_position_for_key=3, a
+    tagged RefOrTagged value — Table::get_key_direct)."""
+    raw = _read_ref(data, table_ref + 8, 3, table_eb)
+    if raw < 0 or not (raw & 1):
+        return None
+    return raw >> 1
+
+
+def _build_table_key_map(
+    data: bytes, root_offset: int, schema: list[str], file_size: int,
+) -> dict[int, str]:
+    """Map each table's own TableKey to its schema name, so Link/LinkList
+    columns can resolve which table they point to (table.hpp
+    top_position_for_key / top_position_for_opposite_table — see
+    _read_opposite_table_keys). TableKeys are stable identifiers assigned
+    at table-creation time, not necessarily the same as the physical
+    index into the Group's table-refs array, so this mapping is required
+    rather than assuming table_key == schema index.
+    """
+    root_hdr = _parse_array_header(data, root_offset)
+    if root_hdr is None or not root_hdr["has_refs"]:
+        return {}
+    root_eb = _elem_bytes(root_hdr)
+    if root_eb < 1:
+        return {}
+    table_refs_off = _read_ref(data, root_offset + 8, 1, root_eb)
+    if table_refs_off <= 0 or table_refs_off >= file_size:
+        return {}
+    tr_hdr = _parse_array_header(data, table_refs_off)
+    if tr_hdr is None or not tr_hdr["has_refs"]:
+        return {}
+    tr_eb = _elem_bytes(tr_hdr)
+    num_tables = tr_hdr["Element count (size)"]
+
+    mapping: dict[int, str] = {}
+    for t_idx in range(num_tables):
+        table_ref = _read_ref(data, table_refs_off + 8, t_idx, tr_eb)
+        if table_ref <= 0 or table_ref >= file_size:
+            continue
+        t_hdr = _parse_array_header(data, table_ref)
+        if t_hdr is None or not t_hdr["has_refs"] or t_hdr["Element count (size)"] < 4:
+            continue
+        t_eb = _elem_bytes(t_hdr)
+        table_key = _read_table_own_key(data, table_ref, t_eb, file_size)
+        if table_key is not None:
+            mapping[table_key] = schema[t_idx] if t_idx < len(schema) else f"table[{t_idx}]"
+    return mapping
+
+
+def _read_opposite_table_keys(
+    data: bytes, table_ref: int, table_eb: int, file_size: int,
+) -> list[int] | None:
+    """Read table.hpp's m_opposite_table array (top_position_for_opposite_table
+    = 7): one raw TableKey per column, in the same full index space as the
+    colkeys/types/attrs arrays (including hidden BackLink columns) — used
+    to resolve a Link/LinkList column's target table
+    (Table::get_opposite_table_key)."""
+    ref = _read_ref(data, table_ref + 8, 7, table_eb)
+    if ref <= 0 or ref >= file_size:
+        return None
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    return _read_scalar_leaf(data, ref, file_size)
+
+
+# ---------------------------------------------------------------------------
+# Primitive value decoders — each implements exactly one real Realm Array
+# class. No structural guessing: the caller already knows which one to call
+# from the column's declared type (see _extract_column_info / _decode_column_values).
 # ---------------------------------------------------------------------------
 
 def _read_scalar_leaf(
@@ -355,12 +862,16 @@ def _read_scalar_leaf(
     col_offset: int,
     file_size: int,
 ) -> list[int | bool | None] | None:
-    """Parse a Realm scalar-column leaf node (integers or booleans).
+    """Parse a flat, non-nullable Realm scalar array (ArrayInteger / boolean
+    bit-packed / any plain has_refs=False integer array — also reused as the
+    generic reader for colkeys, type codes, offsets, and key arrays).
 
-    Handles simple Data Arrays (has_refs=0):
-        width=1, scheme=0  → boolean (1 bit per row)
+        width=1, scheme=0  → 1 bit per row (0/1)
         width=2/4, scheme=0 → packed sub-byte unsigned integers
-        width=8/16/32/64, scheme=0 or scheme=1 → little-endian unsigned integers
+        width=8/16/32/64, scheme=0 or scheme=1 → little-endian integers
+          (byte-aligned widths are reinterpreted as signed int64_t, matching
+          Realm's actual column storage, so values stay within qlonglong
+          range for Qt)
 
     Returns a list of values (``None`` where data is unreadable), or ``None``
     if the node does not look like a scalar leaf.
@@ -392,9 +903,6 @@ def _read_scalar_leaf(
             return result
         if width in (2, 4, 8, 16, 32, 64):
             mask = (1 << width) - 1
-            # For byte-aligned widths, Realm stores signed int64_t values.
-            # Reinterpret as two's-complement signed so values stay within
-            # qlonglong range and do not cause OverflowError in Qt.
             sign_bit = (1 << (width - 1)) if width >= 8 else 0
             result = []
             for i in range(count):
@@ -412,9 +920,6 @@ def _read_scalar_leaf(
                 if sign_bit and val >= sign_bit:
                     val -= (1 << width)
                 result.append(val)
-            # 2-bit scheme=0 is Realm's nullable boolean: 0=False, 1=True, ≥2=NULL
-            if width == 2:
-                result = [None if v is None or v >= 2 else bool(v) for v in result]
             return result
 
     elif scheme == 1:
@@ -434,337 +939,544 @@ def _read_scalar_leaf(
     return None
 
 
-def _read_string_leaf(
-    data: bytes,
-    col_offset: int,
-    file_size: int,
-    expected_rows: int | None = None,
-) -> list[str | None] | None:
-    """Parse a Realm string-column leaf node at *col_offset*.
-
-    Realm stores string columns in a fixed 3-entry structure:
-        col_offset → ref_array[3]
-            [0] → offsets_array  (N × uint16, one byte-offset per row into the blob)
-            [1] → blob_array     (scheme=2: raw string bytes, null-separated)
-            [2] → null_bitmap    (1 bit per row; 1 = value is NULL)
-
-    If *expected_rows* is given, the offsets array must have exactly that many
-    entries (distinguishes string from blob columns, which have N+1 entries).
-
-    Returns a list of N strings (``None`` where the row is NULL), or ``None``
-    if the offset does not match the expected 3-entry pattern.
+def _read_array_int_null(
+    data: bytes, ref: int, file_size: int,
+) -> list[int | None] | None:
+    """Decode a Realm ArrayIntNull: a flat array of N+1 values where slot[0]
+    is a file-chosen null sentinel and slots[1..N] are the row values;
+    value == sentinel means NULL (array_integer.hpp: null_value() reads
+    slot 0 directly — it is not a fixed/assumed constant like INT_MAX).
+    Also used to decode the nullable "seconds" sub-array of a Timestamp.
     """
-    col_hdr = _parse_array_header(data, col_offset)
-    if col_hdr is None or not col_hdr["has_refs"]:
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
         return None
-    entry_count = col_hdr["Element count (size)"]
-    # Accept both the modern 3-entry format [offsets, blob, null_bitmap] and the
-    # legacy 2-entry format [offsets, blob] used before nullable string support.
-    if entry_count not in (2, 3):
-        return None
-
-    eb = _elem_bytes(col_hdr)
-    if eb < 1:
-        return None
-
-    offs_ref = _read_ref(data, col_offset + 8, 0, eb)
-    blob_ref = _read_ref(data, col_offset + 8, 1, eb)
-    null_ref = _read_ref(data, col_offset + 8, 2, eb) if entry_count == 3 else -1
-
-    # Blob must be a scheme=2 (raw bytes) data array
-    blob_hdr = _parse_array_header(data, blob_ref)
-    if blob_hdr is None or blob_hdr["width_scheme"] != 2:
-        return None
-    blob_size = blob_hdr["Element count (size)"]
-    blob = data[blob_ref + 8 : blob_ref + 8 + blob_size]
-
-    # Offsets array: N elements, elem_bytes derived from its own header
-    offs_hdr = _parse_array_header(data, offs_ref)
-    if offs_hdr is None:
-        return None
-    row_count = offs_hdr["Element count (size)"]
-    offs_eb = _elem_bytes(offs_hdr)
-    if offs_eb < 1:
-        return None
-
-    # If the caller knows the expected row count, use it to reject blob columns
-    # (blob offsets arrays have N+1 entries, string arrays have exactly N).
-    if expected_rows is not None and row_count != expected_rows:
-        return None
-
-    # Null bitmap: 1 bit per row (width=1, scheme=0); absent in legacy 2-entry format
-    null_bits: list[bool] = [False] * row_count
-    if null_ref >= 0:
-        null_hdr = _parse_array_header(data, null_ref)
-        if null_hdr and not null_hdr["has_refs"] and null_hdr["width"] == 1:
-            null_payload = data[null_ref + 8 : null_ref + 8 + null_hdr["Payload bytes (raw)"]]
-            for i in range(row_count):
-                byte_i, bit_i = divmod(i, 8)
-                if byte_i < len(null_payload):
-                    null_bits[i] = bool((null_payload[byte_i] >> bit_i) & 1)
-
-    strings: list[str | None] = []
-    for i in range(row_count):
-        if null_bits[i]:
-            strings.append(None)
-            continue
-        off = _read_ref(data, offs_ref + 8, i, offs_eb)
-        if off < 0 or off >= len(blob):
-            strings.append(None)
-            continue
-        null_pos = blob.find(b"\x00", off)
-        end = null_pos if null_pos >= 0 else len(blob)
-        try:
-            strings.append(blob[off:end].decode("utf-8", errors="replace"))
-        except Exception:
-            strings.append(None)
-
-    return strings
-
-
-def _read_blob_leaf(
-    data: bytes,
-    col_offset: int,
-    file_size: int,
-    expected_rows: int | None = None,
-) -> list[str | tuple[str, bytes] | None] | None:
-    """Parse a Realm binary/blob-column leaf node at *col_offset*.
-
-    Blob columns use the same 3-entry ref-array structure as strings, but the
-    offsets array has N+1 entries (cumulative byte offsets into the raw data
-    block) rather than N per-string start offsets with null terminators.
-
-        col_offset → ref_array[3]
-            [0] → offsets_array  ((N+1) entries; end[i] = offsets[i+1])
-            [1] → blob_array     (scheme=2: raw binary bytes)
-            [2] → null_bitmap    (1 bit per row)
-
-    If *expected_rows* is given, the offsets array must have exactly N+1
-    entries to match the blob pattern; otherwise the column is skipped.
-
-    Returns a list of N hex-string representations (``None`` where NULL), or
-    ``None`` if the node does not match the expected blob pattern.
-    """
-    col_hdr = _parse_array_header(data, col_offset)
-    if col_hdr is None or not col_hdr["has_refs"]:
-        return None
-    # Blob leaf uses a 3-entry structure [offsets(N+1), blob, null_bitmap].
-    # A 2-entry form is not known for blob columns.
-    if col_hdr["Element count (size)"] != 3:
-        return None
-
-    eb = _elem_bytes(col_hdr)
-    if eb < 1:
-        return None
-
-    offs_ref = _read_ref(data, col_offset + 8, 0, eb)
-    blob_ref = _read_ref(data, col_offset + 8, 1, eb)
-    null_ref = _read_ref(data, col_offset + 8, 2, eb)
-
-    blob_hdr = _parse_array_header(data, blob_ref)
-    if blob_hdr is None or blob_hdr["width_scheme"] != 2:
-        return None
-    blob_size = blob_hdr["Element count (size)"]
-    blob = data[blob_ref + 8 : blob_ref + 8 + blob_size]
-
-    offs_hdr = _parse_array_header(data, offs_ref)
-    if offs_hdr is None:
-        return None
-    offs_count = offs_hdr["Element count (size)"]
-    offs_eb = _elem_bytes(offs_hdr)
-    if offs_eb < 1 or offs_count < 1:
-        return None
-
-    # Blob columns: N rows → N+1 offset entries.
-    # If expected_rows is known, enforce the distinction from string columns.
-    if expected_rows is not None:
-        if offs_count != expected_rows + 1:
-            return None
-        row_count = expected_rows
-    else:
-        row_count = offs_count - 1
-    if row_count < 0:
-        return None
-
-    null_bits: list[bool] = [False] * row_count
-    null_hdr = _parse_array_header(data, null_ref)
-    if null_hdr and not null_hdr["has_refs"] and null_hdr["width"] == 1:
-        null_payload = data[null_ref + 8 : null_ref + 8 + null_hdr["Payload bytes (raw)"]]
-        for i in range(row_count):
-            byte_i, bit_i = divmod(i, 8)
-            if byte_i < len(null_payload):
-                null_bits[i] = bool((null_payload[byte_i] >> bit_i) & 1)
-
-    results: list[str | tuple[str, bytes] | None] = []
-    for i in range(row_count):
-        if null_bits[i]:
-            results.append(None)
-            continue
-        start = _read_ref(data, offs_ref + 8, i, offs_eb)
-        end = _read_ref(data, offs_ref + 8, i + 1, offs_eb)
-        if start < 0 or end < start or end > len(blob):
-            results.append(None)
-            continue
-        chunk = blob[start:end]
-        preview = f"<blob {len(chunk)}B: {chunk[:16].hex()}" + ("…" if len(chunk) > 16 else "") + ">"
-        results.append((preview, chunk))
-
-    return results
-
-
-def _read_inline_string_leaf(
-    data: bytes,
-    col_offset: int,
-) -> list[str | None] | None:
-    """Parse a Realm format-24 inline string column (scheme=1, any byte-width).
-
-    General encoding for a W-byte entry:
-      - bytes [0 .. length-1]: UTF-8 string content (up to W-1 chars)
-      - byte [W-1]: padding count; actual length = (W-1) - pad
-      - pad >= W → NULL value (all content bytes are zero) or heap pointer
-    Validated against integer columns: if any non-null entry contains a null
-    byte in its content region, the whole column is rejected (→ None).
-    Returns None if the array does not match this layout.
-    """
-    hdr = _parse_array_header(data, col_offset)
-    if hdr is None or hdr["has_refs"] or hdr["width_scheme"] != 1:
-        return None
-
-    width = hdr["width"]
-    if width < 8:
-        return None
-
     count = hdr["Element count (size)"]
     if count == 0:
         return []
+    vals = _read_scalar_leaf(data, ref, file_size)
+    if not vals:
+        return None
+    sentinel = vals[0]
+    return [None if v == sentinel else v for v in vals[1:]]
 
-    max_len = width - 1
-    payload_start = col_offset + 8
-    results: list[str | None] = []
-    valid = 0
 
+def _read_array_bool(
+    data: bytes, ref: int, file_size: int, nullable: bool,
+) -> list[bool | None] | None:
+    """Decode a Realm ArrayBool/ArrayBoolNull: a flat array; for the
+    nullable variant, NULL is signalled by the value being *exactly* 3,
+    not "any value >= 2" (array_bool.hpp: null_value = 3).
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    count = hdr["Element count (size)"]
+    if count == 0:
+        return []
+    vals = _read_scalar_leaf(data, ref, file_size)
+    if vals is None:
+        return None
+    if nullable:
+        return [None if v == 3 else bool(v) for v in vals]
+    return [bool(v) for v in vals]
+
+
+def _read_array_string_short(
+    data: bytes, ref: int, hdr: dict[str, Any], *, is_string: bool, nullable: bool,
+) -> list[Any]:
+    """ArrayStringShort: fixed W-byte slots; last byte of each slot is a pad
+    count. pad == W → NULL, else content length = (W-1) - pad
+    (array_string_short.hpp: get()/get(header,...)).
+    """
+    width = hdr["width"]
+    count = hdr["Element count (size)"]
+    empty: Any = "" if is_string else b""
+    if width == 0:
+        return [None if nullable else empty] * count
+    payload_start = ref + 8
+    results: list[Any] = []
     for i in range(count):
         off = payload_start + i * width
-        if off + width > len(data):
+        entry = data[off : off + width]
+        if len(entry) < width:
             results.append(None)
             continue
-        entry = data[off : off + width]
         pad = entry[width - 1]
-        if pad >= width:
-            # NULL: content bytes all zero; otherwise heap pointer
-            if entry[:max_len] == b"\x00" * max_len:
-                results.append(None)
-            else:
-                results.append("<long>")
-            valid += 1
-        else:
-            length = max_len - pad
-            raw = entry[:length] if length > 0 else b""
-            # Reject if content has null bytes — integers stored in scheme=1
-            # arrays often produce null bytes here, signalling a non-string column.
-            if b"\x00" in raw:
-                return None
-            try:
-                s = raw.decode("utf-8", errors="strict")
-            except UnicodeDecodeError:
-                return None
-            results.append(s)
-            valid += 1
-
-    return results if valid > 0 else None
+        if pad == width:
+            results.append(None if nullable else empty)
+            continue
+        length = (width - 1) - pad
+        raw = entry[:length] if length > 0 else b""
+        results.append(raw.decode("utf-8", errors="replace") if is_string else bytes(raw))
+    return results
 
 
-def _read_direct_string_column(
-    data: bytes,
-    col_offset: int,
-    file_size: int,
-    expected_rows: int | None = None,
-) -> list[str | None] | None:
-    """Parse a Realm string column stored as a flat per-row ref-array.
-
-    Covers two sub-formats that share the same outer shape (has_refs=True,
-    count = N rows, each element = file offset):
-
-    * **Raw pointer** — offset points directly to a null-terminated UTF-8
-      byte sequence (no array header).
-    * **Inline scheme=2 array** — offset points to a Realm array header
-      (AAAA) with width_scheme=2; the array payload is the string bytes.
-      The ``size`` field gives the byte count (may or may not be
-      null-terminated).
-
-    Both sub-formats are distinguished from the canonical 3-entry string leaf
-    by having count ≠ 3, and from blob columns because there is no N+1 offsets
-    array wrapping.
-
-    Returns a list of N strings (``None`` for null/out-of-range rows), or
-    ``None`` if the column doesn't match either sub-format.
+def _read_array_small_blobs(
+    data: bytes, ref: int, hdr: dict[str, Any], file_size: int, *, is_string: bool,
+) -> list[Any] | None:
+    """ArraySmallBlobs: 3-entry [offsets, blob, nulls]. offsets[i] is the
+    cumulative END position of row i's bytes in blob (begin = offsets[i-1],
+    or 0 for i=0) — not a start-offset with a NUL-terminator scan. nulls[i]
+    nonzero means row i is NULL (a plain int array, not necessarily 1-bit
+    wide). String rows carry a trailing '\\0' in blob that is stripped;
+    Binary rows do not (array_blobs_small.hpp).
     """
-    hdr = _parse_array_header(data, col_offset)
-    if hdr is None or not hdr["has_refs"]:
+    if hdr["Element count (size)"] != 3:
         return None
-    # 3-entry refs are string/blob columns, handled elsewhere
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    offs_ref = _read_ref(data, ref + 8, 0, eb)
+    blob_ref = _read_ref(data, ref + 8, 1, eb)
+    nulls_ref = _read_ref(data, ref + 8, 2, eb)
+
+    offsets = _read_uint_array(data, offs_ref)
+    nulls = _read_uint_array(data, nulls_ref)
+
+    blob_hdr = _parse_array_header(data, blob_ref)
+    blob = b""
+    if blob_hdr is not None:
+        blob_size = blob_hdr["Element count (size)"]
+        blob = data[blob_ref + 8 : blob_ref + 8 + blob_size]
+
+    results: list[Any] = []
+    prev = 0
+    for i, end in enumerate(offsets):
+        is_null = nulls[i] != 0 if i < len(nulls) else False
+        if is_null:
+            results.append(None)
+        else:
+            chunk = blob[prev:end]
+            if is_string:
+                if chunk.endswith(b"\x00"):
+                    chunk = chunk[:-1]
+                results.append(chunk.decode("utf-8", errors="replace"))
+            else:
+                results.append(bytes(chunk))
+        prev = end
+    return results
+
+
+def _read_array_big_blobs(
+    data: bytes, ref: int, hdr: dict[str, Any], file_size: int, *, is_string: bool,
+) -> list[Any]:
+    """ArrayBigBlobs: a flat ref array; each element is a ref to its own
+    standalone blob array elsewhere in the file, or 0 for NULL
+    (array_blobs_big.hpp: get()/get(header,...)). Used once a value is too
+    large for the shared small-blobs layout (e.g. long email bodies).
+    """
+    eb = _elem_bytes(hdr)
     count = hdr["Element count (size)"]
-    if count == 3:
+    results: list[Any] = []
+    if eb < 1:
+        return [None] * count
+    for i in range(count):
+        blob_ref = _read_ref(data, ref + 8, i, eb)
+        if blob_ref <= 0 or blob_ref >= file_size:
+            results.append(None)
+            continue
+        blob_hdr = _parse_array_header(data, blob_ref)
+        if blob_hdr is None:
+            results.append(None)
+            continue
+        size = blob_hdr["Element count (size)"]
+        chunk = data[blob_ref + 8 : blob_ref + 8 + size]
+        if is_string:
+            if chunk.endswith(b"\x00"):
+                chunk = chunk[:-1]
+            results.append(chunk.decode("utf-8", errors="replace"))
+        else:
+            results.append(bytes(chunk))
+    return results
+
+
+def _read_array_string_or_binary(
+    data: bytes,
+    ref: int,
+    file_size: int,
+    *,
+    is_string: bool,
+    nullable: bool,
+) -> list[Any] | None:
+    """Decode a Realm String or Binary column leaf.
+
+    String and Binary share *identical* on-disk storage (ArrayString::get,
+    array_string.hpp:146-161) — the only real distinguishing signal is the
+    column's declared type, not the array's shape. Dispatch is purely on
+    the array header's own flags (already decoded by _parse_array_header):
+
+        has_refs=False                → ArrayStringShort (inline)
+        has_refs=True, context=False  → ArraySmallBlobs (offsets/blob/nulls)
+        has_refs=True, context=True   → ArrayBigBlobs (per-row ref to a blob)
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None:
         return None
-    # Refs narrower than 32 bits are integer link keys, not file-offset string pointers
-    if hdr["width"] < 32:
+    if not hdr["has_refs"]:
+        return _read_array_string_short(data, ref, hdr, is_string=is_string, nullable=nullable)
+    if not hdr["context_flag"]:
+        return _read_array_small_blobs(data, ref, hdr, file_size, is_string=is_string)
+    return _read_array_big_blobs(data, ref, hdr, file_size, is_string=is_string)
+
+
+def _read_array_timestamp(data: bytes, ref: int, file_size: int) -> list[str | None] | None:
+    """Decode a Realm ArrayTimestamp: 2-entry [seconds_ref, nanoseconds_ref].
+    seconds is itself an ArrayIntNull; nanoseconds is a plain non-nullable
+    array (array_timestamp.cpp: create()/init_from_mem()).
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] != 2:
         return None
-    if expected_rows is not None and count != expected_rows:
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    secs_ref = _read_ref(data, ref + 8, 0, eb)
+    nanos_ref = _read_ref(data, ref + 8, 1, eb)
+
+    secs = _read_array_int_null(data, secs_ref, file_size)
+    if secs is None:
         return None
 
+    nanos: list[int | None] | None = None
+    nanos_hdr = _parse_array_header(data, nanos_ref)
+    if nanos_hdr is not None and not nanos_hdr["has_refs"]:
+        nanos = _read_scalar_leaf(data, nanos_ref, file_size)
+
+    result: list[str | None] = []
+    for i, s in enumerate(secs):
+        if s is None:
+            result.append(None)
+            continue
+        ns = nanos[i] if nanos and i < len(nanos) and nanos[i] else 0
+        result.append(_decode_timestamp(int(s + (ns / 1_000_000_000 if ns else 0))))
+    return result
+
+
+def _read_array_fixed_bytes(
+    data: bytes, ref: int, file_size: int, elem_size: int,
+) -> list[bytes | None] | None:
+    """Decode a Realm ArrayFixedBytes[Null] leaf: elements are packed in
+    blocks of 8, with 1 extra null-bitvector byte prefixing each block
+    (array_fixed_bytes.hpp: Pos::get_pos/is_null, s_block_size). Used for
+    ObjectId (elem_size=12) and UUID (elem_size=16); nullability is encoded
+    the same way regardless of whether the column itself is nullable.
+    Returns raw per-element bytes (or None); callers format them.
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    total_bytes = hdr["Element count (size)"]
+    if total_bytes <= 0:
+        return []
+    block_size = elem_size * 8 + 1
+    data_bytes = total_bytes - -(-total_bytes // block_size)  # total - ceil(total/block_size)
+    n = max(data_bytes // elem_size, 0)
+    payload = data[ref + 8 : ref + 8 + total_bytes]
+    results: list[bytes | None] = []
+    for i in range(n):
+        block_idx, offset = divmod(i, 8)
+        base = block_idx * block_size
+        if base >= len(payload):
+            results.append(None)
+            continue
+        bitvec = payload[base]
+        if bitvec & (1 << offset):
+            results.append(None)
+            continue
+        start = base + 1 + offset * elem_size
+        val = payload[start : start + elem_size]
+        results.append(val if len(val) == elem_size else None)
+    return results
+
+
+def _format_uuid(raw: bytes) -> str:
+    try:
+        return str(_uuid_mod.UUID(bytes=raw))
+    except Exception:
+        return raw.hex()
+
+
+def _decode_bid(raw_int: int, total_bits: int) -> str:
+    """Decode an IEEE 754-2008 BID (binary integer decimal) value — the
+    encoding Realm's Decimal128 uses (array_decimal128.hpp: Bid64/Bid128).
+
+    Combination-field decode per IEEE 754-2008 §3.5.2: the coefficient's
+    leading decimal digit (0-9) is folded into the 5 most-significant bits
+    of the combination field alongside 2 exponent bits, so the full
+    coefficient reconstructs as msd * 2**t_width + trailing_significand.
+
+    NOTE: implemented directly from the written IEEE 754-2008 encoding
+    rules, not cross-validated against a real Realm-produced Decimal128
+    sample (none appeared in the file this parser was diagnosed against).
+    Treat output with appropriate care and verify against known BID test
+    vectors before relying on it for casework.
+    """
+    if total_bits == 64:
+        g_width, t_width, bias = 13, 50, 398
+    elif total_bits == 128:
+        g_width, t_width, bias = 17, 110, 6176
+    else:
+        return f"<decimal128 unsupported width {total_bits}b>"
+
+    sign = (raw_int >> (total_bits - 1)) & 1
+    g = (raw_int >> t_width) & ((1 << g_width) - 1)
+    t = raw_int & ((1 << t_width) - 1)
+
+    g_top5 = g >> (g_width - 5)
+    exp_low_bits = g & ((1 << (g_width - 5)) - 1)
+
+    if (g_top5 >> 3) != 0b11:
+        msd = (g_top5 >> 2) & 0b111
+        exp_high2 = g_top5 & 0b11
+    else:
+        g2g3 = (g_top5 >> 1) & 0b11
+        if g2g3 == 0b11:
+            g4 = g_top5 & 1
+            if g4:
+                return "NaN"
+            return "-Infinity" if sign else "Infinity"
+        msd = 8 | (g_top5 & 1)
+        exp_high2 = g2g3
+
+    biased_exponent = (exp_high2 << (g_width - 5)) | exp_low_bits
+    coefficient = msd * (1 << t_width) + t
+    exponent = biased_exponent - bias
+
+    value = decimal.Decimal(coefficient).scaleb(exponent)
+    if sign:
+        value = -value
+    return str(value)
+
+
+def _read_array_decimal128(data: bytes, ref: int, file_size: int) -> list[str | None] | None:
+    """Decode a Realm ArrayDecimal128 leaf: element width 0/4/8/16 bytes
+    selects null/Bid32/Bid64/Bid128 (array_decimal128.hpp: get()). Bid64 and
+    Bid128 (the common cases) are decoded via _decode_bid; Bid32 is rare
+    enough that it is surfaced as labeled raw bytes rather than a from-memory
+    guess at its (differently-sized) combination field.
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    width = hdr["width"]
+    count = hdr["Element count (size)"]
+    if width == 0:
+        return [None] * count
+    payload_start = ref + 8
+    results: list[str | None] = []
+    for i in range(count):
+        off = payload_start + i * width
+        raw = data[off : off + width]
+        if len(raw) < width:
+            results.append(None)
+            continue
+        if width == 16:
+            results.append(_decode_bid(int.from_bytes(raw, "little"), 128))
+        elif width == 8:
+            results.append(_decode_bid(int.from_bytes(raw, "little"), 64))
+        else:
+            results.append(f"<decimal128 raw {width}B: {raw.hex()}>")
+    return results
+
+
+def _read_array_link(data: bytes, ref: int, file_size: int) -> list[int | None] | None:
+    """Decode a Realm ArrayKey (single Link column): a flat array where the
+    stored value is the target ObjKey + 1, so that 0 can represent NULL
+    (array_key.hpp: ArrayKeyBase<1>::get/set — adj=1 for cluster-leaf storage).
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    vals = _read_scalar_leaf(data, ref, file_size)
+    if vals is None:
+        return None
+    return [None if v is None or v == 0 else v - 1 for v in vals]
+
+
+def _read_array_float(data: bytes, ref: int, file_size: int) -> list[float | None] | None:
+    """Decode a Realm BasicArray<float|double>: a flat array of native
+    IEEE754 values (array_basic_tpl.hpp: get() = reinterpret_cast<T*>).
+    NULL is represented as NaN, matching all real Float/Double values
+    (null.hpp: is_null_float / array_basic.hpp: is_null()).
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"] or hdr["width"] not in (4, 8):
+        return None
+    count = hdr["Element count (size)"]
+    if count == 0:
+        return []
+    fmt = "<f" if hdr["width"] == 4 else "<d"
+    elem_size = hdr["width"]
+    payload_start = ref + 8
+    results: list[float | None] = []
+    for i in range(count):
+        off = payload_start + i * elem_size
+        chunk = data[off : off + elem_size]
+        if len(chunk) < elem_size:
+            results.append(None)
+            continue
+        val = struct.unpack(fmt, chunk)[0]
+        results.append(None if math.isnan(val) else val)
+    return results
+
+
+def _read_array_typed_link(data: bytes, ref: int, file_size: int) -> list[str | None] | None:
+    """Decode a Realm ArrayTypedLink: a flat array of (table_key+1,
+    obj_key+1) int64 pairs — 2*size elements total, table_key==0 means NULL
+    (array_typed_link.hpp: ArrayTypedLink::get/is_null). TableKey is not
+    resolved to a table name here (that requires the Group's table-key
+    array, not yet mapped from source) — shown as the raw numeric key.
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    vals = _read_scalar_leaf(data, ref, file_size)
+    if not vals or len(vals) % 2 != 0:
+        return None
+    results: list[str | None] = []
+    for i in range(0, len(vals), 2):
+        tk, ok = vals[i], vals[i + 1]
+        if not tk:
+            results.append(None)
+            continue
+        table_key = (int(tk) - 1) & 0x7FFFFFFF
+        obj_key = int(ok) - 1 if ok is not None else None
+        results.append(f"Obj(table_key={table_key}, key={obj_key})")
+    return results
+
+
+# Mixed's composite-value encoding (array_mixed.hpp): each m_composite
+# entry packs (payload_or_inline_value << 8) | (payload_idx << 5) | (data_type+1).
+_MIXED_DATA_TYPE_MASK = 0b0001_1111
+_MIXED_PAYLOAD_IDX_MASK = 0b1110_0000
+_MIXED_DATA_SHIFT = 8
+
+
+def _read_array_mixed(data: bytes, ref: int, file_size: int) -> list[Any] | None:
+    """Decode a Realm ArrayMixed leaf (array_mixed.hpp/.cpp).
+
+    Outer array slots: [0]=m_composite (one packed int64 per row — see the
+    _MIXED_* constants above), [1]=m_ints (single-int64 payloads: Int
+    overflow/Float/Double bit patterns/Link), [2]=m_int_pairs (2 int64s per
+    payload: Timestamp secs+nanos, Decimal128 low+high 64-bit words,
+    TypedLink table+obj key), [3]=m_strings (String/Binary/ObjectId/UUID
+    raw bytes, ArrayString-shaped so the trailing zero-terminator is
+    stripped the same way a real string column strips it), [4]=m_refs
+    (nested List/Dictionary/Set stored *inside* a Mixed — not decoded here,
+    shown as a placeholder).
+
+    NOTE: no Mixed-typed column or list existed in the file this parser was
+    diagnosed against, so this decoder (unlike everything else in this
+    module) has not been cross-checked against a real Realm-produced
+    sample — verify against known test data before relying on it for
+    casework, and treat the Decimal128 word order (w[0]=low, w[1]=high)
+    here as a documented best-effort assumption.
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] < 4:
+        return None
     eb = _elem_bytes(hdr)
     if eb < 1:
         return None
 
-    results: list[str | None] = []
-    valid = 0
-    mode: str | None = None  # "raw" | "scheme2" | None (not yet determined)
+    composite_ref = _read_ref(data, ref + 8, 0, eb)
+    ints_ref = _read_ref(data, ref + 8, 1, eb)
+    pairs_ref = _read_ref(data, ref + 8, 2, eb)
+    strings_ref = _read_ref(data, ref + 8, 3, eb)
 
-    for i in range(count):
-        str_off = _read_ref(data, col_offset + 8, i, eb)
-        if str_off <= 0 or str_off >= file_size:
+    composite = _read_scalar_leaf(data, composite_ref, file_size)
+    if composite is None:
+        return None
+
+    ints = _read_scalar_leaf(data, ints_ref, file_size) if 0 < ints_ref < file_size else None
+    pairs = _read_scalar_leaf(data, pairs_ref, file_size) if 0 < pairs_ref < file_size else None
+    raw_strings: list[Any] | None = None
+    if 0 < strings_ref < file_size:
+        raw_strings = _read_array_string_or_binary(
+            data, strings_ref, file_size, is_string=False, nullable=False,
+        )
+
+    def string_payload(idx: int) -> bytes | None:
+        if not raw_strings or idx >= len(raw_strings):
+            return None
+        raw = raw_strings[idx]
+        if not isinstance(raw, (bytes, bytearray)):
+            return None
+        # The shared m_strings array always stores values the same way a
+        # real string column does (trailing zero-terminator included).
+        return bytes(raw[:-1]) if raw.endswith(b"\x00") else bytes(raw)
+
+    def pair_payload(idx: int) -> tuple[int, int] | None:
+        if not pairs or idx * 2 + 1 >= len(pairs):
+            return None
+        a, b = pairs[idx * 2], pairs[idx * 2 + 1]
+        return (0 if a is None else int(a), 0 if b is None else int(b))
+
+    results: list[Any] = []
+    for val in composite:
+        if not val:
             results.append(None)
             continue
+        val = int(val)
+        data_type = (val & _MIXED_DATA_TYPE_MASK) - 1
+        payload_idx_flag = (val & _MIXED_PAYLOAD_IDX_MASK) >> 5
+        payload_val = val >> _MIXED_DATA_SHIFT
 
-        if data[str_off : str_off + 4] == b"\x41\x41\x41\x41":
-            # Target is a Realm array — must be scheme=2 to be a string
-            if mode == "raw":
-                return None  # inconsistent
-            mode = "scheme2"
-            child = _parse_array_header(data, str_off)
-            if child is None or child["width_scheme"] != 2:
+        if data_type == 0:  # Int
+            if payload_idx_flag == 0:
+                results.append(payload_val)
+            else:
+                results.append(int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None)
+        elif data_type == 1:  # Bool
+            results.append(payload_val != 0)
+        elif data_type == 9:  # Float
+            iv = int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None
+            results.append(struct.unpack("<f", (iv & 0xFFFFFFFF).to_bytes(4, "little"))[0] if iv is not None else None)
+        elif data_type == 10:  # Double
+            iv = int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None
+            results.append(struct.unpack("<d", (iv & 0xFFFFFFFFFFFFFFFF).to_bytes(8, "little"))[0] if iv is not None else None)
+        elif data_type == 2:  # String
+            raw = string_payload(payload_val)
+            results.append(raw.decode("utf-8", errors="replace") if raw is not None else None)
+        elif data_type == 4:  # Binary
+            raw = string_payload(payload_val)
+            results.append(raw if raw is not None else None)
+        elif data_type == 8:  # Timestamp
+            pair = pair_payload(payload_val)
+            results.append(
+                _decode_timestamp(int(pair[0] + (pair[1] / 1_000_000_000 if pair[1] else 0)))
+                if pair else None
+            )
+        elif data_type == 15:  # ObjectId
+            raw = string_payload(payload_val)
+            results.append(raw.hex() if raw is not None else None)
+        elif data_type == 11:  # Decimal128
+            pair = pair_payload(payload_val)
+            if pair:
+                low, high = pair[0] & 0xFFFFFFFFFFFFFFFF, pair[1] & 0xFFFFFFFFFFFFFFFF
+                results.append(_decode_bid(low | (high << 64), 128))
+            else:
                 results.append(None)
-                continue
-            size = child["Element count (size)"]
-            raw_bytes = data[str_off + 8 : str_off + 8 + size]
-            null_pos = raw_bytes.find(b"\x00")
-            raw = raw_bytes[:null_pos] if null_pos >= 0 else raw_bytes
+        elif data_type == 12:  # Link
+            results.append(int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None)
+        elif data_type == 16:  # TypedLink
+            pair = pair_payload(payload_val)
+            if pair:
+                results.append(f"Obj(table_key={pair[0]}, key={pair[1]})")
+            else:
+                results.append(None)
+        elif data_type == 17:  # UUID
+            raw = string_payload(payload_val)
+            results.append(_format_uuid(raw) if raw is not None else None)
         else:
-            # Target is a raw null-terminated string in the file body
-            if mode == "scheme2":
-                return None  # inconsistent
-            mode = "raw"
-            chunk = data[str_off : str_off + 512]
-            null_pos = chunk.find(b"\x00")
-            raw = chunk[:null_pos] if null_pos >= 0 else chunk
-
-        try:
-            s = raw.decode("utf-8", errors="strict")
-            results.append(s)
-            valid += 1
-        except UnicodeDecodeError:
-            results.append(None)
-
-    # Require at least one successfully decoded string to commit
-    if valid == 0 and count > 0:
-        return None
+            results.append(f"<mixed: nested collection or unsupported type_{data_type}>")
     return results
 
 
 def _decode_timestamp(val: int) -> str:
-    """Convert a Realm Timestamp integer to a readable UTC string.
+    """Convert a Realm Timestamp seconds value to a readable UTC string.
 
-    Realm format 24 stores the seconds part of Timestamp as an int64.
     Auto-detects unit by magnitude: seconds → milliseconds → nanoseconds.
     Falls back to the raw integer string if the value is out of any useful range.
     """
@@ -782,325 +1494,92 @@ def _decode_timestamp(val: int) -> str:
         return str(val)
 
 
-def _read_nullable_integer_column(
+def _decode_column_values(
     data: bytes,
-    col_offset: int,
+    col_ref: int,
     file_size: int,
-    expected_rows: int | None = None,
-) -> list[int | None] | None:
-    """Parse a nullable integer/date column stored as a 2-entry ref array.
-
-    Format: outer ref array with count=2:
-        ref[0] → values Data Array (scheme=0, count=expected_rows)
-        ref[1] → null bitmap (scheme=0, width=1, count=expected_rows; 1 = NULL)
-
-    Used for Realm nullable int, date, float, double, objectId, uuid, etc.
+    info: dict[str, Any],
+) -> list[Any] | None:
+    """Dispatch to the exact decoder for one column's leaf array, based on
+    its declared (type, nullable, collection) from the colkey — no
+    structural guessing. Returns None only for Dictionary<K,V> columns
+    (a List/Set/Dictionary of Mixed is also left undecoded for its
+    per-element Mixed content, since Mixed cannot itself hold a
+    Dictionary's key/value pairing without that decoder).
     """
-    hdr = _parse_array_header(data, col_offset)
-    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] != 2:
-        return None
+    if info["is_dictionary"]:
+        return None  # Dictionary<K,V>: different structure, not yet decoded
 
-    eb = _elem_bytes(hdr)
-    if eb < 1:
-        return None
+    type_code = info["type_code"]
+    nullable = info["nullable"]
 
-    values_ref = _read_ref(data, col_offset + 8, 0, eb)
-    null_ref = _read_ref(data, col_offset + 8, 1, eb)
+    # type_code 13 is Realm's on-disk LinkList marker — not a named constant
+    # in the modern ColumnType enum (it predates unified Collections) but
+    # still the real value stored in the colkey; always paired with the
+    # List attribute bit in practice. Verified against poczta.realm.
+    if info["is_list"] or info["is_set"] or type_code == 13:
+        element_type = 12 if type_code == 13 else type_code
+        return _read_collection_column(data, col_ref, file_size, element_type, nullable)
 
-    if values_ref <= 0 or values_ref >= file_size:
-        return None
-    if null_ref <= 0 or null_ref >= file_size:
-        return None
-
-    null_hdr = _parse_array_header(data, null_ref)
-    if (
-        null_hdr is None
-        or null_hdr["has_refs"]
-        or null_hdr["width"] != 1
-        or null_hdr["width_scheme"] != 0
-    ):
-        return None
-
-    vals_hdr = _parse_array_header(data, values_ref)
-    if vals_hdr is None or vals_hdr["has_refs"]:
-        return None
-
-    null_count = null_hdr["Element count (size)"]
-    vals_count = vals_hdr["Element count (size)"]
-    if null_count != vals_count:
-        return None
-    if expected_rows is not None and null_count != expected_rows:
-        return None
-
-    null_payload = data[null_ref + 8 : null_ref + 8 + null_hdr["Payload bytes (raw)"]]
-    null_bits: list[bool] = []
-    for i in range(null_count):
-        byte_i, bit_i = divmod(i, 8)
-        null_bits.append(
-            bool((null_payload[byte_i] >> bit_i) & 1)
-            if byte_i < len(null_payload)
-            else False
+    if type_code == 0:  # Int
+        if nullable:
+            return _read_array_int_null(data, col_ref, file_size)
+        return _read_scalar_leaf(data, col_ref, file_size)
+    if type_code == 1:  # Bool
+        return _read_array_bool(data, col_ref, file_size, nullable)
+    if type_code in (2, 4):  # String, Binary
+        return _read_array_string_or_binary(
+            data, col_ref, file_size, is_string=(type_code == 2), nullable=nullable,
         )
-
-    values_list = _read_scalar_leaf(data, values_ref, file_size)
-    if values_list is None:
-        return None
-
-    result: list[int | None] = []
-    for i in range(null_count):
-        if null_bits[i]:
-            result.append(None)
-        elif i < len(values_list):
-            result.append(values_list[i])
-        else:
-            result.append(None)
-    return result
-
-
-def _read_timestamp_column(
-    data: bytes,
-    col_offset: int,
-    file_size: int,
-    expected_rows: int | None = None,
-) -> list[str | None] | None:
-    """Parse a Realm Timestamp column stored as a 2-entry ref array.
-
-    Format: outer ref array count=2:
-        ref[0] → seconds array (scheme=0, w≥8, 1-indexed; position 0 = INT_MAX null sentinel)
-        ref[1] → nanoseconds array (scheme=0, any w; 0-indexed, same count = expected_rows)
-
-    Row i maps to secs_vals[i+1].  Sentinel value (max signed for given width) → NULL.
-    """
-    hdr = _parse_array_header(data, col_offset)
-    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] != 2:
-        return None
-
-    eb = _elem_bytes(hdr)
-    if eb < 1:
-        return None
-
-    secs_ref = _read_ref(data, col_offset + 8, 0, eb)
-    nanos_ref = _read_ref(data, col_offset + 8, 1, eb)
-
-    if secs_ref <= 0 or secs_ref >= file_size:
-        return None
-
-    secs_hdr = _parse_array_header(data, secs_ref)
-    if secs_hdr is None or secs_hdr["has_refs"] or secs_hdr["width"] < 8:
-        return None
-
-    secs_count = secs_hdr["Element count (size)"]
-    # 1-indexed: position 0 is the null-sentinel slot; actual rows are 1..secs_count-1
-    actual_rows = secs_count - 1
-    if actual_rows < 0:
-        return None
-    if expected_rows is not None and actual_rows != expected_rows:
-        return None
-
-    secs_vals = _read_scalar_leaf(data, secs_ref, file_size)
-    if secs_vals is None:
-        return None
-
-    # Nanoseconds — optional, ignored if width=0 (all zeros)
-    nanos_vals: list[Any] | None = None
-    if 0 < nanos_ref < file_size:
-        nanos_hdr = _parse_array_header(data, nanos_ref)
-        if nanos_hdr and not nanos_hdr["has_refs"] and nanos_hdr["width"] >= 8:
-            nanos_vals = _read_scalar_leaf(data, nanos_ref, file_size)
-
-    width = secs_hdr["width"]
-    null_sentinel = (1 << (width - 1)) - 1  # INT32_MAX for w=32, INT64_MAX for w=64
-
-    result: list[str | None] = []
-    for i in range(actual_rows):
-        idx = i + 1
-        s = secs_vals[idx] if idx < len(secs_vals) else None
-        if s is None or s == null_sentinel:
-            result.append(None)
-        else:
-            ns = 0
-            if nanos_vals and i < len(nanos_vals):
-                ns = nanos_vals[i] or 0
-            ts = s + (ns / 1_000_000_000 if ns else 0)
-            result.append(_decode_timestamp(int(ts)))
-    return result
+    if type_code == 8:  # Timestamp
+        return _read_array_timestamp(data, col_ref, file_size)
+    if type_code in (9, 10):  # Float, Double
+        return _read_array_float(data, col_ref, file_size)
+    if type_code == 11:  # Decimal128
+        return _read_array_decimal128(data, col_ref, file_size)
+    if type_code == 12:  # Link (single)
+        return _read_array_link(data, col_ref, file_size)
+    if type_code == 15:  # ObjectId
+        raw = _read_array_fixed_bytes(data, col_ref, file_size, 12)
+        return None if raw is None else [None if v is None else v.hex() for v in raw]
+    if type_code == 17:  # UUID
+        raw = _read_array_fixed_bytes(data, col_ref, file_size, 16)
+        return None if raw is None else [None if v is None else _format_uuid(v) for v in raw]
+    if type_code == 6:  # Mixed
+        return _read_array_mixed(data, col_ref, file_size)
+    if type_code == 16:  # TypedLink
+        return _read_array_typed_link(data, col_ref, file_size)
+    return None  # unknown type code
 
 
-def _extract_column_names(
-    data: bytes,
-    table_ref: int,
-    table_eb: int,
-    file_size: int,
-) -> list[str]:
-    """Read column names from the spec at child[0] of the table node.
-
-    Path: table_ref → child[0] (spec) → child[1] (names Data Array).
-    spec child[0] holds column type codes; child[1] holds fixed-width 32-byte
-    null-terminated ASCII names for user-visible columns (ObjKey is omitted).
-    Returns an empty list on any failure.
-    """
-    spec_ref = _read_ref(data, table_ref + 8, 0, table_eb)
-    if spec_ref <= 0 or spec_ref >= file_size:
-        return []
-    spec_hdr = _parse_array_header(data, spec_ref)
-    if spec_hdr is None or not spec_hdr["has_refs"] or spec_hdr["Element count (size)"] < 2:
-        return []
-    spec_eb = _elem_bytes(spec_hdr)
-    if spec_eb < 1:
-        return []
-
-    # child[1] = column names (scheme=1, width=32, fixed-width ASCII)
-    names_ref = _read_ref(data, spec_ref + 8, 1, spec_eb)
-    if names_ref <= 0 or names_ref >= file_size:
-        return []
-    names_hdr = _parse_array_header(data, names_ref)
-    if names_hdr is None or names_hdr["has_refs"]:
-        return []
-
-    entry_bytes = _elem_bytes(names_hdr)
-    count = names_hdr["Element count (size)"]
-    if entry_bytes < 1 or count == 0:
-        return []
-
-    payload_start = names_ref + 8
-    names: list[str] = []
-    for i in range(count):
-        entry_off = payload_start + i * entry_bytes
-        if entry_off + entry_bytes > len(data):
-            break
-        entry = data[entry_off : entry_off + entry_bytes]
-        null_pos = entry.find(b"\x00")
-        raw = entry[:null_pos] if null_pos >= 0 else entry
-        try:
-            name = raw.decode("ascii").strip()
-        except Exception:
-            name = f"col_{i}"
-        names.append(name if name else f"col_{i}")
-    return names
-
-
-def _extract_column_types(
-    data: bytes,
-    table_ref: int,
-    table_eb: int,
-    file_size: int,
-) -> list[int]:
-    """Read column type codes from spec→child[0].
-
-    Path: table_ref → child[0] (spec) → child[0] (type codes Data Array).
-    Returns a list of integer type codes aligned with the column names list.
-    Returns an empty list on any failure.
-    """
-    spec_ref = _read_ref(data, table_ref + 8, 0, table_eb)
-    if spec_ref <= 0 or spec_ref >= file_size:
-        return []
-    spec_hdr = _parse_array_header(data, spec_ref)
-    if spec_hdr is None or not spec_hdr["has_refs"] or spec_hdr["Element count (size)"] < 1:
-        return []
-    spec_eb = _elem_bytes(spec_hdr)
-    if spec_eb < 1:
-        return []
-
-    types_ref = _read_ref(data, spec_ref + 8, 0, spec_eb)
-    if types_ref <= 0 or types_ref >= file_size:
-        return []
-
-    codes = _read_scalar_leaf(data, types_ref, file_size)
-    if codes is None:
-        return []
-    return [int(c) for c in codes if c is not None]
-
-
-def _extract_column_key_map(
-    data: bytes,
-    table_ref: int,
-    table_eb: int,
-    file_size: int,
-    raw_type_codes: list[int],
-) -> dict[int, int] | None:
-    """Build a cluster-index → user-column-index map from spec→child[5] colkeys.
-
-    Each column key encodes its physical cluster position:
-        cluster_idx = (colkey & 0xFFFF) + 1
-    Entries whose type code is in _HIDDEN_COL_TYPES (e.g. BackLink = 14) are skipped.
-    Returns None if spec has fewer than 6 children or colkeys cannot be read.
-    """
-    spec_ref = _read_ref(data, table_ref + 8, 0, table_eb)
-    if spec_ref <= 0 or spec_ref >= file_size:
-        return None
-    spec_hdr = _parse_array_header(data, spec_ref)
-    if spec_hdr is None or not spec_hdr["has_refs"] or spec_hdr["Element count (size)"] < 6:
-        return None
-    spec_eb = _elem_bytes(spec_hdr)
-    if spec_eb < 1:
-        return None
-
-    colkeys_ref = _read_ref(data, spec_ref + 8, 5, spec_eb)
-    if colkeys_ref <= 0 or colkeys_ref >= file_size:
-        return None
-
-    colkeys = _read_scalar_leaf(data, colkeys_ref, file_size)
-    if not colkeys:
-        return None
-
-    key_map: dict[int, int] = {}
-    user_col_idx = 0
-    for i, colkey in enumerate(colkeys):
-        if colkey is None:
-            continue
-        type_code = raw_type_codes[i] if i < len(raw_type_codes) else -1
-        if type_code in _HIDDEN_COL_TYPES:
-            continue
-        cluster_idx = (int(colkey) & 0xFFFF) + 1
-        key_map[cluster_idx] = user_col_idx
-        user_col_idx += 1
-
-    return key_map if key_map else None
-
-
-def _derive_row_count(
-    data: bytes,
-    col_data_ref: int,
-    num_cols: int,
-    cd_eb: int,
-    file_size: int,
-) -> int | None:
-    """Derive the table row count from the most common element-count across leaf data arrays.
-
-    The canonical child[7] approach is unreliable in practice (it sometimes
-    stores a different bitmap). The actual row count equals the element count
-    of the column data arrays themselves.
-    """
-    from collections import Counter
-    counts: list[int] = []
-    for c_idx in range(num_cols):
-        col_ref = _read_ref(data, col_data_ref + 8, c_idx, cd_eb)
-        if col_ref <= 0 or col_ref >= file_size:
-            continue
-        hdr = _parse_array_header(data, col_ref)
-        if hdr and not hdr["has_refs"]:
-            counts.append(hdr["Element count (size)"])
-    if not counts:
-        return None
-    return Counter(counts).most_common(1)[0][0]
-
+# ---------------------------------------------------------------------------
+# Table data extraction
+# ---------------------------------------------------------------------------
 
 def _extract_table_data(
     data: bytes,
     root_offset: int,
     schema: list[str],
     file_size: int,
+    table_key_map: dict[int, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Walk the B+ tree and extract column data for each table.
+    """Walk each table's ClusterTree and decode its rows.
 
     Path: root_offset → child[1] (table refs) → table_node → child[2]
-          (column data arrays) → leaf nodes → decoded values.
+    (ClusterTree root) → (recursively, via _walk_cluster_leaves) leaf
+    Cluster(s) → column data arrays → decoded values, per column dispatched
+    by its declared (type, nullable, collection) from the colkeys array
+    (_extract_column_info / _decode_column_values) — not by shape-guessing.
+    A table whose ClusterTree spans multiple leaves (more rows than fit in
+    one Cluster) has its leaves' column values concatenated in key order.
 
-    Handles string (3-entry leaf), blob (N+1 offsets leaf), per-row direct
-    string refs, and scalar (integer/boolean) columns.
+    *table_key_map* (from _build_table_key_map), if given, is used to
+    resolve each Link/LinkList column's target table name via
+    _read_opposite_table_keys — exposed per table as "column_target_tables".
 
-    Returns a list of dicts ``{name, row_count, columns}`` where
-    ``columns`` is a dict of ``{col_index: [values]}``.
+    Returns a list of dicts {name, row_count, columns, column_names,
+    column_types, column_target_tables, obj_keys} where columns is
+    {user_col_idx: [values]}.
     """
     root_hdr = _parse_array_header(data, root_offset)
     if root_hdr is None or not root_hdr["has_refs"]:
@@ -1110,7 +1589,6 @@ def _extract_table_data(
     if root_eb < 1 or root_hdr["Element count (size)"] < 2:
         return []
 
-    # child[1] of root = table refs array
     table_refs_off = _read_ref(data, root_offset + 8, 1, root_eb)
     if table_refs_off <= 0 or table_refs_off >= file_size:
         return []
@@ -1131,110 +1609,95 @@ def _extract_table_data(
         t_hdr = _parse_array_header(data, table_ref)
         if t_hdr is None or not t_hdr["has_refs"] or t_hdr["Element count (size)"] < 3:
             continue
-
         t_eb = _elem_bytes(t_hdr)
 
-        # child[2] = column data array
-        col_data_ref = _read_ref(data, table_ref + 8, 2, t_eb)
-        if col_data_ref <= 0 or col_data_ref >= file_size:
+        cluster_root_ref = _read_ref(data, table_ref + 8, 2, t_eb)
+        if cluster_root_ref <= 0 or cluster_root_ref >= file_size:
             continue
 
-        cd_hdr = _parse_array_header(data, col_data_ref)
-        if cd_hdr is None or not cd_hdr["has_refs"]:
-            continue
-
-        cd_eb = _elem_bytes(cd_hdr)
-        num_cluster = cd_hdr["Element count (size)"]
-
-        # Cluster[0] is the ObjKey array — the most reliable source for row count.
-        # ObjKey is always a non-ref scalar array with exactly one entry per row.
-        # Falls back to the statistical heuristic if cluster[0] can't be read.
-        obj_keys: list[Any] | None = None
-        row_count: int | None = None
-        obj_key_ref = _read_ref(data, col_data_ref + 8, 0, cd_eb)
-        if 0 < obj_key_ref < file_size:
-            ok_hdr = _parse_array_header(data, obj_key_ref)
-            if ok_hdr and not ok_hdr["has_refs"]:
-                row_count = ok_hdr["Element count (size)"]
-                obj_keys = _read_scalar_leaf(data, obj_key_ref, file_size)
-        if row_count is None:
-            row_count = _derive_row_count(data, col_data_ref, num_cluster, cd_eb, file_size)
-
-        # Column names and types from spec (user-visible columns, excludes ObjKey).
         col_names = _extract_column_names(data, table_ref, t_eb, file_size)
-        raw_type_codes = _extract_column_types(data, table_ref, t_eb, file_size)
-        n_names = len(col_names)
-        # col_type_codes aligned with user column names: remove BackLink entries,
-        # then take the first n_names to match the names list.
-        col_type_codes = [tc for tc in raw_type_codes if tc not in _HIDDEN_COL_TYPES]
-        if n_names > 0:
-            col_type_codes = col_type_codes[:n_names]
+        col_infos = _extract_column_info(data, table_ref, t_eb, file_size)
+        if not col_infos:
+            continue
+        col_infos_by_idx = sorted(col_infos, key=lambda info: info["user_col_idx"])
+        col_type_names = [
+            _REALM_COL_TYPES.get(info["type_code"], f"type_{info['type_code']}")
+            for info in col_infos_by_idx
+        ]
+        col_target_tables: list[str | None] = [None] * len(col_infos_by_idx)
+        if table_key_map and any(info["type_code"] in (12, 13) for info in col_infos_by_idx):
+            opposite_keys = _read_opposite_table_keys(data, table_ref, t_eb, file_size)
+            if opposite_keys:
+                for pos, info in enumerate(col_infos_by_idx):
+                    if info["type_code"] not in (12, 13):  # Link, LinkList
+                        continue
+                    idx = info["col_index"]
+                    if idx >= len(opposite_keys):
+                        continue
+                    tk = opposite_keys[idx]
+                    if tk is None or tk == _TABLE_KEY_NULL:
+                        continue
+                    col_target_tables[pos] = table_key_map.get(int(tk))
+        key_map: dict[int, dict[str, Any]] = {info["cluster_idx"]: info for info in col_infos}
 
-        # Build a cluster-index → user-col-index map using spec→child[5] colkeys.
-        # Falls back to the "last N" heuristic when colkeys are unavailable.
-        key_map: dict[int, int] | None = None
-        if n_names > 0:
-            key_map = _extract_column_key_map(data, table_ref, t_eb, file_size, raw_type_codes)
-            if key_map is None and num_cluster >= n_names:
-                col_start = num_cluster - n_names
-                key_map = {col_start + i: i for i in range(n_names)}
+        leaves = _walk_cluster_leaves(data, cluster_root_ref, file_size)
+        if not leaves:
+            continue
 
-        columns: dict[int, list[Any]] = {}
-        for c_idx in range(num_cluster):
-            col_ref = _read_ref(data, col_data_ref + 8, c_idx, cd_eb)
-            if col_ref <= 0 or col_ref >= file_size:
+        columns: dict[int, list[Any]] = {info["user_col_idx"]: [] for info in col_infos}
+        obj_keys: list[Any] = []
+        row_count_total = 0
+
+        for leaf_ref, key_offset in leaves:
+            leaf_hdr = _parse_array_header(data, leaf_ref)
+            if leaf_hdr is None or not leaf_hdr["has_refs"]:
                 continue
+            leaf_eb = _elem_bytes(leaf_hdr)
+            num_cluster = leaf_hdr["Element count (size)"]
 
-            # Determine if this cluster entry is a user column.
-            if n_names > 0:
-                user_col_idx = key_map.get(c_idx) if key_map is not None else None
-                if user_col_idx is None:
-                    continue  # ObjKey, BackLink, or other internal column
-                type_code = col_type_codes[user_col_idx] if user_col_idx < len(col_type_codes) else -1
-            else:
-                user_col_idx = None
-                type_code = -1
-
-            # Decode the column data; timestamp columns use a dedicated decoder.
-            values: list[Any] | None
-            if type_code == 8:  # Timestamp
-                values = _read_timestamp_column(data, col_ref, file_size, row_count)
-                if values is None:
-                    values = _read_scalar_leaf(data, col_ref, file_size)
-            else:
-                values = _read_inline_string_leaf(data, col_ref)
-                if values is None:
-                    values = _read_string_leaf(data, col_ref, file_size, row_count)
-                if values is None:
-                    values = _read_blob_leaf(data, col_ref, file_size, row_count)
-                if values is None:
-                    values = _read_direct_string_column(data, col_ref, file_size, row_count)
-                if values is None:
-                    values = _read_nullable_integer_column(data, col_ref, file_size, row_count)
-                if values is None:
-                    values = _read_scalar_leaf(data, col_ref, file_size)
-
-            if n_names > 0 and user_col_idx is not None:
-                # NULL-only columns: emit all-None list so the column appears in output.
-                columns[user_col_idx] = values if values is not None else [None] * (row_count or 0)
-            elif n_names == 0:
-                # No names available: expose all sub-arrays with raw cluster indices.
-                if values is not None:
-                    columns[c_idx] = values
-
-        col_type_names = [_REALM_COL_TYPES.get(c, f"type_{c}") for c in col_type_codes]
-
-        if columns or row_count is not None:
-            tables.append(
-                {
-                    "name": schema[t_idx] if t_idx < len(schema) else f"table[{t_idx}]",
-                    "row_count": row_count,
-                    "columns": columns,
-                    "column_names": col_names,
-                    "column_types": col_type_names,
-                    "obj_keys": obj_keys,
-                }
+            leaf_row_count, leaf_local_keys = _read_cluster_key_info(
+                data, leaf_ref, leaf_eb, file_size
             )
+            if leaf_row_count is None:
+                leaf_row_count = _derive_row_count(
+                    data, leaf_ref, num_cluster, leaf_eb, file_size
+                ) or 0
+
+            for c_idx in range(1, num_cluster):
+                info = key_map.get(c_idx)
+                if info is None:
+                    continue  # BackLink or otherwise-unmapped cluster slot
+                col_ref = _read_ref(data, leaf_ref + 8, c_idx, leaf_eb)
+                values: list[Any] | None
+                if col_ref <= 0 or col_ref >= file_size:
+                    values = None
+                else:
+                    values = _decode_column_values(data, col_ref, file_size, info)
+                if values is None:
+                    values = [None] * leaf_row_count
+                elif len(values) < leaf_row_count:
+                    values = values + [None] * (leaf_row_count - len(values))
+                elif len(values) > leaf_row_count:
+                    values = values[:leaf_row_count]
+                columns[info["user_col_idx"]].extend(values)
+
+            if leaf_local_keys is not None:
+                obj_keys.extend(key_offset + k for k in leaf_local_keys)
+            else:
+                obj_keys.extend([None] * leaf_row_count)
+            row_count_total += leaf_row_count
+
+        tables.append(
+            {
+                "name": schema[t_idx] if t_idx < len(schema) else f"table[{t_idx}]",
+                "row_count": row_count_total,
+                "columns": columns,
+                "column_names": col_names,
+                "column_types": col_type_names,
+                "column_target_tables": col_target_tables,
+                "obj_keys": obj_keys,
+            }
+        )
 
     return tables
 
@@ -1333,12 +1796,18 @@ class RealmParser(AbstractParser):
 
         tables: list[dict[str, Any]] = []
         if header_info and schema:
-            tables = _extract_table_data(full_data, active_offset, schema, node.size)
+            table_key_map = _build_table_key_map(full_data, active_offset, schema, node.size)
+            tables = _extract_table_data(
+                full_data, active_offset, schema, node.size, table_key_map
+            )
 
         inactive_tables: list[dict[str, Any]] = []
         if header_info and inactive_schema:
-            inactive_tables = _extract_table_data(
+            inactive_table_key_map = _build_table_key_map(
                 full_data, inactive_offset, inactive_schema, node.size
+            )
+            inactive_tables = _extract_table_data(
+                full_data, inactive_offset, inactive_schema, node.size, inactive_table_key_map
             )
 
         # Inject schema-level diff into top_refs so the viewer can display it.

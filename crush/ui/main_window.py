@@ -1255,6 +1255,19 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Artifact parse error: {exc}")
             QMessageBox.warning(self, "Parse error", str(exc))
 
+    def _open_table_as_tab(self, title: str, viewer_data: dict) -> None:
+        """Open an already-resolved table (e.g. from the Realm Views tab) as
+        a new top-level tab — same tab machinery as _open_bytes_as_artifact,
+        just skipping the parse step since the data is already final."""
+        from crush.core.vfs import BytesVFS
+        from crush.parsers.base import ParseResult
+
+        vfs = BytesVFS(b"", name=title)
+        node = vfs.root()
+        result = ParseResult(viewer_type="table", data={title: viewer_data})
+        self._show_result(node, result, vfs)
+        self._status.showMessage(f"Opened view: {title}")
+
     def _materialize_node_for_external(self, node: VFSNode, vfs: VFS) -> Path | None:
         try:
             if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
@@ -1308,6 +1321,8 @@ class MainWindow(QMainWindow):
         base_view = make_viewer(result, node, vfs, self)
         if hasattr(base_view, "open_bytes_requested"):
             base_view.open_bytes_requested.connect(self._open_bytes_as_artifact)
+        if hasattr(base_view, "open_table_requested"):
+            base_view.open_table_requested.connect(self._open_table_as_tab)
         widget: QWidget = base_view
         if self._always_hex:
             hex_bytes = self._read_hex_bytes(vfs, node)

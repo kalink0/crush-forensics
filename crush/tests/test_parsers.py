@@ -226,90 +226,440 @@ def test_realm_schema_extraction(tmp_path: Path) -> None:
     assert result.metadata.get("Tables found") == "2"
 
 
-def test_realm_blob_leaf_decoding() -> None:
-    """_read_blob_leaf correctly extracts binary data using N+1 offsets."""
-    from crush.parsers.realm_parser import _read_blob_leaf
+def _array_hdr(flags: int, size: int) -> bytes:
+    return bytes([0x41, 0x41, 0x41, 0x41, flags]) + size.to_bytes(3, "big")
 
-    # Two blob values: b"\xDE\xAD" (2 bytes) and b"\xBE\xEF\xFF" (3 bytes).
-    # Layout (all arrays stored sequentially from offset 0):
-    #
-    #   pos   0: offsets array  — 3 entries × 2 bytes (width=16, scheme=0)
-    #                             values: 0, 2, 5  (LE)
-    #                             header: AAAA + flags=0x05 + size=3 → payload=6 → aligned=8
-    #                             total 16 bytes
-    #   pos  16: blob data array — 5 raw bytes (scheme=2)
-    #                             header: AAAA + flags=0x10 + size=5 → payload=5 → aligned=8
-    #                             total 16 bytes
-    #   pos  32: null bitmap    — 2 rows, all non-null (width=1, scheme=0)
-    #                             header: AAAA + flags=0x01 + size=2 → payload=1 → aligned=8
-    #                             total 16 bytes
-    #   pos  48: col ref array  — 3 refs × 4 bytes (width=32, scheme=0)
-    #                             header: AAAA + flags=0x46 + size=3 → payload=12 → aligned=16
-    #                             total 24 bytes
-    #   COL_OFFSET = 48
 
-    OFFS_OFF = 0
-    BLOB_OFF = 16
-    NULL_OFF = 32
-    COL_OFF = 48
+def _pad8(b: bytes) -> bytes:
+    rem = len(b) % 8
+    return b if rem == 0 else b + b"\x00" * (8 - rem)
 
-    offs_hdr = b"\x41\x41\x41\x41\x05" + (3).to_bytes(3, "big")
-    offs_payload = (0).to_bytes(2, "little") + (2).to_bytes(2, "little") + (5).to_bytes(2, "little") + b"\x00\x00"
-    offs_array = offs_hdr + offs_payload  # 16 bytes
 
-    blob_hdr = b"\x41\x41\x41\x41\x10" + (5).to_bytes(3, "big")
-    blob_payload = b"\xDE\xAD\xBE\xEF\xFF" + b"\x00\x00\x00"
-    blob_array = blob_hdr + blob_payload  # 16 bytes
+def test_walk_cluster_leaves_resolves_inner_node() -> None:
+    """_walk_cluster_leaves recurses a ClusterNodeInner's fixed layout
+    ([key_ref_or_0, tagged_depth, tagged_tree_size, child_refs...]) and
+    skips the 3 bookkeeping slots, matching cluster_tree.cpp's
+    ClusterNodeInner (s_key_ref_index=0, s_sub_tree_depth_index=1,
+    s_sub_tree_size=2, s_first_node_index=3).
+    """
+    from crush.parsers.realm_parser import _walk_cluster_leaves
 
-    null_hdr = b"\x41\x41\x41\x41\x01" + (2).to_bytes(3, "big")
-    null_payload = b"\x00" + b"\x00" * 7
-    null_array = null_hdr + null_payload  # 16 bytes
+    def leaf_bytes() -> bytes:
+        return _array_hdr(0x46, 1) + _pad8((0).to_bytes(4, "little"))
 
-    col_hdr = b"\x41\x41\x41\x41\x46" + (3).to_bytes(3, "big")
-    col_payload = (
-        OFFS_OFF.to_bytes(4, "little")
-        + BLOB_OFF.to_bytes(4, "little")
-        + NULL_OFF.to_bytes(4, "little")
-        + b"\x00\x00\x00\x00"  # align to 16
+    # A ref of 0 conventionally means "null" in Realm, so no real array ever
+    # sits at file offset 0 (the 24-byte file header always precedes it) —
+    # an 8-byte prefix here keeps every offset below realistic and nonzero.
+    PREFIX = b"\x00" * 8
+    ROOT_OFFSET = len(PREFIX)
+    leaf_a = leaf_bytes()
+    leaf_b = leaf_bytes()
+    LEAF_A_OFFSET = ROOT_OFFSET + 32
+    LEAF_B_OFFSET = ROOT_OFFSET + 48
+
+    inner_payload = _pad8(
+        (0).to_bytes(4, "little")                    # child[0]: key ref = 0 (compact form)
+        + (((1 << 1) | 1)).to_bytes(4, "little")      # child[1]: tagged sub_tree_depth = 1
+        + (((2 << 1) | 1)).to_bytes(4, "little")      # child[2]: tagged sub_tree_size = 2
+        + LEAF_A_OFFSET.to_bytes(4, "little")         # child[3]: leaf A
+        + LEAF_B_OFFSET.to_bytes(4, "little")         # child[4]: leaf B
     )
-    col_array = col_hdr + col_payload  # 24 bytes
+    inner = _array_hdr(0xC6, 5) + inner_payload  # is_inner=1, has_refs=1
 
+    raw = PREFIX + inner + leaf_a + leaf_b
+    leaves = _walk_cluster_leaves(raw, ROOT_OFFSET, len(raw))
+    assert [ref for ref, _off in leaves] == [LEAF_A_OFFSET, LEAF_B_OFFSET]
+    # compact form: child_idx << (sub_tree_depth * 8) = 0<<8=0, 1<<8=256
+    assert [off for _ref, off in leaves] == [0, 256]
+
+
+def test_read_array_int_null_reads_sentinel_from_slot_zero() -> None:
+    """_read_array_int_null: slot[0] holds the file's own null sentinel
+    (not an assumed INT_MAX-style constant); value == sentinel -> NULL
+    (array_integer.hpp: null_value() reads slot 0 directly)."""
+    from crush.parsers.realm_parser import _read_array_int_null
+
+    sentinel = 999
+    raw = _array_hdr(0x0C, 4) + b"".join(
+        v.to_bytes(8, "little", signed=True) for v in (sentinel, 10, sentinel, 30)
+    )
+    assert _read_array_int_null(raw, 0, len(raw)) == [10, None, 30]
+
+
+def test_read_array_bool_null_is_exactly_three() -> None:
+    """_read_array_bool: nullable Bool is NULL iff the stored value is
+    exactly 3, not "any value >= 2" (array_bool.hpp: null_value = 3)."""
+    from crush.parsers.realm_parser import _read_array_bool
+
+    # 4 values, 2 bits each: 0, 1, 3, 1 -> byte = 0b01_11_01_00 = 0x74
+    raw = _array_hdr(0x02, 4) + _pad8(bytes([0b01110100]))
+    assert _read_array_bool(raw, 0, len(raw), nullable=True) == [False, True, None, True]
+    assert _read_array_bool(raw, 0, len(raw), nullable=False) == [False, True, True, True]
+
+
+def test_read_array_string_short_inline() -> None:
+    """ArrayStringShort: pad byte == width -> NULL; else content length is
+    (width-1)-pad (array_string_short.hpp)."""
+    from crush.parsers.realm_parser import _read_array_string_or_binary
+
+    entry0 = b"hello\x00\x00" + bytes([2])   # length = 7-2 = 5
+    entry1 = b"\x00" * 7 + bytes([8])        # pad == width(8) -> NULL
+    raw = _array_hdr(0x0C, 2) + entry0 + entry1
+    result = _read_array_string_or_binary(raw, 0, len(raw), is_string=True, nullable=True)
+    assert result == ["hello", None]
+
+
+def test_read_array_small_blobs_cumulative_end_offsets() -> None:
+    """ArraySmallBlobs: offsets[i] is the cumulative END position (begin =
+    offsets[i-1] or 0), not a start-offset scanned for a NUL terminator;
+    String rows carry a trailing '\\0' in blob that is stripped
+    (array_blobs_small.hpp)."""
+    from crush.parsers.realm_parser import _read_array_string_or_binary
+
+    OFFS_OFF, BLOB_OFF, NULL_OFF = 0, 16, 32
+    # row0="ab" (stored "ab\0", end=3), row1="" (stored "\0", end=4), row2=NULL
+    offs_array = _array_hdr(0x05, 3) + _pad8(
+        (3).to_bytes(2, "little") + (4).to_bytes(2, "little") + (4).to_bytes(2, "little")
+    )
+    blob_array = _array_hdr(0x10, 4) + _pad8(b"ab\x00\x00")
+    null_array = _array_hdr(0x01, 3) + _pad8(bytes([0b100]))
+    COL_OFF = 48
+    col_array = _array_hdr(0x46, 3) + _pad8(
+        OFFS_OFF.to_bytes(4, "little") + BLOB_OFF.to_bytes(4, "little") + NULL_OFF.to_bytes(4, "little")
+    )
     raw = offs_array + blob_array + null_array + col_array
-
-    result = _read_blob_leaf(raw, COL_OFF, len(raw), expected_rows=2)
-    assert result is not None
-    assert len(result) == 2
-    assert result[0] == ("<blob 2B: dead>", b"\xde\xad")
-    assert result[1] == ("<blob 3B: beefff>", b"\xbe\xef\xff")
+    result = _read_array_string_or_binary(raw, COL_OFF, len(raw), is_string=True, nullable=True)
+    assert result == ["ab", "", None]
 
 
-def test_realm_string_leaf_rejects_blob_offsets() -> None:
-    """_read_string_leaf returns None when offsets count != expected_rows (blob format)."""
-    from crush.parsers.realm_parser import _read_string_leaf
+def test_read_array_big_blobs_per_row_ref() -> None:
+    """ArrayBigBlobs: each element is a ref to a standalone blob elsewhere
+    in the file, or 0 for NULL (array_blobs_big.hpp)."""
+    from crush.parsers.realm_parser import _read_array_string_or_binary
 
-    # Re-use the same blob layout from test_realm_blob_leaf_decoding.
-    OFFS_OFF = 0
-    BLOB_OFF = 16
-    NULL_OFF = 32
-    COL_OFF = 48
-
-    offs_hdr = b"\x41\x41\x41\x41\x05" + (3).to_bytes(3, "big")
-    offs_payload = (0).to_bytes(2, "little") + (2).to_bytes(2, "little") + (5).to_bytes(2, "little") + b"\x00\x00"
-    blob_hdr = b"\x41\x41\x41\x41\x10" + (5).to_bytes(3, "big")
-    blob_payload = b"\xDE\xAD\xBE\xEF\xFF" + b"\x00\x00\x00"
-    null_hdr = b"\x41\x41\x41\x41\x01" + (2).to_bytes(3, "big")
-    null_payload = b"\x00" + b"\x00" * 7
-    col_hdr = b"\x41\x41\x41\x41\x46" + (3).to_bytes(3, "big")
-    col_payload = (
-        OFFS_OFF.to_bytes(4, "little") + BLOB_OFF.to_bytes(4, "little")
-        + NULL_OFF.to_bytes(4, "little") + b"\x00\x00\x00\x00"
+    # A ref of 0 means "null" in Realm, so the target blob must not sit at
+    # file offset 0 (a small prefix keeps it, and every other offset, nonzero).
+    PREFIX = b"\x00" * 8
+    BLOB_OFF = len(PREFIX)
+    blob_array = _array_hdr(0x10, 3) + _pad8(b"XYZ")
+    OUTER_OFF = BLOB_OFF + 16
+    outer_array = _array_hdr(0x66, 2) + _pad8(  # has_refs=1, context_flag=1
+        BLOB_OFF.to_bytes(4, "little") + (0).to_bytes(4, "little")
     )
-    raw = (offs_hdr + offs_payload + blob_hdr + blob_payload
-           + null_hdr + null_payload + col_hdr + col_payload)
+    raw = PREFIX + blob_array + outer_array
+    result = _read_array_string_or_binary(raw, OUTER_OFF, len(raw), is_string=False, nullable=True)
+    assert result == [b"XYZ", None]
 
-    # With expected_rows=2, string reader must reject because offs_count(3) != 2
-    result = _read_string_leaf(raw, COL_OFF, len(raw), expected_rows=2)
-    assert result is None
+
+def test_read_array_timestamp_nested_int_null() -> None:
+    """ArrayTimestamp: [seconds_ref, nanos_ref], seconds is itself an
+    ArrayIntNull (array_timestamp.cpp)."""
+    from crush.parsers.realm_parser import _decode_timestamp, _read_array_timestamp
+
+    SECS_OFF = 0
+    sentinel = 777
+    secs_array = _array_hdr(0x0C, 3) + b"".join(
+        v.to_bytes(8, "little", signed=True) for v in (sentinel, 1_700_000_000, sentinel)
+    )
+    NANOS_OFF = 32
+    nanos_array = _array_hdr(0x0C, 2) + b"".join(v.to_bytes(8, "little", signed=True) for v in (0, 0))
+    OUTER_OFF = 56
+    outer_array = _array_hdr(0x46, 2) + _pad8(
+        SECS_OFF.to_bytes(4, "little") + NANOS_OFF.to_bytes(4, "little")
+    )
+    raw = secs_array + nanos_array + outer_array
+    result = _read_array_timestamp(raw, OUTER_OFF, len(raw))
+    assert result == [_decode_timestamp(1_700_000_000), None]
+
+
+def test_read_array_fixed_bytes_block_bitvector() -> None:
+    """ArrayFixedBytes[Null]: elements packed in blocks of 8, with 1
+    null-bitvector byte prefixing each block (array_fixed_bytes.hpp)."""
+    from crush.parsers.realm_parser import _read_array_fixed_bytes
+
+    bitvec = bytes([0b00000010])  # element index 1 is NULL
+    elem0 = b"\xAA\xBB\xCC\xDD"
+    elem1 = b"\x00\x00\x00\x00"
+    raw = _array_hdr(0x10, 9) + bitvec + elem0 + elem1  # total_bytes=9 (scheme=2, raw bytes)
+    result = _read_array_fixed_bytes(raw, 0, len(raw), elem_size=4)
+    assert result == [b"\xAA\xBB\xCC\xDD", None]
+
+
+def test_read_array_link_stores_target_plus_one() -> None:
+    """ArrayKey (single Link column): stored value = target ObjKey + 1, so
+    that 0 represents NULL (array_key.hpp: ArrayKeyBase<1>)."""
+    from crush.parsers.realm_parser import _read_array_link
+
+    raw = _array_hdr(0x0C, 3) + b"".join(v.to_bytes(8, "little", signed=True) for v in (0, 6, 1))
+    assert _read_array_link(raw, 0, len(raw)) == [None, 5, 0]
+
+
+def test_extract_table_data_multi_leaf_concatenates_rows() -> None:
+    """End-to-end: a table whose ClusterTree spans 2 leaves has its column
+    values concatenated across leaves in key order, and row_count is the
+    true sum — the scenario that was silently truncated before the
+    ClusterNodeInner traversal fix."""
+    from crush.parsers.realm_parser import _extract_table_data
+
+    # A ref of 0 means "null" in Realm, so no real array may sit at file
+    # offset 0 — an 8-byte prefix keeps every emitted offset nonzero.
+    buf = bytearray(b"\x00" * 8)
+
+    def emit(b: bytes) -> int:
+        off = len(buf)
+        buf.extend(b)
+        return off
+
+    # -- leaf 1: rows [10, 20] (compact keys) --
+    col1_ref = emit(_array_hdr(0x0C, 2) + _pad8(
+        b"".join(v.to_bytes(8, "little", signed=True) for v in (10, 20))
+    ))
+    leaf1_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (((2 << 1) | 1)).to_bytes(4, "little") + col1_ref.to_bytes(4, "little")
+    ))
+
+    # -- leaf 2: rows [30, 40, 50] (compact keys) --
+    col2_ref = emit(_array_hdr(0x0C, 3) + _pad8(
+        b"".join(v.to_bytes(8, "little", signed=True) for v in (30, 40, 50))
+    ))
+    leaf2_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (((3 << 1) | 1)).to_bytes(4, "little") + col2_ref.to_bytes(4, "little")
+    ))
+
+    # -- ClusterNodeInner: [key_ref=0, tagged_depth=1, tagged_tree_size=5, leaf1, leaf2] --
+    cluster_root_ref = emit(_array_hdr(0xC6, 5) + _pad8(
+        (0).to_bytes(4, "little")
+        + (((1 << 1) | 1)).to_bytes(4, "little")
+        + (((5 << 1) | 1)).to_bytes(4, "little")
+        + leaf1_ref.to_bytes(4, "little")
+        + leaf2_ref.to_bytes(4, "little")
+    ))
+
+    # -- spec: one column "n", Int, non-nullable --
+    names_ref = emit(_array_hdr(0x0C, 1) + _pad8(b"n\x00\x00\x00\x00\x00\x00\x00"))
+    colkey = 0  # index=0, type=Int(0), attrs=0
+    colkeys_ref = emit(_array_hdr(0x0C, 1) + _pad8(colkey.to_bytes(8, "little", signed=True)))
+    spec_ref = emit(_array_hdr(0x46, 6) + _pad8(
+        (0).to_bytes(4, "little")            # child[0] types: unused by dispatch (colkey carries type)
+        + names_ref.to_bytes(4, "little")    # child[1] names
+        + (0).to_bytes(4, "little")          # child[2] attrs: unused (colkey carries attrs)
+        + (0).to_bytes(4, "little")          # child[3] vacant
+        + (0).to_bytes(4, "little")          # child[4] enum keys: unused
+        + colkeys_ref.to_bytes(4, "little")  # child[5] colkeys
+    ))
+
+    # -- table node: [spec_ref, 0(unused), cluster_root_ref] --
+    table_ref = emit(_array_hdr(0x46, 3) + _pad8(
+        spec_ref.to_bytes(4, "little") + (0).to_bytes(4, "little") + cluster_root_ref.to_bytes(4, "little")
+    ))
+
+    # -- table refs + root --
+    table_refs_ref = emit(_array_hdr(0x46, 1) + _pad8(table_ref.to_bytes(4, "little")))
+    root_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (0).to_bytes(4, "little") + table_refs_ref.to_bytes(4, "little")
+    ))
+
+    data = bytes(buf)
+    tables = _extract_table_data(data, root_ref, ["class_Foo"], len(data))
+
+    assert len(tables) == 1
+    t = tables[0]
+    assert t["name"] == "class_Foo"
+    assert t["row_count"] == 5
+    assert t["column_names"] == ["n"]
+    assert t["column_types"] == ["int"]
+    assert t["columns"][0] == [10, 20, 30, 40, 50]
+
+
+def test_walk_bplustree_leaves_compact_form() -> None:
+    """_walk_bplustree_leaves: BPlusTreeInner has a *different* layout from
+    ClusterNodeInner — [elem0, child_1..child_N, tagged_tree_size(last)],
+    only 2 bookkeeping slots (not 3), and elem0 uses the RefOrTagged tag
+    bit (not zero/nonzero) to distinguish compact vs. general form
+    (bplustree.cpp: BPlusTreeInner::get_node_size/get_bp_node_ref)."""
+    from crush.parsers.realm_parser import _walk_bplustree_leaves
+
+    # Children must be emitted (and their real offsets known) before the
+    # inner node that references them, since the inner node's fixed size
+    # depends on its own element count, not the children's.
+    buf = bytearray(b"\x00" * 8)  # ref 0 means "null" in Realm; keep offsets nonzero
+
+    def emit(b: bytes) -> int:
+        off = len(buf)
+        buf.extend(b)
+        return off
+
+    def leaf_bytes() -> bytes:
+        return _array_hdr(0x05, 1) + _pad8((0).to_bytes(2, "little"))
+
+    leaf_a_off = emit(leaf_bytes())
+    leaf_b_off = emit(leaf_bytes())
+
+    elems_per_child = 3
+    inner_payload = _pad8(
+        (((elems_per_child << 1) | 1)).to_bytes(4, "little")  # elem[0]: tagged compact marker
+        + leaf_a_off.to_bytes(4, "little")                    # elem[1]: child A
+        + leaf_b_off.to_bytes(4, "little")                    # elem[2]: child B
+        + (((5 << 1) | 1)).to_bytes(4, "little")               # elem[3] (last): tagged tree_size
+    )
+    root_off = emit(_array_hdr(0xC6, 4) + inner_payload)
+
+    raw = bytes(buf)
+    leaves = _walk_bplustree_leaves(raw, root_off, len(raw))
+    assert [ref for ref, _off in leaves] == [leaf_a_off, leaf_b_off]
+    # compact form: child_idx * elems_per_child = 0*3=0, 1*3=3
+    assert [off for _ref, off in leaves] == [0, 3]
+
+
+def test_read_collection_column_list_of_int() -> None:
+    """_read_collection_column: each row's ref points to its own
+    BPlusTree<T> root — 0 means an empty collection, a non-inner ref means
+    the tree root is itself already a leaf (small lists)."""
+    from crush.parsers.realm_parser import _read_collection_column
+
+    buf = bytearray(b"\x00" * 8)
+
+    def emit(b: bytes) -> int:
+        off = len(buf)
+        buf.extend(b)
+        return off
+
+    # row0's list tree root is a single leaf holding [7, 8]; row1 is empty.
+    row0_leaf = emit(_array_hdr(0x0C, 2) + _pad8(
+        b"".join(v.to_bytes(8, "little", signed=True) for v in (7, 8))
+    ))
+    col_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        row0_leaf.to_bytes(4, "little") + (0).to_bytes(4, "little")
+    ))
+
+    data = bytes(buf)
+    result = _read_collection_column(data, col_ref, len(data), element_type=0, nullable=False)
+    assert result == [[7, 8], []]
+
+
+def test_read_array_typed_link_pairs() -> None:
+    """ArrayTypedLink: flat (table_key+1, obj_key+1) int64 pairs;
+    table_key==0 means NULL (array_typed_link.hpp)."""
+    from crush.parsers.realm_parser import _read_array_typed_link
+
+    raw = _array_hdr(0x0C, 4) + b"".join(
+        v.to_bytes(8, "little", signed=True) for v in (4, 11, 0, 0)
+    )
+    assert _read_array_typed_link(raw, 0, len(raw)) == ["Obj(table_key=3, key=10)", None]
+
+
+def test_read_array_mixed_basic_types() -> None:
+    """ArrayMixed: each composite entry packs
+    (payload_or_inline_value << 8) | (payload_idx << 5) | (data_type + 1);
+    Int/Bool can be stored inline, String goes through the shared
+    m_strings (ArrayString-shaped) payload array (array_mixed.cpp: get())."""
+    from crush.parsers.realm_parser import _read_array_mixed
+
+    buf = bytearray(b"\x00" * 8)
+
+    def emit(b: bytes) -> int:
+        off = len(buf)
+        buf.extend(b)
+        return off
+
+    # m_strings: 1 short-inline entry "hi" (width=8, pad=5)
+    strings_ref = emit(_array_hdr(0x0C, 1) + (b"hi" + b"\x00" * 5 + bytes([5])))
+
+    DT_INT, DT_BOOL, DT_STRING = 1, 2, 3  # data_type + 1 (Int=0, Bool=1, String=2)
+    composite_vals = [
+        (42 << 8) | (0 << 5) | DT_INT,     # inline Int
+        (1 << 8) | (0 << 5) | DT_BOOL,     # inline Bool (True)
+        (0 << 8) | (3 << 5) | DT_STRING,   # String at m_strings[0]
+        0,                                  # NULL
+    ]
+    composite_ref = emit(_array_hdr(0x0C, 4) + _pad8(
+        b"".join(v.to_bytes(8, "little", signed=True) for v in composite_vals)
+    ))
+
+    # outer ArrayMixed: [composite_ref, ints_ref=0, pairs_ref=0, strings_ref]
+    outer_ref = emit(_array_hdr(0x46, 4) + _pad8(
+        composite_ref.to_bytes(4, "little")
+        + (0).to_bytes(4, "little")
+        + (0).to_bytes(4, "little")
+        + strings_ref.to_bytes(4, "little")
+    ))
+
+    data = bytes(buf)
+    result = _read_array_mixed(data, outer_ref, len(data))
+    assert result == [42, True, "hi", None]
+
+
+def test_link_column_resolves_target_table_name() -> None:
+    """A Link column's target table is resolved via table.hpp's
+    top_position_for_key (=3, this table's own TableKey) and
+    top_position_for_opposite_table (=7, one TableKey per column) —
+    table.hpp: Table::get_key_direct / Table::get_opposite_table_key.
+    TableKeys are stable IDs, not necessarily equal to the table's
+    physical index, so class_B (schema index 1) deliberately gets the
+    larger TableKey (9) and class_A (schema index 0) the smaller one (5)."""
+    from crush.parsers.realm_parser import _build_table_key_map, _extract_table_data
+
+    buf = bytearray(b"\x00" * 8)
+
+    def emit(b: bytes) -> int:
+        off = len(buf)
+        buf.extend(b)
+        return off
+
+    # -- class_A: one Int column "x", own TableKey = 5 --
+    names_ref_a = emit(_array_hdr(0x0C, 1) + (b"x" + b"\x00" * 6 + bytes([6])))
+    colkeys_ref_a = emit(_array_hdr(0x0C, 1) + _pad8((0).to_bytes(8, "little", signed=True)))
+    spec_ref_a = emit(_array_hdr(0x46, 6) + _pad8(
+        (0).to_bytes(4, "little") + names_ref_a.to_bytes(4, "little")
+        + (0).to_bytes(4, "little") + (0).to_bytes(4, "little")
+        + (0).to_bytes(4, "little") + colkeys_ref_a.to_bytes(4, "little")
+    ))
+    col_a_data_ref = emit(_array_hdr(0x0C, 1) + _pad8((42).to_bytes(8, "little", signed=True)))
+    leaf_a_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (((1 << 1) | 1)).to_bytes(4, "little") + col_a_data_ref.to_bytes(4, "little")
+    ))
+    table_a_ref = emit(_array_hdr(0x46, 4) + _pad8(
+        spec_ref_a.to_bytes(4, "little") + (0).to_bytes(4, "little")
+        + leaf_a_ref.to_bytes(4, "little") + (((5 << 1) | 1)).to_bytes(4, "little")
+    ))
+
+    # -- class_B: one Link column "link_to_a" pointing at class_A, own TableKey = 9 --
+    names_ref_b = emit(_array_hdr(0x0D, 1) + (b"link_to_a" + b"\x00" * 6 + bytes([6])))
+    colkey_b = 12 << 16  # index=0, type=Link(12), attrs=0
+    colkeys_ref_b = emit(_array_hdr(0x0C, 1) + _pad8(colkey_b.to_bytes(8, "little", signed=True)))
+    spec_ref_b = emit(_array_hdr(0x46, 6) + _pad8(
+        (0).to_bytes(4, "little") + names_ref_b.to_bytes(4, "little")
+        + (0).to_bytes(4, "little") + (0).to_bytes(4, "little")
+        + (0).to_bytes(4, "little") + colkeys_ref_b.to_bytes(4, "little")
+    ))
+    col_b_data_ref = emit(_array_hdr(0x0C, 1) + _pad8((1).to_bytes(8, "little", signed=True)))
+    leaf_b_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (((1 << 1) | 1)).to_bytes(4, "little") + col_b_data_ref.to_bytes(4, "little")
+    ))
+    opposite_ref_b = emit(_array_hdr(0x0C, 1) + _pad8((5).to_bytes(8, "little", signed=True)))
+    table_b_ref = emit(_array_hdr(0x46, 8) + _pad8(
+        spec_ref_b.to_bytes(4, "little") + (0).to_bytes(4, "little")
+        + leaf_b_ref.to_bytes(4, "little") + (((9 << 1) | 1)).to_bytes(4, "little")
+        + (0).to_bytes(4, "little") + (0).to_bytes(4, "little")
+        + (0).to_bytes(4, "little") + opposite_ref_b.to_bytes(4, "little")
+    ))
+
+    table_refs_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        table_a_ref.to_bytes(4, "little") + table_b_ref.to_bytes(4, "little")
+    ))
+    root_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (0).to_bytes(4, "little") + table_refs_ref.to_bytes(4, "little")
+    ))
+
+    data = bytes(buf)
+    schema = ["class_A", "class_B"]
+    table_key_map = _build_table_key_map(data, root_ref, schema, len(data))
+    assert table_key_map == {5: "class_A", 9: "class_B"}
+
+    tables = _extract_table_data(data, root_ref, schema, len(data), table_key_map)
+    table_b = next(t for t in tables if t["name"] == "class_B")
+    assert table_b["column_names"] == ["link_to_a"]
+    assert table_b["column_target_tables"] == ["class_A"]
 
 
 def _u16(value: int) -> bytes:

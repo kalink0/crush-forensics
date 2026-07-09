@@ -821,6 +821,20 @@ class TableViewer(QWidget):
                     cell.setData(raw, Qt.ItemDataRole.UserRole)
                     if row_color:
                         cell.setForeground(row_color)
+                elif isinstance(val, list):
+                    # Realm List/Set/LinkList columns decode to a Python list.
+                    # Flag it visibly -- it otherwise looks like plain bracketed
+                    # text, and in SQL exports the same value is JSON text
+                    # (queryable via json_each(), or already resolved in the
+                    # auto-generated "v_<table>" view).
+                    cell = QStandardItem(str(val) if val else "[]")
+                    cell.setForeground(Qt.GlobalColor.gray if not val else QColor("#8844cc"))
+                    cell.setToolTip(
+                        f"List/Set column — {len(val)} item(s). Stored as JSON text in "
+                        "SQL exports; query with json_each(...) or use the matching "
+                        "\"v_<table>\" view for already-resolved link names."
+                    )
+                    cell.setData(val, Qt.ItemDataRole.UserRole)
                 else:
                     cell = QStandardItem(str(val))
                     if row_color:

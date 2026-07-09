@@ -80,13 +80,15 @@ Limitations
 ### Realm Database
 - Parses `.realm` files and opens them in the Realm Viewer.
 - Extracts: file header metadata, schema/class list, top-ref comparison across header slots, and table/column data.
-- SQL queries run against a temporary SQLite representation of the data; the SQL editor supports autocomplete.
+- Column decoding is spec-driven — each column's on-disk layout (Cluster/ClusterTree B+-tree, and each of Int/Bool/String/Binary/Timestamp/Float/Double/Decimal128/ObjectId/UUID/Link/LinkList/Set) is dispatched from its actual declared type, not guessed from the data's shape.
+- SQL queries run against a temporary SQLite representation of the data; the SQL editor supports autocomplete. Tables with Link/LinkList columns get a matching `v_<table>` view with those columns already resolved to the linked row's data.
 - Double-clicking a Summary row navigates directly to that table.
+- The Views tab resolves Link/LinkList columns to chosen columns of the linked table interactively, opened as a new tab (no SQL needed).
 - BLOB column cells expose raw bytes in the Blob Inspector on double-click.
 
 Limitations
-- Realm file format is undocumented; parsing is best-effort and may not cover all versions.
-- Column data decoding covers primitive types; complex or encrypted columns may show raw bytes.
+- Dictionary-typed columns are not yet decoded (shown as raw/undecoded) — they use a different two-BPlusTree key/value structure that isn't covered yet.
+- Mixed and TypedLink values are decoded on their own or as a List/Set element, but a Mixed value that itself holds a nested List/Dictionary/Set is shown as a placeholder, not expanded.
 - Parse failures fall back to Hex Viewer.
 
 ### Images
@@ -197,10 +199,10 @@ Limitations
 - Multiline event grouping for custom formats requires an explicit line-start regex.
 
 ### Realm Viewer
-- Tabbed view: **Header** (file metadata), **Schema** (class/table list), **Top Refs** (comparison across header slots), **Tables** (column data), **Hex Preview**.
+- Tabbed view: **Header** (file metadata), **Schema** (class/table list, with Link/LinkList target tables shown), **Top Refs** (comparison across header slots), **Tables** (column data), **Views** (interactive Link/LinkList resolution), **Freed Data**, **Strings**, **Hex Preview**.
 
 Limitations
-- Column header names are not always recoverable from the binary format; columns may appear as `col_0`, `col_1`, etc.
+- On a corrupt or partially overwritten file, a column's name may be unrecoverable and falls back to `col_0`, `col_1`, etc.
 
 ### Protobuf Viewer
 - Schema-less decode in a tree view (field numbers, wire types, values).
