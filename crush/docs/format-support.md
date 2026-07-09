@@ -87,8 +87,10 @@ Limitations
 - BLOB column cells expose raw bytes in the Blob Inspector on double-click.
 
 Limitations
+- Encrypted `.realm` files (Realm's built-in AES-256 database encryption) are not supported — only unencrypted files are parsed.
 - Dictionary-typed columns are not yet decoded (shown as raw/undecoded) — they use a different two-BPlusTree key/value structure that isn't covered yet.
 - Mixed and TypedLink values are decoded on their own or as a List/Set element, but a Mixed value that itself holds a nested List/Dictionary/Set is shown as a placeholder, not expanded.
+- Some column types (Decimal128, ObjectId, UUID, Mixed, Float/Double) are verified against hand-built synthetic test data matching the on-disk format spec, not a confirmed real-world sample of that type — none appeared in the files this parser has been tested against so far.
 - Parse failures fall back to Hex Viewer.
 
 ### Images
