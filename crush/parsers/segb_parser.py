@@ -15,9 +15,9 @@ from typing import Any
 
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.proto_interp import interpret_fixed64
 from crush.parsers.proto_wire import read_varint as _read_varint
 from crush.third_party.ccl_segb import ccl_segb1, ccl_segb2
-from crush.third_party.ccl_segb.ccl_segb_common import decode_cocoa_time
 
 _logger = logging.getLogger(__name__)
 
@@ -116,9 +116,11 @@ def _json_safe(val: object) -> object:
 
 
 def _scalar_to_json(val: Any) -> Any:
-    """Convert a single protobuf field value to a JSON-serializable object."""
-    if isinstance(val, float):
-        return _fmt_cocoa(val) if _looks_like_cocoa_ts(val) else val
+    """Convert a single protobuf field value to a JSON-serializable object.
+
+    Floats are kept as JSON numbers (never swapped for a formatted-date string,
+    even when they fall in a plausible Cocoa-timestamp range) so a field's type
+    stays consistent for callers doing json_extract() comparisons."""
     if isinstance(val, bytes):
         sub = _parse_protobuf(val)
         if sub:
@@ -340,15 +342,16 @@ def _parse_protobuf(data: bytes) -> dict[int, Any]:
     return result
 
 
-def _looks_like_cocoa_ts(val: float) -> bool:
-    return 0.0 < val < 2e9
-
-
-def _fmt_cocoa(val: float) -> str:
-    try:
-        return _fmt_ts(decode_cocoa_time(val))
-    except Exception:
-        return f"{val:.6g}"
+def _cocoa_hint(val: float) -> str | None:
+    """Labeled Cocoa-timestamp hint for a double field, or None if out of the
+    plausible range. Delegates the range check and conversion to proto_interp's
+    interpret_fixed64 so every schema-less protobuf decoder in this codebase
+    agrees on what counts as a plausible timestamp, instead of each keeping its
+    own hand-picked threshold."""
+    for interp in interpret_fixed64(struct.pack("<d", val)):
+        if interp.label == "Cocoa timestamp":
+            return interp.value
+    return None
 
 
 def _render_field(field_num: int, val: object, *, nested: bool = False) -> str | None:
@@ -360,16 +363,23 @@ def _render_field(field_num: int, val: object, *, nested: bool = False) -> str |
     if isinstance(val, str):
         return f'{field_num}{sep}"{val}"'
     if isinstance(val, float):
-        return f"{field_num}{sep}{_fmt_cocoa(val) if _looks_like_cocoa_ts(val) else f'{val:.6g}'}"
+        hint = _cocoa_hint(val)
+        suffix = f" [possible Cocoa timestamp: {hint}]" if hint else ""
+        return f"{field_num}{sep}{val:.6g}{suffix}"
     if isinstance(val, bytes):
         sub = _parse_protobuf(val)
+        preview = val[:16].hex() + ("…" if len(val) > 16 else "")
         if not sub:
-            return None  # undecodable blob — skip
+            return f"{field_num}{sep}<{len(val)} B: {preview}>"
         inner = ", ".join(
             r for fn, fv in sorted(sub.items())
             if (r := _render_field(fn, fv, nested=True)) is not None
         )
-        return f"{field_num}{sep}{{{inner}}}"
+        # Wire type 2 doesn't declare whether these bytes really are a nested
+        # message — they just happen to be grammatically valid protobuf.
+        # Always show the raw bytes alongside it (same convention as the
+        # standalone Protobuf Viewer), instead of presenting the guess as fact.
+        return f"{field_num}{sep}{{{inner}}} [raw: {len(val)} B: {preview}]"
     return f"{field_num}{sep}{val}"
 
 

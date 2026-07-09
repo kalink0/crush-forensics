@@ -215,7 +215,7 @@ class _AbxReader:
             return s
         if ref < len(self._string_pool):
             return self._string_pool[ref]
-        return ""
+        raise ValueError(f"Invalid ABX string pool reference: {ref}")
 
     def read_value(self, dtype: int) -> object | None:
         if dtype == TYPE_NULL:
@@ -247,8 +247,7 @@ class _AbxReader:
             return True
         if dtype == TYPE_BOOLEAN_FALSE:
             return False
-        # Best-effort fallback: attempt to read a UTF string
-        return self.read_utf()
+        raise ValueError(f"Unknown ABX value type: 0x{dtype:02x}")
 
 
 def _int_to_hex(value: int) -> str:

@@ -10,6 +10,7 @@ import pytest
 
 from crush.parsers.unified_log_parser import (
     _ANSI_RE,
+    _entry_from_mandiant_csv,
     _entry_from_mandiant_json,
     _extract_message_entries,
     _normalise_ul_level,
@@ -238,6 +239,17 @@ class TestEntryFromMandiantJson:
         entry = _entry_from_mandiant_json(obj)
         assert entry["timestamp"] is None
 
+    def test_boot_relative_timestamp_preserved_in_extra(self) -> None:
+        """The excluded pre-2000 value must not be lost — it's kept visible
+        (a genuinely tampered/reset clock would also produce a pre-2000
+        timestamp, and that's evidence, not noise to discard)."""
+        obj = self._base()
+        obj["timestamp"] = "1970-01-01T00:00:01.000000000Z"
+        obj["time"] = 1_000_000_000
+        entry = _entry_from_mandiant_json(obj)
+        assert entry["extra"]["excluded_timestamp"].startswith("1970-01-01")
+        assert entry["extra"]["boot_time_ns"] == "1000000000"
+
     def test_private_message_entry_annotated(self) -> None:
         obj = self._base()
         obj["message"] = "Unknown shared string message"
@@ -247,6 +259,22 @@ class TestEntryFromMandiantJson:
         entry = _entry_from_mandiant_json(obj)
         assert "[private]" in entry["message"]
         assert "hunter2" in entry["message"]
+
+
+class TestEntryFromMandiantCsv:
+    def test_boot_relative_timestamp_preserved_in_extra(self) -> None:
+        """Same exclusion as the JSON path (see TestEntryFromMandiantJson);
+        the CSV row has no raw nanosecond field, so only excluded_timestamp
+        is available here, but it must still not be silently dropped."""
+        row = {
+            "Timestamp": "1970-01-01 00:00:01.000000-0000",
+            "Log Type": "Default",
+            "Process": "/usr/sbin/sshd",
+            "Message": "hello",
+        }
+        entry = _entry_from_mandiant_csv(row)
+        assert entry["timestamp"] is None
+        assert entry["extra"]["excluded_timestamp"].startswith("1970-01-01")
 
 
 # ---------------------------------------------------------------------------

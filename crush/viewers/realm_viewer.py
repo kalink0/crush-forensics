@@ -407,7 +407,12 @@ class RealmViewer(QWidget):
                     col_types: list[str] = t.get("column_types") or []
                     col_targets: list[str | None] = t.get("column_target_tables") or []
                     n_rows = t.get("row_count")
-                    rows_label = f"{n_rows} rows" if n_rows is not None else "? rows"
+                    if n_rows is None:
+                        rows_label = "? rows"
+                    elif t.get("row_count_estimated"):
+                        rows_label = f"~{n_rows} rows (estimated — file corruption)"
+                    else:
+                        rows_label = f"{n_rows} rows"
                     label = f"{name}  ({rows_label}, {len(col_names)} cols)"
                     col_entries: dict[str, str] = {}
                     for i in range(len(col_names)):
@@ -521,7 +526,8 @@ class RealmViewer(QWidget):
                 "__column_types": col_types,
                 "__column_target_tables": col_targets,
             }
-            summary_rows.append([name, len(headers), n_rows])
+            notes = "row count estimated (file corruption)" if t.get("row_count_estimated") else ""
+            summary_rows.append([name, len(headers), n_rows, notes])
 
         for t in inactive_tables:
             name = t.get("name") or "?"
@@ -538,7 +544,7 @@ class RealmViewer(QWidget):
 
         viewer_data: dict[str, Any] = {
             "Summary": {
-                "columns": ["Table", "Decoded cols", "Rows"],
+                "columns": ["Table", "Decoded cols", "Rows", "Notes"],
                 "rows": summary_rows,
             },
             "__prev_ref_data": inactive_table_data or None,

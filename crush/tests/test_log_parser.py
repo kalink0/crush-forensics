@@ -125,6 +125,23 @@ class TestTryJsonLines:
         assert entries is not None
         assert entries[0]["level"] == "ERROR"
 
+    def test_ambiguous_keys_resolve_deterministically(self) -> None:
+        """A line with more than one candidate key for the same field (e.g.
+        both "ts" and "timestamp", both "level" and "severity") must always
+        resolve to the same, well-defined priority key — not depend on
+        Python's per-process string-hash randomisation, which is what a
+        plain `set` (the previous implementation) would do: the same file
+        could silently parse to a different timestamp/level across runs."""
+        lines = [
+            '{"ts": "2024-06-15T12:00:00Z", "timestamp": "2024-01-01T00:00:00Z", '
+            '"severity": "ERROR", "level": "INFO", "msg": "m"}'
+        ] * 5
+        entries = _try_json_lines(lines)
+        assert entries is not None
+        assert entries[0]["timestamp"] is not None
+        assert entries[0]["timestamp"].month == 1  # "timestamp" wins over "ts"
+        assert entries[0]["level"] == "INFO"  # "level" wins over "severity"
+
 
 class TestTryLogcat:
     _SAMPLE = (

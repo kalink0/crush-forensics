@@ -10,7 +10,7 @@ from typing import Any
 
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.parsers.proto_interp import interpret_fixed32, interpret_fixed64, interpret_varint
+from crush.parsers.proto_interp import Interpretation, interpret_fixed32, interpret_fixed64, interpret_varint
 from crush.parsers.proto_wire import read_varint
 
 
@@ -142,6 +142,15 @@ def _decode_message(
                             if nested_text:
                                 text_parts.append(nested_text)
                             nested_ok = True
+                            # A length-delimited field decodes as a "message" just
+                            # because its bytes happen to be grammatically valid
+                            # protobuf — wire type 2 doesn't declare whether the
+                            # payload really is a submessage. Always show the raw
+                            # bytes alongside it (like the scalar interpretations
+                            # below), instead of presenting the guess as fact.
+                            entry["interpretations"] = [
+                                Interpretation("raw bytes", _bytes_preview(payload)["hex_preview"])
+                            ]
                     if not nested_ok:
                         if _looks_like_utf8(payload):
                             text = payload.decode("utf-8", errors="replace")

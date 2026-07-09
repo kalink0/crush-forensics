@@ -487,13 +487,19 @@ def _entry_from_mandiant_json(obj: dict[str, Any]) -> dict[str, Any]:
     Boot-relative timestamps
     ------------------------
     Without a matching boot record the iterator outputs timestamps anchored to
-    Unix epoch + boot_offset.  Any timestamp before 2000-01-01 is treated as
-    boot-relative and stored as None so the viewer does not display garbage dates.
-    The raw boot_offset (nanoseconds) is kept in extra["boot_time_ns"].
+    Unix epoch + boot_offset, which land near 1970 and would be misleading if
+    shown as the entry's real wall-clock time — so a timestamp before
+    2000-01-01 is not put in the Timestamp column. It is not discarded,
+    though: a device with a tampered/reset clock could in principle produce a
+    genuine pre-2000 wall-clock timestamp too, and that's exactly the kind of
+    anomaly an examiner needs to see, not lose. The excluded value is always
+    kept in extra["excluded_timestamp"] (plus the raw boot_offset nanoseconds
+    in extra["boot_time_ns"] when available) so it stays visible either way.
     """
     ts_str = str(obj.get("timestamp", "") or "")
     ts = _parse_ul_timestamp(ts_str) if ts_str else None
     boot_relative = ts is not None and ts < _MIN_REAL_TS
+    excluded_ts_iso = ts.isoformat() if boot_relative and ts is not None else None
     if boot_relative:
         ts = None
 
@@ -554,6 +560,8 @@ def _entry_from_mandiant_json(obj: dict[str, Any]) -> dict[str, Any]:
     if tz_name:
         extra["timezone"] = tz_name
     if boot_relative:
+        if excluded_ts_iso is not None:
+            extra["excluded_timestamp"] = excluded_ts_iso
         time_ns = obj.get("time")
         if time_ns is not None:
             extra["boot_time_ns"] = str(int(time_ns))
@@ -614,10 +622,15 @@ def _entry_from_mandiant_csv(row: dict[str, str]) -> dict[str, Any]:
     Timestamp, Event Type, Log Type, Subsystem, Thread ID, PID, EUID,
     Library, Library UUID, Activity ID, Category, Process, Process UUID,
     Message, Raw Message, Boot UUID, System Timezone Name
+
+    See _entry_from_mandiant_json's "Boot-relative timestamps" note: the same
+    before-2000 exclusion applies here, and the excluded value is likewise
+    kept, in extra["excluded_timestamp"], rather than discarded.
     """
     ts_str = row.get("Timestamp", "")
     ts = _parse_ul_timestamp(ts_str) if ts_str else None
     boot_relative = ts is not None and ts < _MIN_REAL_TS
+    excluded_ts_iso = ts.isoformat() if boot_relative and ts is not None else None
     if boot_relative:
         ts = None
 
@@ -678,6 +691,8 @@ def _entry_from_mandiant_csv(row: dict[str, str]) -> dict[str, Any]:
     tz_name = row.get("System Timezone Name", "")
     if tz_name:
         extra["timezone"] = tz_name
+    if boot_relative and excluded_ts_iso is not None:
+        extra["excluded_timestamp"] = excluded_ts_iso
 
     return {
         "timestamp": ts,

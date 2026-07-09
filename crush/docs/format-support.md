@@ -59,8 +59,8 @@ Limitations
 
 ### SEGB (Biome)
 - Parses SEGB v1/v2 records into the Table Viewer.
-- Protobuf payloads decoded automatically: Cocoa timestamps shown as ISO datetimes, nested messages expanded inline, repeated fields collected into arrays. Full protobuf field number range (up to 2²⁹−1) is supported.
-- A backing SQLite database is created on open, enabling SQL queries via the built-in editor with autocomplete. The `Payload` column holds human-readable rendered text; `Payload JSON` holds the same data as JSON for `json_extract` queries:
+- Protobuf payloads decoded automatically: double fields in the plausible Cocoa-timestamp range get a `[possible Cocoa timestamp: ...]` hint alongside the raw number (same range check as the schema-less Protobuf Viewer — see Protobuf Viewer Limitations), nested messages expanded inline with a `[raw: N B: hex…]` hint alongside them (wire type 2 doesn't declare that the bytes really are a submessage — see Protobuf Viewer Limitations), repeated fields collected into arrays. Length-delimited fields that don't decode as UTF-8 or as a nested message are shown as a `<N B: hex…>` preview rather than being dropped. Full protobuf field number range (up to 2²⁹−1) is supported.
+- A backing SQLite database is created on open, enabling SQL queries via the built-in editor with autocomplete. The `Payload` column holds human-readable rendered text; `Payload JSON` holds the same data as JSON for `json_extract` queries — floats are always stored as JSON numbers (never swapped for a date string) so comparisons stay type-consistent:
   - Single field: `json_extract("Payload JSON", '$.2')` → value of field 2
   - Nested field: `json_extract("Payload JSON", '$.6.1')` → sub-field 1 of field 6
   - Repeated field: `json_extract("Payload JSON", '$.9[0]')` → first occurrence of field 9
@@ -91,6 +91,7 @@ Limitations
 - Dictionary-typed columns are not yet decoded (shown as raw/undecoded) — they use a different two-BPlusTree key/value structure that isn't covered yet.
 - Mixed and TypedLink values are decoded on their own or as a List/Set element, but a Mixed value that itself holds a nested List/Dictionary/Set is shown as a placeholder, not expanded.
 - Some column types (Decimal128, ObjectId, UUID, Mixed, Float/Double) are verified against hand-built synthetic test data matching the on-disk format spec, not a confirmed real-world sample of that type — none appeared in the files this parser has been tested against so far.
+- On a corrupt or partially-overwritten file, if a Cluster leaf's own row-count slot can't be read, the row count is recovered by cross-checking the (still spec-defined) element counts of that leaf's column arrays instead — a corruption-recovery vote across redundant copies, not a guess on well-formed data. Affected tables are marked "(estimated — file corruption)" in the Schema tab and get a note in the Summary tab; this never happens on an intact file.
 - Parse failures fall back to Hex Viewer.
 
 ### Images
@@ -100,6 +101,7 @@ Limitations
 Limitations
 - EXIF coverage is not complete; only a subset of tags is shown.
 - Decoding depends on Qt image codecs installed on the system.
+- IFD entries are capped at 512 per directory, and SHORT/LONG/RATIONAL tag arrays at 8 items; data beyond the cap is not read. HEIF/HEIC/AVIF: the TIFF block's start offset inside the container's `exif` payload is located by pattern/offset heuristics (pillow-heif doesn't expose it directly) — on an HEIF variant whose prefix doesn't match, EXIF silently comes back empty rather than partially wrong.
 
 ### Media (Audio/Video)
 - Routes supported media formats to the Media Viewer (playback).
@@ -127,6 +129,7 @@ Limitations
 - Timestamp parsing is heuristic for unrecognised formats; logcat logs do not include the year.
 - Year is assumed to be the current year for Syslog (RFC 3164).
 - Apple Unified Log parsing requires the platform `unifiedlog_iterator` binary (included in portable builds; run `scripts/download_unifiedlog_binaries.py` when running from source).
+- Apple Unified Log: when a `.tracev3` is parsed without a matching boot record, `unifiedlog_iterator` outputs Unix-epoch-relative timestamps (landing near 1970) instead of real wall-clock time. Any entry timestamp before 2000-01-01 is therefore left blank in the Timestamp column rather than shown as a misleading date — but the excluded value is never discarded, only moved: it's kept in the entry's `extra["excluded_timestamp"]` field, visible in the detail panel, since a genuinely tampered/reset device clock would also produce a pre-2000 timestamp and that's evidence, not noise.
 
 ### Hex Fallback
 - Any file without a matching parser opens in the Hex Viewer.
@@ -208,6 +211,7 @@ Limitations
 
 ### Protobuf Viewer
 - Schema-less decode in a tree view (field numbers, wire types, values).
+- Wire type 2 (length-delimited) doesn't declare whether a payload is a nested message, a string, or opaque bytes — a field is rendered as a nested message when its bytes happen to parse as one, but a dimmed "raw bytes" hint is always shown alongside it, the same way numeric fields show every plausible interpretation, since a short blob can coincidentally be grammatically valid protobuf without actually being a submessage.
 - Optional schema-based decode after loading a `.proto` file or descriptor set.
 
 Limitations

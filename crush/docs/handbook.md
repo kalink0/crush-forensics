@@ -384,7 +384,7 @@ After the pipeline runs, the resulting bytes are tested against all available in
 | **XML** | ✓ | Parses and pretty-prints well-formed XML (via lxml) |
 | **Android Binary XML (ABX)** | ✓ | Reconstructs XML from Android's compact binary XML format |
 | **Image** | ✓ | Renders the image inline — PNG, JPEG, GIF, BMP, WebP, HEIC, AVIF |
-| **Protobuf (schema-less)** | ~ | Wire-format decode. Numeric fields include `# label: value` hints for int64, sint64 (zigzag), bool, Unix/Cocoa/Chrome timestamps, double, and float. A `# Warning:` header appears if the parse was truncated or malformed. Shown as **~** because Protobuf's wire format accepts most byte sequences. |
+| **Protobuf (schema-less)** | ~ | Wire-format decode. Numeric fields include `# label: value` hints for int64, sint64 (zigzag), bool, Unix/Cocoa/Chrome timestamps, double, and float; a field shown as a nested message also gets a `# raw bytes: ...` hint, since wire type 2 doesn't actually declare whether the bytes are a submessage. A `# Warning:` header appears if the parse was truncated or malformed. Shown as **~** because Protobuf's wire format accepts most byte sequences. |
 | **Latin-1 text** | ~ | ISO-8859-1 — always succeeds since every byte is a valid Latin-1 character; useful as a last resort for mixed binary/text data |
 
 **Auto-selection:** when the inspector opens or the pipeline changes, the best ✓-tier interpretation is selected automatically. If the previously selected format still produces output after a pipeline change, the selection is preserved.
@@ -437,7 +437,7 @@ Decodes Android Binary XML (ABX) format used in Android system and app settings 
 
 Decodes Apple SEGB v1 and v2 files from the Biome framework. Shows timestamped records from app usage, screen time, Siri interaction, and location-adjacent signals.
 
-Protobuf payloads are decoded automatically: Cocoa timestamps are shown as ISO datetimes, nested messages are expanded inline, and repeated fields are collected into arrays. Double-clicking a Payload cell opens the raw protobuf bytes in the Blob Inspector.
+Protobuf payloads are decoded automatically: double fields in the plausible Cocoa-timestamp range get a `[possible Cocoa timestamp: ...]` hint next to the raw number (the value itself is never replaced — there is no schema to confirm the field really is a date), nested messages are expanded inline with a `[raw: N B: hex…]` hint alongside them (wire type 2 doesn't declare that the bytes really are a submessage), and repeated fields are collected into arrays. Double-clicking a Payload cell opens the raw protobuf bytes in the Blob Inspector.
 
 A backing SQLite database is created on open so you can query records using the built-in SQL editor (with autocomplete). Two payload columns are available:
 

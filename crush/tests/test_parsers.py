@@ -5,6 +5,7 @@ from __future__ import annotations
 import plistlib
 import sqlite3
 import struct
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from crush.core.vfs import DirectoryVFS
 from crush.parsers.sqlite_parser import SQLiteParser
 from crush.parsers.plist_parser import PlistParser
 from crush.parsers.abx_parser import AbxParser
+from crush.parsers.abx_decoder import decode_abx
 from crush.parsers.hex_fallback import HexFallbackParser
 from crush.parsers.image_parser import ImageParser
 from crush.parsers.realm_parser import RealmParser
@@ -226,6 +228,59 @@ def test_realm_schema_extraction(tmp_path: Path) -> None:
     assert result.metadata.get("Tables found") == "2"
 
 
+def test_extract_table_data_flags_estimated_row_count_on_corrupt_key_slot() -> None:
+    """When a leaf's key slot (child[0]) is unreadable (e.g. corruption),
+    row_count falls back to _derive_row_count and the table is flagged
+    row_count_estimated=True so the UI never shows a guessed count as if it
+    were authoritative — same failure shape as the original RealmDB bug
+    (silently-wrong row count), just surfaced instead of hidden."""
+    from crush.parsers.realm_parser import _extract_table_data
+
+    buf = bytearray(b"\x00" * 8)
+
+    def emit(b: bytes) -> int:
+        off = len(buf)
+        buf.extend(b)
+        return off
+
+    # -- leaf: key slot (child[0]) is corrupt (ref=0), column has 2 rows --
+    col1_ref = emit(_array_hdr(0x0C, 2) + _pad8(
+        b"".join(v.to_bytes(8, "little", signed=True) for v in (10, 20))
+    ))
+    cluster_root_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (0).to_bytes(4, "little") + col1_ref.to_bytes(4, "little")
+    ))
+
+    names_ref = emit(_array_hdr(0x0C, 1) + _pad8(b"n\x00\x00\x00\x00\x00\x00\x00"))
+    colkey = 0
+    colkeys_ref = emit(_array_hdr(0x0C, 1) + _pad8(colkey.to_bytes(8, "little", signed=True)))
+    spec_ref = emit(_array_hdr(0x46, 6) + _pad8(
+        (0).to_bytes(4, "little")
+        + names_ref.to_bytes(4, "little")
+        + (0).to_bytes(4, "little")
+        + (0).to_bytes(4, "little")
+        + (0).to_bytes(4, "little")
+        + colkeys_ref.to_bytes(4, "little")
+    ))
+
+    table_ref = emit(_array_hdr(0x46, 3) + _pad8(
+        spec_ref.to_bytes(4, "little") + (0).to_bytes(4, "little") + cluster_root_ref.to_bytes(4, "little")
+    ))
+    table_refs_ref = emit(_array_hdr(0x46, 1) + _pad8(table_ref.to_bytes(4, "little")))
+    root_ref = emit(_array_hdr(0x46, 2) + _pad8(
+        (0).to_bytes(4, "little") + table_refs_ref.to_bytes(4, "little")
+    ))
+
+    data = bytes(buf)
+    tables = _extract_table_data(data, root_ref, ["class_Foo"], len(data))
+
+    assert len(tables) == 1
+    t = tables[0]
+    assert t["row_count_estimated"] is True
+    assert t["row_count"] == 2  # recovered via the column-element-count vote
+    assert t["columns"][0] == [10, 20]
+
+
 def _array_hdr(flags: int, size: int) -> bytes:
     return bytes([0x41, 0x41, 0x41, 0x41, flags]) + size.to_bytes(3, "big")
 
@@ -349,6 +404,33 @@ def test_read_array_big_blobs_per_row_ref() -> None:
     raw = PREFIX + blob_array + outer_array
     result = _read_array_string_or_binary(raw, OUTER_OFF, len(raw), is_string=False, nullable=True)
     assert result == [b"XYZ", None]
+
+
+def test_decode_timestamp_negative_seconds_before_1970() -> None:
+    """A negative Timestamp (a valid pre-1970 date, not a guessed unit) must
+    still decode to a date instead of silently falling back to the raw int —
+    array_timestamp.hpp's seconds field is signed and pre-1970 dates are
+    ordinary data, not an edge case to special-case away."""
+    from crush.parsers.realm_parser import _decode_timestamp
+
+    # -100_000 seconds before epoch = 1969-12-30 20:13:20 UTC.
+    result = _decode_timestamp(-100_000)
+    assert result == "1969-12-30 20:13:20 UTC"
+
+
+def test_decode_timestamp_does_not_guess_unit_from_magnitude() -> None:
+    """A value that would look like plausible milliseconds under the old
+    magnitude-based guess must still be decoded as whole seconds, since
+    that's the only unit array_timestamp.hpp ever stores."""
+    from crush.parsers.realm_parser import _decode_timestamp
+
+    # Old code's magnitude guess would have treated this as milliseconds
+    # (dividing by 1000, landing on 1971); it's actually whole seconds.
+    result = _decode_timestamp(50_000_000_000)
+    assert result == datetime.fromtimestamp(50_000_000_000, tz=timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S UTC"
+    )
+    assert "1971" not in result
 
 
 def test_read_array_timestamp_nested_int_null() -> None:
@@ -710,6 +792,32 @@ def _make_atx_lzfs_bytes() -> bytes:
     lzfs_inner = struct.pack("<I", len(astc_block)) + compressed
     lzfs_chunk = struct.pack("<I4s", len(lzfs_inner), b"LZFS") + lzfs_inner
     return b"AAPL\r\n\x1a\n" + _make_atx_head_chunk(width=4, height=4) + lzfs_chunk
+
+
+def test_abx_decode_unknown_value_type_reports_error() -> None:
+    # START_TAG with an unassigned type nibble (0xE0) instead of a real ABX type.
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    bad_start_tag = bytes([0xE2])  # token=START_TAG(2), dtype=0xE0 (unassigned)
+    data = magic + start_doc + bad_start_tag
+
+    result = decode_abx(data)
+
+    assert any("Unknown ABX value type" in w for w in result.warnings)
+
+
+def test_abx_decode_invalid_string_pool_reference_reports_error() -> None:
+    # ATTRIBUTE with an interned-string reference pointing past the (empty) pool,
+    # rather than the reserved 0xFFFF "new string" marker.
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    start_tag = bytes([0x22]) + _utf("root")
+    bad_attr = bytes([0x2F]) + _u16(0) + _utf("value")  # ref=0, pool is empty
+    data = magic + start_doc + start_tag + bad_attr
+
+    result = decode_abx(data)
+
+    assert any("Invalid ABX string pool reference" in w for w in result.warnings)
 
 
 def test_abx_parser_parse(tmp_path: Path) -> None:
@@ -1129,6 +1237,27 @@ def test_render_protobuf_integration_nested() -> None:
     assert "type" not in result       # no raw dict repr leaking through
 
 
+def test_decode_message_nested_field_also_shows_raw_bytes_interpretation() -> None:
+    """Wire type 2 doesn't declare whether a payload is really a submessage —
+    a short blob that happens to be grammatically valid protobuf (like a hash
+    prefix or opaque token) would otherwise render as a confident nested
+    message with no hint it might just be bytes. The raw-bytes reading must
+    always be shown alongside it, like scalar fields' interpretations."""
+    from crush.parsers.protobuf_parser import _decode_message
+
+    # inner: field 1, varint 7  →  b'\x08\x07' (also happens to parse as a message)
+    inner = b"\x08\x07"
+    outer = b"\x12" + bytes([len(inner)]) + inner  # field 2, length-delimited
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    entry = decoded["entries"][0]
+    assert entry["value"]["type"] == "message"
+    labels = [i.label for i in entry["interpretations"]]
+    assert "raw bytes" in labels
+    raw_hint = next(i for i in entry["interpretations"] if i.label == "raw bytes")
+    assert raw_hint.value == inner.hex(" ")
+
+
 def test_render_protobuf_shows_interpretations() -> None:
     """Interpretation hints appear as '# label: value' lines below the field."""
     from crush.parsers.proto_interp import Interpretation
@@ -1462,14 +1591,40 @@ def test_proto_to_json_always_valid_json() -> None:
         assert isinstance(obj, dict)
 
 
-def test_render_proto_payload_skips_undecodable_blobs() -> None:
-    """Binary blobs that cannot be sub-parsed are omitted from display."""
+def test_render_proto_payload_shows_undecodable_blobs_as_hex() -> None:
+    """Binary blobs that cannot be sub-parsed still appear, as a size+hex preview."""
     from crush.parsers.segb_parser import _render_proto_payload
     binary = b"\xde\xad\xbe\xef"
     data = _proto_field(5, 2, _varint(len(binary)) + binary)
     result = _render_proto_payload(data)
-    # field 5 should be absent (undecodable blob → None → skipped)
-    assert "5" not in result
+    # field 5 must stay visible — no field silently vanishes from the rendered view.
+    assert "5" in result
+    assert "4 B" in result
+    assert "deadbeef" in result
+
+
+def test_render_proto_payload_double_field_gets_cocoa_hint_not_replaced() -> None:
+    """A double in the plausible Cocoa range is shown as a labeled hint, raw value kept."""
+    import struct
+    from crush.parsers.segb_parser import _render_proto_payload
+    # 694656000.0 = 2023-01-06 UTC as a Cocoa timestamp (2001-01-01 epoch + 8040 days).
+    data = _proto_field(4, 1, struct.pack("<d", 694_656_000.0))
+    result = _render_proto_payload(data)
+    assert f"{694_656_000.0:.6g}" in result  # raw value still present, not replaced
+    assert "possible Cocoa timestamp" in result
+    assert "2023" in result
+
+
+def test_proto_to_json_double_field_stays_a_json_number() -> None:
+    """Payload JSON must never swap a plausible-Cocoa double for a date string,
+    so json_extract() comparisons stay type-consistent regardless of value."""
+    import json
+    import struct
+    from crush.parsers.segb_parser import _proto_to_json
+    data = _proto_field(4, 1, struct.pack("<d", 694_656_000.0))
+    obj = json.loads(_proto_to_json(data))
+    assert isinstance(obj["4"], float)
+    assert obj["4"] == pytest.approx(694_656_000.0)
 
 
 def test_render_proto_payload_repeated_fields() -> None:
@@ -1479,6 +1634,21 @@ def test_render_proto_payload_repeated_fields() -> None:
     result = _render_proto_payload(data)
     assert result  # non-empty
     assert "3" in result
+
+
+def test_render_proto_payload_nested_message_also_shows_raw_bytes() -> None:
+    """A bytes field that decodes as a nested message must still show the raw
+    bytes alongside it — wire type 2 doesn't declare that the payload really
+    is a submessage, and a short blob can coincidentally parse as one (same
+    convention as the standalone Protobuf Viewer's 'raw bytes' hint)."""
+    from crush.parsers.segb_parser import _render_proto_payload
+    # field 1, varint 200 -> b'\x08\xc8\x01': invalid UTF-8 (0xC8 needs a
+    # continuation byte), but grammatically valid protobuf -> {1: 200}.
+    inner = _proto_field(1, 0, _varint(200))
+    data = _proto_field(5, 2, _varint(len(inner)) + inner)
+    result = _render_proto_payload(data)
+    assert "{1:200}" in result
+    assert f"[raw: {len(inner)} B: {inner.hex()}]" in result
 
 
 def test_create_segb_sqlite_payload_columns() -> None:

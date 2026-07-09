@@ -125,12 +125,20 @@ def _parse_epoch(s: str) -> datetime | None:
 # Format: JSON Lines
 # ---------------------------------------------------------------------------
 
-# Common field name sets used by popular logging frameworks
-_TS_KEYS   = {"timestamp", "ts", "time", "@timestamp", "date", "datetime", "t"}
-_MSG_KEYS  = {"message", "msg", "text", "body", "log", "event", "m"}
-_LVL_KEYS  = {"level", "lvl", "severity", "sev", "loglevel", "log_level", "l"}
-_PROC_KEYS = {"logger", "name", "source", "component", "service", "tag",
-              "process", "caller", "module"}
+# Common field names used by popular logging frameworks, in priority order —
+# tuples, not sets: when a line has more than one candidate key (e.g. both
+# "ts" and "timestamp"), the first match here must win deterministically.
+# A set's iteration order depends on string hashing, which is randomised per
+# process (PYTHONHASHSEED) — the same file could silently parse to a
+# different timestamp/level on two separate runs of the tool.
+_TS_KEYS   = ("timestamp", "ts", "time", "@timestamp", "date", "datetime", "t")
+_MSG_KEYS  = ("message", "msg", "text", "body", "log", "event", "m")
+_LVL_KEYS  = ("level", "lvl", "severity", "sev", "loglevel", "log_level", "l")
+_PROC_KEYS = ("logger", "name", "source", "component", "service", "tag",
+              "process", "caller", "module")
+# Membership-only union for excluding structural keys from the message
+# fallback (order doesn't matter here, so a real set is fine and faster).
+_STRUCTURAL_KEYS = frozenset(_TS_KEYS) | frozenset(_LVL_KEYS) | frozenset(_PROC_KEYS)
 
 
 def _try_json_lines(lines: list[str]) -> list[dict[str, Any]] | None:
@@ -206,7 +214,7 @@ def _try_json_lines(lines: list[str]) -> list[dict[str, Any]] | None:
             # fallback: join all non-structural string values
             msg = " ".join(
                 str(v) for k, v in obj.items()
-                if k not in _TS_KEYS | _LVL_KEYS | _PROC_KEYS
+                if k not in _STRUCTURAL_KEYS
             )
 
         entries.append({"timestamp": ts, "level": level,
