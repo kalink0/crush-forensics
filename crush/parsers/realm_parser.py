@@ -836,7 +836,7 @@ def _build_table_key_map(
 
 def _read_opposite_table_keys(
     data: bytes, table_ref: int, table_eb: int, file_size: int,
-) -> list[int] | None:
+) -> list[int | bool | None] | None:
     """Read table.hpp's m_opposite_table array (top_position_for_opposite_table
     = 7): one raw TableKey per column, in the same full index space as the
     colkeys/types/attrs arrays (including hidden BackLink columns) — used
@@ -1413,6 +1413,12 @@ def _read_array_mixed(data: bytes, ref: int, file_size: int) -> list[Any] | None
         a, b = pairs[idx * 2], pairs[idx * 2 + 1]
         return (0 if a is None else int(a), 0 if b is None else int(b))
 
+    def int_payload(idx: int) -> int | None:
+        if not ints or idx >= len(ints):
+            return None
+        v = ints[idx]
+        return int(v) if v is not None else None
+
     results: list[Any] = []
     for val in composite:
         if not val:
@@ -1427,14 +1433,14 @@ def _read_array_mixed(data: bytes, ref: int, file_size: int) -> list[Any] | None
             if payload_idx_flag == 0:
                 results.append(payload_val)
             else:
-                results.append(int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None)
+                results.append(int_payload(payload_val))
         elif data_type == 1:  # Bool
             results.append(payload_val != 0)
         elif data_type == 9:  # Float
-            iv = int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None
+            iv = int_payload(payload_val)
             results.append(struct.unpack("<f", (iv & 0xFFFFFFFF).to_bytes(4, "little"))[0] if iv is not None else None)
         elif data_type == 10:  # Double
-            iv = int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None
+            iv = int_payload(payload_val)
             results.append(struct.unpack("<d", (iv & 0xFFFFFFFFFFFFFFFF).to_bytes(8, "little"))[0] if iv is not None else None)
         elif data_type == 2:  # String
             raw = string_payload(payload_val)
@@ -1459,7 +1465,7 @@ def _read_array_mixed(data: bytes, ref: int, file_size: int) -> list[Any] | None
             else:
                 results.append(None)
         elif data_type == 12:  # Link
-            results.append(int(ints[payload_val]) if ints and payload_val < len(ints) and ints[payload_val] is not None else None)
+            results.append(int_payload(payload_val))
         elif data_type == 16:  # TypedLink
             pair = pair_payload(payload_val)
             if pair:
@@ -1664,22 +1670,22 @@ def _extract_table_data(
                 ) or 0
 
             for c_idx in range(1, num_cluster):
-                info = key_map.get(c_idx)
-                if info is None:
+                col_info = key_map.get(c_idx)
+                if col_info is None:
                     continue  # BackLink or otherwise-unmapped cluster slot
                 col_ref = _read_ref(data, leaf_ref + 8, c_idx, leaf_eb)
                 values: list[Any] | None
                 if col_ref <= 0 or col_ref >= file_size:
                     values = None
                 else:
-                    values = _decode_column_values(data, col_ref, file_size, info)
+                    values = _decode_column_values(data, col_ref, file_size, col_info)
                 if values is None:
                     values = [None] * leaf_row_count
                 elif len(values) < leaf_row_count:
                     values = values + [None] * (leaf_row_count - len(values))
                 elif len(values) > leaf_row_count:
                     values = values[:leaf_row_count]
-                columns[info["user_col_idx"]].extend(values)
+                columns[col_info["user_col_idx"]].extend(values)
 
             if leaf_local_keys is not None:
                 obj_keys.extend(key_offset + k for k in leaf_local_keys)
