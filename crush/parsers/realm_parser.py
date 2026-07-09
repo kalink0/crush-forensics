@@ -45,7 +45,7 @@ import math
 import re
 import struct
 import uuid as _uuid_mod
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from crush.core.vfs import VFS, VFSNode
@@ -1491,6 +1491,9 @@ def _read_array_mixed(data: bytes, ref: int, file_size: int) -> list[Any] | None
     return results
 
 
+_UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
 def _decode_timestamp(val: int) -> str:
     """Convert a Realm Timestamp value (whole seconds since the Unix epoch)
     to a readable UTC string.
@@ -1499,14 +1502,20 @@ def _decode_timestamp(val: int) -> str:
     nanoseconds) pair; both call sites already combine that pair into whole
     seconds before calling this, so the unit is known from the spec, not
     guessed from magnitude. Negative values (dates before 1970) are valid
-    and decoded the same way, not just positive/"plausible" ones. Falls
-    back to the raw integer string only if it's outside what datetime can
-    represent at all.
+    and decoded the same way, not just positive/"plausible" ones.
+
+    Computed via epoch + timedelta rather than datetime.fromtimestamp():
+    fromtimestamp() delegates to the platform C library (gmtime/localtime),
+    and Windows' CRT rejects negative and far-future timestamps that glibc
+    accepts fine (OSError: [Errno 22] Invalid argument) — pure Python
+    date arithmetic gives the same, platform-independent result everywhere.
+    Falls back to the raw integer string only if it's outside what
+    datetime can represent at all (year 1 - 9999).
     """
     try:
-        dt = datetime.fromtimestamp(val, tz=timezone.utc)
+        dt = _UNIX_EPOCH_UTC + timedelta(seconds=val)
         return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-    except (OSError, OverflowError, ValueError):
+    except (OverflowError, ValueError):
         return str(val)
 
 

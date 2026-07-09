@@ -5,7 +5,7 @@ from __future__ import annotations
 import plistlib
 import sqlite3
 import struct
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -426,10 +426,12 @@ def test_decode_timestamp_does_not_guess_unit_from_magnitude() -> None:
 
     # Old code's magnitude guess would have treated this as milliseconds
     # (dividing by 1000, landing on 1971); it's actually whole seconds.
+    # Expected value computed via epoch + timedelta, not fromtimestamp():
+    # fromtimestamp() delegates to the platform C library, and this value
+    # is beyond what Windows' CRT accepts (though within glibc's range).
     result = _decode_timestamp(50_000_000_000)
-    assert result == datetime.fromtimestamp(50_000_000_000, tz=timezone.utc).strftime(
-        "%Y-%m-%d %H:%M:%S UTC"
-    )
+    expected = (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=50_000_000_000))
+    assert result == expected.strftime("%Y-%m-%d %H:%M:%S UTC")
     assert "1971" not in result
 
 
