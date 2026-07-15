@@ -14,7 +14,7 @@ This page lists what Crush can parse and how each viewer behaves, plus the curre
 - Detects SQLite by magic bytes and loads tables and rows into the Table Viewer.
 - Copies companion `-wal` and `-shm` files if present.
 - The `-wal` companion is parsed directly, frame by frame, rather than only letting SQLite apply it: every frame is classified as **Active** (the current version of that page), **Superseded** (an older version of a page later overwritten in the same WAL — may still hold rows since edited or deleted), **Uncommitted** (part of a transaction that never committed, e.g. a device seized mid-write), or **WAL slack** (salt-mismatch frames left over from a previous WAL reuse cycle, i.e. stale data still physically present in the file). Pages are attributed back to their table by walking the B-tree from each table's root page in `sqlite_master`, across both the WAL frames and the main file. A **WAL Frames** tab lists every frame with its frame number, page, transaction, status, and attributed table; double-click a frame to open its raw page bytes in the Hex Viewer. Per table, a **Show WAL history** toggle re-parses the table's non-Active frames as table-leaf pages and injects their rows straight into the row grid alongside the current data, colour-coded by status and labelled with the source frame (e.g. `WAL Superseded (frame 12)`) — these WAL-sourced rows are additional to, and not subject to, the 10,000-row display cap below.
-- SQLCipher-encrypted databases are supported when the password or key is known — right-click the file → **Open as** → **SQLite DB (SQLCipher)…**; a wrong password/key re-prompts instead of failing silently. This opens the real SQLCipher engine (the `sqlcipher3` package, not a custom decryption), so page and WAL-frame decryption/checkpointing are handled natively rather than reimplemented — including data that only ever made it into a `-wal` companion, never checkpointed into the main file (a device seized mid-session, before the app itself closed its DB connection). By default, opening tries the linked library's current default cipher settings first, then each legacy `cipher_compatibility` preset (SQLCipher 4 down to 1) in turn — each attempt is a real, cryptographically-verified pass/fail via the engine's own per-page HMAC check, not a guess. As with encrypted `.realm` files, a normal double-click open never auto-prompts, since ciphertext (including what would be the plaintext magic header) can't be told apart from corrupt/other binary data.
+- SQLCipher-encrypted databases are supported when the password or key is known — right-click the file → **Open as** → **SQLite DB (Encrypted)…**; a wrong password/key re-prompts instead of failing silently. This opens the real SQLCipher engine (the `sqlcipher3` package, not a custom decryption), so page and WAL-frame decryption/checkpointing are handled natively rather than reimplemented — including data that only ever made it into a `-wal` companion, never checkpointed into the main file (a device seized mid-session, before the app itself closed its DB connection). By default, opening tries the linked library's current default cipher settings first, then each legacy `cipher_compatibility` preset (SQLCipher 4 down to 1) in turn — each attempt is a real, cryptographically-verified pass/fail via the engine's own per-page HMAC check, not a guess. As with encrypted `.realm` files, a normal double-click open never auto-prompts, since ciphertext (including what would be the plaintext magic header) can't be told apart from corrupt/other binary data.
 - The credentials dialog has a **Raw key** option for a key that isn't a passphrase — SQLCipher's own recommended approach when the key is "managed externally" (e.g. an Android Keystore-derived key), rather than typed by a user. Raw key applies independently of whether Advanced parameters are also set, since page size and HMAC algorithm still matter even without a passphrase KDF.
 - An **Advanced** section exposes explicit cipher parameters (page size, KDF iterations, KDF/HMAC digest, plaintext header size) for apps whose settings don't match any standard `cipher_compatibility` preset — notably Signal and its forks (Session, Molly), which set `kdf_iter = 1` since their key already comes from the platform keystore at full entropy, making the passphrase-stretching KDF pointless overhead. When Advanced is used, those exact parameters are applied in a single attempt instead of the auto-try.
 
@@ -122,11 +122,12 @@ Limitations
 - Playback depends on system multimedia codecs.
 
 ### PDF
-- Extracts text using `pypdf` and shows it in the Text Viewer.
+- Renders pages as images (via `pypdfium2`) in a **Pages** tab, with prev/next navigation and zoom, alongside a **Text** tab with the text extracted via `pypdf`.
+- Password-protected PDFs: right-click → **Open as** → **PDF (Encrypted)…**; a wrong password re-prompts instead of failing silently. A normal double-click never auto-prompts, since an encrypted PDF's content can't be told apart from a corrupt one from the header alone.
 
 Limitations
-- Without `pypdf` installed, PDFs open in Hex Viewer with a note.
-- Some PDFs have no extractable text (scanned or protected files).
+- Without `pypdf`/`pypdfium2` installed, PDFs open in Hex Viewer with a note.
+- Some PDFs have no extractable text (scanned or protected files) — the Pages tab still renders normally in that case.
 
 ### Log Files (Explicit Only)
 - Open via context menu: **Open in Multi-Log Studio**.
@@ -240,5 +241,4 @@ Limitations
 ## Known Gaps (Planned)
 
 - Extended EXIF/metadata viewer
-- PDF page rendering (not just text extraction)
 - Type/extension filters in the filesystem panel

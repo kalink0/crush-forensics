@@ -72,6 +72,8 @@ The left panel shows the loaded archive or folder as a tree.
     - **Text** — force text view
     - **Protobuf** — schema-less Protobuf decode (optionally load a `.proto` schema)
     - **Realm DB (Encrypted)…** — decrypt and open a Realm database given its 64-byte encryption key (as a hex string). This is the only way to open an encrypted `.realm` file — a normal double-click never prompts for a key, since a header that fails to decode is equally consistent with "encrypted" and "corrupt/non-standard" and can't be told apart from content alone
+    - **SQLite DB (Encrypted)…** — open a SQLCipher-encrypted SQLite database given its password or raw key, with optional advanced cipher parameters. Same no-auto-prompt rule as Realm above
+    - **PDF (Encrypted)…** — open a password-protected PDF; a wrong password re-prompts instead of failing silently. Same no-auto-prompt rule as Realm above
   - **Open in Multi-Log Studio** — structured log viewer with level/time/text filtering and multi-source support
   - **Add to Multi-Log Studio** — adds the file as an additional source to the currently open studio tab
   - **Open External (Default)** — hand off to the OS default application
@@ -279,7 +281,7 @@ Parses XML into a collapsible tree. Android `<map>`-style preference files are f
 
 ### PDF Viewer
 
-Extracts and displays the text content of PDF files in the Text Viewer. Scanned or protected PDFs with no extractable text show a notice.
+Two tabs: **Pages** renders each page as an image, with prev/next navigation and a zoom slider, so layout, images, and form fields are visible — not just extractable text. **Text** shows the text extracted from the PDF, same as before. Password-protected PDFs open via right-click → **Open as** → **PDF (Encrypted)…**.
 
 ### LevelDB Viewer
 

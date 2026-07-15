@@ -20,6 +20,7 @@ ViewerType = Literal[
     "protobuf",
     "realm",
     "leveldb",
+    "pdf",
 ]
 
 

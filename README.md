@@ -38,7 +38,7 @@ Supported viewers (more planned):
 - Media Viewer (audio/video)
 - Multi-Log Studio (multi-source log analysis with format auto-detection; Apple Unified Log / `.tracev3` / `.logarchive`, syslog, and more)
 - Protobuf Viewer (schema-less; optional schema decoding)
-- PDF text extraction (displays extracted text)
+- PDF Viewer (page-by-page rendering with zoom, plus extracted text; password-protected PDFs supported)
 - Realm Database Viewer (header, schema/class extraction, top-ref comparison, table/column data decoding)
 
 ## Documentation

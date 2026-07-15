@@ -229,7 +229,7 @@ class SQLiteParser(AbstractParser):
                         _logger.debug("Could not load filesystem companion %s: %s", fs_companion.name, exc)
 
         if password is not None:
-            # Explicit "Open as -> SQLite DB (SQLCipher)…" path only -- the
+            # Explicit "Open as -> SQLite DB (Encrypted)…" path only -- the
             # normal open flow never passes a password, since an encrypted
             # file's content (including what would be the plaintext magic
             # header) is ciphertext, indistinguishable from corrupt/other

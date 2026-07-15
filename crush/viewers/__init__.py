@@ -36,5 +36,11 @@ def _register_builtin_viewers() -> None:
     except ImportError:
         pass
 
+    try:
+        from crush.viewers.pdf_viewer import PDFViewer
+        ViewerRegistry.register("pdf", lambda r, n, v, p: PDFViewer(r.data, p, **r.viewer_hints))
+    except ImportError:
+        pass
+
 
 _register_builtin_viewers()

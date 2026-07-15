@@ -80,7 +80,7 @@ def test_sqlcipher_can_parse_returns_false_without_a_key(tmp_path: Path) -> None
     would be the SQLite magic header on a plaintext file -- is ciphertext,
     indistinguishable from corrupt/other binary data. can_parse() must stay
     False so a normal double-click open never auto-prompts for a password;
-    only the explicit "Open as -> SQLite DB (SQLCipher)…" action tries."""
+    only the explicit "Open as -> SQLite DB (Encrypted)…" action tries."""
     db_path = tmp_path / "encrypted.db"
     _make_sqlcipher(db_path, "hunter2")
 

@@ -108,6 +108,12 @@ your support makes this project possible.</p>
     <td><a href="https://pypdf.readthedocs.io/">pypdf</a></td>
   </tr>
   <tr class="alt">
+    <td><b>pypdfium2</b></td>
+    <td>PDF page rendering (PDF viewer)</td>
+    <td class="lic">Apache 2.0 / BSD 3-Clause</td>
+    <td><a href="https://pypdfium2.readthedocs.io/">pypdfium2</a></td>
+  </tr>
+  <tr>
     <td><b>grpcio-tools</b></td>
     <td>Protobuf / .proto schema compilation (optional, used by Protobuf viewer)</td>
     <td class="lic">Apache 2.0</td>

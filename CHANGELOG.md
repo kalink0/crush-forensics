@@ -7,6 +7,7 @@ All notable changes to Crush will be documented in this file.
 ### New Features
 
 - **Properties panel shows the original iTunes backup file ID** — the raw `fileID`-named path (e.g. `ab/ab54f7c9...e1`) is now shown alongside the resolved `domain/relativePath`, for files only. Addresses [#41](https://github.com/kalink0/crush-forensics/issues/41).
+- **PDF viewer renders pages, not just text** — double-clicking a PDF now shows a "Pages" tab with page-by-page rendering (via `pypdfium2`) and navigation/zoom, alongside the existing extracted-text "Text" tab. Password-protected PDFs are supported via **Open as → PDF (Encrypted)…**.
 
 ### Bug Fixes
 

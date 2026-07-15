@@ -1045,9 +1045,19 @@ class MainWindow(QMainWindow):
             result = self._enrich_with_format_info(parser, node, vfs, result)
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
-            self._status.showMessage(
-                f"{node.path}  [{parser.DISPLAY_NAME}]"
-            )
+            possibly_encrypted = result.metadata.get("Possibly Encrypted")
+            if possibly_encrypted:
+                # A normal double-click never auto-prompts for a password (see
+                # pdf_parser.py / realm_parser.py), but that shouldn't mean the
+                # hint is invisible unless the user happens to be looking at
+                # the Properties panel -- surface it in the status bar too.
+                self._status.showMessage(
+                    f"{node.path}  [{parser.DISPLAY_NAME} — {possibly_encrypted}]"
+                )
+            else:
+                self._status.showMessage(
+                    f"{node.path}  [{parser.DISPLAY_NAME}]"
+                )
         except Exception as exc:
             self._status.showMessage(f"Parse error: {exc}")
             QMessageBox.warning(self, "Parse error", str(exc))
@@ -1148,6 +1158,10 @@ class MainWindow(QMainWindow):
             self._hash_node_if_integrity(node, vfs)
             self._open_encrypted_sqlite(node, vfs)
             return
+        if mode == "pdf_encrypted":
+            self._hash_node_if_integrity(node, vfs)
+            self._open_encrypted_pdf(node, vfs)
+            return
         self._open_node(node, vfs)
 
     def _open_encrypted_sqlite(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
@@ -1208,6 +1222,37 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._status.showMessage(f"Realm decrypt error: {exc}")
             QMessageBox.warning(self, "Realm decrypt error", str(exc))
+            return
+
+        result = self._enrich_with_format_info(parser, node, vfs, result)
+        self._show_result(node, result, vfs)
+        self._props_panel.update_properties(node, result.metadata, vfs)
+        self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
+
+    def _open_encrypted_pdf(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
+        from crush.core.passwords import WrongPasswordError
+        from crush.parsers.pdf_parser import PDFParser
+
+        title = "Incorrect Password" if was_wrong else "PDF Password"
+        prompt = (
+            "Incorrect password. Please try again:"
+            if was_wrong
+            else "Enter the PDF's password:"
+        )
+        password, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
+        if not ok or not password:
+            self._status.showMessage("Load cancelled: password required")
+            return
+
+        parser = PDFParser()
+        try:
+            result = parser.parse(node, vfs, password=password)
+        except WrongPasswordError:
+            self._open_encrypted_pdf(node, vfs, was_wrong=True)
+            return
+        except Exception as exc:
+            self._status.showMessage(f"PDF decrypt error: {exc}")
+            QMessageBox.warning(self, "PDF decrypt error", str(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
@@ -1409,6 +1454,27 @@ class MainWindow(QMainWindow):
             metadata["Size"] = _format_size(node.size)
         self._props_panel.update_properties(node, metadata, vfs)
 
+    def _wrap_with_encryption_banner(self, view: QWidget, hint: str) -> QWidget:
+        """Prepend a prominent banner above *view* -- used when a parser's
+        metadata carries "Possibly Encrypted" (see pdf_parser.py /
+        realm_parser.py). The Properties panel already lists this metadata
+        too, but that's easy to miss; this puts it directly in the tab
+        content, impossible to miss, without popping up an interrupting
+        dialog on every double-click of an encrypted file."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        banner = QLabel(f"\U0001F512 This file appears to be encrypted. {hint}")
+        banner.setWordWrap(True)
+        banner.setStyleSheet(
+            "color: white; background-color: #c87000; font-weight: bold;"
+            " padding: 6px 10px;"
+        )
+        layout.addWidget(banner)
+        layout.addWidget(view)
+        return container
+
     def _show_result(self, node: VFSNode, result: ParseResult, vfs: VFS) -> None:
         from crush.ui.viewer_factory import make_viewer
         base_view = make_viewer(result, node, vfs, self)
@@ -1416,6 +1482,9 @@ class MainWindow(QMainWindow):
             base_view.open_bytes_requested.connect(self._open_bytes_as_artifact)
         if hasattr(base_view, "open_table_requested"):
             base_view.open_table_requested.connect(self._open_table_as_tab)
+        possibly_encrypted = result.metadata.get("Possibly Encrypted")
+        if possibly_encrypted:
+            base_view = self._wrap_with_encryption_banner(base_view, possibly_encrypted)
         widget: QWidget = base_view
         if self._always_hex:
             hex_bytes = self._read_hex_bytes(vfs, node)

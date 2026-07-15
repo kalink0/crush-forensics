@@ -2164,7 +2164,8 @@ class RealmParser(AbstractParser):
             if schema:
                 meta["Tables found"] = str(len(schema))
         else:
-            meta["Header"] = "Not detected (possibly encrypted or non-standard)"
+            meta["Header"] = "Not detected (corrupt or non-standard)"
+            meta["Possibly Encrypted"] = "Try Open as → Realm DB (Encrypted)…"
 
         text_parts: list[str] = []
         for t in tables:
