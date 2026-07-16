@@ -122,12 +122,18 @@ Limitations
 - Playback depends on system multimedia codecs.
 
 ### PDF
-- Renders pages as images (via `pypdfium2`) in a **Pages** tab, with prev/next navigation and zoom, alongside a **Text** tab with the text extracted via `pypdf`.
+- Renders pages as images (via `pypdfium2`) in a **Pages** tab, with prev/next navigation and zoom (also Ctrl+scroll wheel), alongside a **Text** tab with the text extracted via `pypdf`.
 - Password-protected PDFs: right-click → **Open as** → **PDF (Encrypted)…**; a wrong password re-prompts instead of failing silently. A normal double-click never auto-prompts, since an encrypted PDF's content can't be told apart from a corrupt one from the header alone.
+- Properties panel: PDF version, `/Info` fields, and separately XMP metadata (a mismatch between the two is itself a forensic signal). JavaScript presence (`/Names/JavaScript`, `/OpenAction`), signature form fields (`/AcroForm` `/FT /Sig`), and attachment count are always shown, even when none are found, so it's clear these were actually checked.
+- Embedded files get an **Attachments** tab — open one as a new tab (routed through the normal parser pipeline) or export to disk.
+- **Revision history**: PDFs saved multiple times without a full rewrite (incremental updates, chained via each trailer's `/Prev` offset) get a **History** tab exposing every revision, including content, JavaScript, or attachments only present in an earlier revision and since removed from the current one. Sub-tabs: **Browse** (one revision at a time, full Pages/Text/Attachments; revisions with JavaScript/signatures/attachments are flagged with ⚠), **Text Diff** (line-level diff between any two revisions), and **Visual Diff** (pixel-level page comparison — catches a redaction box drawn *over* text, which a text diff can't see since the underlying content stream is untouched).
 
 Limitations
 - Without `pypdf`/`pypdfium2` installed, PDFs open in Hex Viewer with a note.
 - Some PDFs have no extractable text (scanned or protected files) — the Pages tab still renders normally in that case.
+- JavaScript detection only checks the two standard document-level locations, not every annotation/form-field's own `/AA` actions. Signature-field detection only checks top-level `/AcroForm` fields, not fields nested inside a `/Kids` hierarchy.
+- Revision detection was validated against classic cross-reference tables; PDF 1.5+ cross-reference *streams* use the same `/Prev` mechanism through `pypdf`'s public API and aren't expected to need special handling, but weren't separately tested against a real-world sample.
+- Visual Diff doesn't diff pages whose size differs between the two selected revisions (shows the newer one only, to avoid a misleading resize).
 
 ### Log Files (Explicit Only)
 - Open via context menu: **Open in Multi-Log Studio**.

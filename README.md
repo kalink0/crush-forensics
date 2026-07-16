@@ -36,10 +36,10 @@ Supported viewers (more planned):
 - LevelDB Viewer (Chrome LevelDB / Android app databases)
 - Image Viewer
 - Media Viewer (audio/video)
-- Multi-Log Studio (multi-source log analysis with format auto-detection; Apple Unified Log / `.tracev3` / `.logarchive`, syslog, and more)
+- Multi-Log Studio (multi-source log analysis, format auto-detection)
 - Protobuf Viewer (schema-less; optional schema decoding)
-- PDF Viewer (page-by-page rendering with zoom, plus extracted text; password-protected PDFs supported)
-- Realm Database Viewer (header, schema/class extraction, top-ref comparison, table/column data decoding)
+- PDF Viewer (page rendering, text extraction, revision history)
+- Realm Database Viewer (schema and table decoding)
 
 ## Documentation
 
