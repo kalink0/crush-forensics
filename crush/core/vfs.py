@@ -1074,6 +1074,8 @@ def _find_node_by_path(node: VFSNode, path: str) -> "VFSNode | None":
 def open_vfs(path: str | Path, *, password: str = "") -> VFS:
     """Factory — open the right VFS type based on the source path."""
     p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"File no longer exists: {p}")
     if p.is_dir():
         if _is_itunes_backup_dir(p):
             return ITunesBackupVFS(p, password=password)

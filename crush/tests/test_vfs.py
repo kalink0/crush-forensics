@@ -65,6 +65,12 @@ def test_open_vfs_directory(tmp_path: Path) -> None:
     assert isinstance(vfs, DirectoryVFS)
 
 
+def test_open_vfs_missing_path_raises_file_not_found(tmp_path: Path) -> None:
+    missing = tmp_path / "does_not_exist.db"
+    with pytest.raises(FileNotFoundError, match="no longer exists"):
+        open_vfs(missing)
+
+
 def test_open_vfs_zip(tmp_path: Path) -> None:
     zip_path = tmp_path / "test.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:

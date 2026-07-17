@@ -8,13 +8,16 @@ import gzip
 import json as _json
 import zlib
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -32,6 +35,11 @@ from crush.core.formatters import (
     bytes_to_hexview,
     try_plist_text,
     try_xml_text,
+)
+from crush.parsers.protobuf_schema import (
+    SchemaLoadError,
+    decode_message_with_schema,
+    load_descriptor_set,
 )
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
@@ -203,6 +211,10 @@ def _is_image(data: bytes) -> bool:
     )
 
 
+def _is_protobuf_entry(name: str) -> bool:
+    return name == "Protobuf (schema-less)" or name.startswith("Protobuf (schema: ")
+
+
 def _render_protobuf(entries: list, indent: int = 0) -> str:
     lines: list[str] = []
     pad = "  " * indent
@@ -323,6 +335,8 @@ class _BlobPanel(QWidget):
         self._cached_results: dict[str, str] = {}
         self._cached_image_data: bytes | None = None
         self._hex_mode = False
+        self._schema_pool = None
+        self._schema_message: str | None = None
         self._build_panel()
         self._recompute()
 
@@ -385,6 +399,28 @@ class _BlobPanel(QWidget):
         content_col.setContentsMargins(4, 0, 0, 0)
         content_col.setSpacing(4)
 
+        self._schema_toolbar = QWidget()
+        schema_row = QHBoxLayout(self._schema_toolbar)
+        schema_row.setContentsMargins(0, 0, 0, 0)
+        schema_row.setSpacing(4)
+        self._schema_load_btn = QPushButton("Load .proto schema…")
+        self._schema_load_btn.setToolTip("Load a .proto/.pb/.desc/.fds schema for Protobuf decoding")
+        self._schema_load_btn.clicked.connect(self._on_load_schema)
+        schema_row.addWidget(self._schema_load_btn)
+        self._schema_combo = QComboBox()
+        self._schema_combo.setPlaceholderText("No schema loaded")
+        self._schema_combo.setEnabled(False)
+        self._schema_combo.currentTextChanged.connect(self._on_schema_message_changed)
+        schema_row.addWidget(self._schema_combo, stretch=1)
+        self._schema_clear_btn = QPushButton("✕")
+        self._schema_clear_btn.setFixedWidth(22)
+        self._schema_clear_btn.setToolTip("Clear loaded schema")
+        self._schema_clear_btn.setEnabled(False)
+        self._schema_clear_btn.clicked.connect(self._on_clear_schema)
+        schema_row.addWidget(self._schema_clear_btn)
+        self._schema_toolbar.setVisible(False)
+        content_col.addWidget(self._schema_toolbar)
+
         self._stack = QStackedWidget()
 
         self._viewer = _BlobViewerEdit(self)
@@ -420,6 +456,57 @@ class _BlobPanel(QWidget):
 
         outer.addWidget(splitter, stretch=1)
 
+    def _on_load_schema(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Protobuf schema",
+            "",
+            "Protobuf schema (*.proto *.pb *.desc *.fds);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            loaded = load_descriptor_set(Path(path))
+        except SchemaLoadError as exc:
+            self._viewer.setPlainText(f"[schema load failed: {exc}]")
+            return
+        self._schema_pool = loaded["pool"]
+        self._schema_combo.blockSignals(True)
+        self._schema_combo.clear()
+        self._schema_combo.addItems(loaded["message_names"])
+        self._schema_combo.setCurrentIndex(0)
+        self._schema_combo.blockSignals(False)
+        self._schema_combo.setEnabled(True)
+        self._schema_clear_btn.setEnabled(True)
+        self._schema_message = self._schema_combo.currentText() or None
+        self._recompute()
+        if self._schema_message:
+            self._select_format(f"Protobuf (schema: {self._schema_message})")
+
+    def _on_clear_schema(self) -> None:
+        self._schema_pool = None
+        self._schema_message = None
+        self._schema_combo.blockSignals(True)
+        self._schema_combo.clear()
+        self._schema_combo.blockSignals(False)
+        self._schema_combo.setEnabled(False)
+        self._schema_clear_btn.setEnabled(False)
+        self._recompute()
+        self._select_format("Protobuf (schema-less)")
+
+    def _on_schema_message_changed(self, name: str) -> None:
+        self._schema_message = name or None
+        self._recompute()
+        if self._schema_message:
+            self._select_format(f"Protobuf (schema: {self._schema_message})")
+
+    def _select_format(self, name: str) -> None:
+        for i in range(self._format_list.count()):
+            item = self._format_list.item(i)
+            if item and item.data(Qt.ItemDataRole.UserRole) == name:
+                self._format_list.setCurrentItem(item)
+                return
+
     def _push_step(self) -> None:
         number = len(self._steps) + 1
         step = _StepRow(number, self)
@@ -453,6 +540,7 @@ class _BlobPanel(QWidget):
                 self._stack.setCurrentIndex(0)
                 self._hex_mode = False
                 self._copy_btn.setEnabled(False)
+                self._schema_toolbar.setVisible(False)
                 return
             step.set_hint(f"→ {len(result):,} B")
             current = result
@@ -489,6 +577,21 @@ class _BlobPanel(QWidget):
                     confident.append(key)
             else:
                 failed.append(key)
+
+        if self._schema_pool is not None and self._schema_message:
+            label = f"Protobuf (schema: {self._schema_message})"
+            try:
+                from google.protobuf import json_format
+                msg = decode_message_with_schema(self._schema_pool, self._schema_message, data)
+                self._cached_results[label] = json_format.MessageToJson(
+                    msg,
+                    preserving_proto_field_name=True,
+                    always_print_fields_with_no_presence=True,
+                )
+                confident.append(label)
+            except Exception as exc:
+                self._cached_results[label] = f"[schema decode failed: {exc}]"
+                failed.append(label)
 
         self._cached_results["Hex view"] = bytes_to_hexview(data, max_bytes=200_000)
 
@@ -569,6 +672,8 @@ class _BlobPanel(QWidget):
     def _on_format_selected(self, name: str) -> None:
         if not name:
             return
+
+        self._schema_toolbar.setVisible(_is_protobuf_entry(name))
 
         if name == "Image":
             if self._cached_image_data is not None:

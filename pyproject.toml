@@ -91,3 +91,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["sqlcipher3", "sqlcipher3.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["google.protobuf", "google.protobuf.*", "grpc_tools", "grpc_tools.*"]
+ignore_missing_imports = true

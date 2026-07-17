@@ -240,6 +240,7 @@ Limitations
 - Schema-less decode in a tree view (field numbers, wire types, values).
 - Wire type 2 (length-delimited) doesn't declare whether a payload is a nested message, a string, or opaque bytes — a field is rendered as a nested message when its bytes happen to parse as one, but a dimmed "raw bytes" hint is always shown alongside it, the same way numeric fields show every plausible interpretation, since a short blob can coincidentally be grammatically valid protobuf without actually being a submessage.
 - Optional schema-based decode after loading a `.proto` file or descriptor set.
+- The **Blob Inspector** (any BLOB field, not just files opened as Protobuf) offers the same schema-based decode: select **Protobuf (schema-less)** first, then a schema-loading toolbar appears above the content view.
 
 Limitations
 - Schema-based decoding depends on the protobuf Python library and valid schemas.

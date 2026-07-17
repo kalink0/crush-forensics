@@ -9,10 +9,13 @@ All notable changes to Crush will be documented in this file.
 - **Properties panel shows the original iTunes backup file ID** — the raw `fileID`-named path (e.g. `ab/ab54f7c9...e1`) is now shown alongside the resolved `domain/relativePath`, for files only. Addresses [#41](https://github.com/kalink0/crush-forensics/issues/41).
 - **PDF viewer renders pages, not just text** — double-clicking a PDF now shows a "Pages" tab with page-by-page rendering (via `pypdfium2`) and navigation/zoom (also via Ctrl+scroll wheel, same as the Image viewer), alongside the existing extracted-text "Text" tab. Password-protected PDFs are supported via **Open as → PDF (Encrypted)…**.
 - **PDF: extended metadata, attachments, and revision history** — Properties panel gains PDF version, XMP metadata, and always-shown JavaScript/Signatures/Attachments/Revisions fields; embedded files get their own **Attachments** tab. PDFs saved multiple times get a **History** tab exposing every revision (including content/JS/attachments since removed from the current one), with **Text Diff** and **Visual Diff** (pixel-level page comparison) between any two revisions.
+- **Blob Inspector: schema-based Protobuf decode** — selecting **Protobuf (schema-less)** now reveals a **Load .proto schema…** toolbar; loading a `.proto`/`.pb`/`.desc`/`.fds` file and picking a message type decodes the blob with real field names, using the same schema loader the standalone Protobuf Viewer already had.
 
 ### Bug Fixes
 
 - **Rainbow/'Merica theme: dialog buttons stopped responding to clicks** — the animated-theme timer's stylesheet refresh already skipped open menus to avoid a re-polish flicker, but not open modal dialogs (`QMessageBox` etc.), where the same re-polish could eat a button click. Now skipped for both.
+- **Protobuf Viewer's schema-based decode was broken on current protobuf versions** — `MessageFactory.GetPrototype` was removed in protobuf 6.x and `including_default_value_fields` was renamed to `always_print_fields_with_no_presence`; both call sites now use the current API.
+- **Opening a moved/deleted file from Open Recent showed "Unsupported source type"** — `open_vfs()` fell through to that generic error whenever a path didn't exist instead of checking existence first; now raises a clear "File no longer exists" error.
 
 ## v0.14.0 - 2026-07-12
 

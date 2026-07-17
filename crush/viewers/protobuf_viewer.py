@@ -18,6 +18,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.parsers.protobuf_schema import (
+    SchemaLoadError,
+    decode_message_with_schema,
+    load_descriptor_set,
+)
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.tree_viewer import TreeViewer
 
@@ -124,8 +129,10 @@ class ProtobufViewer(QWidget):
         )
         if not path:
             return
-        loaded = self._load_descriptor_set(Path(path))
-        if loaded is None:
+        try:
+            loaded = load_descriptor_set(Path(path))
+        except SchemaLoadError as exc:
+            self._status.setText(str(exc))
             return
         self._descriptor_set = loaded
         self._pool = loaded["pool"]
@@ -139,39 +146,6 @@ class ProtobufViewer(QWidget):
         self._schema_label.setStyleSheet("color: palette(text);")
         self._status.setText(f"Loaded {len(self._message_names)} message types")
 
-    def _load_descriptor_set(self, path: Path) -> dict[str, Any] | None:
-        try:
-            from google.protobuf import descriptor_pb2, descriptor_pool
-        except Exception:
-            self._status.setText("Install protobuf to use schema decoding")
-            return None
-
-        if path.suffix.lower() == ".proto":
-            compiled = _compile_proto(path)
-            if compiled is None:
-                self._status.setText(".proto requires grpcio-tools or a .pb descriptor set")
-                return None
-            data = compiled
-        else:
-            data = path.read_bytes()
-
-        fds = descriptor_pb2.FileDescriptorSet()
-        try:
-            fds.ParseFromString(data)
-        except Exception:
-            self._status.setText("Invalid descriptor set")
-            return None
-
-        pool = descriptor_pool.DescriptorPool()
-        for fd in fds.file:
-            pool.Add(fd)
-
-        message_names = _collect_message_names(fds)
-        if not message_names:
-            self._status.setText("No message types found")
-            return None
-        return {"pool": pool, "message_names": message_names}
-
     def _decode_with_schema(self) -> None:
         if self._pool is None:
             self._status.setText("Load a schema first")
@@ -181,15 +155,12 @@ class ProtobufViewer(QWidget):
             self._status.setText("Select a message type")
             return
         try:
-            from google.protobuf import json_format, message_factory
-            descriptor = self._pool.FindMessageTypeByName(name)
-            cls = message_factory.MessageFactory(self._pool).GetPrototype(descriptor)
-            msg = cls()
-            msg.ParseFromString(self._raw)
+            from google.protobuf import json_format
+            msg = decode_message_with_schema(self._pool, name, self._raw)
             decoded = json_format.MessageToDict(
                 msg,
                 preserving_proto_field_name=True,
-                including_default_value_fields=True,
+                always_print_fields_with_no_presence=True,
             )
         except Exception as exc:
             self._status.setText(f"Decode failed: {exc}")
@@ -284,52 +255,3 @@ class ProtobufTreeWidget(QWidget):
             # Recurse into nested messages
             if isinstance(val, dict) and val.get("type") == "message":
                 self._populate(val.get("entries", []), field_item)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _compile_proto(path: Path) -> bytes | None:
-    """Compile a .proto file to a FileDescriptorSet using grpcio-tools if available."""
-    try:
-        from grpc_tools import protoc
-    except Exception:
-        return None
-
-    import tempfile
-
-    out_path = Path(tempfile.mkdtemp()) / "descriptor.fds"
-    args = [
-        "protoc",
-        f"-I{path.parent}",
-        f"--descriptor_set_out={out_path}",
-        "--include_imports",
-        str(path),
-    ]
-    try:
-        rc = protoc.main(args)
-        if rc != 0 or not out_path.exists():
-            return None
-        return out_path.read_bytes()
-    except Exception:
-        return None
-
-
-def _collect_message_names(fds: Any) -> list[str]:
-    names: list[str] = []
-
-    def walk(prefix: str, msg: Any) -> None:
-        full = f"{prefix}.{msg.name}" if prefix else msg.name
-        names.append(full)
-        for nested in msg.nested_type:
-            walk(full, nested)
-
-    for fd in fds.file:
-        pkg = fd.package or ""
-        for msg in fd.message_type:
-            walk(pkg, msg)
-
-    names.sort()
-    return names

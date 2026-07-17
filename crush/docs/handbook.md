@@ -401,9 +401,12 @@ After the pipeline runs, the resulting bytes are tested against all available in
 | **Android Binary XML (ABX)** | ✓ | Reconstructs XML from Android's compact binary XML format |
 | **Image** | ✓ | Renders the image inline — PNG, JPEG, GIF, BMP, WebP, HEIC, AVIF |
 | **Protobuf (schema-less)** | ~ | Wire-format decode. Numeric fields include `# label: value` hints for int64, sint64 (zigzag), bool, Unix/Cocoa/Chrome timestamps, double, and float; a field shown as a nested message also gets a `# raw bytes: ...` hint, since wire type 2 doesn't actually declare whether the bytes are a submessage. A `# Warning:` header appears if the parse was truncated or malformed. Shown as **~** because Protobuf's wire format accepts most byte sequences. |
+| **Protobuf (schema: `<type>`)** | ✓ | Only appears once a schema is loaded (see below) — decodes using real field names and types instead of raw wire format. |
 | **Latin-1 text** | ~ | ISO-8859-1 — always succeeds since every byte is a valid Latin-1 character; useful as a last resort for mixed binary/text data |
 
 **Auto-selection:** when the inspector opens or the pipeline changes, the best ✓-tier interpretation is selected automatically. If the previously selected format still produces output after a pipeline change, the selection is preserved.
+
+**Schema-based Protobuf decode:** select **Protobuf (schema-less)** first to confirm the bytes decode plausibly as Protobuf — a *Load .proto schema…* toolbar then appears above the content view. Load a `.proto` source file or a compiled FileDescriptorSet (`.pb`, `.fds`, `.desc`) and pick a message type from the dropdown; the view switches to a **Protobuf (schema: `<type>`)** entry decoded with real field names via that schema. The toolbar only shows while a Protobuf entry is selected — it stays out of the way for every other format. Uses the same schema loader as the standalone [Protobuf Viewer](#protobuf-viewer); the loaded schema is kept only for this inspector window's lifetime.
 
 ---
 
