@@ -1,6 +1,25 @@
 """Entry point."""
+import argparse
 import os
 import sys
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="crush", description="Crush — Digital Forensic Analysis Workbench")
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        metavar="PATH",
+        help="File(s) or folder(s) to open on startup (shorthand for --open PATH)",
+    )
+    parser.add_argument(
+        "--open",
+        action="append",
+        dest="open_paths",
+        metavar="PATH",
+        help="File or folder to open on startup (repeatable)",
+    )
+    return parser.parse_args(argv)
 
 
 def _icon_path() -> str:
@@ -15,6 +34,9 @@ def _icon_path() -> str:
 
 
 def main() -> None:
+    args = _parse_args(sys.argv[1:])
+    open_paths = list(args.paths) + list(args.open_paths or [])
+
     import crush
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
@@ -34,6 +56,8 @@ def main() -> None:
         app.setWindowIcon(QIcon(icon_path))
     window = MainWindow()
     window.show()
+    for path in open_paths:
+        window._load_source(path, open_after_load=True, append_to_tree=True)
     sys.exit(app.exec())
 
 if __name__ == "__main__":

@@ -143,6 +143,17 @@ python -m crush
 
 If you see missing Qt or media errors, install the system dependencies below.
 
+### CLI arguments
+
+```bash
+crush /path/to/evidence.zip /path/to/case_folder
+crush --open /path/to/evidence.zip --open /path/to/case_folder
+```
+
+Positional paths and `--open PATH` (repeatable) are equivalent — each opens
+that file or folder on startup, added to the same window's tree. Every
+invocation opens a new window.
+
 ## System Dependencies
 
 Some Python packages require OS-level libraries on fresh machines.

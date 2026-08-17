@@ -13,6 +13,7 @@ All notable changes to Crush will be documented in this file.
 - Added "Send to Peach" (right-click an AUL source, or any log file): hands the source off to the bundled peach-forensics log viewer.
 - Added Tools -> Peach -> Open Peach: launches peach standalone, no source pre-filled.
 - Added multi-file and recursive-folder handoff to Peach (multi-select in the tree, or right-click a folder) — sends multiple sources to one peach session at once.
+- Added CLI arguments: `crush PATH [PATH ...]` / `crush --open PATH` open one or more files/folders on startup, for other tools to invoke Crush with evidence pre-loaded.
 
 ### Bug Fixes
 
