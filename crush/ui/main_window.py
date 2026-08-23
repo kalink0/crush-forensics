@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QPalette,
     QColor,
     QAction,
+    QFontMetrics,
     QGuiApplication,
 )
 from shiboken6 import isValid
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
     QTabBar,
     QTabWidget,
     QTextEdit,
+    QToolButton,
     QWidget,
     QHBoxLayout,
     QVBoxLayout,
@@ -453,6 +455,24 @@ class MainWindow(QMainWindow):
         self._viewer_tabs.setTabsClosable(True)
         self._viewer_tabs.setDocumentMode(True)
         self._viewer_tabs.tabCloseRequested.connect(self._close_tab)
+        # Long VFS paths (issue #47) would otherwise grow the tab past the
+        # viewport and push the native close button off-screen; cap the
+        # width and elide in the middle so the close button always fits.
+        self._viewer_tabs.tabBar().setElideMode(Qt.TextElideMode.ElideMiddle)
+        self._viewer_tabs.setStyleSheet("QTabBar::tab { max-width: 240px; }")
+        self._viewer_tabs.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._viewer_tabs.tabBar().customContextMenuRequested.connect(self._show_tab_context_menu)
+
+        self._tab_list_menu = QMenu(self)
+        self._tab_list_menu.aboutToShow.connect(self._populate_tab_list_menu)
+        self._tab_list_menu.triggered.connect(self._on_tab_list_menu_triggered)
+        self._tab_list_button = QToolButton()
+        self._tab_list_button.setText("▾")
+        self._tab_list_button.setToolTip("Show open tabs")
+        self._tab_list_button.setAutoRaise(True)
+        self._tab_list_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._tab_list_button.setMenu(self._tab_list_menu)
+        self._viewer_tabs.setCornerWidget(self._tab_list_button, Qt.Corner.TopRightCorner)
 
         self._empty_view = QWidget()
         empty_layout = QVBoxLayout(self._empty_view)
@@ -1777,6 +1797,49 @@ class MainWindow(QMainWindow):
     def _close_all_tabs(self) -> None:
         self._viewer_tabs.clear()
         self._props_panel.clear()
+
+    def _close_other_tabs(self, keep_index: int) -> None:
+        keep_widget = self._viewer_tabs.widget(keep_index)
+        for i in range(self._viewer_tabs.count() - 1, -1, -1):
+            if self._viewer_tabs.widget(i) is not keep_widget:
+                self._viewer_tabs.removeTab(i)
+        self._props_panel.clear()
+
+    def _show_tab_context_menu(self, pos: object) -> None:
+        tab_bar = self._viewer_tabs.tabBar()
+        index = tab_bar.tabAt(pos)  # type: ignore[arg-type]
+        if index < 0:
+            return
+        menu = QMenu(self)
+        close_action = menu.addAction("Close")
+        close_others_action = menu.addAction("Close Others")
+        close_others_action.setEnabled(self._viewer_tabs.count() > 1)
+        close_all_action = menu.addAction("Close All")
+        action = menu.exec(tab_bar.mapToGlobal(pos))  # type: ignore[arg-type]
+        if action == close_action:
+            self._close_tab(index)
+        elif action == close_others_action:
+            self._close_other_tabs(index)
+        elif action == close_all_action:
+            self._close_all_tabs()
+
+    def _populate_tab_list_menu(self) -> None:
+        self._tab_list_menu.clear()
+        metrics = QFontMetrics(self._tab_list_menu.font())
+        current = self._viewer_tabs.currentIndex()
+        for i in range(self._viewer_tabs.count()):
+            full_label = self._viewer_tabs.tabText(i)
+            elided = metrics.elidedText(full_label, Qt.TextElideMode.ElideMiddle, 500)
+            menu_action = self._tab_list_menu.addAction(elided)
+            menu_action.setToolTip(self._viewer_tabs.tabToolTip(i))
+            menu_action.setData(i)
+            menu_action.setCheckable(True)
+            menu_action.setChecked(i == current)
+
+    def _on_tab_list_menu_triggered(self, action: QAction) -> None:
+        index = action.data()
+        if isinstance(index, int) and 0 <= index < self._viewer_tabs.count():
+            self._viewer_tabs.setCurrentIndex(index)
 
     def _close_tabs_for_vfs(self, vfs: VFS) -> int:
         closed = 0

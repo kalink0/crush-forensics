@@ -14,10 +14,12 @@ All notable changes to Crush will be documented in this file.
 - Added Tools -> Peach -> Open Peach: launches peach standalone, no source pre-filled.
 - Added multi-file and recursive-folder handoff to Peach (multi-select in the tree, or right-click a folder) — sends multiple sources to one peach session at once.
 - Added CLI arguments: `crush PATH [PATH ...]` / `crush --open PATH` open one or more files/folders on startup, for other tools to invoke Crush with evidence pre-loaded.
+- Added a viewer-tab context menu (Close / Close Others / Close All) and a tab-list dropdown in the top-right corner of the viewer area for quickly jumping between open tabs.
 
 ### Bug Fixes
 
 - Fixed "Send to Peach" not finding the bundled peach binary on Windows: it's now copied to a persistent cache directory on first launch instead of run from the temporary extraction directory, which is deleted as soon as Crush exits.
+- Fixed viewer tabs with long file paths pushing the close button off-screen: tab text is now capped in width and elided in the middle.
 
 ### Removed
 
