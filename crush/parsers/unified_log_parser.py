@@ -432,6 +432,18 @@ def _resolve_binary_dir() -> Path:
 _BINARY_DIR = _resolve_binary_dir()
 
 
+def get_bundled_ul_version() -> str | None:
+    """Version of the bundled unifiedlog_iterator, per VERSION.txt written by
+    scripts/download_unifiedlog_binaries.py (or the CI download steps) next
+    to the binaries. None if running from source without downloaded
+    binaries.
+    """
+    version_file = _BINARY_DIR / "VERSION.txt"
+    if not version_file.exists():
+        return None
+    return version_file.read_text().strip() or None
+
+
 def is_unified_log_node(node: "VFSNode") -> bool:
     """Return True if the VFS node is a .tracev3 file or .logarchive directory."""
     name = node.name.lower()

@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 )
 
 import crush
+from crush.core.peach_launcher import get_bundled_peach_version
+from crush.parsers.unified_log_parser import get_bundled_ul_version
 from crush.ui import open_url as _open_link
 
 _ABOUT_HTML = f"""\
@@ -29,7 +31,12 @@ github.com/kalink0/crush-forensics</a></p>
 <p><a href="https://github.com/kalink0/crush-forensics/issues">Report a bug or request a feature</a></p>
 """
 
-_ACK_BODY = """\
+def _ack_body() -> str:
+    ul_version = get_bundled_ul_version()
+    ul_label = f"unifiedlog_iterator {ul_version}" if ul_version else "unifiedlog_iterator"
+    peach_version = get_bundled_peach_version()
+    peach_label = f"peach {peach_version}" if peach_version else "peach"
+    return f"""\
 <h3>Contributors</h3>
 <p>Crush is built on the shoulders of the open-source and DFIR community.
 A huge thank you to everyone who contributed code, ideas, or feedback —
@@ -56,10 +63,16 @@ your support makes this project possible.</p>
     <td><a href="https://github.com/cclgroupltd/ccl-leveldb">CCL Forensics</a></td>
   </tr>
   <tr class="alt">
-    <td><b>unifiedlog_iterator</b></td>
+    <td><b>{ul_label}</b></td>
     <td>Apple Unified Log (.tracev3 / .logarchive) converter — bundled in portable builds; when running from source, place the binary under <code>crush/bin/unifiedlog_iterator/</code></td>
     <td class="lic">Apache 2.0</td>
     <td><a href="https://github.com/mandiant/macos-UnifiedLogs">Mandiant</a></td>
+  </tr>
+  <tr>
+    <td><b>{peach_label}</b></td>
+    <td>Sibling forensic multi-log viewer — bundled in portable builds for "Send to Peach"; when running from source, place the binary under <code>crush/bin/peach/</code></td>
+    <td class="lic">Apache 2.0</td>
+    <td><a href="https://github.com/kalink0/peach-forensics">kalink0</a></td>
   </tr>
 </table>
 
@@ -153,7 +166,7 @@ def _styled_html(browser: QTextBrowser, body: str) -> str:
 
 
 def _ack_html(browser: QTextBrowser) -> str:
-    return _styled_html(browser, _ACK_BODY)
+    return _styled_html(browser, _ack_body())
 
 
 

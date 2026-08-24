@@ -9,7 +9,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  UL_VERSION: "0.5.1"
+  UL_VERSION: "0.6.0"
 
 jobs:
   build:
@@ -95,6 +95,7 @@ jobs:
             | head -1 \
             | xargs -I{} cp {} crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-unknown-linux-gnu
           chmod +x crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-unknown-linux-gnu
+          echo "$UL_VERSION" > crush/bin/unifiedlog_iterator/VERSION.txt
 
       - name: Download unifiedlog_iterator binary (macOS)
         if: runner.os == 'macOS'
@@ -108,6 +109,7 @@ jobs:
             | head -1 \
             | xargs -I{} cp {} crush/bin/unifiedlog_iterator/${MACOS_UL_BINARY}
           chmod +x crush/bin/unifiedlog_iterator/${MACOS_UL_BINARY}
+          echo "$UL_VERSION" > crush/bin/unifiedlog_iterator/VERSION.txt
 
       - name: Download unifiedlog_iterator binary (Windows)
         if: runner.os == 'Windows'
@@ -121,6 +123,7 @@ jobs:
           Get-ChildItem "$env:TEMP\ul-extract" -Recurse -Filter "unifiedlog_iterator.exe" `
             | Select-Object -First 1 `
             | Copy-Item -Destination "crush\bin\unifiedlog_iterator\unifiedlog_iterator-x86_64-pc-windows-msvc.exe"
+          Set-Content -Path "crush\bin\unifiedlog_iterator\VERSION.txt" -Value $env:UL_VERSION -NoNewline
 
       - name: Generate icon (Linux → crush_icon_256.png)
         if: runner.os == 'Linux'
@@ -171,7 +174,9 @@ jobs:
             --add-data "crush/resources/icons/crush_icon_128.svg:crush/resources/icons/" \
             --add-data "crush_icon_256.png:crush/resources/icons/" \
             --add-data "crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-unknown-linux-gnu:crush/bin/unifiedlog_iterator/" \
+            --add-data "crush/bin/unifiedlog_iterator/VERSION.txt:crush/bin/unifiedlog_iterator/" \
             --add-data "crush/bin/peach/peach-linux:crush/bin/peach/" \
+            --add-data "crush/bin/peach/VERSION.txt:crush/bin/peach/" \
             crush/__main__.py
 
       - name: Build (PyInstaller) macOS
@@ -208,7 +213,9 @@ jobs:
             --add-data "crush/data/formats.db:data" \
             --add-data "crush/resources/icons/crush_icon_128.svg:crush/resources/icons/" \
             --add-data "crush/bin/unifiedlog_iterator/${MACOS_UL_BINARY}:crush/bin/unifiedlog_iterator/" \
+            --add-data "crush/bin/unifiedlog_iterator/VERSION.txt:crush/bin/unifiedlog_iterator/" \
             --add-data "crush/bin/peach/${MACOS_PEACH_BINARY}:crush/bin/peach/" \
+            --add-data "crush/bin/peach/VERSION.txt:crush/bin/peach/" \
             crush/__main__.py
 
       - name: Strip unused Qt frameworks (macOS)
@@ -262,7 +269,9 @@ jobs:
             --add-data "crush/data/formats.db;data" `
             --add-data "crush/resources/icons/crush_icon_128.svg;crush/resources/icons/" `
             --add-data "crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-pc-windows-msvc.exe;crush/bin/unifiedlog_iterator/" `
+            --add-data "crush/bin/unifiedlog_iterator/VERSION.txt;crush/bin/unifiedlog_iterator/" `
             --add-data "crush/bin/peach/peach-windows.exe;crush/bin/peach/" `
+            --add-data "crush/bin/peach/VERSION.txt;crush/bin/peach/" `
             crush/__main__.py
 
       - name: Package artifact (Linux → AppImage)

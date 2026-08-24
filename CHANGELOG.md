@@ -15,11 +15,17 @@ All notable changes to Crush will be documented in this file.
 - Added multi-file and recursive-folder handoff to Peach (multi-select in the tree, or right-click a folder) — sends multiple sources to one peach session at once.
 - Added CLI arguments: `crush PATH [PATH ...]` / `crush --open PATH` open one or more files/folders on startup, for other tools to invoke Crush with evidence pre-loaded.
 - Added a viewer-tab context menu (Close / Close Others / Close All) and a tab-list dropdown in the top-right corner of the viewer area for quickly jumping between open tabs.
+- The About dialog's Acknowledgements tab now shows the actual bundled version of unifiedlog_iterator and peach, including in nightly builds.
 
 ### Bug Fixes
 
 - Fixed "Send to Peach" not finding the bundled peach binary on Windows: it's now copied to a persistent cache directory on first launch instead of run from the temporary extraction directory, which is deleted as soon as Crush exits.
 - Fixed viewer tabs with long file paths pushing the close button off-screen: tab text is now capped in width and elided in the middle.
+
+### Changed
+
+- Bumped bundled unifiedlog_iterator from v0.5.1 to v0.6.0: fixes an incorrect Signpost name when the shared_cache/has_large_shared_cache flag was set, plus mach kernel error codes and message flags in the output.
+- Bumped bundled peach from v0.1.0 to v0.2.0: adds an interactive text-log format builder, timezone settings, per-field filter chips, a configurable rules directory, and grows the built-in AUL/EVTX/journald rule packs — also fixes a bug where EVTX `event_id`/`provider` rule conditions never actually matched real data. See peach's own [release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.2.0) for the full list.
 
 ### Removed
 

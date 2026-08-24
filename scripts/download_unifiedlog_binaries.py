@@ -8,7 +8,9 @@ Run from the repository root:
 
 Downloads release assets from https://github.com/mandiant/macos-UnifiedLogs
 and places them in crush/bin/unifiedlog_iterator/ with the filenames expected
-by UnifiedLogConverter._select_binary().
+by UnifiedLogConverter._select_binary(). Also writes VERSION.txt next to
+them, read at runtime by unified_log_parser.get_bundled_ul_version() to show
+which version is actually bundled (About dialog).
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ from pathlib import Path
 # Configuration — bump VERSION and update SHA256 when upgrading
 # ---------------------------------------------------------------------------
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 
 # (release_asset_name, target_filename_in_bin_dir, sha256_or_None)
 # sha256 is optional: set to None to skip verification, or fill in after
@@ -88,9 +90,15 @@ def _verify_sha256(path: Path, expected: str) -> None:
 
 
 def _extract_binary_from_tar(archive: Path, target: Path) -> None:
+    # Match the exact basename, not a substring: release archives also
+    # contain a README.md/LICENSE whose *path* contains "unifiedlog_iterator"
+    # (the enclosing directory is named after the release asset) — a
+    # substring match picks whichever of those come first in tar order,
+    # which changed between v0.5.1 and v0.6.0 and silently extracted the
+    # README as the "binary".
     with tarfile.open(archive, "r:gz") as tf:
         for member in tf.getmembers():
-            if member.isfile() and "unifiedlog_iterator" in member.name:
+            if member.isfile() and Path(member.name).name == "unifiedlog_iterator":
                 src = tf.extractfile(member)
                 if src is None:
                     continue
@@ -104,7 +112,7 @@ def _extract_binary_from_tar(archive: Path, target: Path) -> None:
 def _extract_binary_from_zip(archive: Path, target: Path) -> None:
     with zipfile.ZipFile(archive) as zf:
         for info in zf.infolist():
-            if "unifiedlog_iterator" in info.filename and not info.is_dir():
+            if not info.is_dir() and Path(info.filename).name == "unifiedlog_iterator.exe":
                 target.write_bytes(zf.read(info.filename))
                 return
     raise FileNotFoundError(
@@ -157,6 +165,8 @@ def main() -> None:
             print(f"  ERROR: {exc}")
             errors.append(f"{target_name}: {exc}")
             archive.unlink(missing_ok=True)
+
+    (_BIN_DIR / "VERSION.txt").write_text(VERSION)
 
     print()
     if errors:

@@ -46,6 +46,17 @@ def _resolve_binary_dir() -> Path:
 _BINARY_DIR = _resolve_binary_dir()
 
 
+def get_bundled_peach_version() -> str | None:
+    """Version of the bundled peach binary, per VERSION.txt written by
+    scripts/download_peach_binaries.py next to the binaries. None if running
+    from source without downloaded binaries.
+    """
+    version_file = _BINARY_DIR / "VERSION.txt"
+    if not version_file.exists():
+        return None
+    return version_file.read_text().strip() or None
+
+
 def _stabilize_windows_binary(embedded_path: Path) -> Path:
     """Copy the onefile-embedded peach binary into a persistent cache dir.
 

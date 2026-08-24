@@ -8,7 +8,9 @@ Run from the repository root:
 
 Downloads release assets from https://github.com/kalink0/peach-forensics
 and places them in crush/bin/peach/ with the filenames expected by
-crush.core.peach_launcher._select_binary().
+crush.core.peach_launcher._select_binary(). Also writes VERSION.txt next to
+them, read at runtime by peach_launcher.get_bundled_peach_version() to show
+which version is actually bundled (About dialog).
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from pathlib import Path
 # Configuration — bump VERSION when upgrading
 # ---------------------------------------------------------------------------
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 # (release_asset_name, target_filename_in_bin_dir)
 _ASSETS: list[tuple[str, str]] = [
@@ -102,6 +104,8 @@ def main() -> None:
             print(f"  ERROR: {exc}")
             errors.append(f"{target_name}: {exc}")
             archive.unlink(missing_ok=True)
+
+    (_BIN_DIR / "VERSION.txt").write_text(VERSION)
 
     print()
     if errors:
