@@ -8,9 +8,7 @@ after launch, matching peach's own "runs completely independently" design.
 """
 from __future__ import annotations
 
-import os
 import platform
-import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -31,15 +29,10 @@ _PLATFORM_BINARY_MAP: dict[tuple[str, str], str] = {
 def _resolve_binary_dir() -> Path:
     if getattr(sys, "frozen", False):
         # PyInstaller extracts data files to sys._MEIPASS when frozen.
-        # --add-data places the binary at _MEIPASS/crush/bin/peach/.
-        #
-        # On Windows the build is --onefile, so _MEIPASS is a fresh,
-        # ephemeral per-process temp dir (%TEMP%\_MEIxxxxxx) torn down once
-        # crush.exe exits -- fine for unifiedlog_iterator (invoked
-        # synchronously while crush is still running) but wrong for peach,
-        # which must keep running detached after crush.exe closes. See
-        # _stabilize_windows_binary() below, which copies the binary out of
-        # here into a persistent cache before it's launched.
+        # --add-data places the binary at _MEIPASS/crush/bin/peach/. All
+        # platforms build --onedir, so _MEIPASS is the persistent install
+        # directory (not a per-process temp dir) -- peach can be launched
+        # detached straight from here, it outlives crush.exe closing.
         return Path(sys._MEIPASS) / "crush" / "bin" / "peach"  # type: ignore[attr-defined]
     return Path(__file__).parent.parent / "bin" / "peach"
 
@@ -56,24 +49,6 @@ def get_bundled_peach_version() -> str | None:
     if not version_file.exists():
         return None
     return version_file.read_text().strip() or None
-
-
-def _stabilize_windows_binary(embedded_path: Path) -> Path:
-    """Copy the onefile-embedded peach binary into a persistent cache dir.
-
-    Needed only on Windows: the bundled binary otherwise lives under
-    sys._MEIPASS, a per-process temp dir PyInstaller deletes once crush.exe
-    exits -- but peach is launched detached and must keep running after
-    that. Skips the copy if a matching-size copy is already cached, so a
-    normal launch doesn't re-copy the binary every time.
-    """
-    cache_root = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    cache_dir = Path(cache_root) / "Crush" / "peach"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cached_path = cache_dir / embedded_path.name
-    if not cached_path.exists() or cached_path.stat().st_size != embedded_path.stat().st_size:
-        shutil.copy2(embedded_path, cached_path)
-    return cached_path
 
 
 def find_peach_binary(override_path: str = "") -> Path:
@@ -115,8 +90,6 @@ def find_peach_binary(override_path: str = "") -> Path:
             f"Run scripts/download_peach_binaries.py, or set a Peach binary "
             f"path override in Settings."
         )
-    if sys.platform == "win32" and getattr(sys, "frozen", False):
-        path = _stabilize_windows_binary(path)
     return path
 
 

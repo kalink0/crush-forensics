@@ -309,7 +309,8 @@ jobs:
       - name: Build (PyInstaller) Windows
         if: runner.os == 'Windows'
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onefile --name crush `
+          python -m PyInstaller --noconfirm --clean --windowed --name crush `
+            --contents-directory crush-data `
             --icon crush.ico `
             --collect-all PySide6 `
             --collect-all magic `
@@ -428,7 +429,7 @@ jobs:
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist\\crush.exe -DestinationPath crush-windows-$env:BUILD_ID.zip
+        run: Compress-Archive -Path dist\\crush\\* -DestinationPath crush-windows-$env:BUILD_ID.zip
 
       - name: Upload artifact (Linux)
         if: runner.os == 'Linux'
