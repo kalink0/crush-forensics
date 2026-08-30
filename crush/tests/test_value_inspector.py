@@ -248,6 +248,38 @@ class TestTimestamp:
         rows = _interpret(" ".join(f"{b:02x}" for b in data))
         assert _get(rows, "Timestamp", "Windows SYSTEMTIME") is None
 
+    # -- Fractional-value timestamps (issue #51) --------------------------------
+
+    def test_unix_ms_with_fractional_component(self) -> None:
+        # Reported case: a ms epoch with a sub-ms fraction appended ("...913.061").
+        # int(raw) rejects the "." so this must fall back to a float parse.
+        rows = _interpret("1760996870913.061")
+        ts = _value(rows, "Timestamp", "Unix (ms)")
+        assert ts == "2025-10-20 21:47:50.913061 UTC"
+
+    def test_unix_s_with_fractional_component(self) -> None:
+        rows = _interpret("1718000000.5")
+        ts = _value(rows, "Timestamp", "Unix (s)")
+        assert ts == "2024-06-10 06:13:20.500000 UTC"
+
+    def test_fractional_input_no_bitfield_formats(self) -> None:
+        # Twitter Snowflake / FAT unpack exact bit fields (shift/mask) and can't
+        # accept a float, even though the arithmetic-based formats now resolve one.
+        rows = _interpret("1760996870913.061")
+        assert _get(rows, "Timestamp", "Twitter / X Snowflake") is None
+        assert _get(rows, "Timestamp", "FAT / exFAT (MS-DOS)") is None
+
+    def test_small_fractional_no_spurious_cocoa_ns(self) -> None:
+        # Cocoa (ns)'s plausible range dips below zero (like Cocoa (s)'s), so an
+        # unguarded float fallback would match trivial values such as "123.0".
+        rows = _interpret("123.0")
+        assert _get(rows, "Timestamp", "Cocoa / Apple (ns)") is None
+
+    def test_negative_fractional_no_spurious_timestamps(self) -> None:
+        rows = _interpret("-1760996870913.061")
+        assert _get(rows, "Timestamp", "Unix (ms)") is None
+        assert _get(rows, "Timestamp", "Cocoa / Apple (ns)") is None
+
 
 # ---------------------------------------------------------------------------
 # UUID group

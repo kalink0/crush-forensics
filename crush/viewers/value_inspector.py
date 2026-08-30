@@ -94,14 +94,19 @@ _GPS_NS_MAX = _GPS_S_MAX * 1_000_000_000
 
 
 def _fmt_dt(dt: datetime) -> str:
+    if dt.microsecond:
+        return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{dt.microsecond:06d} UTC"
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _safe_ts(ts_s: float) -> str | None:
+    # epoch + timedelta rather than datetime.fromtimestamp(): the latter is OS-clamped on
+    # Windows and rejects timestamps fromtimestamp() would otherwise handle fine on Linux/Mac.
     try:
-        return _fmt_dt(datetime.fromtimestamp(ts_s, tz=timezone.utc))
-    except (OSError, OverflowError, ValueError):
+        dt = _UNIX_EPOCH + timedelta(seconds=ts_s)
+    except (OverflowError, ValueError):
         return None
+    return _fmt_dt(dt)
 
 
 def _bcd_byte(b: int) -> int | None:
@@ -271,7 +276,12 @@ def _interpret(raw: str) -> list[_Row]:
     # -----------------------------------------------------------------------
     # Group: Timestamps
     # -----------------------------------------------------------------------
-    ts = eff_int
+    # `ts` drives the arithmetic-based formats (division/addition against an epoch) and falls
+    # back to the parsed float so a value with a fractional component (e.g. sub-ms noise
+    # appended to a ms epoch, "1760996870913.061") still resolves instead of being dropped.
+    # `ts_int` stays integer-only, for the two formats below that unpack exact bit fields.
+    ts_int = eff_int
+    ts: int | float | None = eff_int if eff_int is not None else float_val
 
     if ts is not None and _TS_S_MIN <= ts <= _TS_S_MAX:
         rows.append(R("Timestamp", "Unix (s)", _safe_ts(ts)))
@@ -288,8 +298,9 @@ def _interpret(raw: str) -> list[_Row]:
     else:
         rows.append(R("Timestamp", "Unix (µs)", None))
 
-    # Cocoa: seconds since 2001-01-01; for floats require > 1M to avoid false positives on tiny values
-    cocoa_src = ts if ts is not None else (float_val if float_val is not None and float_val > 1_000_000 else None)
+    # Cocoa: seconds since 2001-01-01; for floats require > 1M to avoid false positives on
+    # tiny values (Cocoa's plausible range dips below zero, unlike the other formats).
+    cocoa_src = ts if eff_int is not None else (float_val if float_val is not None and float_val > 1_000_000 else None)
     if cocoa_src is not None and _COCOA_MIN <= cocoa_src <= _COCOA_MAX:
         try:
             rows.append(R("Timestamp", "Cocoa / Apple (s)", _fmt_dt(_COCOA_EPOCH + timedelta(seconds=cocoa_src))))
@@ -298,10 +309,12 @@ def _interpret(raw: str) -> list[_Row]:
     else:
         rows.append(R("Timestamp", "Cocoa / Apple (s)", None))
 
-    # Cocoa nanoseconds: ns since 2001-01-01
-    if ts is not None and _COCOA_NS_MIN <= ts <= _COCOA_NS_MAX:
+    # Cocoa nanoseconds: ns since 2001-01-01; same float-magnitude guard as Cocoa (s) above —
+    # _COCOA_NS_MIN is deep negative, so an unguarded float fallback would match trivial values.
+    cocoa_ns_src = ts if eff_int is not None else (float_val if float_val is not None and float_val > 1_000_000 else None)
+    if cocoa_ns_src is not None and _COCOA_NS_MIN <= cocoa_ns_src <= _COCOA_NS_MAX:
         try:
-            dt = _COCOA_EPOCH + timedelta(seconds=ts / 1_000_000_000)
+            dt = _COCOA_EPOCH + timedelta(seconds=cocoa_ns_src / 1_000_000_000)
             rows.append(R("Timestamp", "Cocoa / Apple (ns)", _fmt_dt(dt)))
         except (OverflowError, ValueError):
             rows.append(R("Timestamp", "Cocoa / Apple (ns)", None))
@@ -355,9 +368,9 @@ def _interpret(raw: str) -> list[_Row]:
     else:
         rows.append(R("Timestamp", "OLE Automation Date", None))
 
-    # Twitter / X Snowflake ID: upper 41 bits = ms since Twitter epoch
-    if ts is not None and ts >= (1 << 22):  # timestamp part must be > 0
-        tw_ms = (ts >> 22) + _TWITTER_EPOCH_MS
+    # Twitter / X Snowflake ID: upper 41 bits = ms since Twitter epoch (bit-packed, integer-only)
+    if ts_int is not None and ts_int >= (1 << 22):  # timestamp part must be > 0
+        tw_ms = (ts_int >> 22) + _TWITTER_EPOCH_MS
         if _TS_MS_MIN <= tw_ms <= _TS_MS_MAX:
             rows.append(R("Timestamp", "Twitter / X Snowflake", _safe_ts(tw_ms / 1000.0)))
         else:
@@ -366,9 +379,9 @@ def _interpret(raw: str) -> list[_Row]:
         rows.append(R("Timestamp", "Twitter / X Snowflake", None))
 
     # FAT / exFAT (MS-DOS): 32-bit packed date+time, 2-second resolution, epoch 1980-01-01
-    if ts is not None and _FAT_TS_MIN <= ts <= _FAT_TS_MAX:
-        date_word = (ts >> 16) & 0xFFFF
-        time_word = ts & 0xFFFF
+    if ts_int is not None and _FAT_TS_MIN <= ts_int <= _FAT_TS_MAX:
+        date_word = (ts_int >> 16) & 0xFFFF
+        time_word = ts_int & 0xFFFF
         fat_year  = ((date_word >> 9) & 0x7F) + 1980
         fat_month = (date_word >> 5) & 0x0F
         fat_day   = date_word & 0x1F

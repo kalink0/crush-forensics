@@ -3,7 +3,9 @@
 """Timestamp column decoding helpers — no Qt dependency."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 # (internal_key, menu_label, header_suffix)
 TS_FORMATS: list[tuple[str, str, str]] = [
@@ -40,7 +42,11 @@ def decode_ts(value: int | float, fmt: str) -> str | None:
             unix = v / 1_000_000.0 - _WIN_EPOCH_OFFSET
         else:
             return None
-        dt = datetime.fromtimestamp(unix, tz=timezone.utc)
+        # epoch + timedelta rather than datetime.fromtimestamp(): the latter calls the
+        # OS's C library, which on Windows rejects negative (pre-1970) timestamps that
+        # Linux/Mac handle fine — the same evidence value would decode differently
+        # depending on the examiner's OS.
+        dt = _UNIX_EPOCH + timedelta(seconds=unix)
         return dt.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
-    except (OSError, OverflowError, ValueError, TypeError):
+    except (OverflowError, ValueError, TypeError):
         return None

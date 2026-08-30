@@ -4,6 +4,11 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+### Bug Fixes
+
+- Fixed Value Inspector not recognizing epoch timestamps with a fractional component (e.g. `1760996870913.061`) for any arithmetic-based timestamp format (Unix s/ms/µs, Cocoa, Chrome/WebKit, Windows FILETIME, HFS+, .NET Ticks, GPS Time). Sub-second precision is now shown when present. Addresses [#51](https://github.com/kalink0/crush-forensics/issues/51), reported by [@JamesHabben](https://github.com/JamesHabben).
+- Fixed timestamp decoding (Value Inspector and the DB Table viewer's "interpret column as timestamp") relying on the OS's C library for epoch conversion, which made Windows reject valid pre-1970 timestamps that Linux/Mac decode fine — the same evidence value could show as a date on one examiner's machine and as a raw number on another's. Both now compute purely in Python.
+
 ## v0.16.0 - 2026-08-26
 
 **Focus: SQLite deleted-data recovery (Freelist Recovery, Freeblocks, Unallocated Space); Send to Peach handoff; CLI args to open evidence on startup; viewer tab management.**

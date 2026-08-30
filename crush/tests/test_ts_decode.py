@@ -57,6 +57,11 @@ class TestDecodeTsFormats:
         # A value far in the future that overflows datetime
         assert decode_ts(10**18, "unix_s") is None
 
+    def test_negative_unix_s_pre_1970(self) -> None:
+        # datetime.fromtimestamp() rejects negative values on Windows (OSError) while
+        # working fine on Linux/Mac; epoch+timedelta must decode this the same everywhere.
+        assert decode_ts(-86400, "unix_s") == "1969-12-31 00:00:00 UTC"
+
     def test_output_ends_with_utc(self) -> None:
         result = decode_ts(self._UNIX_S, "unix_s")
         assert result is not None
