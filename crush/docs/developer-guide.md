@@ -226,6 +226,22 @@ ViewerType = Literal[
 ]
 ```
 
+### Slow work belongs off the UI thread
+
+If `_load()` (or any handler triggered by a button/tab-switch) walks a whole
+file/every page/every record, its cost scales with evidence size — fine on
+a small fixture, a multi-second freeze on a real 14 MB+ file, and the OS
+will flag the window as unresponsive on top of that. Wrap it with
+`crush.ui.busy_dialog.run_with_busy_dialog()` instead of calling it
+directly: it runs the work on a background thread and shows a "please
+wait" dialog while the UI thread keeps pumping events. See
+`TableViewer._load_freeblocks()`/`_populate_freeblocks_table()` in
+`crush/viewers/table_viewer.py` for the pattern — split the work into a
+plain-Python "fetch" function (no Qt widgets touched, safe off-thread) and
+a "populate" function that builds the actual model/items (must stay on the
+UI thread; called back via `on_done`). Cheap/cached calls don't need this —
+only wrap the case that can actually be slow.
+
 ---
 
 ## VFS API

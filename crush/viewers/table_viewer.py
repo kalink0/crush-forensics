@@ -8,6 +8,7 @@ from typing import Any
 import csv
 import re
 import sqlite3
+from contextlib import contextmanager
 import struct
 import time
 from collections import Counter
@@ -73,6 +74,7 @@ from crush.core.work_priority import (
     foreground_io,
     release_foreground_io,
 )
+from crush.ui.busy_dialog import run_with_busy_dialog
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
 
@@ -1395,8 +1397,36 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        entries, carved = self._get_freelist_data()
+        # Fast path: already cached, populate directly.
+        if self._freelist_cache is not None:
+            entries, carved = self._freelist_cache
+            schema_cols = self._table_column_counts(conn)
+            self._populate_freelist_recovery_table(entries, carved, schema_cols)
+            return
 
+        # Slow path: walk_freelist_pages/carve_freelist_rows haven't run yet
+        # for this database -- do the full scan off the UI thread.
+        def _work() -> tuple[list[dict], list[dict], dict[str, int]]:
+            entries, carved = self._get_freelist_data()
+            schema_cols = self._table_column_counts(self._ensure_db())
+            return entries, carved, schema_cols
+
+        def _on_done(result: object) -> None:
+            entries, carved, schema_cols = result  # type: ignore[misc]
+            self._populate_freelist_recovery_table(entries, carved, schema_cols)
+
+        def _on_error(message: str) -> None:
+            self._sql_status.setStyleSheet("color: red;")
+            self._sql_status.setText(f"Error scanning freelist pages: {message}")
+
+        run_with_busy_dialog(self, "Scanning freelist pages…", _work, _on_done, _on_error)
+
+    def _populate_freelist_recovery_table(
+        self,
+        entries: list[dict],
+        carved: list[dict],
+        schema_cols: dict[str, int],
+    ) -> None:
         if not entries:
             self._source_model.setHorizontalHeaderLabels(["Freelist Recovery (generated)"])
             item = QStandardItem("No freelist pages found")
@@ -1405,7 +1435,6 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        schema_cols = self._table_column_counts(conn)
         max_cols = max(
             (len(values) for c in carved for _rowid, values in c["rows"]), default=0
         )
@@ -1415,36 +1444,37 @@ class TableViewer(QWidget):
         self._source_model.setHorizontalHeaderLabels(headers)
 
         total_rows = 0
-        for c in carved:
-            page, kind = c["page"], c["kind"]
-            for rowid, values in c["rows"]:
-                candidates = sorted(
-                    name for name, n in schema_cols.items() if n == len(values)
-                )
-                cand_text = ", ".join(candidates) if candidates else "—"
+        with self._dynamic_sort_suspended():
+            for c in carved:
+                page, kind = c["page"], c["kind"]
+                for rowid, values in c["rows"]:
+                    candidates = sorted(
+                        name for name, n in schema_cols.items() if n == len(values)
+                    )
+                    cand_text = ", ".join(candidates) if candidates else "—"
 
-                items = [
-                    QStandardItem(str(page)),
-                    QStandardItem(kind),
-                    QStandardItem(str(rowid)),
-                    QStandardItem(cand_text),
-                ]
-                for i in range(max_cols):
-                    if i < len(values):
-                        v = values[i]
-                        if v is None:
-                            text = ""
-                        elif isinstance(v, bytes):
-                            text = v.decode("utf-8", errors="replace")
+                    items = [
+                        QStandardItem(str(page)),
+                        QStandardItem(kind),
+                        QStandardItem(str(rowid)),
+                        QStandardItem(cand_text),
+                    ]
+                    for i in range(max_cols):
+                        if i < len(values):
+                            v = values[i]
+                            if v is None:
+                                text = ""
+                            elif isinstance(v, bytes):
+                                text = v.decode("utf-8", errors="replace")
+                            else:
+                                text = str(v)
                         else:
-                            text = str(v)
-                    else:
-                        text = ""
-                    items.append(QStandardItem(text))
-                for it in items:
-                    it.setEditable(False)
-                self._source_model.appendRow(items)
-                total_rows += 1
+                            text = ""
+                        items.append(QStandardItem(text))
+                    for it in items:
+                        it.setEditable(False)
+                    self._source_model.appendRow(items)
+                    total_rows += 1
 
         self._resize_and_cap()
         n_pages_with_data = len({c["page"] for c in carved})
@@ -1507,8 +1537,47 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        freeblocks = self._get_freeblocks_data()
+        # Fast path: everything needed is already cached from a previous
+        # visit to this or another SQLite-recovery tab -- populate directly,
+        # no need for a background thread/busy dialog.
+        if (
+            self._freeblocks_cache is not None
+            and self._page_table_map
+            and self._freelist_cache is not None
+        ):
+            freelist_pages = {e["page"] for e in self._freelist_cache[0]}
+            self._populate_freeblocks_table(
+                self._freeblocks_cache, self._page_table_map, freelist_pages
+            )
+            return
 
+        # Slow path: at least one of these caches is cold and needs a full
+        # file scan (scan_database_freeblocks / build_page_table_map /
+        # walk_freelist_pages+carve_freelist_rows) -- do that off the UI
+        # thread so the window stays responsive instead of freezing for
+        # however long the scan takes on this particular database.
+        def _work() -> tuple[list[dict], dict[int, str], set[int]]:
+            freeblocks = self._get_freeblocks_data()
+            page_table_map = self._get_page_table_map()
+            freelist_pages = {e["page"] for e in self._get_freelist_data()[0]}
+            return freeblocks, page_table_map, freelist_pages
+
+        def _on_done(result: object) -> None:
+            freeblocks, page_table_map, freelist_pages = result  # type: ignore[misc]
+            self._populate_freeblocks_table(freeblocks, page_table_map, freelist_pages)
+
+        def _on_error(message: str) -> None:
+            self._sql_status.setStyleSheet("color: red;")
+            self._sql_status.setText(f"Error scanning freeblocks: {message}")
+
+        run_with_busy_dialog(self, "Scanning for freeblocks…", _work, _on_done, _on_error)
+
+    def _populate_freeblocks_table(
+        self,
+        freeblocks: list[dict],
+        page_table_map: dict[int, str],
+        freelist_pages: set[int],
+    ) -> None:
         if not freeblocks:
             self._source_model.setHorizontalHeaderLabels(["Freeblocks (generated)"])
             item = QStandardItem("No freeblocks found")
@@ -1517,33 +1586,31 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        page_table_map = self._get_page_table_map()
-        freelist_pages = {e["page"] for e in self._get_freelist_data()[0]}
-
         self._source_model.setHorizontalHeaderLabels(
             ["Page", "Table", "Offset (B)", "Size (B)", "Data"]
         )
 
-        for fb in freeblocks:
-            page = fb["page"]
-            if page in page_table_map:
-                origin = page_table_map[page]
-            elif page in freelist_pages:
-                origin = "Freelist"
-            else:
-                origin = "—"
-            text = fb["data"].decode("utf-8", errors="replace")
+        with self._dynamic_sort_suspended():
+            for fb in freeblocks:
+                page = fb["page"]
+                if page in page_table_map:
+                    origin = page_table_map[page]
+                elif page in freelist_pages:
+                    origin = "Freelist"
+                else:
+                    origin = "—"
+                text = fb["data"].decode("utf-8", errors="replace")
 
-            items = [
-                QStandardItem(str(page)),
-                QStandardItem(origin),
-                QStandardItem(str(fb["offset"])),
-                QStandardItem(str(fb["size"])),
-                QStandardItem(text),
-            ]
-            for it in items:
-                it.setEditable(False)
-            self._source_model.appendRow(items)
+                items = [
+                    QStandardItem(str(page)),
+                    QStandardItem(origin),
+                    QStandardItem(str(fb["offset"])),
+                    QStandardItem(str(fb["size"])),
+                    QStandardItem(text),
+                ]
+                for it in items:
+                    it.setEditable(False)
+                self._source_model.appendRow(items)
 
         self._resize_and_cap()
         self._row_count_label.setText(f"({len(freeblocks)} freeblocks)")
@@ -1588,8 +1655,41 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        entries = self._get_unallocated_data()
+        # Fast path: already cached, populate directly.
+        if (
+            self._unallocated_cache is not None
+            and self._page_table_map
+            and self._freelist_cache is not None
+        ):
+            freelist_pages = {e["page"] for e in self._freelist_cache[0]}
+            self._populate_unallocated_table(
+                self._unallocated_cache, self._page_table_map, freelist_pages
+            )
+            return
 
+        # Slow path: at least one of these needs a fresh full-file scan.
+        def _work() -> tuple[list[dict], dict[int, str], set[int]]:
+            entries = self._get_unallocated_data()
+            page_table_map = self._get_page_table_map()
+            freelist_pages = {e["page"] for e in self._get_freelist_data()[0]}
+            return entries, page_table_map, freelist_pages
+
+        def _on_done(result: object) -> None:
+            entries, page_table_map, freelist_pages = result  # type: ignore[misc]
+            self._populate_unallocated_table(entries, page_table_map, freelist_pages)
+
+        def _on_error(message: str) -> None:
+            self._sql_status.setStyleSheet("color: red;")
+            self._sql_status.setText(f"Error scanning unallocated space: {message}")
+
+        run_with_busy_dialog(self, "Scanning unallocated space…", _work, _on_done, _on_error)
+
+    def _populate_unallocated_table(
+        self,
+        entries: list[dict],
+        page_table_map: dict[int, str],
+        freelist_pages: set[int],
+    ) -> None:
         if not entries:
             self._source_model.setHorizontalHeaderLabels(["Unallocated Space (generated)"])
             item = QStandardItem("No non-empty unallocated space found")
@@ -1598,33 +1698,31 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        page_table_map = self._get_page_table_map()
-        freelist_pages = {e["page"] for e in self._get_freelist_data()[0]}
-
         self._source_model.setHorizontalHeaderLabels(
             ["Page", "Table", "Offset (B)", "Size (B)", "Data"]
         )
 
-        for entry in entries:
-            page = entry["page"]
-            if page in page_table_map:
-                origin = page_table_map[page]
-            elif page in freelist_pages:
-                origin = "Freelist"
-            else:
-                origin = "—"
-            text = entry["data"].decode("utf-8", errors="replace")
+        with self._dynamic_sort_suspended():
+            for entry in entries:
+                page = entry["page"]
+                if page in page_table_map:
+                    origin = page_table_map[page]
+                elif page in freelist_pages:
+                    origin = "Freelist"
+                else:
+                    origin = "—"
+                text = entry["data"].decode("utf-8", errors="replace")
 
-            items = [
-                QStandardItem(str(page)),
-                QStandardItem(origin),
-                QStandardItem(str(entry["offset"])),
-                QStandardItem(str(entry["size"])),
-                QStandardItem(text),
-            ]
-            for it in items:
-                it.setEditable(False)
-            self._source_model.appendRow(items)
+                items = [
+                    QStandardItem(str(page)),
+                    QStandardItem(origin),
+                    QStandardItem(str(entry["offset"])),
+                    QStandardItem(str(entry["size"])),
+                    QStandardItem(text),
+                ]
+                for it in items:
+                    it.setEditable(False)
+                self._source_model.appendRow(items)
 
         self._resize_and_cap()
         self._row_count_label.setText(f"({len(entries)} pages with non-empty unallocated space)")
@@ -2246,6 +2344,27 @@ class TableViewer(QWidget):
         self._source_model = QStandardItemModel(self)
         self._proxy_model.setSourceModel(self._source_model)
         old_model.deleteLater()
+
+    @contextmanager
+    def _dynamic_sort_suspended(self):
+        """Disable the proxy model's incremental re-sort for a bulk
+        appendRow() loop, re-enabling it (and sorting once) afterward.
+
+        _load_table()'s own wrapper does this too, but only around the
+        *synchronous* portion of a tab load -- a tab whose data comes back
+        via run_with_busy_dialog() populates its rows later, after that
+        wrapper has already re-enabled dynamic sorting. Any appendRow loop
+        that might run asynchronously needs its own copy of this guard
+        rather than relying on the wrapper's timing.
+        """
+        self._proxy_model.setDynamicSortFilter(False)
+        try:
+            yield
+        finally:
+            self._proxy_model.setDynamicSortFilter(True)
+            self._proxy_model.sort(
+                self._proxy_model.sortColumn(), self._proxy_model.sortOrder()
+            )
 
     def _activate_standard_model(self) -> None:
         if not self._query_results_active:
