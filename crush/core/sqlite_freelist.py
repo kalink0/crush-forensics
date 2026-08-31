@@ -176,3 +176,48 @@ def carve_freelist_rows(
         return carved
     finally:
         fh.close()
+
+
+_AFFINITY_TEXT = "TEXT"
+_AFFINITY_NUMERIC = "NUMERIC"
+_AFFINITY_INTEGER = "INTEGER"
+_AFFINITY_REAL = "REAL"
+_AFFINITY_BLOB = "BLOB"
+
+
+def column_affinity(declared_type: str | None) -> str:
+    """Map a declared column type to its SQLite type affinity.
+
+    Follows the rules in https://www.sqlite.org/datatype3.html
+    ("Determination Of Column Affinity"), applied in the order the spec
+    lists them.
+    """
+    t = (declared_type or "").upper()
+    if "INT" in t:
+        return _AFFINITY_INTEGER
+    if "CHAR" in t or "CLOB" in t or "TEXT" in t:
+        return _AFFINITY_TEXT
+    if "BLOB" in t or not t:
+        return _AFFINITY_BLOB
+    if "REAL" in t or "FLOA" in t or "DOUB" in t:
+        return _AFFINITY_REAL
+    return _AFFINITY_NUMERIC
+
+
+def value_matches_affinity(value: Any, affinity: str) -> bool:
+    """Whether a decoded value's storage class is possible for *affinity*.
+
+    Type affinity only governs what an INSERT coerces a value *into* — once
+    stored, SQLite does not re-check it — so most affinities give no usable
+    signal here: NUMERIC/INTEGER/REAL affinity columns keep unparseable text
+    as TEXT and store BLOB literals unconverted, so any storage class is
+    possible for them. TEXT affinity is the one case the spec makes a hard
+    guarantee for: "If numerical data is inserted into a column with TEXT
+    affinity it is converted into text form before being stored" — so a
+    TEXT-affinity column can only ever hold NULL, TEXT or BLOB, never a raw
+    INTEGER/REAL storage class. NULL always matches, since nullability
+    constraints aren't visible from a freed page's row header.
+    """
+    if value is None or affinity != _AFFINITY_TEXT:
+        return True
+    return isinstance(value, (str, bytes))

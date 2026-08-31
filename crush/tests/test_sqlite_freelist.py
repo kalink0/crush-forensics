@@ -7,7 +7,9 @@ from pathlib import Path
 
 from crush.core.sqlite_freelist import (
     carve_freelist_rows,
+    column_affinity,
     read_raw_page,
+    value_matches_affinity,
     walk_freelist_pages,
 )
 
@@ -151,3 +153,46 @@ def test_carve_freelist_rows_falls_back_safely_when_chain_hits_a_trunk_page(
     assert not any(
         isinstance(v, str) and v.startswith("OVERFLOWSTART") for v in all_values
     )
+
+
+def test_column_affinity_follows_sqlite_type_rules() -> None:
+    assert column_affinity("INTEGER") == "INTEGER"
+    assert column_affinity("BIGINT") == "INTEGER"
+    assert column_affinity("VARCHAR(255)") == "TEXT"
+    assert column_affinity("CLOB") == "TEXT"
+    assert column_affinity("BLOB") == "BLOB"
+    assert column_affinity("") == "BLOB"
+    assert column_affinity(None) == "BLOB"
+    assert column_affinity("DOUBLE") == "REAL"
+    assert column_affinity("FLOAT") == "REAL"
+    assert column_affinity("NUMERIC") == "NUMERIC"
+    assert column_affinity("DATE") == "NUMERIC"
+
+
+def test_value_matches_affinity_text_column_rejects_numeric_storage() -> None:
+    # A TEXT-affinity column can only ever hold NULL, TEXT or BLOB -- SQLite
+    # converts anything else to text form before storing it.
+    assert value_matches_affinity("hello", "TEXT") is True
+    assert value_matches_affinity(b"raw", "TEXT") is True
+    assert value_matches_affinity(None, "TEXT") is True
+    assert value_matches_affinity(42, "TEXT") is False
+    assert value_matches_affinity(3.14, "TEXT") is False
+
+
+def test_value_matches_affinity_numeric_family_is_permissive() -> None:
+    # NUMERIC/INTEGER/REAL affinity columns can end up holding any storage
+    # class (unparseable text is kept as TEXT, BLOB literals bypass
+    # conversion entirely), so this gives no rejection signal.
+    for affinity in ("INTEGER", "REAL", "NUMERIC"):
+        assert value_matches_affinity(42, affinity) is True
+        assert value_matches_affinity(3.14, affinity) is True
+        assert value_matches_affinity("not-a-number", affinity) is True
+        assert value_matches_affinity(b"blob", affinity) is True
+        assert value_matches_affinity(None, affinity) is True
+
+
+def test_value_matches_affinity_blob_column_accepts_anything() -> None:
+    assert value_matches_affinity(42, "BLOB") is True
+    assert value_matches_affinity("text", "BLOB") is True
+    assert value_matches_affinity(b"raw", "BLOB") is True
+    assert value_matches_affinity(None, "BLOB") is True

@@ -4,8 +4,13 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+### New Features
+
+- SQLite Table viewer's Freelist Recovery tab now checks column *types*, not just column count, when matching a carved row to a candidate table, and marks higher-confidence matches (✓, both count and types match) separately from count-only matches. A new "View as" dropdown pivots the tab onto one candidate table, mapping columns to its real names.
+
 ### Bug Fixes
 
+- Fixed the Freelist Recovery tab's explanatory status text getting cut off instead of wrapping to a second line.
 - Fixed Value Inspector not recognizing epoch timestamps with a fractional component (e.g. `1760996870913.061`) for any arithmetic-based timestamp format (Unix s/ms/µs, Cocoa, Chrome/WebKit, Windows FILETIME, HFS+, .NET Ticks, GPS Time). Sub-second precision is now shown when present. Addresses [#51](https://github.com/kalink0/crush-forensics/issues/51), reported by [@JamesHabben](https://github.com/JamesHabben).
 - Fixed timestamp decoding (Value Inspector and the DB Table viewer's "interpret column as timestamp") relying on the OS's C library for epoch conversion, which made Windows reject valid pre-1970 timestamps that Linux/Mac decode fine — the same evidence value could show as a date on one examiner's machine and as a raw number on another's. Both now compute purely in Python.
 - Fixed the SQLite Table viewer's Freeblocks/Freelist Recovery/Unallocated Space tabs hanging for tens of seconds on wide or deleted-data-heavy databases — several spots reopened the database file once per page instead of reusing one handle, and switching tabs after loading a large result could take almost a minute just to clear the old table view. Whatever scan time remains now runs in the background with a "please wait" dialog instead of freezing the window.

@@ -59,7 +59,9 @@ from PySide6.QtWidgets import (
 from crush.core.sqlite_freeblocks import scan_database_freeblocks
 from crush.core.sqlite_freelist import (
     carve_freelist_rows,
+    column_affinity,
     read_raw_page as _read_freelist_page,
+    value_matches_affinity,
     walk_freelist_pages,
 )
 from crush.core.sqlite_unallocated import scan_database_unallocated
@@ -507,6 +509,9 @@ class TableViewer(QWidget):
         self._wal_page_size: int = 0
         self._db_page_size: int = 0
         self._freelist_cache: tuple[list[dict], list[dict]] | None = None
+        self._freelist_render_state: (
+            tuple[list[dict], list[dict], dict[str, list[tuple[str, str]]]] | None
+        ) = None
         self._freeblocks_cache: list[dict] | None = None
         self._unallocated_cache: list[dict] | None = None
         self._page_table_map: dict[int, str] = {}  # page_num → table_name
@@ -582,6 +587,18 @@ class TableViewer(QWidget):
         self._prev_ref_toggle.stateChanged.connect(self._on_prev_ref_toggle)
         toolbar_layout.addWidget(self._prev_ref_toggle)
 
+        self._freelist_table_filter_label = QLabel("View as:")
+        self._freelist_table_filter_label.setVisible(False)
+        toolbar_layout.addWidget(self._freelist_table_filter_label)
+
+        self._freelist_table_filter = QComboBox()
+        self._freelist_table_filter.setVisible(False)
+        self._freelist_table_filter.setMinimumWidth(160)
+        self._freelist_table_filter.currentTextChanged.connect(
+            self._on_freelist_table_filter_changed
+        )
+        toolbar_layout.addWidget(self._freelist_table_filter)
+
         toolbar_layout.addStretch()
 
         search_label = QLabel("Search:")
@@ -645,6 +662,7 @@ class TableViewer(QWidget):
 
         self._sql_status = QLabel("")
         self._sql_status.setContentsMargins(4, 0, 0, 2)
+        self._sql_status.setWordWrap(True)
         self._sql_status.setSizePolicy(
             QSizePolicy.Policy.Ignored,
             QSizePolicy.Policy.Fixed,
@@ -746,6 +764,8 @@ class TableViewer(QWidget):
             )
 
     def _load_table_impl(self, table_name: str) -> None:
+        self._freelist_table_filter.setVisible(False)
+        self._freelist_table_filter_label.setVisible(False)
         if table_name == self._summary_label:
             self._load_summary()
             return
@@ -1356,9 +1376,12 @@ class TableViewer(QWidget):
         self._freelist_cache = (entries, carved)
         return self._freelist_cache
 
-    def _table_column_counts(self, conn: sqlite3.Connection) -> dict[str, int]:
-        """Return {table_name: column_count} for every table in the schema."""
-        counts: dict[str, int] = {}
+    def _table_schema_columns(
+        self, conn: sqlite3.Connection
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Return {table_name: [(column_name, column_affinity), ...]} for
+        every table in the schema, columns in declaration order."""
+        result: dict[str, list[tuple[str, str]]] = {}
         try:
             names = [
                 r[0] for r in conn.execute(
@@ -1366,14 +1389,14 @@ class TableViewer(QWidget):
                 ).fetchall()
             ]
         except Exception:
-            return counts
+            return result
         for name in names:
             try:
                 cols = conn.execute(f"PRAGMA table_info([{name}])").fetchall()  # noqa: S608
-                counts[name] = len(cols)
+                result[name] = [(c[1], column_affinity(c[2])) for c in cols]
             except Exception:
                 continue
-        return counts
+        return result
 
     def _load_freelist_recovery(self) -> None:
         """Carve leftover table-leaf rows out of freed (freelist) pages.
@@ -1382,8 +1405,11 @@ class TableViewer(QWidget):
         hold table data can still carry its old cells until reused. Since a
         freed page is no longer referenced by any B-tree, the table it
         originally belonged to cannot be determined with certainty —
-        "Candidate Tables" is a heuristic match by column count only, and
-        all matches are shown rather than guessing a single one.
+        "Candidate Tables" is a heuristic match by column count, refined by
+        whether each value's storage class is possible under the candidate
+        column's type affinity (see column_affinity()/value_matches_affinity()
+        in sqlite_freelist.py). All matches are shown, tiered by confidence,
+        rather than guessing a single one.
         """
         self._reset_source_model()
         conn = self._ensure_db()
@@ -1400,20 +1426,20 @@ class TableViewer(QWidget):
         # Fast path: already cached, populate directly.
         if self._freelist_cache is not None:
             entries, carved = self._freelist_cache
-            schema_cols = self._table_column_counts(conn)
-            self._populate_freelist_recovery_table(entries, carved, schema_cols)
+            schema_cols = self._table_schema_columns(conn)
+            self._render_freelist_recovery(entries, carved, schema_cols)
             return
 
         # Slow path: walk_freelist_pages/carve_freelist_rows haven't run yet
         # for this database -- do the full scan off the UI thread.
-        def _work() -> tuple[list[dict], list[dict], dict[str, int]]:
+        def _work() -> tuple[list[dict], list[dict], dict[str, list[tuple[str, str]]]]:
             entries, carved = self._get_freelist_data()
-            schema_cols = self._table_column_counts(self._ensure_db())
+            schema_cols = self._table_schema_columns(self._ensure_db())
             return entries, carved, schema_cols
 
         def _on_done(result: object) -> None:
             entries, carved, schema_cols = result  # type: ignore[misc]
-            self._populate_freelist_recovery_table(entries, carved, schema_cols)
+            self._render_freelist_recovery(entries, carved, schema_cols)
 
         def _on_error(message: str) -> None:
             self._sql_status.setStyleSheet("color: red;")
@@ -1421,12 +1447,89 @@ class TableViewer(QWidget):
 
         run_with_busy_dialog(self, "Scanning freelist pages…", _work, _on_done, _on_error)
 
+    def _render_freelist_recovery(
+        self,
+        entries: list[dict],
+        carved: list[dict],
+        schema_cols: dict[str, list[tuple[str, str]]],
+    ) -> None:
+        """Store freshly (re)scanned freelist data and (re)populate the
+        table, refreshing the 'View as' pivot options against it."""
+        self._freelist_render_state = (entries, carved, schema_cols)
+        self._refresh_freelist_table_filter_options(carved, schema_cols)
+        self._populate_freelist_recovery_table(
+            entries, carved, schema_cols, self._freelist_table_filter.currentText()
+        )
+
+    def _refresh_freelist_table_filter_options(
+        self, carved: list[dict], schema_cols: dict[str, list[tuple[str, str]]]
+    ) -> None:
+        """Populate the 'View as' combo with every table that is a candidate
+        (either tier) for at least one carved row, keeping the current
+        selection if it is still valid."""
+        candidate_tables: set[str] = set()
+        for c in carved:
+            for _rowid, values in c["rows"]:
+                full, count_only = self._candidate_table_tiers(values, schema_cols)
+                candidate_tables.update(full)
+                candidate_tables.update(count_only)
+
+        previous = self._freelist_table_filter.currentText()
+        self._freelist_table_filter.blockSignals(True)
+        self._freelist_table_filter.clear()
+        self._freelist_table_filter.addItem(self._FREELIST_FILTER_ALL)
+        self._freelist_table_filter.addItems(sorted(candidate_tables))
+        idx = self._freelist_table_filter.findText(previous)
+        self._freelist_table_filter.setCurrentIndex(idx if idx >= 0 else 0)
+        self._freelist_table_filter.blockSignals(False)
+
+        visible = bool(candidate_tables)
+        self._freelist_table_filter.setVisible(visible)
+        self._freelist_table_filter_label.setVisible(visible)
+
+    def _on_freelist_table_filter_changed(self, _text: str) -> None:
+        if self._freelist_render_state is None:
+            return
+        entries, carved, schema_cols = self._freelist_render_state
+        self._populate_freelist_recovery_table(
+            entries, carved, schema_cols, self._freelist_table_filter.currentText()
+        )
+
+    @staticmethod
+    def _candidate_table_tiers(
+        values: tuple, schema_cols: dict[str, list[tuple[str, str]]]
+    ) -> tuple[list[str], list[str]]:
+        """Split tables whose column count matches *values* into (types also
+        match, count only) candidate-name lists, both sorted."""
+        full: list[str] = []
+        count_only: list[str] = []
+        for name, cols in schema_cols.items():
+            if len(cols) != len(values):
+                continue
+            if all(value_matches_affinity(v, aff) for v, (_name, aff) in zip(values, cols)):
+                full.append(name)
+            else:
+                count_only.append(name)
+        return sorted(full), sorted(count_only)
+
+    _FREELIST_FILTER_ALL = "(all tables)"
+
+    @staticmethod
+    def _freelist_cell_text(v: Any) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, bytes):
+            return v.decode("utf-8", errors="replace")
+        return str(v)
+
     def _populate_freelist_recovery_table(
         self,
         entries: list[dict],
         carved: list[dict],
-        schema_cols: dict[str, int],
+        schema_cols: dict[str, list[tuple[str, str]]],
+        selected_table: str | None = None,
     ) -> None:
+        self._reset_source_model()
         if not entries:
             self._source_model.setHorizontalHeaderLabels(["Freelist Recovery (generated)"])
             item = QStandardItem("No freelist pages found")
@@ -1435,41 +1538,79 @@ class TableViewer(QWidget):
             self._row_count_label.setText("")
             return
 
-        max_cols = max(
-            (len(values) for c in carved for _rowid, values in c["rows"]), default=0
-        )
-        headers = ["Page", "Kind", "RowID", "Candidate Tables (by column count)"] + [
-            f"col{i}" for i in range(max_cols)
-        ]
+        pivot_table = selected_table if selected_table not in (
+            None, self._FREELIST_FILTER_ALL
+        ) else None
+        pivot_cols = schema_cols.get(pivot_table, []) if pivot_table else []
+
+        if pivot_table:
+            headers = ["Page", "Kind", "RowID", "Match"] + [name for name, _aff in pivot_cols]
+        else:
+            max_cols = max(
+                (len(values) for c in carved for _rowid, values in c["rows"]), default=0
+            )
+            headers = ["Page", "Kind", "RowID", "Candidate Tables"] + [
+                f"col{i}" for i in range(max_cols)
+            ]
         self._source_model.setHorizontalHeaderLabels(headers)
 
+        cand_tooltip = (
+            "✓ = column count and value types both match (higher confidence). "
+            "Others match column count only — value types don't rule them out, "
+            "but don't confirm them either."
+        )
         total_rows = 0
         with self._dynamic_sort_suspended():
             for c in carved:
                 page, kind = c["page"], c["kind"]
                 for rowid, values in c["rows"]:
-                    candidates = sorted(
-                        name for name, n in schema_cols.items() if n == len(values)
-                    )
-                    cand_text = ", ".join(candidates) if candidates else "—"
+                    full, count_only = self._candidate_table_tiers(values, schema_cols)
 
-                    items = [
-                        QStandardItem(str(page)),
-                        QStandardItem(kind),
-                        QStandardItem(str(rowid)),
-                        QStandardItem(cand_text),
-                    ]
-                    for i in range(max_cols):
-                        if i < len(values):
-                            v = values[i]
-                            if v is None:
-                                text = ""
-                            elif isinstance(v, bytes):
-                                text = v.decode("utf-8", errors="replace")
-                            else:
-                                text = str(v)
+                    if pivot_table:
+                        if pivot_table in full:
+                            match_item = QStandardItem("✓ types match")
+                            match_item.setForeground(QColor("#2a9d8f"))
+                        elif pivot_table in count_only:
+                            match_item = QStandardItem("count only")
+                            match_item.setForeground(Qt.GlobalColor.gray)
                         else:
-                            text = ""
+                            continue  # row isn't a candidate for the pivoted table at all
+                        match_item.setToolTip(cand_tooltip)
+                        lead_items = [
+                            QStandardItem(str(page)),
+                            QStandardItem(kind),
+                            QStandardItem(str(rowid)),
+                            match_item,
+                        ]
+                        n_value_cols = len(pivot_cols)
+                    else:
+                        if full and count_only:
+                            cand_text = (
+                                "✓ " + ", ".join(full) + "   |   " + ", ".join(count_only)
+                            )
+                        elif full:
+                            cand_text = "✓ " + ", ".join(full)
+                        elif count_only:
+                            cand_text = ", ".join(count_only)
+                        else:
+                            cand_text = "—"
+                        cand_item = QStandardItem(cand_text)
+                        cand_item.setToolTip(cand_tooltip)
+                        if full and not count_only:
+                            cand_item.setForeground(QColor("#2a9d8f"))
+                        elif count_only and not full:
+                            cand_item.setForeground(Qt.GlobalColor.gray)
+                        lead_items = [
+                            QStandardItem(str(page)),
+                            QStandardItem(kind),
+                            QStandardItem(str(rowid)),
+                            cand_item,
+                        ]
+                        n_value_cols = len(headers) - 4
+
+                    items = lead_items
+                    for i in range(n_value_cols):
+                        text = self._freelist_cell_text(values[i]) if i < len(values) else ""
                         items.append(QStandardItem(text))
                     for it in items:
                         it.setEditable(False)
@@ -1478,17 +1619,31 @@ class TableViewer(QWidget):
 
         self._resize_and_cap()
         n_pages_with_data = len({c["page"] for c in carved})
-        self._row_count_label.setText(
-            f"({len(entries)} freelist pages, {n_pages_with_data} with recoverable data, "
-            f"{total_rows} rows carved)"
-        )
-        self._sql_status.setText(
-            "Candidate tables are a heuristic match by column count only — the source "
-            "table cannot be determined from a freed page. Values spilling onto overflow "
-            "pages are reconstructed when those pages are still on the freelist "
-            "unmodified; otherwise shown as '<OVERFLOW>'. Double-click a row to open the "
-            "raw page in the hex viewer."
-        )
+        if pivot_table:
+            self._row_count_label.setText(
+                f"({total_rows} rows carved matching '{pivot_table}')"
+            )
+            self._sql_status.setText(
+                f"Showing carved rows candidate for table '{pivot_table}', columns mapped "
+                "to its real names — this is still a candidate match, not a confirmed "
+                "recovery. ✓ rows also match on value types (higher confidence); 'count "
+                "only' rows match column count alone. Double-click a row to open the raw "
+                "page in the hex viewer."
+            )
+        else:
+            self._row_count_label.setText(
+                f"({len(entries)} freelist pages, {n_pages_with_data} with recoverable data, "
+                f"{total_rows} rows carved)"
+            )
+            self._sql_status.setText(
+                "Candidate tables are a heuristic match — the source table cannot be "
+                "determined with certainty from a freed page. ✓-marked candidates match on "
+                "both column count and value types (higher confidence); unmarked candidates "
+                "match column count only. Values spilling onto overflow "
+                "pages are reconstructed when those pages are still on the freelist "
+                "unmodified; otherwise shown as '<OVERFLOW>'. Double-click a row to open the "
+                "raw page in the hex viewer."
+            )
 
     def _get_page_table_map(self) -> dict[int, str]:
         """Return (and cache) {page_num: table_name}, independent of WAL presence."""
