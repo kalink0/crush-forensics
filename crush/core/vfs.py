@@ -847,9 +847,14 @@ class SevenZipVFS(VFS):
       valid 7z header structure, so py7zr has no way to tell "wrong
       password" apart from "corrupt file" there.
     - Content-only encryption: construction/listing always succeeds; a
-      missing password raises PasswordRequired() at extract() time, a wrong
-      one raises lzma.LZMAError ("Corrupt input data") since AES-CBC has no
-      built-in integrity check the way RFC 3394 key-wrap does.
+      missing password raises PasswordRequired() at extract() time. A wrong
+      one decrypts to garbage -- AES-CBC has no built-in integrity check the
+      way RFC 3394 key-wrap does -- and *which* exception that garbage then
+      trips is unstable across platforms/py7zr versions, same as the header
+      case above: usually lzma.LZMAError ("Corrupt input data") when the
+      garbage doesn't even decompress, but observed as py7zr's own
+      CrcError on macOS CI when it happens to decompress into something
+      that still fails the archive's own CRC32 check.
     """
 
     def __init__(self, path: str | Path, *, password: str = "") -> None:
@@ -947,7 +952,7 @@ class SevenZipVFS(VFS):
             self._zf.extract(targets=targets, factory=factory)
         except py7zr.exceptions.PasswordRequired as exc:
             raise PasswordRequiredError(f"7z archive is password-protected: {self._path}") from exc
-        except lzma.LZMAError as exc:
+        except (lzma.LZMAError, py7zr.exceptions.CrcError) as exc:
             raise WrongPasswordError("Incorrect 7z archive password") from exc
         finally:
             self._zf.reset()
