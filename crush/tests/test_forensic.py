@@ -741,6 +741,24 @@ def test_realm_fixture_known_output(realm_fixture: Path) -> None:
 
 
 @pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="minimal_format9.realm (file format 9) must parse to exactly: "
+    "schema ['metadata', 'class_LegacyRecord'], Row data explicitly marked unsupported",
+)
+def test_realm_format9_fixture_known_output(realm_format9_fixture: Path) -> None:
+    vfs = DirectoryVFS(realm_format9_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == realm_format9_fixture.name)
+
+    result = RealmParser().parse(node, vfs)
+
+    assert result.viewer_type == "realm"
+    assert result.data["schema"] == ["metadata", "class_LegacyRecord"]
+    assert result.data["tables"] == []
+    assert "Not supported" in result.metadata.get("Row data", "")
+
+
+@pytest.mark.forensic(
     category="Reproducibility",
     desc="Parsing the same Realm file twice must produce structurally identical results",
 )

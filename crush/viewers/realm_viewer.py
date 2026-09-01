@@ -533,6 +533,8 @@ class RealmViewer(QWidget):
             lbl.setWordWrap(True)
             tabs.addTab(lbl, "Header")
 
+        unsupported_row_format = self._data.get("unsupported_row_format")
+
         # --- Schema ---
         schema: list[str] = self._data.get("schema", [])
         if schema:
@@ -560,6 +562,11 @@ class RealmViewer(QWidget):
                             f"{type_str}  →  {target}" if target else type_str
                         )
                     schema_tree[label] = col_entries
+                elif unsupported_row_format is not None:
+                    schema_tree[name] = (
+                        f"(row data unsupported — file format {unsupported_row_format} "
+                        "predates Cluster storage, format 10+)"
+                    )
                 else:
                     schema_tree[name] = "(no column data decoded)"
             tabs.addTab(
@@ -577,6 +584,14 @@ class RealmViewer(QWidget):
                 self._build_tables_tab(tables, tabs, inactive_tables, inactive_ref_index),
                 "Tables",
             )
+        elif unsupported_row_format is not None:
+            lbl = QLabel(
+                f"Row/table data not extracted — file format {unsupported_row_format} "
+                "predates the Cluster storage engine (format 10+, realm-core v6.0.0 / "
+                "~2019). Class names in the Schema tab are still accurate."
+            )
+            lbl.setWordWrap(True)
+            tabs.addTab(lbl, "Tables")
 
         # --- Views ---
         if tables:

@@ -128,6 +128,16 @@ def realm_fixture(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def realm_format9_fixture(tmp_path: Path) -> Path:
+    """Writable copy of minimal_format9.realm (pre-Cluster file format 9,
+    BigBlobs-form class names — see issue #55) placed in tmp_path."""
+    src = FIXTURES_DIR / "minimal_format9.realm"
+    dst = tmp_path / src.name
+    dst.write_bytes(src.read_bytes())
+    return dst
+
+
+@pytest.fixture
 def sqlite_fixture(tmp_path: Path) -> Path:
     """Writable copy of minimal.sqlite placed in tmp_path."""
     src = FIXTURES_DIR / "minimal.sqlite"

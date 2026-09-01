@@ -388,8 +388,10 @@ def test_realm_schema_extraction(tmp_path: Path) -> None:
     ROOT_OFFSET = SCHEMA_OFFSET + 72  # = 96
 
     # Two 32-byte schema entries
-    entry0 = b"metadata\x00" + b"\x00" * 23
-    entry1 = b"class_Task\x00" + b"\x00" * 21
+    # ArrayStringShort real encoding (array_string_short.hpp get()): content,
+    # zero-padding, then a trailing pad-count byte (= width-1-len(content)).
+    entry0 = b"metadata" + b"\x00" * 23 + bytes([23])
+    entry1 = b"class_Task" + b"\x00" * 21 + bytes([21])
     schema_hdr = b"\x41\x41\x41\x41\x0E" + (2).to_bytes(3, "big")  # flags=0x0E, size=2
     schema_array = schema_hdr + entry0 + entry1  # 8 + 32 + 32 = 72 bytes
 
@@ -426,6 +428,72 @@ def test_realm_schema_extraction(tmp_path: Path) -> None:
     assert result.metadata.get("Tables found") == "2"
 
 
+def test_realm_schema_extraction_format9_big_blobs(tmp_path: Path) -> None:
+    """Pre-Cluster (file format < 10) Group.m_table_names is the full
+    polymorphic ArrayString (group.hpp, confirmed against tag v5.23.9 -- the
+    last release that still wrote format 9), which can use the on-disk
+    SmallBlobs/BigBlobs forms, not just the inline ArrayStringShort form
+    modern (format 10+) files are restricted to (max_table_name_length=63
+    lets them always use the inline form). Before the issue #55 fix,
+    _extract_schema only decoded the inline form and silently returned zero
+    classes for a BigBlobs-form file -- indistinguishable from a genuinely
+    empty schema. This also verifies row/table data is explicitly flagged
+    unsupported for file format < 10 rather than left silently empty,
+    since this parser's Cluster-walking code cannot read the pre-Cluster
+    row layout such a file would actually have.
+    """
+    ROOT_OFFSET = 24
+    TABLE_NAMES_OFFSET = 40
+    BLOB0_OFFSET = 56
+    name0 = b"metadata\x00"
+    BLOB1_OFFSET = BLOB0_OFFSET + 8 + len(name0)
+    name1 = b"class_LegacyRecord\x00"
+
+    # Group top array: 1 ref (flags=0x46: has_refs, scheme=0, width_ndx=6/32-bit)
+    root_hdr_bytes = b"\x41\x41\x41\x41\x46" + (1).to_bytes(3, "big")
+    root_payload = TABLE_NAMES_OFFSET.to_bytes(4, "little") + b"\x00" * 4
+    root_array = root_hdr_bytes + root_payload  # 24..40
+
+    # ArrayBigBlobs: has_refs=1, context_flag=1, scheme=0, width_ndx=6 (32-bit refs)
+    # -> flags = 0b01100110 = 0x66 (see _read_array_string_or_binary dispatch)
+    table_names_hdr = b"\x41\x41\x41\x41\x66" + (2).to_bytes(3, "big")
+    table_names_payload = (
+        BLOB0_OFFSET.to_bytes(4, "little") + BLOB1_OFFSET.to_bytes(4, "little")
+    )
+    table_names_array = table_names_hdr + table_names_payload  # 40..56
+
+    # Each blob leaf: has_refs=0, scheme=0, width_ndx=1 (1 byte/elem) -> size == byte length
+    blob0 = b"\x41\x41\x41\x41\x01" + len(name0).to_bytes(3, "big") + name0
+    blob1 = b"\x41\x41\x41\x41\x01" + len(name1).to_bytes(3, "big") + name1
+
+    file_hdr = (
+        (0).to_bytes(8, "little")             # top_ref0 = 0 (unused)
+        + ROOT_OFFSET.to_bytes(8, "little")   # top_ref1 = 24
+        + b"T-DB"
+        + bytes([9, 9, 0, 0x01])              # fmt0=fmt1=9 (pre-Cluster), top_ref1 active
+    )
+
+    realm_bytes = file_hdr + root_array + table_names_array + blob0 + blob1
+
+    realm_path = tmp_path / "format9.realm"
+    realm_path.write_bytes(realm_bytes)
+
+    vfs = DirectoryVFS(tmp_path)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == "format9.realm")
+
+    result = RealmParser().parse(node, vfs)
+
+    assert result.viewer_type == "realm"
+    assert result.data["schema"] == ["metadata", "class_LegacyRecord"]
+
+    # Row/table data needs the Cluster layout (format 10+) this file doesn't
+    # have -- must be explicitly flagged, never silently left at zero rows.
+    assert result.data["tables"] == []
+    assert "Not supported" in result.metadata.get("Row data", "")
+    assert "9" in result.metadata["Row data"]
+
+
 def test_realm_parser_decrypts_with_correct_key(tmp_path: Path) -> None:
     """RealmParser.parse(..., password=hex_key) decrypts an encrypted file
     and parses it exactly like the equivalent plaintext file -- end-to-end
@@ -437,8 +505,10 @@ def test_realm_parser_decrypts_with_correct_key(tmp_path: Path) -> None:
 
     SCHEMA_OFFSET = 24
     ROOT_OFFSET = SCHEMA_OFFSET + 72
-    entry0 = b"metadata\x00" + b"\x00" * 23
-    entry1 = b"class_Task\x00" + b"\x00" * 21
+    # ArrayStringShort real encoding (array_string_short.hpp get()): content,
+    # zero-padding, then a trailing pad-count byte (= width-1-len(content)).
+    entry0 = b"metadata" + b"\x00" * 23 + bytes([23])
+    entry1 = b"class_Task" + b"\x00" * 21 + bytes([21])
     schema_hdr = b"\x41\x41\x41\x41\x0E" + (2).to_bytes(3, "big")
     schema_array = schema_hdr + entry0 + entry1
     root_hdr_bytes = b"\x41\x41\x41\x41\x46" + (1).to_bytes(3, "big")
