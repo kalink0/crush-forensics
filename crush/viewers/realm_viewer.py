@@ -564,8 +564,8 @@ class RealmViewer(QWidget):
                     schema_tree[label] = col_entries
                 elif unsupported_row_format is not None:
                     schema_tree[name] = (
-                        f"(row data unsupported — file format {unsupported_row_format} "
-                        "predates Cluster storage, format 10+)"
+                        f"(row data not extracted — file format {unsupported_row_format} "
+                        "not supported by this parser; see Properties panel for why)"
                     )
                 else:
                     schema_tree[name] = "(no column data decoded)"
@@ -587,8 +587,8 @@ class RealmViewer(QWidget):
         elif unsupported_row_format is not None:
             lbl = QLabel(
                 f"Row/table data not extracted — file format {unsupported_row_format} "
-                "predates the Cluster storage engine (format 10+, realm-core v6.0.0 / "
-                "~2019). Class names in the Schema tab are still accurate."
+                "is not supported by this parser (see Properties panel for why). "
+                "Class names in the Schema tab are still accurate."
             )
             lbl.setWordWrap(True)
             tabs.addTab(lbl, "Tables")
