@@ -4,6 +4,10 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+### Bug Fixes
+
+- Fixed the Realm parser silently returning zero classes on file-format-9 (and older) databases, indistinguishable from a genuinely empty file — the class-name array uses a different on-disk form pre-format-10 that the parser didn't decode. Row/table data is still not extracted for these older files, but that's now shown explicitly instead of appearing empty. Addresses [#55](https://github.com/kalink0/crush-forensics/issues/55), reported by [@abrignoni](https://github.com/abrignoni).
+
 ## v0.17.0 - 2026-08-31
 
 **Focus: Standalone .gz VFS support; SQLite Freelist Recovery refinements; bundled peach updated to v0.4.1.**

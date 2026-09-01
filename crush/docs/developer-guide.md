@@ -119,6 +119,18 @@ for details). A parser audit that fixed the same failure pattern across the rest
   inherently probabilistic by nature of the problem. This rule is about decoding structure
   *within* a format that's already been identified.
 
+### Never let unsupported content render as silent empty/zero
+
+If a parser can't decode something (unsupported version, unimplemented structure variant), say
+so explicitly — never let it degrade to an empty/zero result, which is indistinguishable from a
+genuinely empty file. Check supported boundaries explicitly rather than falling through to a
+happy-path default.
+
+Split the signal: the plain fact (e.g. an int/bool) goes in `data` for any consumer to check;
+the human-readable *why* goes in `metadata` (parser-owned, see conventions below). A viewer
+should build its own generic message from the fact alone, not reproduce the parser's reasoning
+or import its internals.
+
 ### Directory-based formats (e.g. LevelDB)
 
 If the format is detected from a directory rather than a single file, skip `can_parse` and
