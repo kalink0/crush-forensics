@@ -14,17 +14,14 @@ The data dict passed in has the shape:
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-import re
-
-from PySide6.QtGui import QFont, QColor, QSyntaxHighlighter, QTextCharFormat, QTextOption
 from PySide6.QtWidgets import (
     QLabel,
-    QPlainTextEdit,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+from crush.viewers.text_viewer import TextView
 from crush.viewers.tree_viewer import TreeViewer
 
 
@@ -72,48 +69,13 @@ class AbxViewer(QWidget):
         )
         right_layout.addWidget(right_header)
 
-        xml_editor = QPlainTextEdit()
-        xml_editor.setReadOnly(True)
-        # setReadOnly() only grants mouse-based selection in Qt6 — keyboard
-        # cursor movement and Shift-selection need TextSelectableByKeyboard too.
-        xml_editor.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
-        # Visual wrap to avoid horizontal scrolling; no actual line breaks inserted.
-        xml_editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
-        xml_editor.setWordWrapMode(QTextOption.WrapMode.WordWrap)
-        xml_editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        font = QFont("Courier New", 10)
-        font.setStyleHint(QFont.StyleHint.Monospace)
-        xml_editor.setFont(font)
-        _XmlHighlighter(xml_editor.document())
-        xml_editor.setPlainText(data.get("xml_str", ""))
-        right_layout.addWidget(xml_editor)
+        # TextView brings its own XML syntax highlighting (auto-detected from
+        # the leading "<?xml") plus a Ctrl+F search bar with regex/case
+        # options and hit navigation — no need to duplicate either here.
+        xml_view = TextView(data.get("xml_str", ""), right)
+        right_layout.addWidget(xml_view)
 
         splitter.addWidget(right)
         splitter.setSizes([400, 400])
 
         layout.addWidget(splitter)
-
-
-class _XmlHighlighter(QSyntaxHighlighter):
-    def __init__(self, document: object) -> None:
-        super().__init__(document)  # type: ignore[arg-type]
-        self._fmt_tag = QTextCharFormat()
-        self._fmt_tag.setForeground(QColor("#005a9c"))
-        self._fmt_attr = QTextCharFormat()
-        self._fmt_attr.setForeground(QColor("#7a3e9d"))
-        self._fmt_attr_value = QTextCharFormat()
-        self._fmt_attr_value.setForeground(QColor("#2a7b2e"))
-        self._tag_re = re.compile(r"</?\s*[^>\s/]+")
-        self._attr_re = re.compile(r"\s+([A-Za-z_:\-][\w:.-]*)\s*=")
-        self._attr_value_re = re.compile(r"=\s*\"([^\"\\]|\\.)*\"")
-
-    def highlightBlock(self, text: str) -> None:  # type: ignore[override]
-        for m in self._tag_re.finditer(text):
-            self.setFormat(m.start(), m.end() - m.start(), self._fmt_tag)
-        for m in self._attr_re.finditer(text):
-            self.setFormat(m.start(1), m.end(1) - m.start(1), self._fmt_attr)
-        for m in self._attr_value_re.finditer(text):
-            self.setFormat(m.start(), m.end() - m.start(), self._fmt_attr_value)

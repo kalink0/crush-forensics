@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import struct
 from dataclasses import dataclass
 
@@ -58,9 +59,12 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
     out: list[str] = ["<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"]
     tag_stack: list[str] = []
     open_tag = False
+    root_element_count = 0
+    token_start_pos = reader.pos
 
     try:
         while reader.pos < len(data):
+            token_start_pos = reader.pos
             token_byte = reader.read_u8()
             token = token_byte & 0x0F
             dtype = token_byte & 0xF0
@@ -73,11 +77,14 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
             if token == START_TAG:
                 if open_tag:
                     out.append(">")
+                    open_tag = False
+                if not tag_stack:
+                    root_element_count += 1
                 name = _to_string(reader.read_value(dtype))
                 if not name:
                     name = "unknown"
                     warnings.append("Empty start tag name")
-                out.append(f"<{_xml_escape(name)}")
+                out.append(f"<{_xml_escape(name, warnings)}")
                 open_tag = True
                 tag_stack.append(name)
 
@@ -92,7 +99,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                     attr_val = reader.read_value(attr_type)
                     attr_val_str = _to_string(attr_val)
                     out.append(
-                        f" {_xml_escape(attr_name)}=\"{_xml_escape(attr_val_str)}\""
+                        f' {_xml_escape(attr_name, warnings)}="{_xml_escape(attr_val_str, warnings)}"'
                     )
                 continue
 
@@ -108,7 +115,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                     open_tag = False
                 if tag_stack:
                     tag_stack.pop()
-                out.append(f"</{_xml_escape(name)}>")
+                out.append(f"</{_xml_escape(name, warnings)}>")
                 continue
 
             if token == TEXT:
@@ -116,7 +123,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                 if open_tag:
                     out.append(">")
                     open_tag = False
-                out.append(_xml_escape(text))
+                out.append(_xml_escape(text, warnings))
                 continue
 
             if token == CDSECT:
@@ -124,7 +131,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                 if open_tag:
                     out.append(">")
                     open_tag = False
-                out.append(f"<![CDATA[{text}]]>")
+                out.append(f"<![CDATA[{_sanitize_control_chars(text, warnings)}]]>")
                 continue
 
             if token == COMMENT:
@@ -132,12 +139,33 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                 if open_tag:
                     out.append(">")
                     open_tag = False
-                out.append(f"<!--{_xml_escape(text)}-->")
+                out.append(f"<!--{_xml_escape(text, warnings)}-->")
                 continue
 
-            if token in (ENTITY_REF, IGNORABLE_WHITESPACE, PROCESSING_INSTRUCTION, DOCDECL):
-                # Best-effort: consume value if any, then skip
+            if token == IGNORABLE_WHITESPACE:
+                # Per XmlPullParser semantics this is formatting whitespace
+                # between structural elements — safe to discard, matches how
+                # any XML serializer would treat it. Not a data loss.
                 _ = reader.read_value(dtype)
+                continue
+
+            if token in (ENTITY_REF, PROCESSING_INSTRUCTION, DOCDECL):
+                # These carry semantic content unlike IGNORABLE_WHITESPACE.
+                # Android's BinaryXmlSerializer is not known to emit them, so
+                # we don't guess at exact re-encoded syntax (would be a
+                # heuristic) — surface the raw value visibly instead of
+                # silently dropping it, and flag it so it gets a second look.
+                token_name = {
+                    ENTITY_REF: "ENTITY_REF",
+                    PROCESSING_INSTRUCTION: "PROCESSING_INSTRUCTION",
+                    DOCDECL: "DOCDECL",
+                }[token]
+                value = _to_string(reader.read_value(dtype))
+                warnings.append(f"Unsupported {token_name} token encountered (rare/unverified format)")
+                if open_tag:
+                    out.append(">")
+                    open_tag = False
+                out.append(f"<!--{token_name}: {_xml_escape(value, warnings)}-->")
                 continue
 
             if token == ATTRIBUTE:
@@ -153,7 +181,27 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
         if open_tag:
             out.append(">")
     except Exception as exc:
-        warnings.append(f"Decode error: {exc}")
+        remaining = len(data) - token_start_pos
+        warnings.insert(
+            0,
+            f"TRUNCATED: decode error at offset {token_start_pos} (0x{token_start_pos:x}): "
+            f"{exc} — {remaining} of {len(data)} bytes not decoded",
+        )
+        if open_tag:
+            out.append(">")
+            open_tag = False
+        out.append(
+            f"<!--ABX-DECODE-TRUNCATED at offset {token_start_pos}: "
+            f"{remaining} bytes not decoded ({_xml_escape(str(exc), warnings)})-->"
+        )
+
+    if root_element_count > 1:
+        warnings.append(
+            f"Multiple root elements ({root_element_count}) found; wrapped in "
+            f"synthetic <abx-root> for well-formed XML"
+        )
+        out.insert(1, "<abx-root>")
+        out.append("</abx-root>")
 
     return AbxDecodeResult("".join(out), warnings)
 
@@ -266,14 +314,34 @@ def _to_string(value: object | None) -> str:
     return str(value)
 
 
-def _xml_escape(text: str) -> str:
-    return (
+def _xml_escape(text: str, warnings: list[str] | None = None) -> str:
+    escaped = (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
         .replace("'", "&apos;")
     )
+    return _sanitize_control_chars(escaped, warnings)
+
+
+# XML 1.0 only permits #x9 | #xA | #xD | [#x20-...]; raw control bytes below
+# that (as can occur in real-world settings_secure.xml values) break any
+# downstream well-formed-XML parse. Rather than silently stripping forensic
+# byte content, re-encode each one visibly so it survives the round-trip.
+_INVALID_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _sanitize_control_chars(text: str, warnings: list[str] | None = None) -> str:
+    if not _INVALID_XML_CHARS.search(text):
+        return text
+    control_char_warning = (
+        "Raw XML-illegal control character(s) found in decoded value(s); "
+        "re-encoded as \\xHH to keep the XML well-formed"
+    )
+    if warnings is not None and control_char_warning not in warnings:
+        warnings.append(control_char_warning)
+    return _INVALID_XML_CHARS.sub(lambda m: f"\\x{ord(m.group(0)):02x}", text)
 
 
 def _decode_modified_utf8(data: bytes) -> str:

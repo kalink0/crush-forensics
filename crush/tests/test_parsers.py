@@ -1717,6 +1717,93 @@ def test_abx_decode_invalid_string_pool_reference_reports_error() -> None:
     assert any("Invalid ABX string pool reference" in w for w in result.warnings)
 
 
+def test_abx_decode_multi_root_wraps_synthetic_root() -> None:
+    # Real-world Android files (e.g. settings_secure.xml) can contain more
+    # than one top-level element with no enclosing root — without wrapping,
+    # the downstream lxml parse in AbxParser fails with "Extra content at
+    # the end of the document" and the whole tree view is lost.
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    tag_a = bytes([0x22]) + _utf("a")
+    end_a = bytes([0x23]) + _utf("a")
+    tag_b = bytes([0x22]) + _utf("b")
+    end_b = bytes([0x23]) + _utf("b")
+    data = magic + start_doc + tag_a + end_a + tag_b + end_b
+
+    result = decode_abx(data)
+
+    assert any("Multiple root elements" in w for w in result.warnings)
+
+    from lxml import etree
+
+    root = etree.fromstring(result.xml.encode("utf-8"))  # must not raise
+    assert root.tag == "abx-root"
+    assert [c.tag for c in root] == ["a", "b"]
+
+
+def test_abx_decode_sanitizes_illegal_control_chars() -> None:
+    # XML 1.0 forbids raw control bytes below 0x20 (other than tab/LF/CR).
+    # Silently stripping them would lose forensic byte content; silently
+    # passing them through breaks the downstream XML parse entirely.
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    start_tag = bytes([0x22]) + _utf("root")
+    attr = bytes([0x2F]) + _interned("val") + _utf("bad\x01char")
+    end_tag = bytes([0x23]) + _utf("root")
+    data = magic + start_doc + start_tag + attr + end_tag
+
+    result = decode_abx(data)
+
+    assert "\\x01" in result.xml
+    assert "\x01" not in result.xml
+    assert any("illegal control character" in w.lower() for w in result.warnings)
+
+    from lxml import etree
+
+    etree.fromstring(result.xml.encode("utf-8"))  # must not raise
+
+
+def test_abx_decode_surfaces_processing_instruction_not_silently() -> None:
+    # ENTITY_REF/PROCESSING_INSTRUCTION/DOCDECL used to be consumed and
+    # discarded with zero warning — a silent data loss. They must now show
+    # up in the output and be flagged.
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    start_tag = bytes([0x22]) + _utf("root")
+    pi = bytes([0x28]) + _utf("mypi data")  # token=PROCESSING_INSTRUCTION(8), dtype=TYPE_STRING
+    end_tag = bytes([0x23]) + _utf("root")
+    data = magic + start_doc + start_tag + pi + end_tag
+
+    result = decode_abx(data)
+
+    assert "mypi data" in result.xml
+    assert any("PROCESSING_INSTRUCTION" in w for w in result.warnings)
+
+
+def test_abx_decode_reports_truncation_scope_on_error() -> None:
+    # A single decode error used to silently drop every remaining byte with
+    # only a generic, scope-free message. The warning and the XML itself
+    # must now make clear how much was lost and from where.
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    start_tag = bytes([0x22]) + _utf("root")
+    bad_start_tag = bytes([0xE2])  # unassigned dtype, raises mid-document
+    tail = b"\x00" * 10
+    data = magic + start_doc + start_tag + bad_start_tag + tail
+    expected_offset = len(magic) + len(start_doc) + len(start_tag)
+    expected_remaining = len(data) - expected_offset
+
+    result = decode_abx(data)
+
+    assert any(
+        w.startswith("TRUNCATED:")
+        and f"offset {expected_offset}" in w
+        and f"{expected_remaining} of {len(data)} bytes not decoded" in w
+        for w in result.warnings
+    )
+    assert "ABX-DECODE-TRUNCATED" in result.xml
+
+
 def test_abx_parser_parse(tmp_path: Path) -> None:
     abx_path = tmp_path / "binary.xml"
     abx_path.write_bytes(_make_abx_bytes())

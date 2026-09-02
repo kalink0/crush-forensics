@@ -58,9 +58,12 @@ Limitations
 
 ### Android Binary XML (ABX)
 - Decodes ABX v1/v2 into a structured tree and reconstructed XML (ABX Viewer).
+- Files with more than one top-level element and no enclosing root (e.g. `settings_secure.xml`) are wrapped in a synthetic `<abx-root>` so they still parse into a tree, instead of failing on "extra content" errors.
+- Raw XML-illegal control characters in decoded values (occasionally present in real `settings_secure.xml` data) are re-encoded visibly (`\xHH`) rather than breaking reconstruction or being silently dropped.
 
 Limitations
 - Best-effort decode; newer ABX variants may not parse.
+- `ENTITY_REF`/`PROCESSING_INSTRUCTION`/`DOCDECL` tokens are not known to be emitted by Android's serializer; if encountered they are shown as a comment with a warning rather than reconstructed to exact original syntax.
 
 ### SEGB (Biome)
 - Parses SEGB v1/v2 records into the Table Viewer.
@@ -210,6 +213,7 @@ Limitations
 
 ### ABX Viewer
 - Split view with parsed tree and reconstructed XML.
+- The XML pane is pretty-printed (indented, multi-line) and includes a Ctrl+F search bar (regex/case options, hit navigation) shared with the generic Text/XML viewer.
 
 Limitations
 - XML reconstruction is best-effort.

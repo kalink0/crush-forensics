@@ -28,8 +28,15 @@ class AbxParser(AbstractParser):
         try:
             decoded = decode_abx(raw)
             xml_str = decoded.xml
+            display_xml_str = xml_str
             try:
-                tree = _xml_to_tree(xml_str)
+                root = _parse_xml(xml_str)
+                tree = _element_to_dict(root)
+                # decode_abx emits one continuous line with no whitespace
+                # between elements; re-indent for the "Reconstructed XML"
+                # pane so it wraps into readable lines instead of one very
+                # long unbroken one.
+                display_xml_str = _pretty_print(root, fallback=xml_str)
             except Exception as exc:
                 tree = {
                     "error": str(exc),
@@ -40,12 +47,17 @@ class AbxParser(AbstractParser):
                 "File size": f"{node.size:,} B",
             }
             if decoded.warnings:
-                meta["Warnings"] = "; ".join(decoded.warnings[:3])
+                shown = decoded.warnings[:3]
+                remaining = len(decoded.warnings) - len(shown)
+                summary = "; ".join(shown)
+                if remaining > 0:
+                    summary += f" (+{remaining} more)"
+                meta["Warnings"] = summary
             return ParseResult(
                 viewer_type="abx",
-                data={"tree": tree, "xml_str": xml_str},
+                data={"tree": tree, "xml_str": display_xml_str},
                 metadata=meta,
-                text_index=xml_str[:4000],
+                text_index=display_xml_str[:4000],
             )
         except Exception as exc:
             # Fallback: show error in tree viewer
@@ -56,12 +68,23 @@ class AbxParser(AbstractParser):
             )
 
 
-def _xml_to_tree(xml_str: str) -> dict[str, Any]:
-    """Convert XML string to nested dict for the tree viewer."""
+def _parse_xml(xml_str: str) -> Any:
     from lxml import etree
 
-    root = etree.fromstring(xml_str.encode("utf-8", errors="replace"))
-    return _element_to_dict(root)
+    return etree.fromstring(xml_str.encode("utf-8", errors="replace"))
+
+
+def _pretty_print(root: Any, fallback: str) -> str:
+    from lxml import etree
+
+    try:
+        # lxml refuses xml_declaration=True with encoding="unicode", so
+        # serialize to utf-8 bytes (gets the real declaration) and decode.
+        return etree.tostring(
+            root, pretty_print=True, xml_declaration=True, encoding="utf-8"
+        ).decode("utf-8")
+    except Exception:
+        return fallback
 
 
 def _element_to_dict(el: Any) -> dict[str, Any]:

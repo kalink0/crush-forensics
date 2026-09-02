@@ -7,6 +7,7 @@ All notable changes to Crush will be documented in this file.
 ### New Features
 
 - Realm parser now extracts row/table data for pre-Cluster (file format <10) databases, not just class names — covers every old column type, including Mixed, Subtables, StringEnum, and Link/LinkList, validated against real sample files. Continues [#55](https://github.com/kalink0/crush-forensics/issues/55), reported by [@abrignoni](https://github.com/abrignoni).
+- ABX Viewer's reconstructed XML pane now uses the same viewer as generic XML files, adding a Ctrl+F search bar (regex/case options, hit navigation) and pretty-printed, indented output instead of one unbroken line.
 
 ### Bug Fixes
 
@@ -14,6 +15,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed the Realm parser decoding 1-bit-wide Int columns as `True`/`False` instead of their real integer value — array storage width depends on the largest value an array ever held, not the column's declared type. Found by [@abrignoni](https://github.com/abrignoni) on a real-world file.
 - Fixed the Realm parser silently returning an empty schema for files in Realm's "streaming form" (e.g. `Group::write()` output, or a Realm Studio export) instead of resolving the real top reference from the file's end-of-file footer.
 - Fixed the Realm parser leaving row/table decode failures unexplained — the Properties panel's "Row data" field now states the parser's own specific diagnosis instead of a generic or missing message.
+- Fixed ABX files with more than one top-level element (e.g. `settings_secure.xml`) failing to build a tree view — these are now wrapped in a synthetic root instead of raising an XML syntax error.
+- Fixed the ABX decoder silently dropping unsupported XML tokens and truncating the rest of the file on any decode error with no indication of scope, and raw XML-illegal control characters (a known real-world occurrence in `settings_secure.xml` values) breaking the reconstruction entirely — all three now produce explicit, visible warnings instead of silent or total data loss.
 
 ## v0.17.0 - 2026-08-31
 
