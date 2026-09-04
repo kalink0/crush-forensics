@@ -693,6 +693,7 @@ class MainWindow(QMainWindow):
         self._integrity_mode_action.toggled.connect(self._set_integrity_mode)
         tools_menu.addAction(self._integrity_mode_action)
         tools_menu.addAction("Indexing Threads…", self._set_prescan_workers)
+        tools_menu.addAction("Log Temp Directory…", self._set_log_temp_dir)
         peach_menu = tools_menu.addMenu("Peach")
         peach_menu.addAction("Open Peach", self._open_peach_standalone)
         peach_menu.addAction("Binary Path…", self._set_peach_binary_path)
@@ -1716,6 +1717,20 @@ class MainWindow(QMainWindow):
                 )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Send to Peach", str(exc))
+
+    def _set_log_temp_dir(self) -> None:
+        current = self._settings.value("log_temp_dir", "", type=str)
+        text, ok = QInputDialog.getText(
+            self,
+            "Log Temp Directory",
+            "Directory to use for intermediate files during log conversion "
+            "(e.g. Apple Unified Log .tracev3 / .logarchive processing) — "
+            "leave blank to use the OS default temp location:",
+            QLineEdit.EchoMode.Normal,
+            current,
+        )
+        if ok:
+            self._settings.setValue("log_temp_dir", text.strip())
 
     def _set_peach_binary_path(self) -> None:
         current = self._settings.value("peach_binary_path", "", type=str)

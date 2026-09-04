@@ -8,8 +8,10 @@ from typing import Any
 
 import pytest
 
+from crush.parsers import unified_log_parser as ulp
 from crush.parsers.unified_log_parser import (
     _ANSI_RE,
+    UnifiedLogConverter,
     _entry_from_mandiant_csv,
     _entry_from_mandiant_json,
     _extract_message_entries,
@@ -289,6 +291,41 @@ class TestAnsiRe:
     def test_no_ansi_unchanged(self) -> None:
         raw = "[WARN] plain text"
         assert _ANSI_RE.sub("", raw) == raw
+
+
+# ---------------------------------------------------------------------------
+# UnifiedLogConverter — configurable temp directory
+# ---------------------------------------------------------------------------
+
+class TestUnifiedLogConverterTempDir:
+    def test_defaults_to_none(self) -> None:
+        assert UnifiedLogConverter()._temp_dir is None
+
+    def test_blank_string_treated_as_none(self) -> None:
+        assert UnifiedLogConverter(temp_dir="")._temp_dir is None
+
+    def test_stream_entries_creates_tmp_dir_under_configured_base(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The single-file branch of stream_entries() must pass the configured
+        base through to tempfile.mkdtemp(), not fall back to the OS default."""
+        real_mkdtemp = ulp.tempfile.mkdtemp
+        captured: dict[str, Any] = {}
+
+        def fake_mkdtemp(*, prefix: str, dir: str | None = None) -> str:
+            captured["dir"] = dir
+            return real_mkdtemp(prefix=prefix, dir=dir)
+
+        monkeypatch.setattr(ulp.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr(UnifiedLogConverter, "_select_binary", lambda self: __file__)
+
+        converter = UnifiedLogConverter(temp_dir=str(tmp_path))
+        node = type("Node", (), {"is_dir": False, "name": "x.tracev3"})()
+        gen = converter.stream_entries(node, vfs=None)  # type: ignore[arg-type]
+        with pytest.raises(AttributeError):
+            next(gen)  # fails reading from vfs=None, after mkdtemp already ran
+
+        assert captured["dir"] == str(tmp_path)
 
 
 # ---------------------------------------------------------------------------

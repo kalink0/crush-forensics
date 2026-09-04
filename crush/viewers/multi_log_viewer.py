@@ -46,6 +46,7 @@ from PySide6.QtCore import (
     QAbstractTableModel,
     QDateTime,
     QModelIndex,
+    QSettings,
     Qt,
     QThread,
     QTimer,
@@ -581,12 +582,14 @@ class LogLoaderWorker(QThread):
         db_path:   str,
         profile:   Any = None,
         parent:    QWidget | None = None,
+        temp_dir:  str | None = None,
     ) -> None:
         super().__init__(parent)
         self._node        = node
         self._vfs         = vfs
         self._source_id   = source_id
         self._db_path     = db_path
+        self._temp_dir    = temp_dir
         self._profile     = profile
         self._cancel_flag = False
         self._converter: Any = None
@@ -667,7 +670,7 @@ class LogLoaderWorker(QThread):
 
             if _is_ios_diag:
                 from crush.parsers.unified_log_parser import UnifiedLogConverter
-                converter = UnifiedLogConverter()
+                converter = UnifiedLogConverter(temp_dir=self._temp_dir)
                 self._converter = converter
                 self.status_update.emit(self._source_id, "Converting binary log — may take several minutes…")
                 gen = converter.stream_entries_from_diagnostics(self._node, self._vfs)
@@ -681,7 +684,7 @@ class LogLoaderWorker(QThread):
 
             elif is_unified:
                 from crush.parsers.unified_log_parser import UnifiedLogConverter
-                converter = UnifiedLogConverter()
+                converter = UnifiedLogConverter(temp_dir=self._temp_dir)
                 self._converter = converter
                 self.status_update.emit(self._source_id, "Converting binary log — may take several minutes…")
                 gen = converter.stream_entries(self._node, self._vfs)
@@ -1231,6 +1234,14 @@ class MultiLogViewer(QWidget):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _log_temp_dir() -> str | None:
+        """Configured base directory for log conversion's intermediate files
+        (Tools -> Log Temp Directory...), or None to use the OS default temp
+        location."""
+        value = QSettings("Crush DFIR", "Crush").value("log_temp_dir", "", type=str)
+        return value.strip() or None
+
     def closeEvent(self, event: Any) -> None:
         for w in self._workers.values():
             if w.isRunning():
@@ -1257,7 +1268,7 @@ class MultiLogViewer(QWidget):
         self._add_source_chip(sid, node.name, color)
         _log.info("[Multi-Log] Loading: %s", node.name)
 
-        worker = LogLoaderWorker(node, vfs, sid, self._db.path, parent=self)
+        worker = LogLoaderWorker(node, vfs, sid, self._db.path, parent=self, temp_dir=self._log_temp_dir())
         worker.progress.connect(self._on_progress)
         worker.load_finished.connect(self._on_load_finished)
         worker.error.connect(self._on_error)
@@ -1711,7 +1722,9 @@ class MultiLogViewer(QWidget):
         self._model.replace_source_entries(source_id)
 
         # Launch a fresh worker with the custom profile
-        worker = LogLoaderWorker(node, vfs, source_id, self._db.path, profile=profile, parent=self)
+        worker = LogLoaderWorker(
+            node, vfs, source_id, self._db.path, profile=profile, parent=self, temp_dir=self._log_temp_dir()
+        )
         worker.progress.connect(self._on_progress)
         worker.load_finished.connect(self._on_load_finished)
         worker.error.connect(self._on_error)

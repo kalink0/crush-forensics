@@ -840,9 +840,10 @@ class UnifiedLogConverter:
     See ``crush/bin/unifiedlog_iterator/README.md`` for download instructions.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, temp_dir: str | None = None) -> None:
         self._procs: list["subprocess.Popen[bytes]"] = []
         self._cancelled = False
+        self._temp_dir = temp_dir or None
 
     def cancel(self) -> None:
         """Signal cancellation and kill all running subprocesses."""
@@ -1096,7 +1097,7 @@ class UnifiedLogConverter:
         if sys.platform != "win32":
             os.chmod(bin_path, 0o755)
 
-        tmp_in = Path(tempfile.mkdtemp(prefix="crush-ul-in-"))
+        tmp_in = Path(tempfile.mkdtemp(prefix="crush-ul-in-", dir=self._temp_dir))
         try:
             is_archive = node.is_dir or node.name.lower().endswith(".logarchive")
 
@@ -1159,7 +1160,7 @@ class UnifiedLogConverter:
         if sys.platform != "win32":
             os.chmod(bin_path, 0o755)
 
-        tmp_root = Path(tempfile.mkdtemp(prefix="crush-ul-ios-"))
+        tmp_root = Path(tempfile.mkdtemp(prefix="crush-ul-ios-", dir=self._temp_dir))
         try:
             logarchive_path = build_logarchive_from_acquisition(diag_node, vfs, tmp_root)
             yield from self._stream_logarchive_from_path(bin_path, logarchive_path, tmp_root, n_workers)

@@ -659,6 +659,8 @@ A high-performance log viewer for large files and multi-source correlation. Open
 
 **Parallel conversion** — when loading a `.logarchive` or iOS diagnostics directory, Crush splits the `Persist/*.tracev3` files across multiple `unifiedlog_iterator` processes (one per physical CPU core by default). Results appear in the viewer as each chunk finishes. The benchmark script `scripts/benchmark_unified_log.py` can be used to measure throughput and tune the worker count with `--workers N`.
 
+**Tools → Log Temp Directory…** sets the base directory for the intermediate files created during log conversion — currently used when converting `.tracev3`/`.logarchive` sources (extracted archive contents, per-worker mini-logarchives, and the converter's output CSVs) — useful when the OS default temp location is on a small or slow disk. Leave blank to use the OS default.
+
 **Context menu** (right-click any row):
 
 | Option | Action |
