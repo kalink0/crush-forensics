@@ -13,6 +13,8 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed the LevelDB viewer's Records table sorting the Seq column as text instead of numerically (`1, 10, 100, 2, 20…`) — the table's filter proxy has its own independent sort role, separate from the underlying model's, that was never set to match. Addresses [#61](https://github.com/kalink0/crush-forensics/issues/61), reported by [@JamesHabben](https://github.com/JamesHabben).
+- Fixed Multi-Log Studio's PID column sorting the same way (text, not numeric) — found while auditing the codebase for the same bug class as [#61](https://github.com/kalink0/crush-forensics/issues/61).
 - Fixed the Protobuf parser discarding a length-delimited field's payload past its 64-byte display preview instead of retaining the full bytes — meant a string/bytes/submessage field longer than that was silently missing data from the newly added value box and "Inspect BLOB…" action. Found while implementing [#60](https://github.com/kalink0/crush-forensics/issues/60).
 - Fixed the Realm parser silently returning zero classes on file-format-9 (and older) databases, indistinguishable from a genuinely empty file — the class-name array uses a different on-disk form pre-format-10 that the parser didn't decode. Addresses [#55](https://github.com/kalink0/crush-forensics/issues/55), reported by [@abrignoni](https://github.com/abrignoni).
 - Fixed the Realm parser decoding 1-bit-wide Int columns as `True`/`False` instead of their real integer value — array storage width depends on the largest value an array ever held, not the column's declared type. Found by [@abrignoni](https://github.com/abrignoni) on a real-world file.

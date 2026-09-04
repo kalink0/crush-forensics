@@ -171,6 +171,10 @@ class LevelDbRecordsWidget(QWidget):
 
         self._proxy = _StateFilterProxy()
         self._proxy.setSourceModel(self._model)
+        # QSortFilterProxyModel has its own independent sortRole (defaults to
+        # DisplayRole) — setting it only on the source model above doesn't propagate
+        # here, so the table would sort Seq/Offset as text without this.
+        self._proxy.setSortRole(Qt.ItemDataRole.UserRole)
 
         self._table = QTableView()
         self._table.setModel(self._proxy)

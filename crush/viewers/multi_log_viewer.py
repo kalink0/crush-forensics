@@ -797,7 +797,9 @@ _SQL_SORT_COL: dict[int, str] = {
     _COL_TS:   "ts_unix",
     _COL_LVL:  "level",
     _COL_PROC: "process",
-    _COL_PID:  "pid",
+    # pid is stored as TEXT (crush/core/log_db.py) — CAST to sort numerically
+    # ("2" before "10") instead of SQLite's default TEXT collation order.
+    _COL_PID:  "CAST(pid AS INTEGER)",
     _COL_SUB:  "subsystem",
     _COL_CAT:  "category",
     _COL_MSG:  "message",
