@@ -3,6 +3,7 @@
 """Protobuf viewer — schema-less decode with optional schema-based decoding."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -185,6 +186,46 @@ _FULLTEXT_ROLE = Qt.ItemDataRole.UserRole + 1
 _ENTRY_ROLE = Qt.ItemDataRole.UserRole + 2  # the field's original decoded entry dict
 
 
+def _entry_to_jsonable(entry: dict[str, Any]) -> dict[str, Any]:
+    """Convert one decoded protobuf entry to a JSON-safe dict.
+
+    Uses the entry's full raw payload for a bytes field's value (not the parser's
+    64-byte-capped hex_preview, per #60) so an export never contains less than the
+    field actually holds.
+    """
+    from crush.viewers.blob_inspector import _PROTOBUF_INTERP_SKIP
+
+    out: dict[str, Any] = {"field": entry.get("field"), "wire_type": entry.get("wire_type")}
+    val = entry.get("value")
+    raw = entry.get("raw")
+    if isinstance(val, dict):
+        vtype = val.get("type")
+        if vtype == "message":
+            out["type"] = "message"
+            out["entries"] = [_entry_to_jsonable(e) for e in val.get("entries", [])]
+        elif vtype == "string":
+            out["type"] = "string"
+            out["value"] = val.get("text", "")
+        else:
+            out["type"] = "bytes"
+            out["length"] = val.get("length")
+            out["value_hex"] = raw.hex() if raw else val.get("hex_preview", "")
+    else:
+        out["type"] = "scalar"
+        out["value"] = val
+    interpretations = [
+        i for i in entry.get("interpretations", [])
+        if i.label not in _PROTOBUF_INTERP_SKIP
+    ]
+    if interpretations:
+        out["interpretations"] = {i.label: i.value for i in interpretations}
+    return out
+
+
+def _entries_to_json(entries: list[dict[str, Any]]) -> str:
+    return json.dumps([_entry_to_jsonable(e) for e in entries], indent=2, ensure_ascii=False)
+
+
 class ProtobufTreeWidget(QWidget):
     """Tree view tailored for schema-less protobuf entries.
 
@@ -211,6 +252,9 @@ class ProtobufTreeWidget(QWidget):
         self._collapse_all_btn = QPushButton("Collapse All")
         self._collapse_all_btn.clicked.connect(self._tree_collapse_all)
         tb_layout.addWidget(self._collapse_all_btn)
+        self._export_btn = QPushButton("Export…")
+        self._export_btn.clicked.connect(self._show_export_menu)
+        tb_layout.addWidget(self._export_btn)
         tb_layout.addStretch()
         tb_layout.addWidget(QLabel("Search:"))
         self._search = QLineEdit()
@@ -350,6 +394,31 @@ class ProtobufTreeWidget(QWidget):
             any_visible = any_visible or visible
         return any_visible
 
+    def _show_export_menu(self) -> None:
+        menu = QMenu(self)
+        export_text = menu.addAction("Export All as Text…")
+        export_json = menu.addAction("Export All as JSON…")
+        action = menu.exec(self._export_btn.mapToGlobal(self._export_btn.rect().bottomLeft()))
+        entries = self._decoded.get("entries", [])
+        if action == export_text:
+            self._export_entries(entries, "text", "protobuf.txt")
+        elif action == export_json:
+            self._export_entries(entries, "json", "protobuf.json")
+
+    def _export_entries(self, entries: list[dict[str, Any]], fmt: str, default_name: str) -> None:
+        if fmt == "json":
+            content = _entries_to_json(entries)
+            name_filter = "JSON (*.json)"
+        else:
+            from crush.viewers.blob_inspector import _render_protobuf
+            content = _render_protobuf(entries)
+            name_filter = "Text (*.txt)"
+        path, _ = QFileDialog.getSaveFileName(self, "Export Protobuf", default_name, name_filter)
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
     def _current_row_items(self) -> tuple[QStandardItem, QStandardItem] | None:
         index = self._tree.currentIndex()
         if not index.isValid():
@@ -384,6 +453,7 @@ class ProtobufTreeWidget(QWidget):
         value = val_item.data(_FULLTEXT_ROLE)
         value = value if value is not None else val_item.text()
         raw_bytes = val_item.data(_RAW_ROLE)
+        subtree_entry = key_item.data(_ENTRY_ROLE)  # None for interpretation hint rows
 
         menu = QMenu(self)
         inspect_action = menu.addAction("Inspect BLOB…")
@@ -392,6 +462,11 @@ class ProtobufTreeWidget(QWidget):
         copy_key = menu.addAction("Copy key")
         copy_value = menu.addAction("Copy value")
         copy_pair = menu.addAction("Copy key = value")
+        menu.addSeparator()
+        export_text = menu.addAction("Export Subtree as Text…")
+        export_text.setEnabled(subtree_entry is not None)
+        export_json = menu.addAction("Export Subtree as JSON…")
+        export_json.setEnabled(subtree_entry is not None)
         action = menu.exec(self._tree.viewport().mapToGlobal(pos))
         if action == inspect_action:
             from crush.viewers.table_viewer import BlobInspector
@@ -402,3 +477,7 @@ class ProtobufTreeWidget(QWidget):
             QApplication.clipboard().setText(value)
         elif action == copy_pair:
             QApplication.clipboard().setText(f"{key} = {value}")
+        elif action == export_text:
+            self._export_entries([subtree_entry], "text", f"{key.replace(' ', '_')}.txt")
+        elif action == export_json:
+            self._export_entries([subtree_entry], "json", f"{key.replace(' ', '_')}.json")
