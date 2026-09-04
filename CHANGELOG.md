@@ -10,6 +10,7 @@ All notable changes to Crush will be documented in this file.
 - ABX Viewer's reconstructed XML pane now uses the same viewer as generic XML files, adding a Ctrl+F search bar (regex/case options, hit navigation) and pretty-printed, indented output instead of one unbroken line.
 - Value Inspector now shows a Data Size interpretation, treating the parsed value as a byte count and auto-scaling it to both decimal (KB/MB/GB…) and binary (KiB/MiB/GiB…) units. Addresses [#59](https://github.com/kalink0/crush-forensics/issues/59), reported by [@JamesHabben](https://github.com/JamesHabben).
 - Protobuf Viewer's schema-less decode tree now has a selected-value box showing the full value below the tree, and a right-click menu (Copy key / Copy value / Copy key = value / Inspect BLOB…) — matching the other tree-based viewers. Addresses [#60](https://github.com/kalink0/crush-forensics/issues/60), reported by [@JamesHabben](https://github.com/JamesHabben).
+- Protobuf Viewer's schema-less decode tree now has Expand All / Collapse All buttons and a search box that filters to matching field names/values — matching the other tree-based viewers, and matching against each field's full value even when the tree cell shows it truncated. Addresses [#63](https://github.com/kalink0/crush-forensics/issues/63).
 
 ### Bug Fixes
 

@@ -182,6 +182,7 @@ _GRAY = QColor(130, 130, 130)
 _INTERP_FONT_SIZE_DELTA = -1  # points smaller than parent
 _RAW_ROLE = Qt.ItemDataRole.UserRole
 _FULLTEXT_ROLE = Qt.ItemDataRole.UserRole + 1
+_ENTRY_ROLE = Qt.ItemDataRole.UserRole + 2  # the field's original decoded entry dict
 
 
 class ProtobufTreeWidget(QWidget):
@@ -194,8 +195,31 @@ class ProtobufTreeWidget(QWidget):
 
     def __init__(self, decoded: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._decoded = decoded
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        toolbar = QWidget()
+        toolbar.setFixedHeight(36)
+        tb_layout = QHBoxLayout(toolbar)
+        tb_layout.setContentsMargins(8, 4, 8, 4)
+        tb_layout.setSpacing(8)
+        self._expand_all_btn = QPushButton("Expand All")
+        self._expand_all_btn.clicked.connect(self._tree_expand_all)
+        tb_layout.addWidget(self._expand_all_btn)
+        self._collapse_all_btn = QPushButton("Collapse All")
+        self._collapse_all_btn.clicked.connect(self._tree_collapse_all)
+        tb_layout.addWidget(self._collapse_all_btn)
+        tb_layout.addStretch()
+        tb_layout.addWidget(QLabel("Search:"))
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Filter fields / values…")
+        self._search.setClearButtonEnabled(True)
+        self._search.setFixedWidth(200)
+        self._search.textChanged.connect(self._apply_filter)
+        tb_layout.addWidget(self._search)
+        layout.addWidget(toolbar)
 
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels(["Field", "Value", "Wire type"])
@@ -261,6 +285,7 @@ class ProtobufTreeWidget(QWidget):
             wt_item = QStandardItem(wire_type)
             val_item.setData(raw_bytes, _RAW_ROLE)
             val_item.setData(full_text, _FULLTEXT_ROLE)
+            field_item.setData(entry, _ENTRY_ROLE)
             for item in (field_item, val_item, wt_item):
                 item.setEditable(False)
             parent.appendRow([field_item, val_item, wt_item])
@@ -291,6 +316,39 @@ class ProtobufTreeWidget(QWidget):
             # Recurse into nested messages
             if isinstance(val, dict) and val.get("type") == "message":
                 self._populate(val.get("entries", []), field_item)
+
+    def _tree_expand_all(self) -> None:
+        self._tree.expandAll()
+
+    def _tree_collapse_all(self) -> None:
+        self._tree.collapseAll()
+
+    def _apply_filter(self, text: str) -> None:
+        """Show/hide rows whose field name or value contains the search text."""
+        self._filter_items(self._model.invisibleRootItem(), text.lower())
+
+    def _filter_items(self, parent: QStandardItem, text: str) -> bool:
+        any_visible = False
+        for row in range(parent.rowCount()):
+            key_item = parent.child(row, 0)
+            val_item = parent.child(row, 1)
+            if key_item is None:
+                continue
+            child_visible = self._filter_items(key_item, text)
+            # Match against the full (untruncated) value where available, so a search
+            # can find text even in a value the tree cell itself shows truncated.
+            full_text = val_item.data(_FULLTEXT_ROLE) if val_item else None
+            val_text = full_text if full_text is not None else (val_item.text() if val_item else "")
+            key_match = not text or text in key_item.text().lower()
+            val_match = text in val_text.lower()
+            visible = key_match or val_match or child_visible
+            self._tree.setRowHidden(
+                row,
+                self._model.indexFromItem(parent),
+                not visible,
+            )
+            any_visible = any_visible or visible
+        return any_visible
 
     def _current_row_items(self) -> tuple[QStandardItem, QStandardItem] | None:
         index = self._tree.currentIndex()
