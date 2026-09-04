@@ -161,6 +161,11 @@ def _decode_message(
                 else:
                     entry["value"] = {"type": "bytes", "length": 0, "hex_preview": ""}
 
+                # Full payload, independent of the (possibly truncated) preview above —
+                # so a viewer's "Inspect BLOB…" / expanded-value display never shows less
+                # than the field actually contains.
+                entry["raw"] = payload
+
                 entries.append(entry)
 
             elif wire_type == 3:  # start group — deprecated; skip and continue

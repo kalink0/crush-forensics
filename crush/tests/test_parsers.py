@@ -2242,6 +2242,69 @@ def test_decode_message_nested_field_also_shows_raw_bytes_interpretation() -> No
     assert raw_hint.value == inner.hex(" ")
 
 
+def test_decode_message_bytes_entry_keeps_full_raw_past_preview_cap() -> None:
+    """The hex_preview shown in the tree/text output is capped at 64 bytes, but the
+    full payload must still be retrievable (e.g. for "Inspect BLOB…" / expanded value
+    display) — losing it past the cap would silently hide real evidence bytes."""
+    from crush.parsers.protobuf_parser import _decode_message
+
+    payload = bytes(range(256)) * 2  # 512 bytes, well past the 64-byte preview cap, non-UTF8
+    outer = b"\x0a" + _varint(len(payload)) + payload  # field 1, length-delimited
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    entry = decoded["entries"][0]
+    assert entry["value"]["type"] == "bytes"
+    assert len(entry["value"]["hex_preview"]) < len(payload.hex(" "))  # preview is truncated
+    assert entry["raw"] == payload  # but the full payload is preserved
+
+
+def test_decode_message_string_entry_raw_matches_utf8_bytes() -> None:
+    from crush.parsers.protobuf_parser import _decode_message
+
+    text = "hello protobuf"
+    payload = text.encode("utf-8")
+    outer = b"\x0a" + _varint(len(payload)) + payload
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    entry = decoded["entries"][0]
+    assert entry["value"]["type"] == "string"
+    assert entry["raw"] == payload
+
+
+def test_decode_message_nested_message_entry_keeps_raw_submessage_bytes() -> None:
+    from crush.parsers.protobuf_parser import _decode_message
+
+    inner = b"\x08\x07"  # field 1, varint 7
+    outer = b"\x12" + _varint(len(inner)) + inner  # field 2, length-delimited
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    entry = decoded["entries"][0]
+    assert entry["value"]["type"] == "message"
+    assert entry["raw"] == inner
+
+
+def test_decode_message_empty_length_delimited_has_empty_raw() -> None:
+    from crush.parsers.protobuf_parser import _decode_message
+
+    outer = b"\x0a\x00"  # field 1, length-delimited, zero length
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    assert decoded["entries"][0]["raw"] == b""
+
+
+def _varint(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+
 def test_render_protobuf_shows_interpretations() -> None:
     """Interpretation hints appear as '# label: value' lines below the field."""
     from crush.parsers.proto_interp import Interpretation
