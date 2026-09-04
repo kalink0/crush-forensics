@@ -117,6 +117,26 @@ def _bcd_byte(b: int) -> int | None:
     return hi * 10 + lo
 
 
+_DECIMAL_SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB", "EB")
+_BINARY_SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB")
+
+
+def _fmt_size(n: int, base: int, units: tuple[str, ...]) -> str:
+    """Auto-scale a byte count to the largest unit where the value is >= 1, at 4-5 significant digits."""
+    size = float(n)
+    unit = units[0]
+    for candidate in units[1:]:
+        if size < base:
+            break
+        size /= base
+        unit = candidate
+    if unit == units[0]:
+        return f"{n:,} {unit}"
+    int_digits = len(str(int(size))) if size >= 1 else 1
+    decimals = min(3, max(0, 5 - int_digits))
+    return f"{size:.{decimals}f} {unit}"
+
+
 # ---------------------------------------------------------------------------
 # Interpretation engine
 # ---------------------------------------------------------------------------
@@ -234,6 +254,16 @@ def _interpret(raw: str) -> list[_Row]:
             rows.append(R("Integer", "Unsigned 64-bit (LE)", str(le)))
         else:
             rows.append(R("Integer", "Unsigned 64-bit (LE)", None))
+
+    # -----------------------------------------------------------------------
+    # Group: Data Size
+    # -----------------------------------------------------------------------
+    if eff_int is not None and eff_int >= 0:
+        rows.append(R("Data Size", "Decimal (KB/MB/GB…)", _fmt_size(eff_int, 1000, _DECIMAL_SIZE_UNITS)))
+        rows.append(R("Data Size", "Binary (KiB/MiB/GiB…)", _fmt_size(eff_int, 1024, _BINARY_SIZE_UNITS)))
+    else:
+        rows.append(R("Data Size", "Decimal (KB/MB/GB…)", None))
+        rows.append(R("Data Size", "Binary (KiB/MiB/GiB…)", None))
 
     # -----------------------------------------------------------------------
     # Group: Float

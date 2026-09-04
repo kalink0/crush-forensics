@@ -105,6 +105,45 @@ class TestIntegerHexBytes:
 
 
 # ---------------------------------------------------------------------------
+# Data Size group
+# ---------------------------------------------------------------------------
+
+class TestDataSize:
+    def test_bytes_under_1000_shown_as_bytes_both_units(self) -> None:
+        rows = _interpret("512")
+        assert _value(rows, "Data Size", "Decimal (KB/MB/GB…)") == "512 B"
+        assert _value(rows, "Data Size", "Binary (KiB/MiB/GiB…)") == "512 B"
+
+    def test_decimal_and_binary_scale_differently_at_1024(self) -> None:
+        rows = _interpret("1024")
+        assert _value(rows, "Data Size", "Decimal (KB/MB/GB…)") == "1.024 KB"
+        assert _value(rows, "Data Size", "Binary (KiB/MiB/GiB…)") == "1.000 KiB"
+
+    def test_mib_scale_matches_expected_precision(self) -> None:
+        rows = _interpret("423123456")
+        assert _value(rows, "Data Size", "Binary (KiB/MiB/GiB…)") == "403.52 MiB"
+
+    def test_gib_scale_matches_expected_precision(self) -> None:
+        rows = _interpret("1330000000")
+        assert _value(rows, "Data Size", "Binary (KiB/MiB/GiB…)") == "1.239 GiB"
+
+    def test_zero_shown_as_zero_bytes(self) -> None:
+        rows = _interpret("0")
+        assert _value(rows, "Data Size", "Decimal (KB/MB/GB…)") == "0 B"
+        assert _value(rows, "Data Size", "Binary (KiB/MiB/GiB…)") == "0 B"
+
+    def test_negative_int_shows_none(self) -> None:
+        rows = _interpret("-5")
+        assert _get(rows, "Data Size", "Decimal (KB/MB/GB…)") is None
+        assert _get(rows, "Data Size", "Binary (KiB/MiB/GiB…)") is None
+
+    def test_non_numeric_shows_none(self) -> None:
+        rows = _interpret("hello")
+        assert _get(rows, "Data Size", "Decimal (KB/MB/GB…)") is None
+        assert _get(rows, "Data Size", "Binary (KiB/MiB/GiB…)") is None
+
+
+# ---------------------------------------------------------------------------
 # Float group
 # ---------------------------------------------------------------------------
 

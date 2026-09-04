@@ -8,6 +8,7 @@ All notable changes to Crush will be documented in this file.
 
 - Realm parser now extracts row/table data for pre-Cluster (file format <10) databases, not just class names — covers every old column type, including Mixed, Subtables, StringEnum, and Link/LinkList, validated against real sample files. Continues [#55](https://github.com/kalink0/crush-forensics/issues/55), reported by [@abrignoni](https://github.com/abrignoni).
 - ABX Viewer's reconstructed XML pane now uses the same viewer as generic XML files, adding a Ctrl+F search bar (regex/case options, hit navigation) and pretty-printed, indented output instead of one unbroken line.
+- Value Inspector now shows a Data Size interpretation, treating the parsed value as a byte count and auto-scaling it to both decimal (KB/MB/GB…) and binary (KiB/MiB/GiB…) units. Addresses [#59](https://github.com/kalink0/crush-forensics/issues/59), reported by [@JamesHabben](https://github.com/JamesHabben).
 
 ### Bug Fixes
 
