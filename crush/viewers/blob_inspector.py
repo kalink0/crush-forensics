@@ -223,6 +223,7 @@ def _render_protobuf(entries: list, indent: int = 0) -> str:
         field = entry.get("field", "?")
         wt = entry.get("wire_type", "?")
         val = entry.get("value")
+        raw = entry.get("raw")  # full payload; only set for length-delimited entries
         interpretations = [
             i for i in entry.get("interpretations", [])
             if i.label not in _PROTOBUF_INTERP_SKIP
@@ -236,13 +237,20 @@ def _render_protobuf(entries: list, indent: int = 0) -> str:
             elif vtype == "string":
                 lines.append(f'{pad}{field}: "{val.get("text", "")}"')
             else:
-                lines.append(f"{pad}{field}: <{val.get('hex_preview', '')}>")
+                # hex_preview is capped at 64 bytes by the parser — show the complete
+                # payload here instead of repeating that truncated preview.
+                hex_full = raw.hex(" ") if raw else val.get("hex_preview", "")
+                lines.append(f"{pad}{field}: <{hex_full}>")
         elif isinstance(val, bytes):
-            lines.append(f"{pad}{field}: {val[:32].hex()}" + ("…" if len(val) > 32 else ""))
+            lines.append(f"{pad}{field}: {val.hex()}")
         else:
             lines.append(f"{pad}{field} [{wt}]: {val}")
         for interp in interpretations:
-            lines.append(f"{ipad}# {interp.label}: {interp.value}")
+            if interp.label == "raw bytes" and raw:
+                # Same 64-byte-capped preview as above — use the full payload.
+                lines.append(f"{ipad}# {interp.label}: {raw.hex(' ')}")
+            else:
+                lines.append(f"{ipad}# {interp.label}: {interp.value}")
     return "\n".join(lines)
 
 

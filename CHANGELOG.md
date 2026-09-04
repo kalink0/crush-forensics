@@ -16,12 +16,17 @@ All notable changes to Crush will be documented in this file.
 - Fixed the LevelDB viewer's Records table sorting the Seq column as text instead of numerically (`1, 10, 100, 2, 20…`) — the table's filter proxy has its own independent sort role, separate from the underlying model's, that was never set to match. Addresses [#61](https://github.com/kalink0/crush-forensics/issues/61), reported by [@JamesHabben](https://github.com/JamesHabben).
 - Fixed Multi-Log Studio's PID column sorting the same way (text, not numeric) — found while auditing the codebase for the same bug class as [#61](https://github.com/kalink0/crush-forensics/issues/61).
 - Fixed the Protobuf parser discarding a length-delimited field's payload past its 64-byte display preview instead of retaining the full bytes — meant a string/bytes/submessage field longer than that was silently missing data from the newly added value box and "Inspect BLOB…" action. Found while implementing [#60](https://github.com/kalink0/crush-forensics/issues/60).
+- Fixed the BLOB Inspector's "Protobuf (schema-less)" decode also repeating that same capped 64-byte preview for bytes/message fields, and truncating any raw bytes field at 32 bytes with no way to see the rest — both now show the field's complete value.
 - Fixed the Realm parser silently returning zero classes on file-format-9 (and older) databases, indistinguishable from a genuinely empty file — the class-name array uses a different on-disk form pre-format-10 that the parser didn't decode. Addresses [#55](https://github.com/kalink0/crush-forensics/issues/55), reported by [@abrignoni](https://github.com/abrignoni).
 - Fixed the Realm parser decoding 1-bit-wide Int columns as `True`/`False` instead of their real integer value — array storage width depends on the largest value an array ever held, not the column's declared type. Found by [@abrignoni](https://github.com/abrignoni) on a real-world file.
 - Fixed the Realm parser silently returning an empty schema for files in Realm's "streaming form" (e.g. `Group::write()` output, or a Realm Studio export) instead of resolving the real top reference from the file's end-of-file footer.
 - Fixed the Realm parser leaving row/table decode failures unexplained — the Properties panel's "Row data" field now states the parser's own specific diagnosis instead of a generic or missing message.
 - Fixed ABX files with more than one top-level element (e.g. `settings_secure.xml`) failing to build a tree view — these are now wrapped in a synthetic root instead of raising an XML syntax error.
 - Fixed the ABX decoder silently dropping unsupported XML tokens and truncating the rest of the file on any decode error with no indication of scope, and raw XML-illegal control characters (a known real-world occurrence in `settings_secure.xml` values) breaking the reconstruction entirely — all three now produce explicit, visible warnings instead of silent or total data loss.
+
+### Documentation
+
+- Value Inspector and BLOB Inspector added to the README feature list with screenshots — both were long-standing, heavily-used features that were never actually documented there.
 
 ## v0.17.0 - 2026-08-31
 

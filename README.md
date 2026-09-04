@@ -21,6 +21,10 @@ Open and navigate ZIP, TAR, 7z, Android `adb backup` (`.ab`), and iTunes/Finder 
 
 **Built-in file format database** — Crush identifies forensically relevant formats by magic bytes and extension, and shows format name, platform, forensic relevance, and a link to the specification for every selected file, including formats without a dedicated viewer.
 
+**Value Inspector** — shows every plausible interpretation of a pasted or selected value at once: integers, floats, a dozen timestamp epochs, UUIDs, network addresses, and byte sizes (decimal and binary). On Linux, it updates automatically from any text you highlight.
+
+**BLOB Inspector** — chain byte-level transforms (Base64/hex decode, zlib/gzip/lzfse decompress) and render the result as hex, text, JSON, XML, plist, ABX, or Protobuf (schema-less or schema-based) — available on any BLOB cell or pasted value throughout Crush.
+
 **Integrity mode** — optional hashing for auditability: file/ZIP/TAR sources are hashed on open and exports generate a hash manifest (`crush-export-hashes.txt`). Toggle via the bottom-right status badge.
 
 **Send to Peach** — hand a log source (Apple Unified Log, or any other file — same "no pre-filtering, confirm in the tool itself" approach as Multi-Log Studio) off to the bundled sibling log viewer [peach-forensics](https://github.com/kalink0/peach-forensics) for tagging and Splunk-style search, via right-click.
@@ -82,6 +86,12 @@ Format Reference (Linux)
 
 Integrity Mode (Linux)
 ![Integrity Mode (Linux)](crush/docs/pictures/example_dark_forensic_mode_linux.png)
+
+BLOB Inspector (Linux)
+![BLOB Inspector (Linux)](crush/docs/pictures/example_BLOB_inspector.png)
+
+Value Inspector (Linux)
+![Value Inspector (Linux)](crush/docs/pictures/example_value_inspector.png)
 
 ## Install and Run
 

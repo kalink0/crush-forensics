@@ -2191,12 +2191,53 @@ def test_render_protobuf_bytes_dict_value() -> None:
 
 
 def test_render_protobuf_bytes_value() -> None:
+    """A field's full bytes value must never be truncated — hiding real evidence
+    bytes behind a display cutoff would be a forensic-accuracy bug, not a cosmetic
+    one. This is distinct from the 40-byte 'value' shape here (a bare bytes object,
+    not the {"type": "bytes", ...} dict _decode_message() actually produces)."""
     from crush.viewers.blob_inspector import _render_protobuf
-    entries = [{"field": 2, "wire_type": "bytes", "value": bytes(range(40))}]
+    payload = bytes(range(40))
+    entries = [{"field": 2, "wire_type": "bytes", "value": payload}]
     result = _render_protobuf(entries)
-    assert "2:" in result           # field number present
-    assert "…" in result            # truncation marker for > 32 bytes
-    assert "00010203" in result     # hex content starts correctly
+    assert "2:" in result
+    assert "…" not in result
+    assert payload.hex() in result  # complete 40-byte hex, not just the first 32
+
+
+def test_render_protobuf_bytes_dict_value_uses_full_raw_not_capped_preview() -> None:
+    """The parser's hex_preview is capped at 64 bytes for the tree/text display label —
+    when the entry also carries the full raw payload (as real _decode_message() output
+    does), the renderer must use that instead of repeating the capped preview."""
+    from crush.viewers.blob_inspector import _render_protobuf
+    payload = bytes(range(256)) * 2  # 512 bytes, well past the 64-byte preview cap
+    entries = [{
+        "field": 3,
+        "wire_type": "length-delimited",
+        "value": {"type": "bytes", "length": len(payload), "hex_preview": payload[:64].hex(" ") + " …"},
+        "raw": payload,
+    }]
+    result = _render_protobuf(entries)
+    assert payload.hex(" ") in result
+    assert "…" not in result
+
+
+def test_render_protobuf_ambiguous_message_raw_bytes_hint_shows_full_payload() -> None:
+    """The dimmed 'raw bytes' interpretation shown alongside an ambiguous message
+    decode is built from the same capped hex_preview — it must also be replaced
+    with the full payload when available, not just the field's own primary value."""
+    from crush.parsers.protobuf_parser import _decode_message
+    from crush.viewers.blob_inspector import _render_protobuf
+
+    inner_payload = bytes(range(64, 64 + 80))  # 80 bytes, not itself a nested submessage
+    inner = b"\x0a" + _varint(len(inner_payload)) + inner_payload  # itself valid protobuf -> ambiguous
+    outer = b"\x12" + _varint(len(inner)) + inner  # field 2, length-delimited
+
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    result = _render_protobuf(decoded["entries"])
+    assert "raw bytes" in result
+    assert inner.hex(" ") in result
+    assert "…" not in result
 
 
 def test_render_protobuf_integration_nested() -> None:
