@@ -28,6 +28,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed the Realm parser leaving row/table decode failures unexplained — the Properties panel's "Row data" field now states the parser's own specific diagnosis instead of a generic or missing message.
 - Fixed ABX files with more than one top-level element (e.g. `settings_secure.xml`) failing to build a tree view — these are now wrapped in a synthetic root instead of raising an XML syntax error.
 - Fixed the ABX decoder silently dropping unsupported XML tokens and truncating the rest of the file on any decode error with no indication of scope, and raw XML-illegal control characters (a known real-world occurrence in `settings_secure.xml` values) breaking the reconstruction entirely — all three now produce explicit, visible warnings instead of silent or total data loss.
+- Fixed the Properties panel only ever reflecting whichever viewer tab was most recently opened — switching back to an already-open tab left it showing the previous tab's properties until something in the file tree was clicked. It now refreshes on every tab switch.
 
 ### Documentation
 

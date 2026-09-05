@@ -1843,6 +1843,8 @@ class MainWindow(QMainWindow):
         widget.setProperty("crush_path", node.path)
         widget.setProperty("crush_viewer", result.viewer_type)
         widget.setProperty("crush_vfs", vfs)
+        widget.setProperty("crush_node", node)
+        widget.setProperty("crush_metadata", result.metadata)
         idx = self._viewer_tabs.addTab(widget, label)
         self._viewer_tabs.setTabToolTip(idx, node.path)
         self._viewer_tabs.setCurrentIndex(idx)
@@ -2413,7 +2415,14 @@ class MainWindow(QMainWindow):
     def _on_viewer_tab_changed(self, index: int) -> None:
         """Re-apply the live app palette to a viewer tab when it becomes
         visible, catching it up if it wasn't the current tab during a
-        Rainbow/'Merica tick (see _set_palette_everywhere)."""
+        Rainbow/'Merica tick (see _set_palette_everywhere), and refresh the
+        Properties panel to match the now-active tab.
+
+        Without this, the panel only ever reflected whichever tab was most
+        recently *opened* — switching back to an already-open tab left it
+        showing the previous tab's properties until something in the file
+        tree was clicked.
+        """
         if index < 0:
             return
         widget = self._viewer_tabs.widget(index)
@@ -2423,6 +2432,12 @@ class MainWindow(QMainWindow):
         if app is None:
             return
         self._propagate_palette_recursive(widget, app.palette())
+
+        node = widget.property("crush_node")
+        vfs = widget.property("crush_vfs")
+        if node is not None and vfs is not None:
+            metadata = widget.property("crush_metadata") or {}
+            self._props_panel.update_properties(node, metadata, vfs)
 
     def _apply_palette(self, pal: QPalette) -> None:
         """Set the application palette and a matching checkbox/radio-button
