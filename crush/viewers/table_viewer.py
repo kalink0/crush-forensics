@@ -8,6 +8,7 @@ from typing import Any
 import csv
 import re
 import sqlite3
+import zlib
 from contextlib import contextmanager
 import struct
 import time
@@ -84,6 +85,14 @@ from crush.viewers.blob_inspector import BlobInspector
 _MAX_COL_WIDTH = 400
 _QUERY_ROW_LIMIT = 10_000
 _COLUMN_SIZE_SAMPLE = 250
+_VIRTUAL_PATH_BAD_CHARS = re.compile(r"[\\/:\x00-\x1f]+")
+
+
+def _virtual_path_component(value: object, fallback: str) -> str:
+    text = str(value or "").strip()
+    text = _VIRTUAL_PATH_BAD_CHARS.sub("_", text)
+    text = text.strip(" .")
+    return text or fallback
 
 
 class _QueryResultModel(QAbstractTableModel):
@@ -479,15 +488,19 @@ class TableViewer(QWidget):
         }
     """
     open_bytes_requested = Signal(bytes, str)
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
+
     def __init__(
         self,
         data: dict[str, Any],
         parent: QWidget | None = None,
         show_db_tabs: bool = True,
         summary_nav_table: str | None = None,
+        source_name: str = "sqlite",
     ) -> None:
         super().__init__(parent)
         self._data = data
+        self._source_name = source_name
         self._show_db_tabs = show_db_tabs
         self._summary_nav_table = summary_nav_table
         self._col_ts_formats: dict[int, str] = {}
@@ -674,6 +687,7 @@ class TableViewer(QWidget):
         self._source_model = QStandardItemModel()
         self._query_model: _QueryResultModel | None = None
         self._query_results_active = False
+        self._last_executed_query = ""
         self._proxy_model = _NumericSortProxy()
         self._proxy_model.setSourceModel(self._source_model)
         self._proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -2220,6 +2234,7 @@ class TableViewer(QWidget):
             "truncated": was_truncated,
         }
         prepare_elapsed = time.perf_counter() - prepare_started
+        self._last_executed_query = sql
         model_elapsed, resize_elapsed = self._load_table_from_query(data)
         elapsed = time.perf_counter() - started
 
@@ -2305,18 +2320,21 @@ class TableViewer(QWidget):
         blob_preview = menu.addAction("Inspect Cell…")
         blob_hex = menu.addAction("Open in Hex")
         blob_export = menu.addAction("Export…")
-        open_tab = menu.addAction("Open as new tab")
+        open_tab_menu = menu.addMenu("Open as new tab")
+        open_tab_auto = open_tab_menu.addAction("Auto-detect")
+        open_tab_hex = open_tab_menu.addAction("Hex")
+        open_tab_text = open_tab_menu.addAction("Text")
+        open_tab_proto = open_tab_menu.addAction("Protobuf")
         blob_bytes = _coerce_blob(blob)
         display_val = self._table_view.model().data(index, Qt.ItemDataRole.DisplayRole)
         display_str = str(display_val) if display_val is not None else ""
         has_display = bool(display_str)
         is_blob_placeholder = display_str.startswith("<BLOB ") and display_str.endswith(" B>")
         if blob_bytes is None and not has_display:
-            open_tab.setEnabled(False)
+            open_tab_menu.setEnabled(False)
             blob_preview.setEnabled(False)
             blob_hex.setEnabled(False)
             blob_export.setEnabled(False)
-            open_tab.setEnabled(False)
         if blob_bytes is None and has_display:
             blob_preview.setEnabled(True)
             blob_hex.setEnabled(True)
@@ -2350,7 +2368,7 @@ class TableViewer(QWidget):
                 self._export_blob(blob_bytes)
             elif has_display:
                 self._export_blob(str(display_val).encode("utf-8", errors="replace"))
-        elif action == open_tab:
+        elif action in {open_tab_auto, open_tab_hex, open_tab_text, open_tab_proto}:
             data_to_open = blob_bytes
             if data_to_open is None and has_display:
                 data_to_open = str(display_val).encode("utf-8", errors="replace")
@@ -2358,7 +2376,58 @@ class TableViewer(QWidget):
                 col_header = self._table_view.model().headerData(
                     index.column(), Qt.Orientation.Horizontal
                 ) or "blob"
-                self.open_bytes_requested.emit(data_to_open, str(col_header))
+                artifact_path, artifact_meta = self._virtual_cell_path_and_metadata(index, col_header)
+                if action == open_tab_auto:
+                    self.open_bytes_with_format_requested.emit(
+                        data_to_open, artifact_path, None, artifact_meta
+                    )
+                elif action == open_tab_hex:
+                    self.open_bytes_with_format_requested.emit(
+                        data_to_open, artifact_path, "__hex__", artifact_meta
+                    )
+                elif action == open_tab_text:
+                    self.open_bytes_with_format_requested.emit(
+                        data_to_open, artifact_path, "__text__", artifact_meta
+                    )
+                elif action == open_tab_proto:
+                    self.open_bytes_with_format_requested.emit(
+                        data_to_open, artifact_path, "Protobuf (schema-less)", artifact_meta
+                    )
+
+    def _virtual_cell_path_and_metadata(
+        self, index: QModelIndex, col_header: object
+    ) -> tuple[str, dict[str, str]]:
+        """Build the tab-dedup path (kept short and technical — it's shown
+        verbatim in the tab tooltip) plus a separate, fully readable
+        provenance dict for the Properties panel (table/query, column, row).
+        Query text especially is never truncated here or in the path, since
+        it can be arbitrarily long — see the Properties panel, not the path
+        or the tooltip, for that."""
+        db_name = _virtual_path_component(self._source_name, "sqlite")
+        query_text = self._last_executed_query if self._query_results_active else ""
+        if query_text:
+            table_name = f"query-{zlib.crc32(query_text.encode('utf-8')):08x}"
+        elif self._query_results_active:
+            table_name = "query"
+        else:
+            table_name = self._table_combo.currentText()
+        table = _virtual_path_component(table_name, "table")
+        column_text = str(col_header)
+        column = _virtual_path_component(column_text, "column")
+        row_index = self._table_view.model().index(index.row(), 0)
+        row_value = self._table_view.model().data(row_index, Qt.ItemDataRole.DisplayRole)
+        row = _virtual_path_component(row_value, str(index.row() + 1))
+        path = f"/virtual/{db_name}/{table}/{column}/{row}"
+
+        metadata: dict[str, str] = {
+            "Source column": column_text,
+            "Source row": str(row_value) if row_value is not None else str(index.row() + 1),
+        }
+        if query_text:
+            metadata["Source query"] = query_text
+        else:
+            metadata["Source table"] = self._table_combo.currentText()
+        return path, metadata
 
     def _on_header_context_menu(self, pos: object) -> None:
         header = self._table_view.horizontalHeader()
@@ -2529,6 +2598,7 @@ class TableViewer(QWidget):
         self._proxy_model.setDynamicSortFilter(True)
         self._query_model = None
         self._query_results_active = False
+        self._last_executed_query = ""
         if old_query_model is not None:
             old_query_model.deleteLater()
 

@@ -1119,11 +1119,14 @@ class SevenZipVFS(VFS):
 class BytesVFS(VFS):
     """VFS backed by a single in-memory bytes object (for artifact chaining)."""
 
-    def __init__(self, data: bytes, name: str = "blob") -> None:
+    def __init__(self, data: bytes, name: str = "blob", path: str | None = None) -> None:
         self._data = data
+        if path is None and name.startswith("/"):
+            path = name
+            name = name.rstrip("/").rsplit("/", 1)[-1] or "blob"
         self._root = VFSNode(
             name=name,
-            path=f"/{name}",
+            path=path or f"/{name}",
             is_dir=False,
             size=len(data),
         )

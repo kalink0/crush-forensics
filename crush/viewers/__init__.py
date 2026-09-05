@@ -19,7 +19,10 @@ def _register_builtin_viewers() -> None:
     from crush.viewers.leveldb_viewer import LevelDbViewer
     from crush.viewers.mmkv_viewer import MMKVViewer
 
-    ViewerRegistry.register("table", lambda r, n, v, p: TableViewer(r.data, p, **r.viewer_hints))
+    ViewerRegistry.register(
+        "table",
+        lambda r, n, v, p: TableViewer(r.data, p, source_name=n.name, **r.viewer_hints),
+    )
     ViewerRegistry.register("tree", lambda r, n, v, p: TreeViewer(r.data, p))
     ViewerRegistry.register(
         "tree_text", lambda r, n, v, p: TreeTextViewer(r.data, p, **r.viewer_hints)
