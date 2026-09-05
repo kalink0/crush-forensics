@@ -231,7 +231,7 @@ Values are displayed as `YYYY-MM-DD HH:MM:SS UTC`. The column header shows the a
 **Cell inspection:** right-click any cell for options including:
 - **Inspect Cell…** — preview the raw value, attempt base64/plist/XML decode
 - **Open in Hex** — view cell bytes as hex
-- **Open as new tab** — parse a BLOB cell as a new artifact (e.g. a plist stored inside a SQLite column)
+- **Open as new tab** — submenu: **Auto-detect** (best-guess parser, e.g. a plist stored inside a SQLite column), or force **Hex** / **Text** / **Protobuf**. Each cell opens in its own tab — opening several cells from the same column (or from different rows of an ad-hoc SQL query) never collides into one shared tab. The tab tooltip and Properties panel show where the artifact came from: source table or full query text, column, row, and the originating database file
 - **Export…** — save the cell value to disk
 - **Copy cell / Copy row / Copy selection**
 
@@ -721,6 +721,9 @@ The right panel updates whenever you select or open a file. It shows:
 - **Platforms** — which platforms this format originates from
 - **Reference** — link to the format specification
 - **Parser-specific metadata** — EXIF fields, page counts, parse errors, etc.
+- **SQLite blob provenance** — a cell opened via the Table Viewer's **Open as new tab** additionally shows the source table (or the full, untruncated SQL query text if it came from an ad-hoc query), column, row, originating database file, and the chosen display format
+
+The panel refreshes automatically whenever you switch between already-open viewer tabs, not just when a new one is opened.
 
 ---
 
@@ -819,7 +822,7 @@ Integrity mode adds hashing and traceability to file access:
 
 - **Large archives:** Crush loads ZIP, TAR, and 7z indexes immediately and reads file content on demand — you do not need to wait for a full extraction before browsing. 7z's solid compression blocks multiple files together, so reading any single file from a solid 7z can be slower than the equivalent ZIP/TAR read.
 - **SQLite WAL files:** if a `-wal` or `-shm` companion file is present alongside a `.db`, Crush automatically includes it so you see the most recent state of the database. Use **WAL Frames (generated)** for a full frame inventory with forensic classification (Active / Superseded / Uncommitted / WAL slack), and enable **Show WAL history** in any table view to surface rows from historical frames — potentially recovering data from before the last UPDATE or DELETE.
-- **BLOB chaining:** SQLite cells containing embedded plists, images, or other binary data can be opened directly as a new viewer tab via right-click → **Open as new tab**.
+- **BLOB chaining:** SQLite cells containing embedded plists, images, or other binary data can be opened directly as a new viewer tab via right-click → **Open as new tab**, forcing a specific format (Hex/Text/Protobuf) if needed. The Properties panel keeps track of exactly which table/query, column, and row each opened cell came from.
 - **Unknown files:** even if Crush cannot parse a file, the Properties panel will show the identified format name and forensic relevance based on magic bytes — so you know what you are looking at before deciding to export and open it externally.
 
 ---
