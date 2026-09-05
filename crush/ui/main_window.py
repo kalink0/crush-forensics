@@ -427,7 +427,8 @@ class MainWindow(QMainWindow):
         self.session = Session()
         self._always_hex = False
         self._pending_open: tuple[VFSNode, VFS] | None = None
-        self._load_queue: list[tuple[str, bool, bool, str | None]] = []
+        self._pending_focus_path: str | None = None
+        self._load_queue: list[tuple[str, bool, bool, str | None, str, str | None]] = []
         self._settings = QSettings("Crush DFIR", "Crush")
         self._multi_log_windows: list[QWidget] = []
         self.setWindowTitle(f"Crush {crush.display_version()}")
@@ -763,13 +764,14 @@ class MainWindow(QMainWindow):
         append_to_tree: bool = False,
         itunes_zip_prefix: str | None = None,
         password: str = "",
+        focus_path: str | None = None,
     ) -> None:
         if itunes_zip_prefix is None and Path(path).suffix.lower() == ".zip":
             itunes_zip_prefix = self._maybe_confirm_itunes_backup_zip(path)
 
         if self._thread_is_running(getattr(self, "_load_thread", None)):
             self._load_queue.append(
-                (path, open_after_load, append_to_tree, itunes_zip_prefix, password)
+                (path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path)
             )
             self._status.showMessage("Queued source for loading…")
             self._logger.debug("Load queued: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
@@ -781,6 +783,7 @@ class MainWindow(QMainWindow):
         self._loading_itunes_zip_prefix = itunes_zip_prefix
         self._open_after_load = open_after_load
         self._append_to_tree = append_to_tree
+        self._pending_focus_path = focus_path
         self._tree_build_started = time.monotonic()
         self._status.showMessage(f"Loading: {path}")
         self._progress = LoadingDialog("Loading source…", self)
@@ -893,7 +896,30 @@ class MainWindow(QMainWindow):
                     self._logger.info("Load + initial tree render: %.3f s", elapsed)
             else:
                 self._logger.info("Load + initial tree render: %.3f s", elapsed)
-        if self._pending_open:
+        focus_path = self._pending_focus_path
+        self._pending_focus_path = None
+        focus_handled = False
+        if focus_path:
+            from crush.core.vfs import resolve_relative_path
+            vfs = self._loading_vfs
+            root = vfs.root()
+            if not root.is_dir:
+                # Not an error worth blocking on -- the single-file case below
+                # already opens it unconditionally; --focus just didn't apply.
+                msg = f"--focus ignored: {self._loading_path!r} is a single file, not a folder/archive"
+                self._status.showMessage(msg)
+                self._logger.warning(msg)
+            else:
+                target = resolve_relative_path(root, focus_path)
+                if target is None:
+                    msg = f"--focus: {focus_path!r} not found in {self._loading_path!r}"
+                    self._status.showMessage(msg)
+                    self._logger.warning(msg)
+                else:
+                    self._fs_panel._navigate_to_node(target, vfs)
+                    self._open_node(target, vfs)
+                    focus_handled = True
+        if not focus_handled and self._pending_open:
             node, vfs = self._pending_open
             self._pending_open = None
             self._open_node(node, vfs)
@@ -2292,13 +2318,14 @@ class MainWindow(QMainWindow):
     def _on_load_thread_finished(self) -> None:
         self._load_thread = None
         if self._load_queue:
-            path, open_after_load, append_to_tree, itunes_zip_prefix, password = self._load_queue.pop(0)
+            path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path = self._load_queue.pop(0)
             self._load_source(
                 path,
                 open_after_load=open_after_load,
                 append_to_tree=append_to_tree,
                 itunes_zip_prefix=itunes_zip_prefix,
                 password=password,
+                focus_path=focus_path,
             )
 
     def _on_password_required(self, was_wrong: bool) -> None:

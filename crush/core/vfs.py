@@ -1186,6 +1186,23 @@ def _find_node_by_path(node: VFSNode, path: str) -> "VFSNode | None":
     return None
 
 
+def resolve_relative_path(root: VFSNode, rel_path: str) -> "VFSNode | None":
+    """Walk *root*'s children by name to find the node at *rel_path* (e.g.
+    ``"Documents/chat.db"``, relative to *root* itself). Accepts both "/" and
+    "\\" as separators, so a path typed on Windows still resolves. Returns
+    None if any segment along the way isn't found — the caller must surface
+    that explicitly rather than silently doing nothing (see
+    feedback_explicit_unsupported_marking)."""
+    parts = [p for p in re.split(r"[\\/]+", rel_path.strip()) if p not in ("", ".")]
+    node = root
+    for part in parts:
+        found = next((child for child in node.children if child.name == part), None)
+        if found is None:
+            return None
+        node = found
+    return node
+
+
 def open_vfs(path: str | Path, *, password: str = "") -> VFS:
     """Factory — open the right VFS type based on the source path."""
     p = Path(path)
