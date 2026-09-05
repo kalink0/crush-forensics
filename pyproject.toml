@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crush"
-version = "0.17.0"
+version = "0.18.0"
 description = "Crush — Digital Forensic Analysis Workbench"
 readme = "README.md"
 license = { text = "Apache-2.0" }

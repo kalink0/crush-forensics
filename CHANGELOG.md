@@ -4,6 +4,10 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+## v0.18.0 - 2026-09-05
+
+**Focus: MMKV support; full Realm format-9 (pre-Cluster) row-level parsing; SQLite blob-cell tab menu with per-cell provenance; `--focus` CLI flag; bundled peach updated to v0.6.0.**
+
 ### New Features
 
 - Realm parser now extracts row/table data for pre-Cluster (file format <10) databases, not just class names — covers every old column type, including Mixed, Subtables, StringEnum, and Link/LinkList, validated against real sample files. Continues [#55](https://github.com/kalink0/crush-forensics/issues/55), reported by [@abrignoni](https://github.com/abrignoni).
