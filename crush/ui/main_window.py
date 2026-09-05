@@ -934,6 +934,18 @@ class MainWindow(QMainWindow):
         if not dest_dir:
             return
 
+        target_root = Path(dest_dir) / _safe_name(node.name or "export")
+        if target_root.exists():
+            reply = QMessageBox.question(
+                self,
+                "Overwrite?",
+                f"{target_root} already exists. Overwrite?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
         if self._thread_is_running(getattr(self, "_export_thread", None)):
             QMessageBox.information(self, "Export", "An export is already running.")
             return

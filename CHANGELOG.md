@@ -32,6 +32,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed the ABX decoder silently dropping unsupported XML tokens and truncating the rest of the file on any decode error with no indication of scope, and raw XML-illegal control characters (a known real-world occurrence in `settings_secure.xml` values) breaking the reconstruction entirely — all three now produce explicit, visible warnings instead of silent or total data loss.
 - Fixed the SQLite Table Viewer's cell-detail box (below the grid) keeping the previously selected cell's data visible after switching tables via the dropdown, instead of clearing until a new cell is selected in the freshly loaded table. Addresses [#73](https://github.com/kalink0/crush-forensics/issues/73), reported by [@JamesHabben](https://github.com/JamesHabben). Found two more spots with the same bug while auditing for it: switching the Freelist Recovery tab's "View as" filter, and running a SQL query — both now clear the box the same way.
 - Fixed the Properties panel only ever reflecting whichever viewer tab was most recently opened — switching back to an already-open tab left it showing the previous tab's properties until something in the file tree was clicked. It now refreshes on every tab switch.
+- Fixed exporting a file/folder from the tree silently overwriting an already-existing same-named item at the destination, with no warning. Now prompts to confirm first, matching the existing behavior of the "Save .logarchive to folder" export.
 
 ### Documentation
 
