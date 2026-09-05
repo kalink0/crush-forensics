@@ -19,7 +19,21 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         metavar="PATH",
         help="File or folder to open on startup (repeatable)",
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--focus",
+        dest="focus_path",
+        metavar="REL_PATH",
+        help=(
+            "Path, relative to the root of the single file/folder being opened, "
+            "of a file to select and open automatically. Only valid when exactly "
+            "one PATH/--open target is given."
+        ),
+    )
+    args = parser.parse_args(argv)
+    open_paths = list(args.paths) + list(args.open_paths or [])
+    if args.focus_path and len(open_paths) != 1:
+        parser.error("--focus requires exactly one file/folder to open (via PATH or --open)")
+    return args
 
 
 def _icon_path() -> str:
@@ -57,7 +71,9 @@ def main() -> None:
     window = MainWindow()
     window.show()
     for path in open_paths:
-        window._load_source(path, open_after_load=True, append_to_tree=True)
+        window._load_source(
+            path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path
+        )
     sys.exit(app.exec())
 
 if __name__ == "__main__":

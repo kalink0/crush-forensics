@@ -23,6 +23,8 @@ You can also **drag and drop** files, archives, or folders straight onto the Cru
 
 A third way: pass paths on the command line — `crush /path/to/evidence.zip /path/to/case_folder` or `crush --open /path/to/evidence.zip` (repeatable) — to have Crush open them on startup instead of loading manually. Each invocation opens a fresh window. Useful for launching Crush from another tool with evidence already queued up.
 
+Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also select and open one specific file inside it on startup — e.g. `crush /path/to/evidence.zip --focus Documents/chat.db` opens the archive and jumps straight to that file, instead of just showing the tree. `REL_PATH` is relative to the opened target's own root. A single file passed directly (not a folder/archive) already opens itself regardless of `--focus`.
+
 ---
 
 ## The Interface
