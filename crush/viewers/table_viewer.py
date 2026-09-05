@@ -764,6 +764,12 @@ class TableViewer(QWidget):
         an already-fast, cached data fetch into a many-second UI freeze on
         every tab switch.
         """
+        # Switching tables must not leave the previous table's last-selected
+        # cell visible in the detail box below — nothing is selected in the
+        # freshly loaded table yet, so the box should say so too (#73).
+        self._cell_detail_label.setText("—  No cell selected")
+        self._cell_detail_view.setPlainText("")
+
         # _activate_standard_model() itself turns dynamic sorting back on
         # (when leaving query-results mode), so it must run *before* it's
         # switched off here, or that reset would win.
@@ -1504,6 +1510,8 @@ class TableViewer(QWidget):
     def _on_freelist_table_filter_changed(self, _text: str) -> None:
         if self._freelist_render_state is None:
             return
+        self._cell_detail_label.setText("—  No cell selected")
+        self._cell_detail_view.setPlainText("")
         entries, carved, schema_cols = self._freelist_render_state
         self._populate_freelist_recovery_table(
             entries, carved, schema_cols, self._freelist_table_filter.currentText()
@@ -2260,6 +2268,8 @@ class TableViewer(QWidget):
         self._sql_status.setToolTip(timing_details)
 
     def _load_table_from_query(self, table: dict[str, Any]) -> tuple[float, float]:
+        self._cell_detail_label.setText("—  No cell selected")
+        self._cell_detail_view.setPlainText("")
         self._col_ts_formats.clear()
         columns: list[str] = table["columns"]
         rows: list[list[Any]] = table["rows"]
