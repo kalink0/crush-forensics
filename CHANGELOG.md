@@ -15,6 +15,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed Freeblocks' Data column rendering an all-zero freeblock as an apparently empty cell (NUL bytes render invisibly) instead of stating so explicitly.
 - Fixed the SQLite Table Viewer's status line below the SQL box keeping a previous tab's message (e.g. WAL Frames' hex-viewer hint) after switching to a plain table, which never sets its own. Same bug class as [#73](https://github.com/kalink0/crush-forensics/issues/73).
 - Fixed the MMKV parser trusting a store's `.crc` meta file's "non-zero vector" field as proof of AES encryption — confirmed false-positive on a real react-native-mmkv store with demonstrably plaintext data. It now only reports "encrypted" when the store genuinely fails to read as plaintext.
+- Fixed the shared Hex Viewer's "Copy Selected Hex"/"Copy Selected ASCII" context-menu actions dropping the first row's content whenever a multi-row selection didn't start at column 0 (i.e. almost any real mouse drag) — a 2-row selection looked exactly like only the last line got copied. Affects every viewer with a hex/ASCII pane (LevelDB, Realm, SQLite blob cells, and more).
 
 ## v0.18.0 - 2026-09-05
 

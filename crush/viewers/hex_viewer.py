@@ -581,13 +581,36 @@ class HexViewer(QWidget):
             self._search_input.setText(" ".join(f"{b:02X}" for b in chunk))
             self._do_search()
 
+    def _selection_start_column(self) -> int:
+        """Column (0-based) within its row that the selection's first
+        character sits at.
+
+        A multi-row selection's first row is a *partial* row whenever the
+        drag didn't start at column 0 (the normal case -- nobody drags from
+        exactly the left edge) -- Qt's selectedText() still hands back that
+        row's text starting from wherever the selection actually begins, not
+        from column 0. Slicing that fragment at the usual fixed column
+        offsets (_HEX_START, _ASCII_START, ...) would then cut from the
+        wrong place, or make it look like there was nothing to take from
+        that row at all. Every row after the first is unaffected (a
+        multi-row selection always starts each subsequent row at its true
+        column 0), and the last row is only ever truncated on the right,
+        which fixed-offset slicing already handles correctly on its own.
+        """
+        cursor = self._text.textCursor()
+        doc = self._text.document()
+        start_block = doc.findBlock(cursor.selectionStart())
+        return cursor.selectionStart() - start_block.position()
+
     def _copy_selected_hex(self) -> None:
         text = _selected_text(self._text)
         if not text:
             return
+        first_col = self._selection_start_column()
         tokens: list[str] = []
-        for line in text.split(" "):
-            hex_section = line[_HEX_START:_HEX_END]
+        for i, line in enumerate(text.split(" ")):
+            col_offset = first_col if i == 0 else 0
+            hex_section = line[max(_HEX_START - col_offset, 0):max(_HEX_END - col_offset, 0)]
             for part in hex_section.split():
                 if len(part) == 2 and all(c in "0123456789ABCDEFabcdef" for c in part):
                     tokens.append(part.upper())
@@ -597,10 +620,11 @@ class HexViewer(QWidget):
         text = _selected_text(self._text)
         if not text:
             return
+        first_col = self._selection_start_column()
         parts: list[str] = []
-        for line in text.split(" "):
-            if len(line) > _ASCII_START:
-                parts.append(line[_ASCII_START:])
+        for i, line in enumerate(text.split(" ")):
+            col_offset = first_col if i == 0 else 0
+            parts.append(line[max(_ASCII_START - col_offset, 0):])
         QApplication.clipboard().setText("".join(parts))
 
 
