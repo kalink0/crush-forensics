@@ -31,7 +31,7 @@ def _ensure_exotic_formats() -> None:
         return
     _exotic_registered = True
     try:
-        import pillow_heif  # type: ignore[import-untyped]
+        import pillow_heif
         pillow_heif.register_heif_opener()
     except ImportError:
         pass

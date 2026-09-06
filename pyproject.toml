@@ -97,3 +97,8 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["google.protobuf", "google.protobuf.*", "grpc_tools", "grpc_tools.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pillow_heif", "pillow_heif.*"]
+ignore_missing_imports = true
+follow_imports = "skip"

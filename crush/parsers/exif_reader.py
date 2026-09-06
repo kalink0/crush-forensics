@@ -322,7 +322,7 @@ def _is_isobmff_image(raw: bytes) -> bool:
 def _extract_heif_exif(raw: bytes) -> dict[str, Any]:
     """Extract EXIF from a HEIF/HEIC/AVIF file via pillow-heif (optional dep)."""
     try:
-        import pillow_heif  # type: ignore[import-untyped]
+        import pillow_heif
         heif = pillow_heif.open_heif(raw, convert_hdr_to_8bit=False)
         exif_bytes: bytes = heif.info.get("exif", b"")
         if not exif_bytes:
