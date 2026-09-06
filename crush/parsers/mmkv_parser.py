@@ -17,13 +17,18 @@ from __future__ import annotations
 import os
 import struct
 import tempfile
-from typing import Any
+from typing import Any, cast
 
 from crush.core.passwords import WrongPasswordError
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.mmkv_parser import MMKVError, decode_value, read_entries
-from crush.third_party.mmkv_parser.mmkv_parser import _read_varint
+from crush.third_party.mmkv_parser.mmkv_parser import (
+    _HEADER_LENGTH,
+    _read_varint,
+    _region_size,
+    _walk,
+)
 
 # MMKVMetaInfo (.crc file) layout, independently verified against Tencent/MMKV's
 # MMKVMetaInfo.hpp: crc u32, version u32, sequence u32, aesVector[16], actualSize u32.
@@ -55,6 +60,32 @@ def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
         "encrypted": any(vector),
         "actual_size": actual_size if version >= _META_VERSION_ACTUAL_SIZE else None,
     }
+
+
+def _try_plain_walk(raw: bytes) -> list[tuple[str, bytes]] | None:
+    """Attempt to read *raw* as an unencrypted MMKV store, ignoring the .crc
+    meta file's encryption flag entirely.
+
+    The .crc file's "non-zero vector means AES-encrypted" heuristic is only
+    as good as the MMKVMetaInfo layout it's read against — seen false-
+    positive in the field on a real react-native-mmkv store whose meta
+    "version" field was far higher than anything this layout has been
+    verified against (61, vs. the 1-4 range the known struct evolution
+    covers), producing a non-zero vector for a demonstrably plaintext store.
+    Rather than trust the flag blindly, confirm it: a genuinely encrypted
+    store fed through here as if it weren't will, per read_entries()'s own
+    documented invariant, either yield nothing or leave a tail unread.
+    """
+    if len(raw) < _HEADER_LENGTH:
+        return None
+    region_size = _region_size(raw, None)  # type: ignore[no-untyped-call]
+    if region_size == 0 or _HEADER_LENGTH + region_size > len(raw):
+        return None
+    region = raw[_HEADER_LENGTH:_HEADER_LENGTH + region_size]
+    entries, unread = _walk(region)  # type: ignore[no-untyped-call]
+    if not entries or unread:
+        return None
+    return cast(list[tuple[str, bytes]], entries)
 
 
 _TYPE_LABELS: dict[type, str] = {str: "string", int: "int", bytes: "bytes"}
@@ -153,56 +184,66 @@ class MMKVParser(AbstractParser):
                 crc_bytes = None
 
         meta_info = _read_meta_info(crc_bytes)
+        meta_flagged_encrypted = meta_info is not None and meta_info["encrypted"]
+        false_positive_encrypted_flag = False
 
-        if meta_info is not None and meta_info["encrypted"] and password is None:
-            return ParseResult(
-                viewer_type="tree",
-                data={
-                    "error": "This MMKV store is AES-encrypted.",
-                    "hint": 'Use "Open as -> MMKV (Encrypted)..." and supply the key.',
-                },
-                metadata={
-                    "Format": "MMKV Key-Value Store (encrypted)",
-                    "File size": f"{node.size:,} B",
-                    "Encrypted": "yes",
-                },
-            )
-
-        tmp_dir = tempfile.mkdtemp(prefix="crush_mmkv_")
-        tmp_path = os.path.join(tmp_dir, node.name)
-        try:
-            with open(tmp_path, "wb") as f:
-                f.write(raw)
-            if crc_bytes is not None:
-                with open(tmp_path + ".crc", "wb") as f:
-                    f.write(crc_bytes)
-            try:
-                entries = read_entries(  # type: ignore[no-untyped-call]
-                    tmp_path, key=password, aes256=aes256
-                )
-            except MMKVError as exc:
-                msg = str(exc)
-                if password is not None and "did not decrypt" in msg:
-                    raise WrongPasswordError(msg) from exc
+        if meta_flagged_encrypted and password is None:
+            plain_entries = _try_plain_walk(raw)
+            if plain_entries is None:
                 return ParseResult(
                     viewer_type="tree",
-                    data={"error": msg, "hint": "MMKV store could not be read"},
+                    data={
+                        "error": "This MMKV store is AES-encrypted.",
+                        "hint": 'Use "Open as -> MMKV (Encrypted)..." and supply the key.',
+                    },
                     metadata={
-                        "Format": "MMKV Key-Value Store (parse failed)",
+                        "Format": "MMKV Key-Value Store (encrypted)",
                         "File size": f"{node.size:,} B",
-                        "Parse error": msg,
+                        "Encrypted": "yes",
                     },
                 )
-        finally:
-            for p in (tmp_path, tmp_path + ".crc"):
+            # The .crc file's vector-nonzero flag said "encrypted", but the
+            # store just read cleanly as plaintext -- trust the successful
+            # read over the flag, and say so explicitly rather than silently
+            # overriding it.
+            entries = plain_entries
+            false_positive_encrypted_flag = True
+        else:
+            tmp_dir = tempfile.mkdtemp(prefix="crush_mmkv_")
+            tmp_path = os.path.join(tmp_dir, node.name)
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(raw)
+                if crc_bytes is not None:
+                    with open(tmp_path + ".crc", "wb") as f:
+                        f.write(crc_bytes)
                 try:
-                    os.remove(p)
+                    entries = read_entries(  # type: ignore[no-untyped-call]
+                        tmp_path, key=password, aes256=aes256
+                    )
+                except MMKVError as exc:
+                    msg = str(exc)
+                    if password is not None and "did not decrypt" in msg:
+                        raise WrongPasswordError(msg) from exc
+                    return ParseResult(
+                        viewer_type="tree",
+                        data={"error": msg, "hint": "MMKV store could not be read"},
+                        metadata={
+                            "Format": "MMKV Key-Value Store (parse failed)",
+                            "File size": f"{node.size:,} B",
+                            "Parse error": msg,
+                        },
+                    )
+            finally:
+                for p in (tmp_path, tmp_path + ".crc"):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                try:
+                    os.rmdir(tmp_dir)
                 except OSError:
                     pass
-            try:
-                os.rmdir(tmp_dir)
-            except OSError:
-                pass
 
         records = _classify_entries(entries)
         live = sum(1 for r in records if r["state"] == "Live")
@@ -226,6 +267,12 @@ class MMKVParser(AbstractParser):
             meta["Meta file"] = "not found (.crc companion missing) — encryption status unverified"
         if password is not None:
             meta["Encrypted"] = "yes (decrypted)"
+        elif false_positive_encrypted_flag:
+            meta["Encrypted"] = (
+                "no — .crc meta file's vector field is non-zero, which normally "
+                "flags AES encryption, but the store read cleanly as plaintext "
+                "anyway, so that flag is treated as a false positive here"
+            )
 
         text_parts: list[str] = []
         for r in records:

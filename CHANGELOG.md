@@ -4,6 +4,18 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+### New Features
+
+- SQLite Table Viewer's WAL Frames tab now has a Content column, decoding each frame's page into its actual row values (with real column names when the page maps to a known table) instead of only frame/page/status metadata.
+
+### Bug Fixes
+
+- Fixed the SQLite Freelist Recovery, Freeblocks, and Unallocated Space scanners (and page→table attribution) reading only the database's frozen base file, ignoring a live, not-yet-checkpointed `-wal` sidecar — a delete/drop recorded only in the WAL could look like nothing was ever freed.
+- Fixed the Freelist Recovery tab only appearing when a live PRAGMA reported freed pages, unlike Freeblocks/Unallocated Space (always shown regardless); it's now always shown too, with a status message distinguishing "nothing recoverable" from "no freed pages at all".
+- Fixed Freeblocks' Data column rendering an all-zero freeblock as an apparently empty cell (NUL bytes render invisibly) instead of stating so explicitly.
+- Fixed the SQLite Table Viewer's status line below the SQL box keeping a previous tab's message (e.g. WAL Frames' hex-viewer hint) after switching to a plain table, which never sets its own. Same bug class as [#73](https://github.com/kalink0/crush-forensics/issues/73).
+- Fixed the MMKV parser trusting a store's `.crc` meta file's "non-zero vector" field as proof of AES encryption — confirmed false-positive on a real react-native-mmkv store with demonstrably plaintext data. It now only reports "encrypted" when the store genuinely fails to read as plaintext.
+
 ## v0.18.0 - 2026-09-05
 
 **Focus: MMKV support; full Realm format-9 (pre-Cluster) row-level parsing; SQLite blob-cell tab menu with per-cell provenance; `--focus` CLI flag; bundled peach updated to v0.6.0.**

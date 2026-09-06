@@ -210,15 +210,39 @@ def _aes_cfb128_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
 
 
 def test_encrypted_store_without_key_reports_encrypted_not_empty(tmp_path: Path) -> None:
-    payload = _store(_entry("a", _string_value("b")))
-    vector = bytes(range(1, 17))  # non-zero -> encrypted
-    crc = _meta_bytes(version=1, sequence=0, vector=vector)
-    node, vfs = _write_store(tmp_path, payload, crc=crc)
+    key = b"correct horse battery staple 12"[:16]
+    iv = bytes(range(16))
+    plaintext = _store(_entry("a", _string_value("secret")))
+    header, region = plaintext[:4], plaintext[4:]
+    ciphertext = header + _aes_cfb128_encrypt(region, key, iv)
+
+    crc = _meta_bytes(version=1, sequence=0, vector=iv)
+    node, vfs = _write_store(tmp_path, ciphertext, crc=crc)
 
     result = MMKVParser().parse(node, vfs)  # no password
     assert result.viewer_type == "tree"
     assert result.metadata["Encrypted"] == "yes"
     assert "records" not in result.data
+
+
+def test_high_meta_version_false_positive_encrypted_flag_does_not_block_plaintext_read(
+    tmp_path: Path,
+) -> None:
+    """Regression: a real react-native-mmkv store's .crc file had a non-zero
+    vector (meta version 61, far outside the 1-4 range this struct layout
+    has been verified against) even though the store's own data was
+    demonstrably plaintext (readable JSON, hundreds of correctly-decoded
+    entries). Crush must not take the vector-nonzero flag at face value when
+    the store reads cleanly as plaintext anyway -- confirm before refusing."""
+    payload = _store(_entry("a", _string_value("b")), _entry("c", _string_value("d")))
+    vector = bytes(range(1, 17))  # non-zero, would normally mean "encrypted"
+    crc = _meta_bytes(version=61, sequence=0, vector=vector)
+    node, vfs = _write_store(tmp_path, payload, crc=crc)
+
+    result = MMKVParser().parse(node, vfs)  # no password
+    assert result.data["records"][0]["decoded"] == "b"
+    assert result.data["records"][1]["decoded"] == "d"
+    assert "false positive" in result.metadata["Encrypted"]
 
 
 def test_encrypted_store_with_correct_key_decrypts(tmp_path: Path) -> None:

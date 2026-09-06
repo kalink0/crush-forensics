@@ -277,6 +277,48 @@ def get_page_type(page: bytes) -> int | None:
 # Page → table attribution
 # ---------------------------------------------------------------------------
 
+# Same magic pair the WAL frame classifier in table_viewer.py's _get_wal_frames
+# checks (_WAL_MAGIC there) -- kept local here since this module has no
+# dependency on the viewer.
+_WAL_MAGIC = (0x377F0682, 0x377F0683)
+
+
+def build_wal_page_overlay(wal_data: bytes | None, page_size: int) -> dict[int, bytes]:
+    """Return {page_num: latest committed page bytes} from a WAL file's
+    salt-valid frames.
+
+    A page's *logical* current content is its base-file copy unless a later,
+    not-yet-checkpointed WAL frame overrides it -- which is exactly what a
+    live SQLite connection already returns transparently for any query, WAL
+    or no WAL. Any code that instead reads a database file's raw bytes
+    directly (as every recovery scanner in sqlite_freelist.py,
+    sqlite_freeblocks.py and sqlite_unallocated.py does, since none of them
+    go through sqlite3) sees only the frozen base-file state and silently
+    misses -- or reports as still-live -- whatever the WAL has since
+    changed. Passing this overlay's bytes for a page number, falling back to
+    the base file otherwise, closes that gap without needing sqlite3 at all.
+    """
+    wal_pages: dict[int, bytes] = {}
+    if not wal_data or not page_size or len(wal_data) < 32:
+        return wal_pages
+    magic = struct.unpack_from(">I", wal_data, 0)[0]
+    if magic not in _WAL_MAGIC:
+        return wal_pages
+    salt1 = struct.unpack_from(">I", wal_data, 16)[0]
+    salt2 = struct.unpack_from(">I", wal_data, 20)[0]
+    frame_size = 24 + page_size
+    offset = 32
+    # Collect last valid frame per page (active)
+    while offset + frame_size <= len(wal_data):
+        pn  = struct.unpack_from(">I", wal_data, offset)[0]
+        fs1 = struct.unpack_from(">I", wal_data, offset + 8)[0]
+        fs2 = struct.unpack_from(">I", wal_data, offset + 12)[0]
+        if fs1 == salt1 and fs2 == salt2:
+            wal_pages[pn] = wal_data[offset + 24: offset + 24 + page_size]
+        offset += frame_size
+    return wal_pages
+
+
 def build_page_table_map(
     conn: sqlite3.Connection,
     wal_data: bytes | None = None,
@@ -290,25 +332,7 @@ def build_page_table_map(
     numbers.  Index pages and non-table objects are excluded.
     """
     mapping: dict[int, str] = {}
-
-    # Build WAL frame lookup: page_num → latest page bytes (active frames only)
-    wal_pages: dict[int, bytes] = {}
-    if wal_data and page_size:
-        if len(wal_data) >= 32:
-            magic = struct.unpack_from(">I", wal_data, 0)[0]
-            if magic in (0x377F0682, 0x377F0683):
-                salt1 = struct.unpack_from(">I", wal_data, 16)[0]
-                salt2 = struct.unpack_from(">I", wal_data, 20)[0]
-                frame_size = 24 + page_size
-                offset = 32
-                # Collect last valid frame per page (active)
-                while offset + frame_size <= len(wal_data):
-                    pn    = struct.unpack_from(">I", wal_data, offset)[0]
-                    fs1   = struct.unpack_from(">I", wal_data, offset + 8)[0]
-                    fs2   = struct.unpack_from(">I", wal_data, offset + 12)[0]
-                    if fs1 == salt1 and fs2 == salt2:
-                        wal_pages[pn] = wal_data[offset + 24: offset + 24 + page_size]
-                    offset += frame_size
+    wal_pages = build_wal_page_overlay(wal_data, page_size)
 
     # Read sqlite_master for table root pages and schemas
     try:
