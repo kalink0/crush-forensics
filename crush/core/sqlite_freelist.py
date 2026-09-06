@@ -30,8 +30,19 @@ _HEADER_FIRST_TRUNK_OFFSET = 32
 _HEADER_FREELIST_COUNT_OFFSET = 36
 
 
-def read_raw_page(db_path: Path, page_num: int, page_size: int) -> bytes | None:
-    """Return raw bytes for 1-indexed *page_num*, or None if unreadable."""
+def read_raw_page(
+    db_path: Path, page_num: int, page_size: int, wal_pages: dict[int, bytes] | None = None
+) -> bytes | None:
+    """Return raw bytes for 1-indexed *page_num*, or None if unreadable.
+
+    *wal_pages* (see sqlite_wal.build_wal_page_overlay()) is checked first —
+    a page still on the freelist per the base file's header can, on a live
+    WAL-mode database, already have a newer committed version sitting only
+    in the not-yet-checkpointed -wal file; without this, callers would read
+    stale base-file bytes for a page number the header itself says to trust.
+    """
+    if wal_pages and page_num in wal_pages:
+        return wal_pages[page_num]
     if page_num < 1 or page_size <= 0:
         return None
     offset = (page_num - 1) * page_size
@@ -44,10 +55,14 @@ def read_raw_page(db_path: Path, page_num: int, page_size: int) -> bytes | None:
     return data if len(data) == page_size else None
 
 
-def _read_page_via_handle(fh: Any, page_num: int, page_size: int) -> bytes | None:
+def _read_page_via_handle(
+    fh: Any, page_num: int, page_size: int, wal_pages: dict[int, bytes] | None = None
+) -> bytes | None:
     """Like read_raw_page(), but reuses an already-open file handle instead
     of opening the file fresh — avoids one open()/close() per page when
     walking many pages in a loop."""
+    if wal_pages and page_num in wal_pages:
+        return wal_pages[page_num]
     if page_num < 1 or page_size <= 0:
         return None
     try:
@@ -58,12 +73,21 @@ def _read_page_via_handle(fh: Any, page_num: int, page_size: int) -> bytes | Non
     return data if len(data) == page_size else None
 
 
-def walk_freelist_pages(db_path: Path, page_size: int) -> list[dict[str, Any]]:
+def walk_freelist_pages(
+    db_path: Path, page_size: int, wal_pages: dict[int, bytes] | None = None
+) -> list[dict[str, Any]]:
     """Walk the freelist trunk chain, returning one entry per freed page.
 
     Each entry is ``{"page": int, "kind": "trunk" | "leaf"}``.  The walk is
     bounded by the freelist page count declared in the database header, so a
     corrupt or cyclic chain is stopped defensively rather than looping.
+
+    *wal_pages* (see sqlite_wal.build_wal_page_overlay()) lets the header and
+    every trunk/leaf page be read through a live -wal file's not-yet-
+    checkpointed content where present, instead of only the base file's
+    frozen bytes — a header whose freelist fields were last updated by a
+    still-in-WAL transaction would otherwise look empty even though the
+    connection-level PRAGMA freelist_count already reports pages.
     """
     try:
         fh = open(db_path, "rb")
@@ -71,7 +95,7 @@ def walk_freelist_pages(db_path: Path, page_size: int) -> list[dict[str, Any]]:
         return []
 
     try:
-        header = _read_page_via_handle(fh, 1, page_size)
+        header = _read_page_via_handle(fh, 1, page_size, wal_pages)
         if header is None or len(header) < _HEADER_FREELIST_COUNT_OFFSET + 4:
             return []
 
@@ -88,7 +112,7 @@ def walk_freelist_pages(db_path: Path, page_size: int) -> list[dict[str, Any]]:
         while trunk_num and trunk_num not in visited and budget > 0:
             visited.add(trunk_num)
             budget -= 1
-            trunk = _read_page_via_handle(fh, trunk_num, page_size)
+            trunk = _read_page_via_handle(fh, trunk_num, page_size, wal_pages)
             if trunk is None or len(trunk) < 8:
                 break
             entries.append({"page": trunk_num, "kind": "trunk"})
@@ -122,6 +146,7 @@ def carve_freelist_rows(
     db_path: Path,
     page_size: int,
     entries: list[dict[str, Any]] | None = None,
+    wal_pages: dict[int, bytes] | None = None,
 ) -> list[dict[str, Any]]:
     """Carve leftover table-leaf rows out of freed pages.
 
@@ -146,7 +171,7 @@ def carve_freelist_rows(
     reconstruct what can be verified).
     """
     if entries is None:
-        entries = walk_freelist_pages(db_path, page_size)
+        entries = walk_freelist_pages(db_path, page_size, wal_pages)
 
     freelist_page_set = {e["page"] for e in entries if e["kind"] == "leaf"}
 
@@ -158,12 +183,12 @@ def carve_freelist_rows(
     def _overflow_reader(page_num: int) -> bytes | None:
         if page_num not in freelist_page_set:
             return None
-        return _read_page_via_handle(fh, page_num, page_size)
+        return _read_page_via_handle(fh, page_num, page_size, wal_pages)
 
     try:
         carved: list[dict[str, Any]] = []
         for entry in entries:
-            page = _read_page_via_handle(fh, entry["page"], page_size)
+            page = _read_page_via_handle(fh, entry["page"], page_size, wal_pages)
             if page is None:
                 continue
             rows = parse_table_leaf_page(

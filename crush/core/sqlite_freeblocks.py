@@ -63,7 +63,9 @@ def extract_freeblocks(page: bytes) -> list[dict[str, Any]]:
     return freeblocks
 
 
-def scan_database_freeblocks(db_path: Path, page_size: int) -> list[dict[str, Any]]:
+def scan_database_freeblocks(
+    db_path: Path, page_size: int, wal_pages: dict[int, bytes] | None = None
+) -> list[dict[str, Any]]:
     """Scan every page in *db_path* for freeblocks.
 
     Returns one entry per freeblock: ``{"page": int, "offset": int, "size":
@@ -72,18 +74,29 @@ def scan_database_freeblocks(db_path: Path, page_size: int) -> list[dict[str, An
     a freelist leaf page can still carry both intact cells (see
     ``sqlite_freelist.py``) and, separately, its own freeblock leftovers
     from before it was freed.
+
+    *wal_pages* (see sqlite_wal.build_wal_page_overlay()) is checked before
+    the base file for each page number — on a live WAL-mode database, a
+    page's most recent freeblock layout can sit only in a not-yet-
+    checkpointed -wal frame, and scanning the base file alone would show a
+    stale (or entirely wrong) freeblock list for that page.
     """
     try:
         page_count = db_path.stat().st_size // page_size if page_size else 0
     except OSError:
         return []
+    if wal_pages:
+        page_count = max(page_count, max(wal_pages, default=0))
 
     results: list[dict[str, Any]] = []
     try:
         with open(db_path, "rb") as fh:
             for page_num in range(1, page_count + 1):
-                fh.seek((page_num - 1) * page_size)
-                page = fh.read(page_size)
+                if wal_pages and page_num in wal_pages:
+                    page = wal_pages[page_num]
+                else:
+                    fh.seek((page_num - 1) * page_size)
+                    page = fh.read(page_size)
                 if len(page) != page_size:
                     continue
                 for fb in extract_freeblocks(page):

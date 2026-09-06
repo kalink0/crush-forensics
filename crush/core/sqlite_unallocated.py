@@ -49,24 +49,36 @@ def extract_unallocated_space(page: bytes) -> dict[str, Any] | None:
     return {"offset": pointer_array_end, "size": len(data), "data": data}
 
 
-def scan_database_unallocated(db_path: Path, page_size: int) -> list[dict[str, Any]]:
+def scan_database_unallocated(
+    db_path: Path, page_size: int, wal_pages: dict[int, bytes] | None = None
+) -> list[dict[str, Any]]:
     """Scan every table-leaf page in *db_path* for non-empty unallocated gaps.
 
     Returns one entry per page with a non-zero gap: ``{"page", "offset",
     "size", "data"}``. Applies to live-allocated and freelist leaf pages
     alike, same as `sqlite_freeblocks.scan_database_freeblocks`.
+
+    *wal_pages* (see sqlite_wal.build_wal_page_overlay()) is checked before
+    the base file for each page number, same reasoning as in
+    scan_database_freeblocks: a page's current gap can exist only in a
+    not-yet-checkpointed -wal frame on a live WAL-mode database.
     """
     try:
         page_count = db_path.stat().st_size // page_size if page_size else 0
     except OSError:
         return []
+    if wal_pages:
+        page_count = max(page_count, max(wal_pages, default=0))
 
     results: list[dict[str, Any]] = []
     try:
         with open(db_path, "rb") as fh:
             for page_num in range(1, page_count + 1):
-                fh.seek((page_num - 1) * page_size)
-                page = fh.read(page_size)
+                if wal_pages and page_num in wal_pages:
+                    page = wal_pages[page_num]
+                else:
+                    fh.seek((page_num - 1) * page_size)
+                    page = fh.read(page_size)
                 if len(page) != page_size:
                     continue
                 entry = extract_unallocated_space(page)

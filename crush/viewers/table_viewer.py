@@ -68,6 +68,7 @@ from crush.core.sqlite_freelist import (
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     build_page_table_map,
+    build_wal_page_overlay,
     parse_table_leaf_page,
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
@@ -201,6 +202,21 @@ def _wal_diag(db_path: "str | None", parser_diag: str = "") -> str:
     if magic not in _WAL_MAGIC:
         return f"invalid magic 0x{magic:08x}"
     return f"WAL ok (size={size} B, magic=0x{magic:08x}) — frames list empty"
+
+
+def _format_wal_frame_content(rows: list[tuple[int, list[Any]]], col_names: list[str]) -> str:
+    """Render decoded (rowid, values) tuples from a WAL frame's page as one
+    compact string for the Content column — real column names when the
+    frame's page maps to a known table with a matching column count,
+    positional otherwise."""
+    parts: list[str] = []
+    for rowid, values in rows:
+        if col_names and len(col_names) == len(values):
+            body = ", ".join(f"{c}={v}" for c, v in zip(col_names, values))
+        else:
+            body = ", ".join(str(v) for v in values)
+        parts.append(f"{rowid}: [{body}]")
+    return "; ".join(parts)
 
 
 class _SqlHighlighter(QSyntaxHighlighter):
@@ -521,6 +537,9 @@ class TableViewer(QWidget):
         self._wal_frames_cache: list[dict] | None = None
         self._wal_page_size: int = 0
         self._db_page_size: int = 0
+        self._wal_data_loaded = False
+        self._wal_data_cache: bytes | None = None
+        self._wal_page_overlay_cache: dict[int, bytes] | None = None
         self._freelist_cache: tuple[list[dict], list[dict]] | None = None
         self._freelist_render_state: (
             tuple[list[dict], list[dict], dict[str, list[tuple[str, str]]]] | None
@@ -540,8 +559,7 @@ class TableViewer(QWidget):
                     self._table_combo.addItem(self._db_info_label)
                     if self._db_path and Path(str(self._db_path) + "-wal").exists():
                         self._table_combo.addItem(self._wal_label)
-                    if self._db_path and self._has_freelist_pages():
-                        self._table_combo.addItem(self._freelist_label)
+                    self._table_combo.addItem(self._freelist_label)
                     self._table_combo.addItem(self._freeblocks_label)
                     self._table_combo.addItem(self._unallocated_label)
                 self._table_combo.addItems(table_names)
@@ -769,6 +787,17 @@ class TableViewer(QWidget):
         # freshly loaded table yet, so the box should say so too (#73).
         self._cell_detail_label.setText("—  No cell selected")
         self._cell_detail_view.setPlainText("")
+
+        # Same bug class: the status line below the SQL box is tab-specific
+        # (e.g. WAL Frames' "double-click to open in hex viewer", Freelist
+        # Recovery's carve summary) but was never cleared on switch, so it
+        # kept describing the *previous* tab after landing on a plain table
+        # -- which never sets it itself and so never overwrote the leftover
+        # text. Every generated tab sets its own status right after loading,
+        # so clearing here is always immediately superseded except for plain
+        # tables, which is exactly the case that needs it cleared.
+        self._sql_status.setText("")
+        self._sql_status.setStyleSheet("")
 
         # _activate_standard_model() itself turns dynamic sorting back on
         # (when leaving query-results mode), so it must run *before* it's
@@ -1308,7 +1337,7 @@ class TableViewer(QWidget):
         frames = self._get_wal_frames()
         self._reset_source_model()
         self._source_model.setHorizontalHeaderLabels(
-            ["Frame", "Page", "Transaction", "Status", "Table", "Offset (B)"]
+            ["Frame", "Page", "Transaction", "Status", "Table", "Offset (B)", "Content"]
         )
         if not frames:
             parser_diag = self._data.get("__wal_diag", "") if isinstance(self._data, dict) else ""
@@ -1325,9 +1354,33 @@ class TableViewer(QWidget):
             "WAL slack":   Qt.GlobalColor.darkGray,
         }
 
+        wal_data = self._get_wal_data()
+
+        schema_col_names: dict[str, list[str]] = {}
+        conn = self._ensure_db()
+        if conn is not None:
+            schema_col_names = {
+                name: [col for col, _aff in cols]
+                for name, cols in self._table_schema_columns(conn).items()
+            }
+
         for f in frames:
             color = _status_color.get(f["status"])
             table_name = self._page_table_map.get(f["page"], "—")
+
+            content_text = "—"
+            if f["salt_ok"] and wal_data is not None and self._wal_page_size:
+                page_start = f["offset"] + 24
+                page_bytes = wal_data[page_start: page_start + self._wal_page_size]
+                decoded = parse_table_leaf_page(page_bytes, page_size=self._wal_page_size)
+                if decoded is None:
+                    content_text = "(not a leaf page)"
+                elif not decoded:
+                    content_text = "(empty leaf page)"
+                else:
+                    content_text = _format_wal_frame_content(
+                        decoded, schema_col_names.get(table_name, [])
+                    )
 
             def _item(text: str, sort_val: object = None, _c: object = color) -> QStandardItem:
                 it = QStandardItem(text)
@@ -1345,6 +1398,7 @@ class TableViewer(QWidget):
                 _item(f["status"]),
                 _item(table_name),
                 _item(str(f["offset"]),                  f["offset"]),
+                _item(content_text),
             ])
 
         self._resize_and_cap()
@@ -1357,7 +1411,43 @@ class TableViewer(QWidget):
             if n:
                 parts.append(f"{n} {status.lower()}")
         self._row_count_label.setText(f"({', '.join(parts)})")
-        self._sql_status.setText("Double-click a row to open the raw page in the hex viewer")
+        self._sql_status.setText(
+            "Double-click a row to open the raw page in the hex viewer — "
+            "click a Content cell to see the full decoded value below"
+        )
+
+    def _get_wal_data(self) -> bytes | None:
+        """Return (and cache) the raw -wal sidecar's bytes, or None if there
+        isn't one. Shared by every caller that needs the live WAL's content
+        (as opposed to _get_wal_frames()'s classified, page-size-validated
+        frame list) so the file is only read once per viewer instance."""
+        if self._wal_data_loaded:
+            return self._wal_data_cache
+        self._wal_data_loaded = True
+        if self._db_path is not None:
+            try:
+                self._wal_data_cache = Path(str(self._db_path) + "-wal").read_bytes()
+            except OSError:
+                self._wal_data_cache = None
+        return self._wal_data_cache
+
+    def _get_wal_page_overlay(self) -> dict[int, bytes]:
+        """Return (and cache) {page_num: bytes} for whatever the live -wal
+        file has committed but not yet checkpointed into the base file.
+
+        Every SQLite-recovery scanner (sqlite_freelist, sqlite_freeblocks,
+        sqlite_unallocated) reads the base file's raw bytes directly rather
+        than through sqlite3, so none of them see WAL content on their own —
+        a page whose current, forensically-relevant content sits only in a
+        not-yet-checkpointed WAL frame would otherwise look stale, missing,
+        or (for the freelist header itself) simply absent even though
+        PRAGMA freelist_count on a live connection already reports it.
+        """
+        if self._wal_page_overlay_cache is not None:
+            return self._wal_page_overlay_cache
+        page_size = self._get_page_size()
+        self._wal_page_overlay_cache = build_wal_page_overlay(self._get_wal_data(), page_size)
+        return self._wal_page_overlay_cache
 
     def _get_page_size(self) -> int:
         """Return (and cache) the database's page size via PRAGMA."""
@@ -1373,16 +1463,6 @@ class TableViewer(QWidget):
             self._db_page_size = 0
         return self._db_page_size
 
-    def _has_freelist_pages(self) -> bool:
-        conn = self._ensure_db()
-        if conn is None:
-            return False
-        try:
-            row = conn.execute("PRAGMA freelist_count").fetchone()
-            return bool(row and row[0])
-        except Exception:
-            return False
-
     def _get_freelist_data(self) -> tuple[list[dict], list[dict]]:
         """Return (and cache) (freelist entries, carved leftover rows)."""
         if self._freelist_cache is not None:
@@ -1391,8 +1471,9 @@ class TableViewer(QWidget):
         if self._db_path is None or page_size == 0:
             self._freelist_cache = ([], [])
             return self._freelist_cache
-        entries = walk_freelist_pages(self._db_path, page_size)
-        carved = carve_freelist_rows(self._db_path, page_size, entries)
+        wal_pages = self._get_wal_page_overlay()
+        entries = walk_freelist_pages(self._db_path, page_size, wal_pages)
+        carved = carve_freelist_rows(self._db_path, page_size, entries, wal_pages)
         self._freelist_cache = (entries, carved)
         return self._freelist_cache
 
@@ -1657,18 +1738,29 @@ class TableViewer(QWidget):
                 f"({len(entries)} freelist pages, {n_pages_with_data} with recoverable data, "
                 f"{total_rows} rows carved)"
             )
-            self._sql_status.setText(
-                "Candidate tables are a heuristic match — the source table cannot be "
-                "determined with certainty from a freed page. ✓-marked candidates match on "
-                "both column count and value types (higher confidence); unmarked candidates "
-                "match column count only. Values spilling onto overflow "
-                "pages are reconstructed when those pages are still on the freelist "
-                "unmodified; otherwise shown as '<OVERFLOW>'. Double-click a row to open the "
-                "raw page in the hex viewer."
-            )
+            if total_rows == 0:
+                self._sql_status.setText(
+                    f"{len(entries)} freed page(s) found, but none still carry leftover "
+                    "cell data — not a parsing failure. Either a later allocation already "
+                    "overwrote them, or secure_delete was enabled at write time."
+                )
+            else:
+                self._sql_status.setText(
+                    "Candidate tables are a heuristic match — the source table cannot be "
+                    "determined with certainty from a freed page. ✓-marked candidates match on "
+                    "both column count and value types (higher confidence); unmarked candidates "
+                    "match column count only. Values spilling onto overflow "
+                    "pages are reconstructed when those pages are still on the freelist "
+                    "unmodified; otherwise shown as '<OVERFLOW>'. Double-click a row to open the "
+                    "raw page in the hex viewer."
+                )
 
     def _get_page_table_map(self) -> dict[int, str]:
-        """Return (and cache) {page_num: table_name}, independent of WAL presence."""
+        """Return (and cache) {page_num: table_name}, WAL-aware like
+        _get_wal_frames() builds it -- unlike that method, this one is
+        reachable without ever visiting the WAL Frames tab first (Freeblocks
+        and Unallocated Space use it too), so it has to fetch the WAL data
+        itself rather than assume _page_table_map was already populated."""
         if self._page_table_map:
             return self._page_table_map
         conn = self._ensure_db()
@@ -1676,7 +1768,7 @@ class TableViewer(QWidget):
         if conn is None or page_size == 0:
             return {}
         try:
-            self._page_table_map = build_page_table_map(conn, None, page_size)
+            self._page_table_map = build_page_table_map(conn, self._get_wal_data(), page_size)
         except Exception:
             self._page_table_map = {}
         return self._page_table_map
@@ -1689,7 +1781,9 @@ class TableViewer(QWidget):
         if self._db_path is None or page_size == 0:
             self._freeblocks_cache = []
             return self._freeblocks_cache
-        self._freeblocks_cache = scan_database_freeblocks(self._db_path, page_size)
+        self._freeblocks_cache = scan_database_freeblocks(
+            self._db_path, page_size, self._get_wal_page_overlay()
+        )
         return self._freeblocks_cache
 
     def _load_freeblocks(self) -> None:
@@ -1776,7 +1870,20 @@ class TableViewer(QWidget):
                     origin = "Freelist"
                 else:
                     origin = "—"
-                text = fb["data"].decode("utf-8", errors="replace")
+                raw = fb["data"]
+                if not raw:
+                    text = ""
+                elif not any(raw):
+                    # A string of NUL bytes decodes fine but renders as an
+                    # invisible blank cell in the table -- indistinguishable
+                    # from "nothing here" even though Size (B) shows this
+                    # freeblock is real. Say so explicitly instead (this is
+                    # itself a legitimate, forensically meaningful result:
+                    # e.g. secure_delete was on, or the space was never
+                    # written to before being linked into the freeblock).
+                    text = f"(all zero — {len(raw)} B)"
+                else:
+                    text = raw.decode("utf-8", errors="replace")
 
                 items = [
                     QStandardItem(str(page)),
@@ -1806,7 +1913,9 @@ class TableViewer(QWidget):
         if self._db_path is None or page_size == 0:
             self._unallocated_cache = []
             return self._unallocated_cache
-        self._unallocated_cache = scan_database_unallocated(self._db_path, page_size)
+        self._unallocated_cache = scan_database_unallocated(
+            self._db_path, page_size, self._get_wal_page_overlay()
+        )
         return self._unallocated_cache
 
     def _load_unallocated_space(self) -> None:
@@ -1959,7 +2068,9 @@ class TableViewer(QWidget):
                 page_num = int(page_item.text())
             except ValueError:
                 return
-            page_bytes = _read_freelist_page(self._db_path, page_num, page_size)
+            page_bytes = _read_freelist_page(
+                self._db_path, page_num, page_size, self._get_wal_page_overlay()
+            )
             if page_bytes:
                 self.open_bytes_requested.emit(page_bytes, f"Freelist page {page_num}")
             return
@@ -1978,7 +2089,9 @@ class TableViewer(QWidget):
                 page_num = int(page_item.text())
             except ValueError:
                 return
-            page_bytes = _read_freelist_page(self._db_path, page_num, page_size)
+            page_bytes = _read_freelist_page(
+                self._db_path, page_num, page_size, self._get_wal_page_overlay()
+            )
             if page_bytes:
                 self.open_bytes_requested.emit(page_bytes, f"Page {page_num} (freeblock)")
             return
@@ -1997,7 +2110,9 @@ class TableViewer(QWidget):
                 page_num = int(page_item.text())
             except ValueError:
                 return
-            page_bytes = _read_freelist_page(self._db_path, page_num, page_size)
+            page_bytes = _read_freelist_page(
+                self._db_path, page_num, page_size, self._get_wal_page_overlay()
+            )
             if page_bytes:
                 self.open_bytes_requested.emit(page_bytes, f"Page {page_num} (unallocated space)")
             return
