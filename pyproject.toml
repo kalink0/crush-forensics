@@ -65,6 +65,7 @@ include = ["crush*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["crush/third_party"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
