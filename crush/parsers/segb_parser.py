@@ -21,6 +21,42 @@ from crush.third_party.ccl_segb import ccl_segb1, ccl_segb2
 
 _logger = logging.getLogger(__name__)
 
+def _stream_name(node_path: str) -> str | None:
+    """Derive the Biome stream name from a SEGB file's path, or None if the
+    path doesn't look like a Biome stream layout.
+
+    Biome stores each stream's files under a directory named after the
+    stream itself, one level above a "local"/"remote" leaf directory, e.g.
+    ".../streams/restricted/Device.Wireless.Bluetooth/local/<file>" ->
+    "Device.Wireless.Bluetooth". Pure path metadata — no payload content is
+    inspected, so this works even for streams whose field semantics are
+    completely unknown.
+    """
+    parts = [p for p in node_path.replace("\\", "/").split("/") if p]
+    if len(parts) >= 2 and parts[-2].lower() in ("local", "remote"):
+        return parts[-3] if len(parts) >= 3 else None
+    return parts[-2] if len(parts) >= 2 else None
+
+
+def is_biome_streams_node(node: VFSNode) -> bool:
+    """Return True if *node* is the macOS system Biome streams root
+    (".../private/var/db/biome/streams").
+
+    Deliberately scoped to just this one location: its stream names are
+    reasonably well understood (community research — iLEAPP's biome*
+    artifact modules, DFIR writeups), unlike other Biome roots (e.g. iOS's
+    per-app "Library/Biome/streams") where stream semantics at this path
+    aren't yet established here. Matched by path shape, not directory
+    contents, since a streams/ folder's *children* look the same
+    regardless of which root it lives under — only the path distinguishes
+    the location whose meaning is actually known.
+    """
+    if not node.is_dir:
+        return False
+    path = node.path.replace("\\", "/").rstrip("/").lower()
+    return path.endswith("var/db/biome/streams")
+
+
 _COLUMNS_V1 = [
     "Index", "Offset", "State",
     "Timestamp1", "Timestamp2",
@@ -76,6 +112,9 @@ class SegbParser(AbstractParser):
                 "File size": f"{node.size:,} B",
                 "Records": f"{len(rows):,}",
             }
+            stream = _stream_name(node.path)
+            if stream is not None:
+                meta["Stream"] = stream
             if parse_error:
                 meta["Parse warning"] = parse_error
             data: dict[str, Any] = {"SEGB": {"columns": columns, "rows": rows}}

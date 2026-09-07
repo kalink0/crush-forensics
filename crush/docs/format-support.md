@@ -67,6 +67,7 @@ Limitations
 
 ### SEGB (Biome)
 - Parses SEGB v1/v2 records into the Table Viewer.
+- The Properties panel shows the file's Biome stream name (e.g. `Device.Wireless.Bluetooth`), derived from the file's own path rather than its payload — shown for any stream, including ones whose field-level meaning isn't otherwise decoded.
 - Protobuf payloads decoded automatically: double fields in the plausible Cocoa-timestamp range get a `[possible Cocoa timestamp: ...]` hint alongside the raw number (same range check as the schema-less Protobuf Viewer — see Protobuf Viewer Limitations), nested messages expanded inline with a `[raw: N B: hex…]` hint alongside them (wire type 2 doesn't declare that the bytes really are a submessage — see Protobuf Viewer Limitations), repeated fields collected into arrays. Length-delimited fields that don't decode as UTF-8 or as a nested message are shown as a `<N B: hex…>` preview rather than being dropped. Full protobuf field number range (up to 2²⁹−1) is supported.
 - A backing SQLite database is created on open, enabling SQL queries via the built-in editor with autocomplete. The `Payload` column holds human-readable rendered text; `Payload JSON` holds the same data as JSON for `json_extract` queries — floats are always stored as JSON numbers (never swapped for a date string) so comparisons stay type-consistent:
   - Single field: `json_extract("Payload JSON", '$.2')` → value of field 2

@@ -1221,6 +1221,10 @@ class MainWindow(QMainWindow):
             self._hash_node_if_integrity(node, vfs)
             self._send_to_peach(node, vfs)
             return
+        if mode == "send_to_peach_biome":
+            self._hash_node_if_integrity(node, vfs)
+            self._send_to_peach(node, vfs)
+            return
         if mode == "protobuf":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.protobuf_parser import ProtobufParser

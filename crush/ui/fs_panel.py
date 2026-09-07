@@ -488,16 +488,22 @@ class FilesystemPanel(QWidget):
         export_logarchive_action = None
         _is_logarchive = node.name.lower().endswith(".logarchive")
         _is_ios_diag = False
+        _is_biome_streams = False
         if node.is_dir:
             from crush.parsers.unified_log_parser import is_ios_diagnostics_node
             _is_ios_diag = is_ios_diagnostics_node(node)
+            from crush.parsers.segb_parser import is_biome_streams_node
+            _is_biome_streams = is_biome_streams_node(node)
         send_to_peach_action = None
         send_to_peach_folder_action = None
+        send_to_peach_biome_action = None
         if _is_ios_diag:
             open_ios_diag_action = menu.addAction("Open as Unified Log Archive")
             add_ios_diag_action  = menu.addAction("Add to Multi-Log Studio as Unified Log Archive")
             menu.addSeparator()
             export_logarchive_action = menu.addAction("Export as .logarchive…")
+        elif _is_biome_streams:
+            send_to_peach_biome_action = menu.addAction("Send Biome Streams to Peach…")
         elif node.is_dir and not _is_logarchive:
             open_logs_folder_action = menu.addAction("Open Logs in Multi-Log Studio")
             send_to_peach_folder_action = menu.addAction("Send Logs to Peach…")
@@ -543,6 +549,8 @@ class FilesystemPanel(QWidget):
             self.open_requested.emit(node, vfs, "multi_log_folder")
         elif action == send_to_peach_folder_action:
             self.open_requested.emit(node, vfs, "send_to_peach_folder")
+        elif action == send_to_peach_biome_action:
+            self.open_requested.emit(node, vfs, "send_to_peach_biome")
         elif action == open_ios_diag_action:
             self.open_requested.emit(node, vfs, "multi_log")
         elif action == add_ios_diag_action:

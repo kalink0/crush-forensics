@@ -7,6 +7,7 @@ All notable changes to Crush will be documented in this file.
 ### New Features
 
 - SQLite Table Viewer's WAL Frames tab now has a Content column, decoding each frame's page into its actual row values (with real column names when the page maps to a known table) instead of only frame/page/status metadata.
+- SEGB/Biome Viewer's Properties panel now shows the file's Biome stream name, derived from its path. Right-clicking the macOS system Biome streams folder (`.../private/var/db/biome/streams`) now offers **Send Biome Streams to Peach…**, handing the whole folder to peach for recursive ingestion — the first step toward a Biome tagging rule pack in peach itself. Requires peach v0.7.0+ (Biome/SEGB support isn't in the currently bundled v0.6.0 yet).
 
 ### Bug Fixes
 

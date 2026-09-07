@@ -509,6 +509,8 @@ Decodes Android Binary XML (ABX) format used in Android system and app settings 
 
 Decodes Apple SEGB v1 and v2 files from the Biome framework. Shows timestamped records from app usage, screen time, Siri interaction, and location-adjacent signals.
 
+The Properties panel shows a **Stream** field — the Biome stream name (e.g. `Device.Wireless.Bluetooth`), derived from the file's own path (the directory named after the stream, one level above its `local`/`remote` leaf) rather than from the payload, so it's shown even for streams whose field-level meaning isn't otherwise decoded.
+
 Protobuf payloads are decoded automatically: double fields in the plausible Cocoa-timestamp range get a `[possible Cocoa timestamp: ...]` hint next to the raw number (the value itself is never replaced — there is no schema to confirm the field really is a date), nested messages are expanded inline with a `[raw: N B: hex…]` hint alongside them (wire type 2 doesn't declare that the bytes really are a submessage), and repeated fields are collected into arrays. Double-clicking a Payload cell opens the raw protobuf bytes in the Blob Inspector.
 
 A backing SQLite database is created on open so you can query records using the built-in SQL editor (with autocomplete). Two payload columns are available:
@@ -701,6 +703,7 @@ Every "Send to Peach" click starts a completely new, independent peach process �
 
 - **Multi-select** several files in the tree (Ctrl/Shift-click, same as any file manager) and right-click → **Send N files to Peach**. All selected files go to one new peach instance as multiple pre-filled sources.
 - **A plain folder** (not a `.logarchive` or diagnostics folder) → right-click → **Send Logs to Peach…** recursively scans the folder for log-looking files, shows a checklist to confirm which ones (same picker "Open Logs in Multi-Log Studio" uses), and sends the selected ones together.
+- **The macOS system Biome streams folder** (`.../private/var/db/biome/streams`, specifically — not other Biome roots such as iOS's per-app `Library/Biome/streams`, whose stream semantics aren't as well understood) → right-click → **Send Biome Streams to Peach…** hands the whole folder to peach untouched, for peach to recurse over itself, rather than pre-selecting individual files. **Requires peach v0.7.0 or newer** for Biome/SEGB support — sending to an older peach build just opens an unrecognized source.
 
 Once peach is already open, you can also just keep adding sources directly in peach's own UI (its file picker) — that works the same regardless of how the session got started.
 

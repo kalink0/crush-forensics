@@ -2766,6 +2766,78 @@ def test_create_segb_sqlite_payload_columns() -> None:
     path.unlink(missing_ok=True)
 
 
+def test_stream_name_from_local_leaf_path() -> None:
+    from crush.parsers.segb_parser import _stream_name
+    path = "/private/var/db/biome/streams/restricted/Device.Wireless.Bluetooth/local/0000000012345678"
+    assert _stream_name(path) == "Device.Wireless.Bluetooth"
+
+
+def test_stream_name_from_remote_leaf_path() -> None:
+    from crush.parsers.segb_parser import _stream_name
+    path = "/some/root/streams/Siri.Remembers.CallHistory/remote/abc123"
+    assert _stream_name(path) == "Siri.Remembers.CallHistory"
+
+
+def test_stream_name_falls_back_to_immediate_parent_without_local_remote() -> None:
+    from crush.parsers.segb_parser import _stream_name
+    assert _stream_name("/some/root/SomeStream/file.segb") == "SomeStream"
+
+
+def test_stream_name_none_for_bare_filename() -> None:
+    from crush.parsers.segb_parser import _stream_name
+    assert _stream_name("file.segb") is None
+
+
+def test_is_biome_streams_node_matches_macos_system_path() -> None:
+    from crush.core.vfs import VFSNode
+    from crush.parsers.segb_parser import is_biome_streams_node
+    node = VFSNode(name="streams", path="/private/var/db/biome/streams", is_dir=True)
+    assert is_biome_streams_node(node) is True
+
+
+def test_is_biome_streams_node_case_insensitive() -> None:
+    from crush.core.vfs import VFSNode
+    from crush.parsers.segb_parser import is_biome_streams_node
+    node = VFSNode(name="streams", path="/Private/Var/DB/Biome/Streams", is_dir=True)
+    assert is_biome_streams_node(node) is True
+
+
+def test_is_biome_streams_node_rejects_other_biome_locations() -> None:
+    """Deliberately scoped: iOS's per-app Biome streams root (a different
+    path shape whose stream semantics aren't established here) must not
+    match, even though its *contents* look identical."""
+    from crush.core.vfs import VFSNode
+    from crush.parsers.segb_parser import is_biome_streams_node
+    node = VFSNode(
+        name="streams",
+        path="/private/var/mobile/Library/Biome/streams",
+        is_dir=True,
+    )
+    assert is_biome_streams_node(node) is False
+
+
+def test_is_biome_streams_node_rejects_files() -> None:
+    from crush.core.vfs import VFSNode
+    from crush.parsers.segb_parser import is_biome_streams_node
+    node = VFSNode(name="streams", path="/private/var/db/biome/streams", is_dir=False)
+    assert is_biome_streams_node(node) is False
+
+
+def test_parse_surfaces_stream_name_in_metadata(tmp_path, segb_fixture: Path) -> None:
+    from crush.parsers.segb_parser import SegbParser
+    stream_dir = tmp_path / "streams" / "restricted" / "Device.Wireless.Bluetooth" / "local"
+    stream_dir.mkdir(parents=True)
+    dest = stream_dir / "minimal.segb2"
+    dest.write_bytes(segb_fixture.read_bytes())
+
+    vfs = DirectoryVFS(tmp_path)
+    node = vfs.root()
+    for part in ("streams", "restricted", "Device.Wireless.Bluetooth", "local", "minimal.segb2"):
+        node = next(c for c in node.children if c.name == part)
+    result = SegbParser().parse(node, vfs)
+    assert result.metadata["Stream"] == "Device.Wireless.Bluetooth"
+
+
 # ---------------------------------------------------------------------------
 # Group wire-type (3/4) handling in _decode_message
 # ---------------------------------------------------------------------------
