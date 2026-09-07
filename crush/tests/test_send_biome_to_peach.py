@@ -49,8 +49,21 @@ def test_send_biome_to_peach_preserves_relative_directory_structure(
 
     assert len(captured["sources"]) == 1
     materialized = captured["sources"][0]
-    assert materialized == captured["cleanup_dirs"][0]
+    cleanup_dir = captured["cleanup_dirs"][0]
 
+    # The source handed to peach must structurally end in "biome/streams" --
+    # that's the suffix peach's CLI source-kind heuristic looks for to
+    # default the new source to Biome instead of AUL -- while cleanup
+    # still targets the actual mkdtemp() root above that wrapper.
+    assert materialized.name == "streams"
+    assert materialized.parent.name == "biome"
+    assert materialized.parent.parent == cleanup_dir
+
+    # `rel` is preserved unchanged below the synthetic wrapper, so the
+    # fixture's own "streams" subfolder (relative to root_dir) still shows
+    # up here too -- harmless duplication, since peach's SEGB detection
+    # only inspects each file's last 2-3 path components regardless of
+    # what sits above them.
     copied_a = materialized / "streams" / "restricted" / "Device.Wireless.Bluetooth" / "local" / "file_a"
     copied_b = materialized / "streams" / "public" / "Backlight" / "local" / "file_b"
     assert copied_a.read_bytes() == b"SEGBaaaa"

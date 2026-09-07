@@ -11,6 +11,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed **Send Biome Streams to Peach…** always handing the new source off as AUL instead of Biome — the materialized temp folder was named `crush-biome-XXXXX`, which doesn't match the `.../biome/streams` path shape peach's source-kind auto-detection looks for. Now nested under a synthetic `biome/streams` wrapper before being passed to peach.
 - Fixed the SQLite Freelist Recovery, Freeblocks, and Unallocated Space scanners (and page→table attribution) reading only the database's frozen base file, ignoring a live, not-yet-checkpointed `-wal` sidecar — a delete/drop recorded only in the WAL could look like nothing was ever freed.
 - Fixed the Freelist Recovery tab only appearing when a live PRAGMA reported freed pages, unlike Freeblocks/Unallocated Space (always shown regardless); it's now always shown too, with a status message distinguishing "nothing recoverable" from "no freed pages at all".
 - Fixed Freeblocks' Data column rendering an all-zero freeblock as an apparently empty cell (NUL bytes render invisibly) instead of stating so explicitly.

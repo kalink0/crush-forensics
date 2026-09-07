@@ -1834,8 +1834,20 @@ class MainWindow(QMainWindow):
         intact is what lets peach -- and Crush's own SEGB parser via
         _stream_name() -- derive each file's Biome stream name from its
         parent directory, regardless of which Biome root it came from.
+
+        The materialized tree is nested one level under a synthetic
+        `biome/streams/` wrapper (rather than handed off as the bare
+        mkdtemp() root) so the path peach receives structurally ends in
+        `.../biome/streams`, matching the suffix peach's own CLI source-kind
+        heuristic (`source_kind_for_path` in peach's app.rs) requires to
+        default the newly-added source to Biome instead of falling back to
+        its AUL default. Peach's actual SEGB detection only inspects each
+        file's last 2-3 path components (`<Stream>/local|remote/<file>`),
+        so this wrapper is purely to satisfy that CLI heuristic -- it
+        doesn't need to reflect where "streams" actually sat under *root*.
         """
-        tmp_dir = Path(tempfile.mkdtemp(prefix="crush-biome-"))
+        tmp_root = Path(tempfile.mkdtemp(prefix="crush-biome-"))
+        streams_dir = tmp_root / "biome" / "streams"
         root_prefix = root.path.replace("\\", "/").rstrip("/") + "/"
         try:
             for src_node in selected:
@@ -1845,12 +1857,12 @@ class MainWindow(QMainWindow):
                     if node_path.startswith(root_prefix)
                     else src_node.name
                 )
-                target = tmp_dir / rel
+                target = streams_dir / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with vfs.open(src_node) as src, open(target, "wb") as out:
                     out.write(src.read())
         except Exception as exc:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            shutil.rmtree(tmp_root, ignore_errors=True)
             QMessageBox.warning(
                 self, "Send Biome Streams to Peach",
                 f"Unable to materialize files for Peach: {exc}",
@@ -1861,7 +1873,7 @@ class MainWindow(QMainWindow):
 
         override = self._settings.value("peach_binary_path", "", type=str)
         try:
-            launch_peach([tmp_dir], cleanup_dirs=[tmp_dir], override_path=override)
+            launch_peach([streams_dir], cleanup_dirs=[tmp_root], override_path=override)
             self._status.showMessage(
                 f"Sent {len(selected)} Biome file(s) to Peach: {root.path}"
             )
