@@ -7,7 +7,7 @@ All notable changes to Crush will be documented in this file.
 ### New Features
 
 - SQLite Table Viewer's WAL Frames tab now has a Content column, decoding each frame's page into its actual row values (with real column names when the page maps to a known table) instead of only frame/page/status metadata.
-- SEGB/Biome Viewer's Properties panel now shows the file's Biome stream name, derived from its path. Right-clicking the macOS system Biome streams folder (`.../private/var/db/biome/streams`) now offers **Send Biome Streams to Peach…**, handing the whole folder to peach for recursive ingestion — the first step toward a Biome tagging rule pack in peach itself. Requires peach v0.7.0+ (Biome/SEGB support isn't in the currently bundled v0.6.0 yet).
+- SEGB/Biome Viewer's Properties panel now shows the file's Biome stream name, derived from its path. Right-clicking any folder now offers **Send Biome Streams to Peach…**, which recursively finds SEGB files by content (not by directory-naming convention, so it works under any Biome root — macOS or iOS), confirms via a checklist, then hands the selected files to peach as one source with their original directory structure preserved — the first step toward a Biome tagging rule pack in peach itself.
 
 ### Bug Fixes
 
@@ -18,6 +18,10 @@ All notable changes to Crush will be documented in this file.
 - Fixed the MMKV parser trusting a store's `.crc` meta file's "non-zero vector" field as proof of AES encryption — confirmed false-positive on a real react-native-mmkv store with demonstrably plaintext data. It now only reports "encrypted" when the store genuinely fails to read as plaintext.
 - Fixed the shared Hex Viewer's "Copy Selected Hex"/"Copy Selected ASCII" context-menu actions dropping the first row's content whenever a multi-row selection didn't start at column 0 (i.e. almost any real mouse drag) — a 2-row selection looked exactly like only the last line got copied. Affects every viewer with a hex/ASCII pane (LevelDB, Realm, SQLite blob cells, and more).
 - Fixed the vendored SEGB v2 reader crashing or silently misreading records on real device data in three cases: a trailer slot with an unrecognized state value, two trailer entries sharing the same end offset (e.g. a record written and later deleted), and a stale trailer entry pointing into an already-consumed data region. Re-vendored `ccl_segb2.py` from upstream ([cclgroupltd/ccl-segb](https://github.com/cclgroupltd/ccl-segb), MIT) at the commit that fixes all three, rather than patching our copy in place.
+
+### Changed
+
+- Bumped bundled peach from v0.6.0 to v0.7.0: adds Apple Biome (SEGB) support (**Sourcetype → Apple Biome (SEGB)**) — reads a `.../biome/streams` folder handed off from Crush's new "Send Biome Streams to Peach…" (or opened directly), decodes the SEGB v2 envelope and each record's protobuf payload with a real Message column instead of a raw dump (SEGB v1 is detected but not yet supported) — and a Timestamp sort direction toggle (oldest/newest-first) in the timeline. See peach's own [release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.7.0) for the full list.
 
 ## v0.18.0 - 2026-09-05
 

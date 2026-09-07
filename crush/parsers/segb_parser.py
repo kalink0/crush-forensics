@@ -38,23 +38,30 @@ def _stream_name(node_path: str) -> str | None:
     return parts[-2] if len(parts) >= 2 else None
 
 
-def is_biome_streams_node(node: VFSNode) -> bool:
-    """Return True if *node* is the macOS system Biome streams root
-    (".../private/var/db/biome/streams").
-
-    Deliberately scoped to just this one location: its stream names are
-    reasonably well understood (community research — iLEAPP's biome*
-    artifact modules, DFIR writeups), unlike other Biome roots (e.g. iOS's
-    per-app "Library/Biome/streams") where stream semantics at this path
-    aren't yet established here. Matched by path shape, not directory
-    contents, since a streams/ folder's *children* look the same
-    regardless of which root it lives under — only the path distinguishes
-    the location whose meaning is actually known.
+def discover_segb_nodes(root: VFSNode, vfs: VFS) -> list[VFSNode]:
+    """Recursively find every SEGB-format file under *root*, regardless of
+    which Biome root it lives under (macOS "/private/var/db/biome/streams",
+    iOS's per-app "Library/Biome/streams", or anywhere else) — detected by
+    actual file format (extension or magic bytes, via SegbParser.can_parse),
+    not by directory-naming convention, so no specific path is required.
+    Results are sorted by path for a predictable discovery-dialog order.
     """
-    if not node.is_dir:
-        return False
-    path = node.path.replace("\\", "/").rstrip("/").lower()
-    return path.endswith("var/db/biome/streams")
+    parser = SegbParser()
+    results: list[VFSNode] = []
+    stack: list[VFSNode] = list(root.children)
+    while stack:
+        node = stack.pop()
+        if node.is_dir:
+            stack.extend(node.children)
+            continue
+        try:
+            peek = vfs.read(node)[:64]
+        except Exception:
+            continue
+        if parser.can_parse(node.path, peek):
+            results.append(node)
+    results.sort(key=lambda n: n.path)
+    return results
 
 
 _COLUMNS_V1 = [

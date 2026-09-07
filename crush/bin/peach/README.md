@@ -7,7 +7,7 @@ after launch, peach runs completely independently once started.
 
 - **Project:** https://github.com/kalink0/peach-forensics
 - **Licence:** Apache 2.0 (same as Crush)
-- **Version bundled:** v0.6.0 — pinned in `scripts/download_peach_binaries.py`'s
+- **Version bundled:** v0.7.0 — pinned in `scripts/download_peach_binaries.py`'s
   `VERSION` constant, same pattern as `crush/bin/unifiedlog_iterator/`'s
   `UL_VERSION`. Bump that constant when upgrading.
 

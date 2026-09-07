@@ -1222,8 +1222,22 @@ class MainWindow(QMainWindow):
             self._send_to_peach(node, vfs)
             return
         if mode == "send_to_peach_biome":
+            from crush.parsers.segb_parser import discover_segb_nodes
+            from crush.viewers.multi_log_viewer import FolderDiscoveryDialog
+            found = discover_segb_nodes(node, vfs)
+            if not found:
+                QMessageBox.information(
+                    self, "Send Biome Streams to Peach", f"No SEGB files found in '{node.name}'."
+                )
+                return
+            dlg = FolderDiscoveryDialog(node.name, found, self, title="Send Biome Streams to Peach")
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            selected = dlg.selected_nodes()
+            if not selected:
+                return
             self._hash_node_if_integrity(node, vfs)
-            self._send_to_peach(node, vfs)
+            self._send_biome_to_peach(node, vfs, selected)
             return
         if mode == "protobuf":
             self._hash_node_if_integrity(node, vfs)
@@ -1808,6 +1822,51 @@ class MainWindow(QMainWindow):
                 )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Send to Peach", str(exc))
+
+    def _send_biome_to_peach(
+        self, root: VFSNode, vfs: VFS, selected: list[VFSNode]
+    ) -> None:
+        """Hand off discovered SEGB files to peach as one recursive source,
+        preserving each file's path relative to *root*.
+
+        Unlike _send_to_peach_batch (which flattens each file to its own
+        independent top-level source), keeping the directory structure
+        intact is what lets peach -- and Crush's own SEGB parser via
+        _stream_name() -- derive each file's Biome stream name from its
+        parent directory, regardless of which Biome root it came from.
+        """
+        tmp_dir = Path(tempfile.mkdtemp(prefix="crush-biome-"))
+        root_prefix = root.path.replace("\\", "/").rstrip("/") + "/"
+        try:
+            for src_node in selected:
+                node_path = src_node.path.replace("\\", "/")
+                rel = (
+                    node_path[len(root_prefix):]
+                    if node_path.startswith(root_prefix)
+                    else src_node.name
+                )
+                target = tmp_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with vfs.open(src_node) as src, open(target, "wb") as out:
+                    out.write(src.read())
+        except Exception as exc:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            QMessageBox.warning(
+                self, "Send Biome Streams to Peach",
+                f"Unable to materialize files for Peach: {exc}",
+            )
+            return
+
+        from crush.core.peach_launcher import launch_peach
+
+        override = self._settings.value("peach_binary_path", "", type=str)
+        try:
+            launch_peach([tmp_dir], cleanup_dirs=[tmp_dir], override_path=override)
+            self._status.showMessage(
+                f"Sent {len(selected)} Biome file(s) to Peach: {root.path}"
+            )
+        except (FileNotFoundError, RuntimeError, OSError) as exc:
+            QMessageBox.warning(self, "Send Biome Streams to Peach", str(exc))
 
     def _set_log_temp_dir(self) -> None:
         current = self._settings.value("log_temp_dir", "", type=str)

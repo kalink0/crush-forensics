@@ -2788,39 +2788,60 @@ def test_stream_name_none_for_bare_filename() -> None:
     assert _stream_name("file.segb") is None
 
 
-def test_is_biome_streams_node_matches_macos_system_path() -> None:
-    from crush.core.vfs import VFSNode
-    from crush.parsers.segb_parser import is_biome_streams_node
-    node = VFSNode(name="streams", path="/private/var/db/biome/streams", is_dir=True)
-    assert is_biome_streams_node(node) is True
+def test_discover_segb_nodes_finds_files_under_any_biome_root(tmp_path, segb_fixture: Path) -> None:
+    """No path restriction: an iOS-style root (Library/Biome/streams) is
+    found exactly the same as a macOS-style one (var/db/biome/streams) --
+    detection is by file format, not by which Biome location it lives
+    under."""
+    ios_dir = tmp_path / "private" / "var" / "mobile" / "Library" / "Biome" / "streams" / \
+        "restricted" / "Device.Wireless.Bluetooth" / "local"
+    ios_dir.mkdir(parents=True)
+    (ios_dir / "0000000012345678").write_bytes(segb_fixture.read_bytes())
+
+    from crush.parsers.segb_parser import discover_segb_nodes
+    vfs = DirectoryVFS(tmp_path)
+    found = discover_segb_nodes(vfs.root(), vfs)
+
+    names = {n.name for n in found}
+    assert "0000000012345678" in names
 
 
-def test_is_biome_streams_node_case_insensitive() -> None:
-    from crush.core.vfs import VFSNode
-    from crush.parsers.segb_parser import is_biome_streams_node
-    node = VFSNode(name="streams", path="/Private/Var/DB/Biome/Streams", is_dir=True)
-    assert is_biome_streams_node(node) is True
+def test_discover_segb_nodes_detects_by_content_not_just_extension(tmp_path, segb_fixture: Path) -> None:
+    """A SEGB file with no recognizable extension (real device files are
+    often extensionless) is still found via magic-byte sniffing."""
+    biome_dir = tmp_path / "biome" / "streams" / "SomeStream" / "local"
+    biome_dir.mkdir(parents=True)
+    (biome_dir / "extensionless_file").write_bytes(segb_fixture.read_bytes())
+
+    from crush.parsers.segb_parser import discover_segb_nodes
+    vfs = DirectoryVFS(tmp_path)
+    found = discover_segb_nodes(vfs.root(), vfs)
+
+    names = {n.name for n in found}
+    assert "extensionless_file" in names
 
 
-def test_is_biome_streams_node_rejects_other_biome_locations() -> None:
-    """Deliberately scoped: iOS's per-app Biome streams root (a different
-    path shape whose stream semantics aren't established here) must not
-    match, even though its *contents* look identical."""
-    from crush.core.vfs import VFSNode
-    from crush.parsers.segb_parser import is_biome_streams_node
-    node = VFSNode(
-        name="streams",
-        path="/private/var/mobile/Library/Biome/streams",
-        is_dir=True,
-    )
-    assert is_biome_streams_node(node) is False
+def test_discover_segb_nodes_ignores_non_segb_files(tmp_path, segb_fixture: Path) -> None:
+    biome_dir = tmp_path / "biome" / "streams" / "SomeStream" / "local"
+    biome_dir.mkdir(parents=True)
+    (biome_dir / "real.segb2").write_bytes(segb_fixture.read_bytes())
+    (biome_dir / "notes.txt").write_text("not a SEGB file")
+
+    from crush.parsers.segb_parser import discover_segb_nodes
+    vfs = DirectoryVFS(tmp_path)
+    found = discover_segb_nodes(vfs.root(), vfs)
+
+    names = {n.name for n in found}
+    assert "real.segb2" in names
+    assert "notes.txt" not in names
 
 
-def test_is_biome_streams_node_rejects_files() -> None:
-    from crush.core.vfs import VFSNode
-    from crush.parsers.segb_parser import is_biome_streams_node
-    node = VFSNode(name="streams", path="/private/var/db/biome/streams", is_dir=False)
-    assert is_biome_streams_node(node) is False
+def test_discover_segb_nodes_empty_when_none_found(tmp_path) -> None:
+    (tmp_path / "unrelated.txt").write_text("nothing here")
+
+    from crush.parsers.segb_parser import discover_segb_nodes
+    vfs = DirectoryVFS(tmp_path)
+    assert discover_segb_nodes(vfs.root(), vfs) == []
 
 
 def test_parse_surfaces_stream_name_in_metadata(tmp_path, segb_fixture: Path) -> None:

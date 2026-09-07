@@ -25,7 +25,7 @@ from pathlib import Path
 # Configuration — bump VERSION when upgrading
 # ---------------------------------------------------------------------------
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 # (release_asset_name, target_filename_in_bin_dir)
 # macOS is a single universal (arm64+x86_64) binary as of v0.2.1 -- peach used
