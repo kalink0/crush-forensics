@@ -170,7 +170,8 @@ def _collect_message_ranges(
             highlight_ranges.append((base_offset + idx_after_key, base_offset + value_start))
         highlight_ranges.append(value_range)
         _store_range(ranges, field_path, byte_range, highlight_ranges)
-        _store_range(ranges, target_path, byte_range, highlight_ranges)
+        if target_path != field_path:
+            _store_range(ranges, target_path, byte_range, highlight_ranges)
 
         if wire_type == 2 and field.message_type is not None and value_start <= idx:
             payload = data[value_start:idx]
@@ -207,10 +208,9 @@ def _is_repeated(field: Any) -> bool:
 
 
 def _is_map_field(field: Any) -> bool:
-    return bool(
-        field.message_type is not None
-        and getattr(field.message_type.GetOptions(), "map_entry", False)
-    )
+    if field.message_type is None:
+        return False
+    return bool(getattr(field.message_type.GetOptions(), "map_entry", False))
 
 
 def _store_range(
