@@ -50,6 +50,7 @@ def _decode_message(
     raw: bytes,
     *,
     depth: int = 0,
+    base_offset: int = 0,
     max_depth: int = 6,
     max_entries: int = 50_000,
 ) -> tuple[dict[str, Any], str, str]:
@@ -64,6 +65,7 @@ def _decode_message(
     idx = 0
     try:
         while idx < len(raw):
+            entry_start = idx
             if len(entries) >= max_entries:
                 warning = f"Entry limit reached ({max_entries:,})"
                 break
@@ -71,10 +73,12 @@ def _decode_message(
             if key is None:
                 warning = "Truncated varint key"
                 break
+            key_end = idx
             field_no = key >> 3
             wire_type = key & 0x7
 
             if wire_type == 0:  # varint
+                value_start = idx
                 val, idx = _read_varint(raw, idx)
                 if val is None:
                     warning = "Truncated varint value"
@@ -84,12 +88,16 @@ def _decode_message(
                     "wire_type": "varint",
                     "value": val,
                     "interpretations": interpret_varint(val),
+                    "byte_range": (base_offset + entry_start, base_offset + idx),
+                    "key_range": (base_offset + entry_start, base_offset + key_end),
+                    "value_range": (base_offset + value_start, base_offset + idx),
                 })
 
             elif wire_type == 1:  # 64-bit
                 if idx + 8 > len(raw):
                     warning = "Truncated 64-bit value"
                     break
+                value_start = idx
                 chunk = raw[idx:idx + 8]
                 val = int.from_bytes(chunk, "little", signed=False)
                 idx += 8
@@ -98,12 +106,16 @@ def _decode_message(
                     "wire_type": "fixed64",
                     "value": val,
                     "interpretations": interpret_fixed64(chunk),
+                    "byte_range": (base_offset + entry_start, base_offset + idx),
+                    "key_range": (base_offset + entry_start, base_offset + key_end),
+                    "value_range": (base_offset + value_start, base_offset + idx),
                 })
 
             elif wire_type == 5:  # 32-bit
                 if idx + 4 > len(raw):
                     warning = "Truncated 32-bit value"
                     break
+                value_start = idx
                 chunk = raw[idx:idx + 4]
                 val = int.from_bytes(chunk, "little", signed=False)
                 idx += 4
@@ -112,9 +124,13 @@ def _decode_message(
                     "wire_type": "fixed32",
                     "value": val,
                     "interpretations": interpret_fixed32(chunk),
+                    "byte_range": (base_offset + entry_start, base_offset + idx),
+                    "key_range": (base_offset + entry_start, base_offset + key_end),
+                    "value_range": (base_offset + value_start, base_offset + idx),
                 })
 
             elif wire_type == 2:  # length-delimited
+                length_start = idx
                 length, idx = _read_varint(raw, idx)
                 if length is None:
                     warning = "Truncated length-delimited size"
@@ -122,6 +138,7 @@ def _decode_message(
                 if idx + length > len(raw):
                     warning = "Truncated length-delimited payload"
                     break
+                payload_start = idx
                 payload = raw[idx:idx + length]
                 idx += length
 
@@ -129,13 +146,21 @@ def _decode_message(
                     "field": field_no,
                     "wire_type": "length-delimited",
                     "length": length,
+                    "byte_range": (base_offset + entry_start, base_offset + idx),
+                    "key_range": (base_offset + entry_start, base_offset + key_end),
+                    "length_range": (base_offset + length_start, base_offset + payload_start),
+                    "value_range": (base_offset + payload_start, base_offset + idx),
                 }
 
                 if payload:
                     nested_ok = False
                     if depth < max_depth:
                         nested, nested_warn, nested_text = _decode_message(
-                            payload, depth=depth + 1, max_depth=max_depth, max_entries=max_entries
+                            payload,
+                            depth=depth + 1,
+                            base_offset=base_offset + payload_start,
+                            max_depth=max_depth,
+                            max_entries=max_entries,
                         )
                         if not nested_warn and nested.get("entries"):
                             entry["value"] = {"type": "message", "entries": nested["entries"]}

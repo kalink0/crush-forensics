@@ -38,3 +38,46 @@ def test_list_containing_uint64_max_does_not_crash_and_roundtrips(qapp) -> None:
     obj, key = widget._current_obj_and_key()
     assert key == "items"
     assert obj == [_UINT64_MAX]
+
+
+def test_optional_hex_view_is_hidden_by_default_and_toggles(qapp) -> None:
+    widget = TreeViewer({"value": "decoded"}, raw=b"\x08\x2a")
+
+    assert widget._hex_toggle_btn is not None
+    assert widget._hex_toggle_btn.text() == "Show Hex"
+    assert widget._mapped_view is not None
+    assert not widget._mapped_view.is_hex_visible()
+
+    widget._toggle_hex_view()
+
+    assert widget._hex_toggle_btn.text() == "Hide Hex"
+    assert widget._mapped_view.is_hex_visible()
+
+
+def test_optional_hex_view_can_start_visible(qapp) -> None:
+    widget = TreeViewer({"value": "decoded"}, raw=b"\x08\x2a", hex_visible=True)
+
+    assert widget._hex_toggle_btn is not None
+    assert widget._hex_toggle_btn.text() == "Hide Hex"
+    assert widget._mapped_view is not None
+    assert widget._mapped_view.is_hex_visible()
+
+
+def test_optional_hex_view_uses_tree_path_byte_ranges(qapp) -> None:
+    widget = TreeViewer(
+        {"value": "decoded"},
+        raw=b"\x0a\x07decoded",
+        byte_ranges_by_path={
+            ("value",): {
+                "byte_range": (0, 9),
+                "highlight_ranges": [(0, 1), (1, 2), (2, 9)],
+            },
+        },
+    )
+
+    widget._toggle_hex_view()
+    widget._tree.setCurrentIndex(widget._model.index(0, 0))
+
+    assert widget._mapped_view is not None
+    assert widget._mapped_view.hex_viewer._focus_range == (0, 1)
+    assert widget._mapped_view.hex_viewer._focus_ranges == [(0, 1), (1, 2), (2, 9)]

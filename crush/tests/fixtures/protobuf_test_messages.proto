@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package crush.fixtures;
+
+message BasicWireTypes {
+  uint32 small_count = 1;
+  uint32 large_count = 2;
+  bool enabled = 3;
+  uint64 unix_timestamp = 4;
+  float temperature_c = 5;
+  fixed32 magic_fixed32 = 6;
+  double ratio = 7;
+  fixed64 magic_fixed64 = 8;
+  string note = 9;
+  bytes binary_blob = 10;
+  bytes empty_blob = 11;
+  string long_text = 16;
+}
+
+message NestedMixedPayloads {
+  uint32 version = 1;
+  string title = 2;
+  Device device = 3;
+  repeated Event events = 4;
+  string base64_json = 5;
+  bytes gzip_json = 6;
+  bytes embedded_bytes_message = 7;
+  InnerPayload structured_child = 8;
+}
+
+message Device {
+  string device_id = 1;
+  bool active = 2;
+  float battery_percent = 3;
+}
+
+message Event {
+  uint32 event_index = 1;
+  string event_label = 2;
+  double score = 3;
+}
+
+message InnerPayload {
+  uint32 inner_id = 1;
+  string inner_label = 2;
+}

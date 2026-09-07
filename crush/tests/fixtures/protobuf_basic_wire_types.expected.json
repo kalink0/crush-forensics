@@ -1,0 +1,247 @@
+{
+  "fixture": "protobuf_basic_wire_types.pb",
+  "schema": "protobuf_test_messages.proto",
+  "message": "crush.fixtures.BasicWireTypes",
+  "size": 210,
+  "hex": "080110ac0218012080e2cfaa062d0000124235785634123900000000000019404108070605040302014a1768656c6c6f20666f72656e7369632070726f746f627566520600ff10807f425a00820182014c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c",
+  "fields": [
+    {
+      "field": 1,
+      "name": "small_count",
+      "wire_type": "varint",
+      "byte_range": [
+        0,
+        2
+      ],
+      "key_range": [
+        0,
+        1
+      ],
+      "value_range": [
+        1,
+        2
+      ],
+      "value": 1
+    },
+    {
+      "field": 2,
+      "name": "large_count",
+      "wire_type": "varint",
+      "byte_range": [
+        2,
+        5
+      ],
+      "key_range": [
+        2,
+        3
+      ],
+      "value_range": [
+        3,
+        5
+      ],
+      "value": 300
+    },
+    {
+      "field": 3,
+      "name": "enabled",
+      "wire_type": "varint",
+      "byte_range": [
+        5,
+        7
+      ],
+      "key_range": [
+        5,
+        6
+      ],
+      "value_range": [
+        6,
+        7
+      ],
+      "value": true
+    },
+    {
+      "field": 4,
+      "name": "unix_timestamp",
+      "wire_type": "varint",
+      "byte_range": [
+        7,
+        13
+      ],
+      "key_range": [
+        7,
+        8
+      ],
+      "value_range": [
+        8,
+        13
+      ],
+      "value": 1700000000,
+      "note": "Timestamp-like varint for interpretation checks."
+    },
+    {
+      "field": 5,
+      "name": "temperature_c",
+      "wire_type": "fixed32",
+      "byte_range": [
+        13,
+        18
+      ],
+      "key_range": [
+        13,
+        14
+      ],
+      "value_range": [
+        14,
+        18
+      ],
+      "value": 36.5
+    },
+    {
+      "field": 6,
+      "name": "magic_fixed32",
+      "wire_type": "fixed32",
+      "byte_range": [
+        18,
+        23
+      ],
+      "key_range": [
+        18,
+        19
+      ],
+      "value_range": [
+        19,
+        23
+      ],
+      "value": 305419896
+    },
+    {
+      "field": 7,
+      "name": "ratio",
+      "wire_type": "fixed64",
+      "byte_range": [
+        23,
+        32
+      ],
+      "key_range": [
+        23,
+        24
+      ],
+      "value_range": [
+        24,
+        32
+      ],
+      "value": 6.25
+    },
+    {
+      "field": 8,
+      "name": "magic_fixed64",
+      "wire_type": "fixed64",
+      "byte_range": [
+        32,
+        41
+      ],
+      "key_range": [
+        32,
+        33
+      ],
+      "value_range": [
+        33,
+        41
+      ],
+      "value": "0x0102030405060708"
+    },
+    {
+      "field": 9,
+      "name": "note",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        41,
+        66
+      ],
+      "key_range": [
+        41,
+        42
+      ],
+      "value_range": [
+        43,
+        66
+      ],
+      "value": "hello forensic protobuf",
+      "length_range": [
+        42,
+        43
+      ],
+      "length": 23
+    },
+    {
+      "field": 10,
+      "name": "binary_blob",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        66,
+        74
+      ],
+      "key_range": [
+        66,
+        67
+      ],
+      "value_range": [
+        68,
+        74
+      ],
+      "value": "00ff10807f42",
+      "length_range": [
+        67,
+        68
+      ],
+      "length": 6
+    },
+    {
+      "field": 11,
+      "name": "empty_blob",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        74,
+        76
+      ],
+      "key_range": [
+        74,
+        75
+      ],
+      "value_range": [
+        76,
+        76
+      ],
+      "value": "",
+      "length_range": [
+        75,
+        76
+      ],
+      "length": 0
+    },
+    {
+      "field": 16,
+      "name": "long_text",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        76,
+        210
+      ],
+      "key_range": [
+        76,
+        78
+      ],
+      "value_range": [
+        80,
+        210
+      ],
+      "value": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+      "length_range": [
+        78,
+        80
+      ],
+      "length": 130,
+      "note": "Uses a multi-byte field key and multi-byte length varint."
+    }
+  ]
+}
