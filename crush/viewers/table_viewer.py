@@ -69,6 +69,8 @@ from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     build_page_table_map,
     build_wal_page_overlay,
+    locate_cell,
+    locate_offset,
     parse_table_leaf_page,
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
@@ -81,12 +83,18 @@ from crush.core.work_priority import (
 from crush.ui.busy_dialog import run_with_busy_dialog
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
+from crush.viewers.hex_viewer import HexViewer
 
 
 _MAX_COL_WIDTH = 400
 _QUERY_ROW_LIMIT = 10_000
 _COLUMN_SIZE_SAMPLE = 250
 _VIRTUAL_PATH_BAD_CHARS = re.compile(r"[\\/:\x00-\x1f]+")
+
+# Custom role (distinct from the plain UserRole already used for the "Row"
+# column's display index) storing a real table row's SQLite rowid, when
+# known -- see _append_row()'s rowid param and the embedded Hex pane.
+_ROWID_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 def _virtual_path_component(value: object, fallback: str) -> str:
@@ -548,6 +556,9 @@ class TableViewer(QWidget):
         self._unallocated_cache: list[dict] | None = None
         self._page_table_map: dict[int, str] = {}  # page_num → table_name
         self._table_interaction_active = False
+        self._hex_pane_loaded = False
+        self._hex_file_kind: str | None = None  # "base" or "wal" -- whichever is currently loaded
+        self._syncing_hex_selection = False
         self._build_ui()
         if data:
             table_names = [k for k in data.keys() if not k.startswith("__")]
@@ -641,6 +652,10 @@ class TableViewer(QWidget):
         self._search.setFixedWidth(200)
         self._search.textChanged.connect(self._apply_filter)
         toolbar_layout.addWidget(self._search)
+
+        self._hex_toggle_btn = QPushButton("Show Hex")
+        self._hex_toggle_btn.clicked.connect(self._toggle_hex_pane)
+        toolbar_layout.addWidget(self._hex_toggle_btn)
 
         layout.addWidget(toolbar)
 
@@ -764,7 +779,32 @@ class TableViewer(QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
         splitter.setSizes([140, 500, 80])
-        layout.addWidget(splitter, stretch=1)
+
+        # Embedded, bidirectional Hex pane -- same "Show Hex" toggle
+        # convention as TreeViewer/ProtobufTreeWidget, hidden until toggled
+        # on and loaded lazily then (see _ensure_hex_pane_loaded). The
+        # label above it names which physical file's bytes are currently
+        # loaded -- a row whose current version is only in a not-yet-
+        # checkpointed -wal frame switches the pane to that file instead of
+        # ever implying the base file's (stale) bytes are it.
+        self._hex_panel = QWidget()
+        hex_panel_layout = QVBoxLayout(self._hex_panel)
+        hex_panel_layout.setContentsMargins(0, 0, 0, 0)
+        hex_panel_layout.setSpacing(2)
+        self._hex_file_label = QLabel("")
+        self._hex_file_label.setStyleSheet("color: gray; font-size: 11px;")
+        hex_panel_layout.addWidget(self._hex_file_label)
+        self._hex_viewer = HexViewer(b"")
+        self._hex_viewer.byteOffsetFocused.connect(self._on_hex_offset_focused)
+        hex_panel_layout.addWidget(self._hex_viewer, stretch=1)
+        self._hex_panel.setVisible(False)
+
+        hex_splitter = QSplitter(Qt.Orientation.Horizontal)
+        hex_splitter.addWidget(splitter)
+        hex_splitter.addWidget(self._hex_panel)
+        hex_splitter.setStretchFactor(0, 1)
+        hex_splitter.setStretchFactor(1, 1)
+        layout.addWidget(hex_splitter, stretch=1)
 
         self._table_view.selectionModel().currentChanged.connect(
             self._on_current_cell_changed
@@ -879,6 +919,9 @@ class TableViewer(QWidget):
         self._col_ts_formats.clear()
         columns: list[str] = table["columns"]
         rows: list[list[Any]] = table["rows"]
+        rowids: list[int] | None = table.get("rowids")
+        if rowids is not None and len(rowids) != len(rows):
+            rowids = None  # defensive: should always line up 1:1 with rows
 
         self._reset_source_model()
         show_wal = has_wal and self._wal_toggle.isChecked()
@@ -889,11 +932,13 @@ class TableViewer(QWidget):
         self._source_model.setHorizontalHeaderLabels(headers)
 
         def _append_row(row_data: list[Any], source_label: str | None = None,
-                        row_color: object = None) -> None:
+                        row_color: object = None, rowid: int | None = None) -> None:
             row_index = self._source_model.rowCount() + 1
             row_item = QStandardItem(str(row_index))
             row_item.setEditable(False)
             row_item.setData(row_index, Qt.ItemDataRole.UserRole)
+            if rowid is not None:
+                row_item.setData(rowid, _ROWID_ROLE)
             if row_color:
                 row_item.setForeground(row_color)
             items = [row_item]
@@ -966,13 +1011,14 @@ class TableViewer(QWidget):
             _added_color = QColor("#228833")
             for r, row_data in enumerate(rows):
                 objkey = active_obj_keys[r] if r < len(active_obj_keys) else None
+                rowid = rowids[r] if rowids is not None else None
                 if objkey is not None and objkey not in prev_obj_keys_set:
-                    _append_row(row_data, "added", _added_color)
+                    _append_row(row_data, "added", _added_color, rowid=rowid)
                 else:
-                    _append_row(row_data)
+                    _append_row(row_data, rowid=rowid)
         else:
-            for row_data in rows:
-                _append_row(row_data)
+            for r, row_data in enumerate(rows):
+                _append_row(row_data, rowid=rowids[r] if rowids is not None else None)
 
         wal_row_count = 0
         if show_wal:
@@ -1462,6 +1508,26 @@ class TableViewer(QWidget):
         except Exception:
             self._db_page_size = 0
         return self._db_page_size
+
+    def _ensure_page_table_map(self) -> dict[int, str]:
+        """Return (and cache) self._page_table_map, building it on demand.
+
+        _get_wal_frames() also populates it, but only as a side effect of a
+        live -wal file existing — most forensic SQLite files have long
+        since been checkpointed and have no -wal sidecar, so the embedded
+        Hex pane's sync can't rely on that path alone.
+        """
+        if self._page_table_map:
+            return self._page_table_map
+        page_size = self._get_page_size()
+        conn = self._ensure_db()
+        if conn is None or page_size == 0:
+            return self._page_table_map
+        try:
+            self._page_table_map = build_page_table_map(conn, self._get_wal_data(), page_size)
+        except Exception:
+            pass
+        return self._page_table_map
 
     def _get_freelist_data(self) -> tuple[list[dict], list[dict]]:
         """Return (and cache) (freelist entries, carved leftover rows)."""
@@ -2731,6 +2797,8 @@ class TableViewer(QWidget):
         if not current.isValid():
             self._cell_detail_label.setText("—  No cell selected")
             self._cell_detail_view.setPlainText("")
+            if not self._syncing_hex_selection:
+                self._sync_hex_pane(None)
             return
 
         col = current.column()
@@ -2756,6 +2824,134 @@ class TableViewer(QWidget):
                 self._cell_detail_view.setPlainText(preview)
         else:
             self._cell_detail_view.setPlainText(display_str)
+
+        if not self._syncing_hex_selection:
+            self._sync_hex_pane(current)
+
+    def _is_pseudo_table(self, table_name: str) -> bool:
+        return table_name in (
+            self._summary_label, self._db_structure_label, self._db_info_label,
+            self._wal_label, self._freelist_label, self._freeblocks_label,
+            self._unallocated_label,
+        )
+
+    def _toggle_hex_pane(self) -> None:
+        visible = not self._hex_panel.isVisible()
+        self._hex_panel.setVisible(visible)
+        self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
+        if visible:
+            self._ensure_hex_pane_loaded()
+            self._sync_hex_pane(self._table_view.currentIndex())
+
+    def _ensure_hex_pane_loaded(self) -> None:
+        if self._hex_pane_loaded or self._db_path is None:
+            return
+        try:
+            data = self._db_path.read_bytes()
+        except OSError:
+            return
+        self._hex_viewer.set_data(data)
+        self._hex_file_kind = "base"
+        self._hex_file_label.setText(f"{self._source_name}  ·  db file")
+        self._hex_pane_loaded = True
+
+    def _sync_hex_pane(self, current: QModelIndex | None) -> None:
+        """Table → Hex: highlight the current cell's row (and, when a
+        specific column is selected, that column too, drawn on top) in the
+        embedded Hex pane. Reuses HexViewer.highlight_byte_ranges() as-is
+        (row ranges first so column ranges paint on top of them)."""
+        if not self._hex_panel.isVisible():
+            return
+
+        rowid = None
+        col_idx = None
+        if current is not None and current.isValid():
+            source_index = self._proxy_model.mapToSource(current)
+            row_item = self._source_model.item(source_index.row(), 0)
+            rowid = row_item.data(_ROWID_ROLE) if row_item is not None else None
+            col_idx = current.column() - 1  # column 0 is "Row"
+
+        table_name = self._table_combo.currentText()
+        if (
+            rowid is None or col_idx is None or col_idx < 0
+            or self._is_pseudo_table(table_name)
+            or self._query_results_active
+            or self._db_path is None
+        ):
+            self._hex_viewer.clear_byte_range_highlight()
+            return
+
+        self._ensure_hex_pane_loaded()
+        page_size = self._get_page_size()
+        if page_size == 0:
+            self._hex_viewer.clear_byte_range_highlight()
+            return
+        page_table_map = self._ensure_page_table_map()
+
+        location = locate_cell(
+            self._db_path, table_name, int(rowid), col_idx, page_size,
+            page_table_map, self._get_wal_data(),
+        )
+        if location is None:
+            self._hex_viewer.clear_byte_range_highlight()
+            return
+
+        if location.file_kind != self._hex_file_kind:
+            target_path = (
+                Path(str(self._db_path) + "-wal")
+                if location.file_kind == "wal" else self._db_path
+            )
+            try:
+                data = target_path.read_bytes()
+            except OSError:
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            self._hex_viewer.set_data(data)
+            self._hex_file_kind = location.file_kind
+            suffix = "-wal file" if location.file_kind == "wal" else "db file"
+            self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
+
+        ranges = list(location.row_ranges)
+        if location.column_ranges:
+            ranges.extend(location.column_ranges)
+        self._hex_viewer.highlight_byte_ranges(ranges)
+
+    def _on_hex_offset_focused(self, offset: int) -> None:
+        """Hex → Table: clicking a byte in the pane selects the matching
+        table cell, when resolvable (see locate_offset()'s docstring for
+        the cases it can't -- e.g. a click landing on an overflow-only
+        page -- where this is simply a no-op, never a wrong selection)."""
+        if self._hex_file_kind is None or self._db_path is None:
+            return
+        table_name = self._table_combo.currentText()
+        if self._is_pseudo_table(table_name) or self._query_results_active:
+            return
+        page_size = self._get_page_size()
+        if page_size == 0:
+            return
+        page_table_map = self._ensure_page_table_map()
+
+        result = locate_offset(
+            self._db_path, table_name, offset, self._hex_file_kind, page_size,
+            page_table_map, self._get_wal_data(),
+        )
+        if result is None:
+            return
+        rowid, col_idx = result
+
+        for row in range(self._source_model.rowCount()):
+            row_item = self._source_model.item(row, 0)
+            if row_item is None or row_item.data(_ROWID_ROLE) != rowid:
+                continue
+            target_col = (col_idx + 1) if col_idx is not None else 0
+            source_index = self._source_model.index(row, target_col)
+            proxy_index = self._proxy_model.mapFromSource(source_index)
+            if proxy_index.isValid():
+                self._syncing_hex_selection = True
+                self._table_view.setCurrentIndex(proxy_index)
+                self._table_view.scrollTo(proxy_index)
+                self._syncing_hex_selection = False
+            break
 
     def _on_table_scroll_activity(self, _value: int = 0) -> None:
         if not self._table_interaction_active:
