@@ -49,11 +49,11 @@ _TEXT_ENCODINGS = {
 
 
 def _u16(data: bytes, offset: int) -> int:
-    return struct.unpack_from(">H", data, offset)[0]
+    return int(struct.unpack_from(">H", data, offset)[0])
 
 
 def _u32(data: bytes, offset: int) -> int:
-    return struct.unpack_from(">I", data, offset)[0]
+    return int(struct.unpack_from(">I", data, offset)[0])
 
 
 def _header_field(
