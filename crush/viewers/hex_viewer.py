@@ -3,7 +3,7 @@
 """Hex viewer — displays raw bytes as hex + ASCII, 16 bytes per row."""
 from __future__ import annotations
 
-from PySide6.QtCore import QRegularExpression, Qt, Signal
+from PySide6.QtCore import QPoint, QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -307,7 +307,7 @@ class HexViewer(QWidget):
                 normalized.append((start, end))
         self._focus_ranges = normalized
         self._focus_range = normalized[0] if normalized else None
-        if scroll and self._focus_range is not None:
+        if scroll and self._focus_range is not None and not self._any_focus_byte_visible():
             target_page = self._focus_range[0] // _PAGE_BYTES
             if target_page != self._page:
                 self._page = target_page
@@ -342,6 +342,22 @@ class HexViewer(QWidget):
         self._text.setTextCursor(cursor)
         self._suppress_focus_signal = False
         self._text.centerCursor()
+
+    def _any_focus_byte_visible(self) -> bool:
+        if not self._focus_ranges:
+            return False
+        first_cursor = self._text.cursorForPosition(QPoint(0, 0))
+        last_cursor = self._text.cursorForPosition(
+            QPoint(0, max(0, self._text.viewport().height() - 1))
+        )
+        first_line = first_cursor.blockNumber()
+        last_line = last_cursor.blockNumber()
+        if first_line < 0 or last_line < 0:
+            return False
+        page_start = self._page * _PAGE_BYTES
+        visible_start = page_start + first_line * _BYTES_PER_ROW
+        visible_end = page_start + (last_line + 1) * _BYTES_PER_ROW
+        return any(start < visible_end and end > visible_start for start, end in self._focus_ranges)
 
     # ------------------------------------------------------------------
     # Search — collect / navigate

@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QTableView,
+    QTreeView,
     QVBoxLayout,
     QWidget,
 )
@@ -65,6 +66,7 @@ from crush.core.sqlite_freelist import (
     value_matches_affinity,
     walk_freelist_pages,
 )
+from crush.core.sqlite_structure import StructureNode, build_sqlite_structure_tree
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     build_page_table_map,
@@ -95,6 +97,19 @@ _VIRTUAL_PATH_BAD_CHARS = re.compile(r"[\\/:\x00-\x1f]+")
 # column's display index) storing a real table row's SQLite rowid, when
 # known -- see _append_row()'s rowid param and the embedded Hex pane.
 _ROWID_ROLE = Qt.ItemDataRole.UserRole + 1
+_STRUCTURE_FILE_KIND_ROLE = Qt.ItemDataRole.UserRole + 20
+_STRUCTURE_BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 21
+_STRUCTURE_HIGHLIGHT_RANGES_ROLE = Qt.ItemDataRole.UserRole + 22
+
+
+def _valid_structure_range(value: object) -> bool:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], int)
+        and isinstance(value[1], int)
+        and value[0] <= value[1]
+    )
 
 
 def _virtual_path_component(value: object, fallback: str) -> str:
@@ -537,6 +552,7 @@ class TableViewer(QWidget):
         self._db_conn: sqlite3.Connection | None = None
         self._summary_label = "Summary (generated)"
         self._db_structure_label = "DB Structure (generated)"
+        self._file_structure_label = "File Structure (generated)"
         self._db_info_label = "DB Info (generated)"
         self._wal_label = "WAL Frames (generated)"
         self._freelist_label = "Freelist Recovery (generated)"
@@ -567,6 +583,7 @@ class TableViewer(QWidget):
                 if show_db_tabs:
                     self._table_combo.addItem(self._summary_label)
                     self._table_combo.addItem(self._db_structure_label)
+                    self._table_combo.addItem(self._file_structure_label)
                     self._table_combo.addItem(self._db_info_label)
                     if self._db_path and Path(str(self._db_path) + "-wal").exists():
                         self._table_combo.addItem(self._wal_label)
@@ -660,8 +677,8 @@ class TableViewer(QWidget):
         layout.addWidget(toolbar)
 
         # SQL section: input row + status row below
-        sql_bar = QWidget()
-        sql_outer = QVBoxLayout(sql_bar)
+        self._sql_bar = QWidget()
+        sql_outer = QVBoxLayout(self._sql_bar)
         sql_outer.setContentsMargins(8, 4, 8, 2)
         sql_outer.setSpacing(2)
 
@@ -755,8 +772,24 @@ class TableViewer(QWidget):
         self._table_interaction_timer.timeout.connect(self._end_table_interaction)
 
         # Cell detail panel — shown below the table, updates on selection
-        cell_detail = QWidget()
-        cell_detail_layout = QVBoxLayout(cell_detail)
+        self._structure_model = QStandardItemModel(self)
+        self._structure_model.setHorizontalHeaderLabels(["Structure", "Value", "Type"])
+        self._structure_tree = QTreeView()
+        self._structure_tree.setModel(self._structure_model)
+        self._structure_tree.setAlternatingRowColors(True)
+        self._structure_tree.setAnimated(True)
+        self._structure_tree.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
+        self._structure_tree.header().setStretchLastSection(False)
+        self._structure_tree.setColumnWidth(0, 260)
+        self._structure_tree.setColumnWidth(1, 420)
+        install_horizontal_wheel_scroll(self._structure_tree)
+        self._structure_tree.selectionModel().currentChanged.connect(
+            self._on_structure_current_changed
+        )
+        self._structure_tree.setVisible(False)
+
+        self._cell_detail_panel = QWidget()
+        cell_detail_layout = QVBoxLayout(self._cell_detail_panel)
         cell_detail_layout.setContentsMargins(4, 2, 4, 2)
         cell_detail_layout.setSpacing(2)
         self._cell_detail_label = QLabel("—  No cell selected")
@@ -772,13 +805,15 @@ class TableViewer(QWidget):
         cell_detail_layout.addWidget(self._cell_detail_view, stretch=1)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(sql_bar)
+        splitter.addWidget(self._sql_bar)
         splitter.addWidget(self._table_view)
-        splitter.addWidget(cell_detail)
+        splitter.addWidget(self._structure_tree)
+        splitter.addWidget(self._cell_detail_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
-        splitter.setSizes([140, 500, 80])
+        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(3, 0)
+        splitter.setSizes([140, 500, 500, 80])
 
         # Embedded, bidirectional Hex pane -- same "Show Hex" toggle
         # convention as TreeViewer/ProtobufTreeWidget, hidden until toggled
@@ -855,11 +890,16 @@ class TableViewer(QWidget):
     def _load_table_impl(self, table_name: str) -> None:
         self._freelist_table_filter.setVisible(False)
         self._freelist_table_filter_label.setVisible(False)
+        if table_name != self._file_structure_label:
+            self._set_structure_view_visible(False)
         if table_name == self._summary_label:
             self._load_summary()
             return
         if table_name == self._db_structure_label:
             self._load_db_structure()
+            return
+        if table_name == self._file_structure_label:
+            self._load_file_structure()
             return
         if table_name == self._db_info_label:
             self._load_db_info()
@@ -1095,6 +1135,7 @@ class TableViewer(QWidget):
         if current and current not in (
             self._summary_label,
             self._db_structure_label,
+            self._file_structure_label,
             self._db_info_label,
             self._wal_label,
             self._freelist_label,
@@ -1109,6 +1150,7 @@ class TableViewer(QWidget):
         if current and current not in (
             self._summary_label,
             self._db_structure_label,
+            self._file_structure_label,
             self._db_info_label,
             self._wal_label,
             self._freelist_label,
@@ -1563,6 +1605,25 @@ class TableViewer(QWidget):
                 result[name] = [(c[1], column_affinity(c[2])) for c in cols]
             except Exception:
                 continue
+        return result
+
+    def _table_record_columns(self, conn: sqlite3.Connection) -> dict[str, list[str]]:
+        """Return table columns in declaration order for structure-view labels."""
+        result: dict[str, list[str]] = {}
+        try:
+            names = [
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
+        except Exception:
+            return result
+        for name in names:
+            try:
+                cols = conn.execute(f"PRAGMA table_info([{name}])").fetchall()  # noqa: S608
+            except Exception:
+                continue
+            result[name] = [str(col[1]) for col in cols]
         return result
 
     def _load_freelist_recovery(self) -> None:
@@ -2225,6 +2286,98 @@ class TableViewer(QWidget):
                 f"WAL frame {frame_num} — page {page_num}",
             )
 
+    def _set_structure_view_visible(self, visible: bool) -> None:
+        self._sql_bar.setVisible(not visible)
+        self._structure_tree.setVisible(visible)
+        self._table_view.setVisible(not visible)
+        self._cell_detail_panel.setVisible(not visible)
+
+    def _load_file_structure(self) -> None:
+        self._set_structure_view_visible(True)
+        self._wal_toggle.setVisible(False)
+        self._prev_ref_toggle.setVisible(False)
+        self._freelist_table_filter.setVisible(False)
+        self._freelist_table_filter_label.setVisible(False)
+        self._row_count_label.setText("")
+        self._sql_status.setStyleSheet("")
+        self._sql_status.setText("")
+        self._structure_model.removeRows(0, self._structure_model.rowCount())
+        self._structure_model.setHorizontalHeaderLabels(["Structure", "Value", "Type"])
+
+        if self._db_path is None:
+            self._append_structure_node(
+                self._structure_model.invisibleRootItem(),
+                StructureNode("SQLite file", "database file unavailable"),
+            )
+            return
+
+        page_size = self._get_page_size()
+        if page_size == 0:
+            self._append_structure_node(
+                self._structure_model.invisibleRootItem(),
+                StructureNode("SQLite file", "page size unavailable"),
+            )
+            return
+
+        page_table_map = self._ensure_page_table_map()
+        conn = self._ensure_db()
+        table_columns = self._table_record_columns(conn) if conn is not None else {}
+        if self._freelist_cache is not None:
+            freelist_entries = self._freelist_cache[0]
+        else:
+            freelist_entries = walk_freelist_pages(
+                self._db_path, page_size, self._get_wal_page_overlay()
+            )
+        try:
+            nodes = build_sqlite_structure_tree(
+                self._db_path,
+                page_size,
+                page_table_map,
+                table_columns,
+                freelist_entries,
+                self._get_wal_data(),
+            )
+        except Exception as exc:
+            self._append_structure_node(
+                self._structure_model.invisibleRootItem(),
+                StructureNode("SQLite file", f"structure parse failed: {exc}"),
+            )
+            return
+
+        root = self._structure_model.invisibleRootItem()
+        for node in nodes:
+            self._append_structure_node(root, node)
+        self._filter_structure_items(root, self._search.text().lower())
+        self._structure_tree.expandToDepth(1)
+        pages = next((n for n in nodes if n.label == "Pages"), None)
+        page_count = len(pages.children) if pages is not None else 0
+        self._row_count_label.setText(f"({page_count:,} pages)")
+        self._sql_status.setText(
+            "Select a structure item to highlight its bytes; click the hex pane to "
+            "select the deepest matching header, page, cell, freeblock, or unallocated entry."
+        )
+        if self._hex_panel.isVisible():
+            self._ensure_hex_pane_loaded()
+            self._sync_structure_hex_pane(self._structure_tree.currentIndex())
+
+    def _append_structure_node(self, parent: QStandardItem, node: StructureNode) -> None:
+        label = QStandardItem(node.label)
+        value = QStandardItem(node.value)
+        kind = QStandardItem(node.kind)
+        for item in (label, value, kind):
+            item.setEditable(False)
+        if node.file_kind == "wal":
+            label.setForeground(QColor("#4488ff"))
+            value.setForeground(QColor("#4488ff"))
+        label.setData(node.file_kind, _STRUCTURE_FILE_KIND_ROLE)
+        if node.byte_range is not None:
+            label.setData(node.byte_range, _STRUCTURE_BYTE_RANGE_ROLE)
+        if node.highlight_ranges:
+            label.setData(node.highlight_ranges, _STRUCTURE_HIGHLIGHT_RANGES_ROLE)
+        parent.appendRow([label, value, kind])
+        for child in node.children:
+            self._append_structure_node(label, child)
+
     def _load_db_info(self) -> None:
         """Show all PRAGMA settings with decoded enum values and descriptions."""
         conn = self._ensure_db()
@@ -2327,6 +2480,9 @@ class TableViewer(QWidget):
         self._sql_status.setText("")
 
     def _apply_filter(self, text: str) -> None:
+        if self._table_combo.currentText() == self._file_structure_label:
+            self._filter_structure_items(self._structure_model.invisibleRootItem(), text.lower())
+            return
         self._proxy_model.setFilterFixedString(text)
         visible = self._proxy_model.rowCount()
         source = self._proxy_model.sourceModel()
@@ -2336,6 +2492,29 @@ class TableViewer(QWidget):
         else:
             word = "row" if total == 1 else "rows"
             self._row_count_label.setText(f"({total:,} {word})")
+
+    def _filter_structure_items(self, parent: QStandardItem, text: str) -> bool:
+        any_visible = False
+        for row in range(parent.rowCount()):
+            key_item = parent.child(row, 0)
+            value_item = parent.child(row, 1)
+            kind_item = parent.child(row, 2)
+            if key_item is None:
+                continue
+            child_visible = self._filter_structure_items(key_item, text)
+            haystack = " ".join(
+                item.text().lower()
+                for item in (key_item, value_item, kind_item)
+                if item is not None
+            )
+            visible = not text or text in haystack or child_visible
+            self._structure_tree.setRowHidden(
+                row,
+                self._structure_model.indexFromItem(parent),
+                not visible,
+            )
+            any_visible = any_visible or visible
+        return any_visible
 
     def _ensure_db(self) -> sqlite3.Connection | None:
         if not self._db_path or not self._db_path.exists():
@@ -2830,7 +3009,8 @@ class TableViewer(QWidget):
 
     def _is_pseudo_table(self, table_name: str) -> bool:
         return table_name in (
-            self._summary_label, self._db_structure_label, self._db_info_label,
+            self._summary_label, self._db_structure_label, self._file_structure_label,
+            self._db_info_label,
             self._wal_label, self._freelist_label, self._freeblocks_label,
             self._unallocated_label,
         )
@@ -2841,7 +3021,10 @@ class TableViewer(QWidget):
         self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
         if visible:
             self._ensure_hex_pane_loaded()
-            self._sync_hex_pane(self._table_view.currentIndex())
+            if self._table_combo.currentText() == self._file_structure_label:
+                self._sync_structure_hex_pane(self._structure_tree.currentIndex())
+            else:
+                self._sync_hex_pane(self._table_view.currentIndex())
 
     def _ensure_hex_pane_loaded(self) -> None:
         if self._hex_pane_loaded or self._db_path is None:
@@ -2916,6 +3099,56 @@ class TableViewer(QWidget):
             ranges.extend(location.column_ranges)
         self._hex_viewer.highlight_byte_ranges(ranges)
 
+    def _structure_item_from_index(self, index: QModelIndex) -> QStandardItem | None:
+        if not index.isValid():
+            return None
+        return self._structure_model.itemFromIndex(
+            self._structure_model.index(index.row(), 0, index.parent())
+        )
+
+    def _on_structure_current_changed(
+        self, current: QModelIndex, _previous: QModelIndex
+    ) -> None:
+        if self._table_combo.currentText() != self._file_structure_label:
+            return
+        self._sync_structure_hex_pane(current)
+
+    def _sync_structure_hex_pane(self, current: QModelIndex | None) -> None:
+        if not self._hex_panel.isVisible():
+            return
+        item = self._structure_item_from_index(current) if current is not None else None
+        if item is None:
+            self._hex_viewer.clear_byte_range_highlight()
+            return
+        file_kind = item.data(_STRUCTURE_FILE_KIND_ROLE) or "base"
+        ranges = item.data(_STRUCTURE_HIGHLIGHT_RANGES_ROLE)
+        if not isinstance(ranges, list):
+            rng = item.data(_STRUCTURE_BYTE_RANGE_ROLE)
+            ranges = [rng] if _valid_structure_range(rng) else []
+        else:
+            ranges = [rng for rng in ranges if _valid_structure_range(rng)]
+        if not ranges:
+            self._hex_viewer.clear_byte_range_highlight()
+            return
+        if file_kind != self._hex_file_kind:
+            target_path = (
+                Path(str(self._db_path) + "-wal")
+                if file_kind == "wal" and self._db_path is not None else self._db_path
+            )
+            if target_path is None:
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            try:
+                data = target_path.read_bytes()
+            except OSError:
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            self._hex_viewer.set_data(data)
+            self._hex_file_kind = str(file_kind)
+            suffix = "-wal file" if file_kind == "wal" else "db file"
+            self._hex_file_label.setText(f"{self._source_name}  Â·  {suffix}")
+        self._hex_viewer.highlight_byte_ranges(ranges)
+
     def _on_hex_offset_focused(self, offset: int) -> None:
         """Hex → Table: clicking a byte in the pane selects the matching
         table cell, when resolvable (see locate_offset()'s docstring for
@@ -2924,6 +3157,9 @@ class TableViewer(QWidget):
         if self._hex_file_kind is None or self._db_path is None:
             return
         table_name = self._table_combo.currentText()
+        if table_name == self._file_structure_label:
+            self._select_structure_item_for_offset(offset)
+            return
         if self._is_pseudo_table(table_name) or self._query_results_active:
             return
         page_size = self._get_page_size()
@@ -2952,6 +3188,52 @@ class TableViewer(QWidget):
                 self._table_view.scrollTo(proxy_index)
                 self._syncing_hex_selection = False
             break
+
+    def _select_structure_item_for_offset(self, offset: int) -> None:
+        if self._hex_file_kind is None:
+            return
+        item = self._find_structure_item_for_offset(
+            self._structure_model.invisibleRootItem(),
+            offset,
+            self._hex_file_kind,
+        )
+        if item is None:
+            return
+        index = self._structure_model.indexFromItem(item)
+        if not index.isValid():
+            return
+        self._syncing_hex_selection = True
+        self._structure_tree.setCurrentIndex(index)
+        self._structure_tree.scrollTo(index)
+        self._syncing_hex_selection = False
+        self._sync_structure_hex_pane(index)
+
+    def _find_structure_item_for_offset(
+        self,
+        parent: QStandardItem,
+        offset: int,
+        file_kind: str,
+    ) -> QStandardItem | None:
+        match: QStandardItem | None = None
+        for row in range(parent.rowCount()):
+            item = parent.child(row, 0)
+            if item is None:
+                continue
+            child_match = self._find_structure_item_for_offset(item, offset, file_kind)
+            if child_match is not None:
+                match = child_match
+                continue
+            item_file_kind = item.data(_STRUCTURE_FILE_KIND_ROLE) or "base"
+            if item_file_kind != file_kind:
+                continue
+            ranges = item.data(_STRUCTURE_HIGHLIGHT_RANGES_ROLE)
+            if not isinstance(ranges, list):
+                rng = item.data(_STRUCTURE_BYTE_RANGE_ROLE)
+                ranges = [rng] if _valid_structure_range(rng) else []
+            if not any(start <= offset < end for start, end in ranges):
+                continue
+            match = item
+        return match
 
     def _on_table_scroll_activity(self, _value: int = 0) -> None:
         if not self._table_interaction_active:
