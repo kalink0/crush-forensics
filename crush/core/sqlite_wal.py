@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal, overload
 
+from crush.core.cell_locator import CellLocation
+
 
 # ---------------------------------------------------------------------------
 # Varint
@@ -667,15 +669,6 @@ def _resolve_pieces(
     return out
 
 
-@dataclass
-class CellLocation:
-    """Result of locate_cell(): where a live row (and, if requested, one of
-    its columns) currently lives on disk."""
-    file_kind: str                              # "base" or "wal"
-    row_ranges: list[tuple[int, int]]
-    column_ranges: list[tuple[int, int]] | None  # None if not requested/resolvable
-
-
 def _page_accessors(
     db_path: Path, page_size: int, wal_index: dict[int, tuple[int, bytes]]
 ) -> tuple[Callable[[int], tuple[str, int] | None], Callable[[int], bytes | None]]:
@@ -904,3 +897,58 @@ def locate_offset(
         return entry_rowid, column_index
 
     return None
+
+
+@dataclass
+class SqliteCellLocator:
+    """CellLocator (crush/core/cell_locator.py) implementation for a real
+    SQLite file, backing TableViewer's embedded Hex pane.
+
+    Wraps locate_cell()/locate_offset() with the page_size/page_table_map/
+    wal_data they need. Those are supplied as callables rather than plain
+    values so this can be constructed once, eagerly, in TableViewer.__init__
+    without forcing an early sqlite3 connection or B-tree walk -- the
+    callables are TableViewer's own already-lazy, already-cached
+    _get_page_size()/_ensure_page_table_map()/_get_wal_data(), so nothing
+    about their timing or caching changes versus calling locate_cell()/
+    locate_offset() directly the way the hex-pane methods used to.
+    """
+    db_path: Path
+    page_size_provider: Callable[[], int]
+    page_table_map_provider: Callable[[], dict[int, str]]
+    wal_data_provider: Callable[[], bytes | None]
+
+    def default_file_kind(self) -> str:
+        return "base"
+
+    def read_file(self, file_kind: str) -> bytes | None:
+        path = Path(str(self.db_path) + "-wal") if file_kind == "wal" else self.db_path
+        try:
+            return path.read_bytes()
+        except OSError:
+            return None
+
+    def label_for(self, file_kind: str) -> str:
+        return "-wal file" if file_kind == "wal" else "db file"
+
+    def locate_cell(
+        self, table_name: str, row_key: Any, col_idx: int | None
+    ) -> CellLocation | None:
+        page_size = self.page_size_provider()
+        if page_size == 0:
+            return None
+        return locate_cell(
+            self.db_path, table_name, int(row_key), col_idx, page_size,
+            self.page_table_map_provider(), self.wal_data_provider(),
+        )
+
+    def locate_offset(
+        self, table_name: str, file_kind: str, offset: int
+    ) -> tuple[Any, int | None] | None:
+        page_size = self.page_size_provider()
+        if page_size == 0:
+            return None
+        return locate_offset(
+            self.db_path, table_name, offset, file_kind, page_size,
+            self.page_table_map_provider(), self.wal_data_provider(),
+        )

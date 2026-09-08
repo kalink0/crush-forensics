@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.realm_offsets import RealmCellLocator
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.tree_viewer import TreeViewer
 from crush.viewers.hex_viewer import HexViewer
@@ -658,6 +659,15 @@ class RealmViewer(QWidget):
         inactive_table_data: dict[str, Any] = {}
         summary_rows: list[list] = []
 
+        # Real byte-provenance for the embedded Hex pane, against the actual
+        # .realm file's own bytes -- distinct from __db_path below, which
+        # points at a synthetic SQLite re-encoding used only for
+        # querying/sorting (see crush/core/realm_offsets.py's docstring).
+        file_bytes = self._data.get("__realm_file_bytes") if isinstance(self._data, dict) else None
+        cell_locator = (
+            RealmCellLocator(file_bytes) if isinstance(file_bytes, (bytes, bytearray)) else None
+        )
+
         def _decode(t: dict) -> tuple[list[str], list[list], list, int, list[str], list]:
             cols_dict: dict[int, list] = t.get("columns", {})
             col_indices = sorted(cols_dict.keys())
@@ -690,10 +700,14 @@ class RealmViewer(QWidget):
             table_data[name] = {
                 "columns": headers,
                 "rows": rows,
+                "rowids": obj_keys,  # TableViewer's embedded Hex pane keys rows by this
                 "__obj_keys": obj_keys,
                 "__column_types": col_types,
                 "__column_target_tables": col_targets,
             }
+            if cell_locator is not None:
+                col_indices = sorted((t.get("columns") or {}).keys())
+                cell_locator.add_table(name, t, col_indices)
             notes = "row count estimated (file corruption)" if t.get("row_count_estimated") else ""
             summary_rows.append([name, len(headers), n_rows, notes])
 
@@ -721,6 +735,8 @@ class RealmViewer(QWidget):
         tmp = _create_realm_sqlite(table_data, inactive_table_data or None)
         if tmp:
             viewer_data["__db_path"] = str(tmp)
+        if cell_locator is not None:
+            viewer_data["__cell_locator"] = cell_locator
         return TableViewer(viewer_data, parent, show_db_tabs=False, summary_nav_table="Summary")
 
     # Roles tagged onto QTreeWidgetItem.data(0, UserRole) in the Views tab's
