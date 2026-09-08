@@ -270,15 +270,33 @@ class SQLiteParser(AbstractParser):
 
             for table in tables:
                 try:
-                    cursor.execute(f"SELECT * FROM [{table}] LIMIT {_ROW_LIMIT + 1}")  # noqa: S608
-                    raw_rows = cursor.fetchall()
+                    # Fetch each row's rowid alongside its columns -- needed
+                    # by the table viewer's "Locate in Hex" action to find
+                    # the row's exact on-disk bytes later. WITHOUT ROWID
+                    # tables and views raise "no such column: rowid"; fall
+                    # back to the plain query for those, with rowids=None
+                    # (the action simply isn't offered for such rows).
+                    rowids: list[int] | None
+                    try:
+                        cursor.execute(
+                            f"SELECT rowid, * FROM [{table}] LIMIT {_ROW_LIMIT + 1}"  # noqa: S608
+                        )
+                        raw_rows = cursor.fetchall()
+                        rowids = [r[0] for r in raw_rows[:_ROW_LIMIT]]
+                        rows = [list(r)[1:] for r in raw_rows[:_ROW_LIMIT]]
+                        columns = [desc[0] for desc in cursor.description or []][1:]
+                    except Exception:
+                        cursor.execute(f"SELECT * FROM [{table}] LIMIT {_ROW_LIMIT + 1}")  # noqa: S608
+                        raw_rows = cursor.fetchall()
+                        rowids = None
+                        rows = [list(r) for r in raw_rows[:_ROW_LIMIT]]
+                        columns = [desc[0] for desc in cursor.description or []]
                     was_truncated = len(raw_rows) > _ROW_LIMIT
-                    rows = [list(r) for r in raw_rows[:_ROW_LIMIT]]
-                    columns = [desc[0] for desc in cursor.description or []]
                     data[table] = {
                         "columns": columns,
                         "rows": rows,
                         "truncated": was_truncated,
+                        "rowids": rowids,
                     }
                     if was_truncated:
                         truncated_tables.append(table)
