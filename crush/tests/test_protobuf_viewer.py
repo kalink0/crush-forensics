@@ -6,12 +6,15 @@ from __future__ import annotations
 import json
 
 from crush.parsers.protobuf_parser import _decode_message
+from crush.parsers.protobuf_schema import schema_byte_ranges
 from crush.viewers.protobuf_viewer import (
+    ProtobufViewer,
     ProtobufTreeWidget,
     _ENTRY_ROLE,
     _entries_to_json,
     _entry_to_jsonable,
 )
+from crush.viewers.tree_viewer import TreeViewer
 
 
 def _varint(n: int) -> bytes:
@@ -35,6 +38,43 @@ def _visible_field_labels(widget: ProtobufTreeWidget) -> list[str]:
         if not widget._tree.isRowHidden(row, model.indexFromItem(root)):
             labels.append(root.child(row, 0).text())
     return labels
+
+
+class _FakePool:
+    def __init__(self, descriptor: object) -> None:
+        self._descriptor = descriptor
+
+    def FindMessageTypeByName(self, name: str) -> object:
+        return self._descriptor
+
+
+class _FakeOptions:
+    map_entry = False
+
+
+class _FakeField:
+    LABEL_REPEATED = 3
+
+    def __init__(
+        self,
+        number: int,
+        name: str,
+        *,
+        repeated: bool = False,
+        message_type: object | None = None,
+    ) -> None:
+        self.number = number
+        self.name = name
+        self.label = self.LABEL_REPEATED if repeated else 1
+        self.message_type = message_type
+
+
+class _FakeDescriptor:
+    def __init__(self, fields: list[_FakeField]) -> None:
+        self.fields = fields
+
+    def GetOptions(self) -> _FakeOptions:
+        return _FakeOptions()
 
 
 def test_filter_matches_field_value_text(qapp) -> None:
@@ -191,6 +231,193 @@ def test_tree_stores_uint64_max_entry_without_qt_int_overflow(qapp) -> None:
     root = widget._model.invisibleRootItem()
     field_item = root.child(0, 0)
     assert field_item.data(_ENTRY_ROLE) is not None
+
+
+def test_schema_byte_ranges_map_field_names_repeated_items_and_nested_values() -> None:
+    child_desc = _FakeDescriptor([_FakeField(1, "inner_count")])
+    root_desc = _FakeDescriptor(
+        [
+            _FakeField(1, "small_count"),
+            _FakeField(2, "tags", repeated=True),
+            _FakeField(3, "child", message_type=child_desc),
+        ]
+    )
+    child = b"\x08\x07"
+    raw = (
+        b"\x08\x2a"
+        + b"\x12\x03one"
+        + b"\x12\x03two"
+        + b"\x1a" + _varint(len(child)) + child
+    )
+
+    ranges = schema_byte_ranges(_FakePool(root_desc), "fixtures.Root", raw)
+
+    assert ranges[("small_count",)]["highlight_ranges"] == [(0, 1), (1, 2)]
+    assert ranges[("tags",)]["byte_range"] == (2, 12)
+    assert ranges[("tags", "0")]["highlight_ranges"] == [(2, 3), (3, 4), (4, 7)]
+    assert ranges[("tags", "1")]["highlight_ranges"] == [(7, 8), (8, 9), (9, 12)]
+    assert ranges[("child",)]["highlight_ranges"] == [(12, 13), (13, 14), (14, 16)]
+    assert ranges[("child", "inner_count")]["highlight_ranges"] == [(14, 15), (15, 16)]
+
+
+def test_decode_message_records_absolute_byte_ranges() -> None:
+    raw = b"\x08\x2a" + b"\x12" + _varint(5) + b"hello"
+    decoded, warning, _ = _decode_message(raw)
+    assert not warning
+
+    first, second = decoded["entries"]
+    assert first["byte_range"] == (0, 2)
+    assert first["key_range"] == (0, 1)
+    assert first["value_range"] == (1, 2)
+    assert second["byte_range"] == (2, 9)
+    assert second["key_range"] == (2, 3)
+    assert second["length_range"] == (3, 4)
+    assert second["value_range"] == (4, 9)
+
+
+def test_decode_message_records_nested_ranges_against_outer_bytes() -> None:
+    inner = b"\x28\x01"  # field 5, varint 1
+    raw = b"\x12" + _varint(len(inner)) + inner  # field 2, message
+    decoded, warning, _ = _decode_message(raw)
+    assert not warning
+
+    outer = decoded["entries"][0]
+    nested = outer["value"]["entries"][0]
+    assert outer["byte_range"] == (0, 4)
+    assert outer["value_range"] == (2, 4)
+    assert nested["byte_range"] == (2, 4)
+    assert nested["value_range"] == (3, 4)
+
+
+def test_protobuf_tree_syncs_selection_to_hex_range(qapp) -> None:
+    raw = b"\x08\x2a" + b"\x12" + _varint(5) + b"hello"
+    decoded, warning, _ = _decode_message(raw)
+    assert not warning
+
+    widget = ProtobufTreeWidget(decoded, raw=raw)
+    widget._toggle_hex_view()
+    widget._tree.setCurrentIndex(widget._model.index(1, 0))
+    widget._update_value_field()
+
+    assert widget._hex._focus_range == (2, 3)
+    assert widget._hex._focus_ranges == [(2, 3), (3, 4), (4, 9)]
+
+
+def test_protobuf_tree_hex_toggle_hides_and_shows_mapped_hex(qapp) -> None:
+    raw = b"\x08\x2a"
+    decoded, warning, _ = _decode_message(raw)
+    assert not warning
+
+    widget = ProtobufTreeWidget(decoded, raw=raw)
+    assert not widget._mapped_view.is_hex_visible()
+    assert widget._hex_toggle_btn.text() == "Show Hex"
+
+    widget._toggle_hex_view()
+    assert widget._mapped_view.is_hex_visible()
+    assert widget._hex_toggle_btn.text() == "Hide Hex"
+
+    widget._toggle_hex_view()
+    assert not widget._mapped_view.is_hex_visible()
+    assert widget._hex_toggle_btn.text() == "Show Hex"
+
+
+def test_hex_offset_selects_deepest_protobuf_tree_row(qapp) -> None:
+    inner = b"\x28\x01"  # field 5, varint 1
+    raw = b"\x12" + _varint(len(inner)) + inner
+    decoded, warning, _ = _decode_message(raw)
+    assert not warning
+
+    widget = ProtobufTreeWidget(decoded, raw=raw)
+    widget._toggle_hex_view()
+    widget._mapped_view._select_deepest_item_for_offset(3)
+
+    assert widget._current_row_items()[0].text() == "field 5"
+    assert widget._hex._focus_ranges == [(2, 3), (3, 4)]
+
+
+def test_schema_decoded_view_offers_hidden_hex_toggle(qapp, monkeypatch) -> None:
+    from google.protobuf import json_format
+
+    raw = b"\x08\x2a"
+    widget = ProtobufViewer({"raw": raw, "decoded": {"entries": []}})
+    widget._pool = object()
+    widget._msg_combo.addItem("fixtures.BasicWireTypes")
+    monkeypatch.setattr(
+        "crush.viewers.protobuf_viewer.decode_message_with_schema",
+        lambda pool, name, data: object(),
+    )
+    monkeypatch.setattr(
+        json_format,
+        "MessageToDict",
+        lambda msg, **kwargs: {"small_count": 42},
+    )
+    monkeypatch.setattr(
+        "crush.viewers.protobuf_viewer.schema_byte_ranges",
+        lambda pool, name, data: {
+            ("small_count",): {
+                "byte_range": (0, 2),
+                "highlight_ranges": [(0, 1), (1, 2)],
+            },
+        },
+    )
+
+    widget._decode_with_schema()
+    decoded_widget = widget._content_layout.itemAt(0).widget()
+
+    assert isinstance(decoded_widget, TreeViewer)
+    assert decoded_widget._hex_toggle_btn is not None
+    assert decoded_widget._hex_toggle_btn.text() == "Show Hex"
+    assert decoded_widget._mapped_view is not None
+    assert not decoded_widget._mapped_view.is_hex_visible()
+
+    decoded_widget._toggle_hex_view()
+    decoded_widget._tree.setCurrentIndex(decoded_widget._model.index(0, 0))
+
+    assert decoded_widget._hex_toggle_btn.text() == "Hide Hex"
+    assert decoded_widget._mapped_view.is_hex_visible()
+    assert decoded_widget._mapped_view.hex_viewer._focus_ranges == [(0, 1), (1, 2)]
+
+
+def test_schema_redecode_preserves_visible_hex_view(qapp, monkeypatch) -> None:
+    from google.protobuf import json_format
+
+    raw = b"\x08\x2a"
+    widget = ProtobufViewer({"raw": raw, "decoded": {"entries": []}})
+    widget._pool = object()
+    widget._msg_combo.addItem("fixtures.First")
+    monkeypatch.setattr(
+        "crush.viewers.protobuf_viewer.decode_message_with_schema",
+        lambda pool, name, data: object(),
+    )
+    monkeypatch.setattr(
+        json_format,
+        "MessageToDict",
+        lambda msg, **kwargs: {"small_count": 42},
+    )
+    monkeypatch.setattr(
+        "crush.viewers.protobuf_viewer.schema_byte_ranges",
+        lambda pool, name, data: {
+            ("small_count",): {
+                "byte_range": (0, 2),
+                "highlight_ranges": [(0, 1), (1, 2)],
+            },
+        },
+    )
+
+    widget._decode_with_schema()
+    first_decoded_widget = widget._content_layout.itemAt(0).widget()
+    first_decoded_widget._toggle_hex_view()
+    assert first_decoded_widget._mapped_view.is_hex_visible()
+
+    widget._msg_combo.addItem("fixtures.Second")
+    widget._msg_combo.setCurrentText("fixtures.Second")
+    widget._decode_with_schema()
+    second_decoded_widget = widget._content_layout.itemAt(0).widget()
+
+    assert isinstance(second_decoded_widget, TreeViewer)
+    assert second_decoded_widget._mapped_view is not None
+    assert second_decoded_widget._mapped_view.is_hex_visible()
+    assert second_decoded_widget._hex_toggle_btn.text() == "Hide Hex"
 
 
 def test_export_entries_writes_text_file(qapp, tmp_path, monkeypatch) -> None:

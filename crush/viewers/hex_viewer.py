@@ -3,11 +3,12 @@
 """Hex viewer — displays raw bytes as hex + ASCII, 16 bytes per row."""
 from __future__ import annotations
 
-from PySide6.QtCore import QRegularExpression, Qt
+from PySide6.QtCore import QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
     QFont,
+    QPalette,
     QRegularExpressionValidator,
     QTextCharFormat,
     QTextCursor,
@@ -48,6 +49,7 @@ _ASCII_START = 60
 
 _COLOR_HIT = QColor(255, 230, 80)     # yellow — all matches
 _COLOR_CURRENT = QColor(255, 140, 0)  # orange — current match
+_MAX_FOCUS_RANGES = 5
 
 
 class _HexPlainTextEdit(QPlainTextEdit):
@@ -83,6 +85,8 @@ class _HexPlainTextEdit(QPlainTextEdit):
 class HexViewer(QWidget):
     """Simple hex + ASCII dump viewer with search, highlights, and result panel."""
 
+    byteOffsetFocused = Signal(int)
+
     def __init__(self, data: bytes, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._data = data
@@ -90,6 +94,9 @@ class HexViewer(QWidget):
         self._search_hits: list[int] = []   # byte offsets of all matches
         self._current_hit: int = -1          # index into _search_hits
         self._match_len: int = 0
+        self._focus_range: tuple[int, int] | None = None
+        self._focus_ranges: list[tuple[int, int]] = []
+        self._suppress_focus_signal = False
         self._build_ui()
         self._load_page()
 
@@ -206,6 +213,7 @@ class HexViewer(QWidget):
         font = QFont("Courier New", 10)
         font.setStyleHint(QFont.StyleHint.Monospace)
         self._text.setFont(font)
+        self._text.cursorPositionChanged.connect(self._emit_cursor_offset_changed)
 
         self._splitter.addWidget(self._text)
 
@@ -275,8 +283,43 @@ class HexViewer(QWidget):
         self._search_hits = []
         self._current_hit = -1
         self._match_len = 0
+        self._focus_range = None
+        self._focus_ranges = []
         self._count_label.setText("")
         self._load_page()
+
+    def highlight_byte_range(self, start: int, end: int, *, scroll: bool = True) -> None:
+        """Highlight a half-open byte range and optionally scroll it into view."""
+        self.highlight_byte_ranges([(start, end)], scroll=scroll)
+
+    def highlight_byte_ranges(
+        self,
+        ranges: list[tuple[int, int]],
+        *,
+        scroll: bool = True,
+    ) -> None:
+        """Highlight up to five half-open byte ranges."""
+        normalized: list[tuple[int, int]] = []
+        for start, end in ranges[:_MAX_FOCUS_RANGES]:
+            start = max(0, min(start, len(self._data)))
+            end = max(start, min(end, len(self._data)))
+            if end > start:
+                normalized.append((start, end))
+        self._focus_ranges = normalized
+        self._focus_range = normalized[0] if normalized else None
+        if scroll and self._focus_range is not None:
+            target_page = self._focus_range[0] // _PAGE_BYTES
+            if target_page != self._page:
+                self._page = target_page
+                self._load_page()
+            self._scroll_to_offset(self._focus_range[0] - self._page * _PAGE_BYTES)
+        self._update_highlights()
+
+    def clear_byte_range_highlight(self) -> None:
+        """Clear an externally selected byte-range highlight."""
+        self._focus_range = None
+        self._focus_ranges = []
+        self._update_highlights()
 
     def _prev_page(self) -> None:
         if self._page > 0:
@@ -294,8 +337,10 @@ class HexViewer(QWidget):
         if not block.isValid():
             return
         cursor = self._text.textCursor()
+        self._suppress_focus_signal = True
         cursor.setPosition(block.position())
         self._text.setTextCursor(cursor)
+        self._suppress_focus_signal = False
         self._text.centerCursor()
 
     # ------------------------------------------------------------------
@@ -415,6 +460,15 @@ class HexViewer(QWidget):
         page_end = page_start + len(self._page_data())
 
         selections: list[QTextEdit.ExtraSelection] = []
+        focus_colors = _focus_range_colors(self.palette())
+        for range_idx, (focus_start, focus_end) in enumerate(self._focus_ranges):
+            if focus_end > page_start and focus_start < page_end:
+                fmt_range = QTextCharFormat()
+                fmt_range.setBackground(focus_colors[range_idx % len(focus_colors)])
+                clip_start = max(focus_start, page_start) - page_start
+                clip_end = min(focus_end, page_end) - page_start
+                self._append_match_selections(selections, fmt_range, clip_start, clip_end)
+
         for i, hit_offset in enumerate(self._search_hits):
             hit_end = hit_offset + self._match_len
             if hit_end <= page_start or hit_offset >= page_end:
@@ -462,6 +516,26 @@ class HexViewer(QWidget):
                 ch.setPosition(hpos + 2, QTextCursor.MoveMode.KeepAnchor)
                 sel_h.cursor = ch
                 selections.append(sel_h)
+
+    def _emit_cursor_offset_changed(self) -> None:
+        if self._suppress_focus_signal:
+            return
+        offset = self._byte_offset_at_cursor()
+        if offset is not None:
+            self.byteOffsetFocused.emit(offset)
+
+    def _byte_offset_at_cursor(self) -> int | None:
+        cursor = self._text.textCursor()
+        block = self._text.document().findBlock(cursor.position())
+        if not block.isValid():
+            return None
+        byte_in_line = _column_to_byte(cursor.position() - block.position())
+        if byte_in_line is None:
+            return None
+        offset = self._page * _PAGE_BYTES + block.blockNumber() * _BYTES_PER_ROW + byte_in_line
+        if 0 <= offset < len(self._data):
+            return offset
+        return None
 
     # ------------------------------------------------------------------
     # Result panel
@@ -632,6 +706,41 @@ def _selected_text(widget: QPlainTextEdit) -> str:
     """Return the selected text, using Qt's paragraph separator \\u2029."""
     cursor = widget.textCursor()
     return cursor.selectedText() if cursor.hasSelection() else ""
+
+
+def _column_to_byte(col: int) -> int | None:
+    if col < _HEX_START:
+        return None
+    if col <= 32:
+        return min((col - _HEX_START) // 3, 7)
+    if col <= 34:
+        return 7
+    if col < _HEX_END:
+        return min(8 + (col - 35) // 3, 15)
+    if col < _ASCII_START:
+        return 15
+    return min(col - _ASCII_START, 15)
+
+
+def _focus_range_colors(palette: QPalette) -> list[QColor]:
+    base = palette.color(QPalette.ColorRole.Base)
+    dark = base.lightness() < 128
+    alpha = 92 if dark else 72
+    if dark:
+        return [
+            QColor(91, 160, 255, alpha),
+            QColor(92, 214, 164, alpha),
+            QColor(255, 194, 102, alpha),
+            QColor(207, 153, 255, alpha),
+            QColor(255, 139, 148, alpha),
+        ]
+    return [
+        QColor(28, 120, 220, alpha),
+        QColor(24, 150, 96, alpha),
+        QColor(210, 130, 24, alpha),
+        QColor(145, 84, 210, alpha),
+        QColor(210, 80, 90, alpha),
+    ]
 
 
 def _parse_hex_query(query: str) -> bytes | None:

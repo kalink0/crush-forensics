@@ -1,0 +1,483 @@
+{
+  "fixture": "protobuf_nested_mixed_payloads.pb",
+  "schema": "protobuf_test_messages.proto",
+  "message": "crush.fixtures.NestedMixedPayloads",
+  "size": 238,
+  "hex": "0802121873796e746865746963206e6573746564207061796c6f61641a130a0a6465766963652d30303110011d0000af422214080112076372656174656419000000000000c03f221408021207757064617465641900000000008023402a3065794a726157356b496a6f695a47567462794973496d4e7664573530496a6f7a4c434a766179493664484a315a58303d32391f8b08000000000002ffab564acecf2d284a2d2e4e4d51b25228292a4dd551502aca2f2f06f2a20d75148c74148c636b015f04956a270000003a100807120c64656570207061796c6f616442100807120c64656570207061796c6f6164",
+  "fields": [
+    {
+      "field": 1,
+      "name": "version",
+      "wire_type": "varint",
+      "byte_range": [
+        0,
+        2
+      ],
+      "key_range": [
+        0,
+        1
+      ],
+      "value_range": [
+        1,
+        2
+      ],
+      "value": 2
+    },
+    {
+      "field": 2,
+      "name": "title",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        2,
+        28
+      ],
+      "key_range": [
+        2,
+        3
+      ],
+      "value_range": [
+        4,
+        28
+      ],
+      "value": "synthetic nested payload",
+      "length_range": [
+        3,
+        4
+      ],
+      "length": 24
+    },
+    {
+      "field": 3,
+      "name": "device",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        28,
+        49
+      ],
+      "key_range": [
+        28,
+        29
+      ],
+      "value_range": [
+        30,
+        49
+      ],
+      "value": "message",
+      "length_range": [
+        29,
+        30
+      ],
+      "length": 19,
+      "children": [
+        {
+          "field": 1,
+          "name": "device_id",
+          "wire_type": "length-delimited",
+          "byte_range": [
+            30,
+            42
+          ],
+          "key_range": [
+            30,
+            31
+          ],
+          "value_range": [
+            32,
+            42
+          ],
+          "value": "device-001",
+          "length_range": [
+            31,
+            32
+          ],
+          "length": 10
+        },
+        {
+          "field": 2,
+          "name": "active",
+          "wire_type": "varint",
+          "byte_range": [
+            42,
+            44
+          ],
+          "key_range": [
+            42,
+            43
+          ],
+          "value_range": [
+            43,
+            44
+          ],
+          "value": true
+        },
+        {
+          "field": 3,
+          "name": "battery_percent",
+          "wire_type": "fixed32",
+          "byte_range": [
+            44,
+            49
+          ],
+          "key_range": [
+            44,
+            45
+          ],
+          "value_range": [
+            45,
+            49
+          ],
+          "value": 87.5
+        }
+      ]
+    },
+    {
+      "field": 4,
+      "name": "events",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        49,
+        71
+      ],
+      "key_range": [
+        49,
+        50
+      ],
+      "value_range": [
+        51,
+        71
+      ],
+      "value": "message",
+      "length_range": [
+        50,
+        51
+      ],
+      "length": 20,
+      "children": [
+        {
+          "field": 1,
+          "name": "event_index",
+          "wire_type": "varint",
+          "byte_range": [
+            51,
+            53
+          ],
+          "key_range": [
+            51,
+            52
+          ],
+          "value_range": [
+            52,
+            53
+          ],
+          "value": 1
+        },
+        {
+          "field": 2,
+          "name": "event_label",
+          "wire_type": "length-delimited",
+          "byte_range": [
+            53,
+            62
+          ],
+          "key_range": [
+            53,
+            54
+          ],
+          "value_range": [
+            55,
+            62
+          ],
+          "value": "created",
+          "length_range": [
+            54,
+            55
+          ],
+          "length": 7
+        },
+        {
+          "field": 3,
+          "name": "score",
+          "wire_type": "fixed64",
+          "byte_range": [
+            62,
+            71
+          ],
+          "key_range": [
+            62,
+            63
+          ],
+          "value_range": [
+            63,
+            71
+          ],
+          "value": 0.125
+        }
+      ]
+    },
+    {
+      "field": 4,
+      "name": "events",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        71,
+        93
+      ],
+      "key_range": [
+        71,
+        72
+      ],
+      "value_range": [
+        73,
+        93
+      ],
+      "value": "message",
+      "length_range": [
+        72,
+        73
+      ],
+      "length": 20,
+      "children": [
+        {
+          "field": 1,
+          "name": "event_index",
+          "wire_type": "varint",
+          "byte_range": [
+            73,
+            75
+          ],
+          "key_range": [
+            73,
+            74
+          ],
+          "value_range": [
+            74,
+            75
+          ],
+          "value": 2
+        },
+        {
+          "field": 2,
+          "name": "event_label",
+          "wire_type": "length-delimited",
+          "byte_range": [
+            75,
+            84
+          ],
+          "key_range": [
+            75,
+            76
+          ],
+          "value_range": [
+            77,
+            84
+          ],
+          "value": "updated",
+          "length_range": [
+            76,
+            77
+          ],
+          "length": 7
+        },
+        {
+          "field": 3,
+          "name": "score",
+          "wire_type": "fixed64",
+          "byte_range": [
+            84,
+            93
+          ],
+          "key_range": [
+            84,
+            85
+          ],
+          "value_range": [
+            85,
+            93
+          ],
+          "value": 9.75
+        }
+      ]
+    },
+    {
+      "field": 5,
+      "name": "base64_json",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        93,
+        143
+      ],
+      "key_range": [
+        93,
+        94
+      ],
+      "value_range": [
+        95,
+        143
+      ],
+      "value": "eyJraW5kIjoiZGVtbyIsImNvdW50IjozLCJvayI6dHJ1ZX0=",
+      "length_range": [
+        94,
+        95
+      ],
+      "length": 48,
+      "note": "Base64 text decodes to JSON."
+    },
+    {
+      "field": 6,
+      "name": "gzip_json",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        143,
+        202
+      ],
+      "key_range": [
+        143,
+        144
+      ],
+      "value_range": [
+        145,
+        202
+      ],
+      "value": "1f8b08000000000002ffab564acecf2d284a2d2e4e4d51b25228292a4dd551502aca2f2f06f2a20d75148c74148c636b015f04956a27000000",
+      "length_range": [
+        144,
+        145
+      ],
+      "length": 57,
+      "note": "gzip-compressed JSON for BLOB Inspector pipeline checks."
+    },
+    {
+      "field": 7,
+      "name": "embedded_bytes_message",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        202,
+        220
+      ],
+      "key_range": [
+        202,
+        203
+      ],
+      "value_range": [
+        204,
+        220
+      ],
+      "value": "message-like bytes",
+      "length_range": [
+        203,
+        204
+      ],
+      "length": 16,
+      "note": "Schema says bytes, but schema-less decoding can treat it as a nested message.",
+      "children": [
+        {
+          "field": 1,
+          "name": "inner_id",
+          "wire_type": "varint",
+          "byte_range": [
+            204,
+            206
+          ],
+          "key_range": [
+            204,
+            205
+          ],
+          "value_range": [
+            205,
+            206
+          ],
+          "value": 7
+        },
+        {
+          "field": 2,
+          "name": "inner_label",
+          "wire_type": "length-delimited",
+          "byte_range": [
+            206,
+            220
+          ],
+          "key_range": [
+            206,
+            207
+          ],
+          "value_range": [
+            208,
+            220
+          ],
+          "value": "deep payload",
+          "length_range": [
+            207,
+            208
+          ],
+          "length": 12
+        }
+      ]
+    },
+    {
+      "field": 8,
+      "name": "structured_child",
+      "wire_type": "length-delimited",
+      "byte_range": [
+        220,
+        238
+      ],
+      "key_range": [
+        220,
+        221
+      ],
+      "value_range": [
+        222,
+        238
+      ],
+      "value": "message",
+      "length_range": [
+        221,
+        222
+      ],
+      "length": 16,
+      "children": [
+        {
+          "field": 1,
+          "name": "inner_id",
+          "wire_type": "varint",
+          "byte_range": [
+            222,
+            224
+          ],
+          "key_range": [
+            222,
+            223
+          ],
+          "value_range": [
+            223,
+            224
+          ],
+          "value": 7
+        },
+        {
+          "field": 2,
+          "name": "inner_label",
+          "wire_type": "length-delimited",
+          "byte_range": [
+            224,
+            238
+          ],
+          "key_range": [
+            224,
+            225
+          ],
+          "value_range": [
+            226,
+            238
+          ],
+          "value": "deep payload",
+          "length_range": [
+            225,
+            226
+          ],
+          "length": 12
+        }
+      ]
+    }
+  ]
+}

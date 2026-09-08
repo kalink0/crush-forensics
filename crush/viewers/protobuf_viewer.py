@@ -27,8 +27,10 @@ from crush.parsers.protobuf_schema import (
     SchemaLoadError,
     decode_message_with_schema,
     load_descriptor_set,
+    schema_byte_ranges,
 )
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 from crush.viewers.tree_viewer import TreeViewer
 
 
@@ -93,13 +95,13 @@ class ProtobufViewer(QWidget):
         self._status = QLabel("")
         tb_layout.addWidget(self._status)
 
-        layout.addWidget(toolbar)
+        layout.addWidget(toolbar, 0)
 
         self._content = QWidget()
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._content_layout.setSpacing(0)
-        layout.addWidget(self._content)
+        layout.addWidget(self._content, 1)
 
     def _replace_view(self, widget: QWidget) -> None:
         while self._content_layout.count():
@@ -107,11 +109,28 @@ class ProtobufViewer(QWidget):
             w = item.widget()
             if w is not None:
                 w.deleteLater()
-        self._content_layout.addWidget(widget)
+        self._content_layout.addWidget(widget, 1)
+
+    def _current_hex_visible(self) -> bool:
+        if not self._content_layout.count():
+            return False
+        widget = self._content_layout.itemAt(0).widget()
+        mapped_view = getattr(widget, "_mapped_view", None)
+        if mapped_view is None:
+            return False
+        return bool(mapped_view.is_hex_visible())
 
     def _show_schema_less(self) -> None:
+        hex_visible = self._current_hex_visible()
         self._status.setText("Schema-less decode")
-        self._replace_view(ProtobufTreeWidget(self._decoded, self))
+        self._replace_view(
+            ProtobufTreeWidget(
+                self._decoded,
+                raw=self._raw,
+                hex_visible=hex_visible,
+                parent=self,
+            )
+        )
 
     def _clear_schema(self) -> None:
         self._pool = None
@@ -167,12 +186,22 @@ class ProtobufViewer(QWidget):
                 preserving_proto_field_name=True,
                 always_print_fields_with_no_presence=True,
             )
+            byte_ranges = schema_byte_ranges(self._pool, name, self._raw)
         except Exception as exc:
             self._status.setText(f"Decode failed: {exc}")
             return
 
+        hex_visible = self._current_hex_visible()
         self._status.setText(f"Decoded as {name}")
-        self._replace_view(TreeViewer(decoded, self))
+        self._replace_view(
+            TreeViewer(
+                decoded,
+                self,
+                raw=self._raw,
+                byte_ranges_by_path=byte_ranges,
+                hex_visible=hex_visible,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +213,7 @@ _INTERP_FONT_SIZE_DELTA = -1  # points smaller than parent
 _RAW_ROLE = Qt.ItemDataRole.UserRole
 _FULLTEXT_ROLE = Qt.ItemDataRole.UserRole + 1
 _ENTRY_ROLE = Qt.ItemDataRole.UserRole + 2  # the field's original decoded entry dict
+_BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 class _EntryRef:
@@ -233,6 +263,42 @@ def _entries_to_json(entries: list[dict[str, Any]]) -> str:
     return json.dumps([_entry_to_jsonable(e) for e in entries], indent=2, ensure_ascii=False)
 
 
+def _valid_byte_range(value: object) -> bool:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], int)
+        and isinstance(value[1], int)
+        and value[0] <= value[1]
+    )
+
+
+def _byte_range_from_item(item: QStandardItem) -> tuple[int, int] | None:
+    value = item.data(_BYTE_RANGE_ROLE)
+    if isinstance(value, _EntryRef):
+        value = value.entry.get("byte_range")
+    if _valid_byte_range(value):
+        return value
+    return None
+
+
+def _byte_highlight_ranges_from_item(item: QStandardItem) -> list[tuple[int, int]]:
+    value = item.data(_BYTE_RANGE_ROLE)
+    if not isinstance(value, _EntryRef):
+        return [value] if _valid_byte_range(value) else []
+    entry = value.entry
+    ranges = [
+        entry.get("key_range"),
+        entry.get("length_range"),
+        entry.get("value_range"),
+    ]
+    out = [rng for rng in ranges if _valid_byte_range(rng)]
+    if out:
+        return out
+    fallback = entry.get("byte_range")
+    return [fallback] if _valid_byte_range(fallback) else []
+
+
 class ProtobufTreeWidget(QWidget):
     """Tree view tailored for schema-less protobuf entries.
 
@@ -241,9 +307,17 @@ class ProtobufTreeWidget(QWidget):
     Nested messages expand recursively.
     """
 
-    def __init__(self, decoded: dict[str, Any], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        decoded: dict[str, Any],
+        raw: bytes | None = None,
+        hex_visible: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._decoded = decoded
+        self._raw = raw or b""
+        self._initial_hex_visible = hex_visible
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -270,6 +344,9 @@ class ProtobufTreeWidget(QWidget):
         self._search.setFixedWidth(200)
         self._search.textChanged.connect(self._apply_filter)
         tb_layout.addWidget(self._search)
+        self._hex_toggle_btn = QPushButton("Show Hex")
+        self._hex_toggle_btn.clicked.connect(self._toggle_hex_view)
+        tb_layout.addWidget(self._hex_toggle_btn)
         layout.addWidget(toolbar)
 
         self._model = QStandardItemModel()
@@ -288,8 +365,6 @@ class ProtobufTreeWidget(QWidget):
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._on_context_menu)
 
-        layout.addWidget(self._tree)
-
         value_bar = QWidget()
         vb_layout = QHBoxLayout(value_bar)
         vb_layout.setContentsMargins(8, 4, 8, 4)
@@ -298,11 +373,29 @@ class ProtobufTreeWidget(QWidget):
         self._value_field = QLineEdit()
         self._value_field.setReadOnly(True)
         vb_layout.addWidget(self._value_field, 1)
-        layout.addWidget(value_bar)
+
+        self._mapped_view = ByteMappedTreeHex(
+            raw=self._raw,
+            tree=self._tree,
+            model=self._model,
+            range_for_item=_byte_range_from_item,
+            highlight_ranges_for_item=_byte_highlight_ranges_from_item,
+            selection_changed=self._update_value_field,
+            footer=value_bar,
+            hex_visible=self._initial_hex_visible,
+            parent=self,
+        )
+        self._hex = self._mapped_view.hex_viewer
+        layout.addWidget(self._mapped_view, 1)
+        self._hex_toggle_btn.setText("Hide Hex" if self._initial_hex_visible else "Show Hex")
 
         self._populate(decoded.get("entries", []), self._model.invisibleRootItem())
         self._tree.expandToDepth(1)
-        self._tree.selectionModel().selectionChanged.connect(self._update_value_field)
+
+    def _toggle_hex_view(self) -> None:
+        visible = not self._mapped_view.is_hex_visible()
+        self._mapped_view.set_hex_visible(visible)
+        self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
 
     def _populate(self, entries: list[dict[str, Any]], parent: QStandardItem) -> None:
         for entry in entries:
@@ -337,6 +430,7 @@ class ProtobufTreeWidget(QWidget):
             val_item.setData(raw_bytes, _RAW_ROLE)
             val_item.setData(full_text, _FULLTEXT_ROLE)
             field_item.setData(_EntryRef(entry), _ENTRY_ROLE)
+            field_item.setData(_EntryRef(entry), _BYTE_RANGE_ROLE)
             for item in (field_item, val_item, wt_item):
                 item.setEditable(False)
             parent.appendRow([field_item, val_item, wt_item])
@@ -360,6 +454,9 @@ class ProtobufTreeWidget(QWidget):
                         # full payload instead of repeating that truncated text.
                         v_item.setData(raw_bytes, _RAW_ROLE)
                         v_item.setData(raw_bytes.hex(" "), _FULLTEXT_ROLE)
+                        value_range = entry.get("value_range")
+                        if _valid_byte_range(value_range):
+                            lbl_item.setData(value_range, _BYTE_RANGE_ROLE)
                     empty = QStandardItem("")
                     empty.setEditable(False)
                     field_item.appendRow([lbl_item, v_item, empty])

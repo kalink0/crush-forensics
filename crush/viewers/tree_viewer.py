@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import plistlib
+from collections.abc import Mapping
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -21,8 +22,11 @@ from PySide6.QtWidgets import (
 )
 
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 
 _USER_ROLE = Qt.ItemDataRole.UserRole
+_BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 1
+_BYTE_HIGHLIGHT_RANGES_ROLE = Qt.ItemDataRole.UserRole + 2
 
 
 class _ObjRef:
@@ -35,11 +39,50 @@ class _ObjRef:
         self.obj = obj
 
 
+def _valid_byte_range(value: object) -> bool:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], int)
+        and isinstance(value[1], int)
+        and value[0] <= value[1]
+    )
+
+
+def _byte_range_from_item(item: QStandardItem) -> tuple[int, int] | None:
+    value = item.data(_BYTE_RANGE_ROLE)
+    if _valid_byte_range(value):
+        return value
+    return None
+
+
+def _byte_highlight_ranges_from_item(item: QStandardItem) -> list[tuple[int, int]]:
+    value = item.data(_BYTE_HIGHLIGHT_RANGES_ROLE)
+    if isinstance(value, list):
+        return [rng for rng in value if _valid_byte_range(rng)]
+    rng = _byte_range_from_item(item)
+    return [rng] if rng is not None else []
+
+
 class TreeViewer(QWidget):
     """Viewer for plist / XML / any nested dict/list structure."""
 
-    def __init__(self, data: Any, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        data: Any,
+        parent: QWidget | None = None,
+        *,
+        raw: bytes | None = None,
+        byte_ranges_by_path: Mapping[
+            tuple[str, ...],
+            Mapping[str, tuple[int, int] | list[tuple[int, int]]],
+        ] | None = None,
+        hex_visible: bool = False,
+    ) -> None:
         super().__init__(parent)
+        self._raw = raw
+        self._initial_hex_visible = hex_visible
+        self._byte_ranges_by_path = byte_ranges_by_path or {}
         self._build_ui()
         self._load(data)
 
@@ -69,6 +112,13 @@ class TreeViewer(QWidget):
         self._search.setFixedWidth(200)
         self._search.textChanged.connect(self._apply_filter)
         tb_layout.addWidget(self._search)
+        self._hex_toggle_btn: QPushButton | None = None
+        if self._raw is not None:
+            self._hex_toggle_btn = QPushButton("Show Hex")
+            self._hex_toggle_btn.clicked.connect(self._toggle_hex_view)
+            tb_layout.addWidget(self._hex_toggle_btn)
+            if self._initial_hex_visible:
+                self._hex_toggle_btn.setText("Hide Hex")
         layout.addWidget(toolbar)
 
         # Tree view
@@ -86,7 +136,6 @@ class TreeViewer(QWidget):
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._on_context_menu)
         self._tree.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
-        layout.addWidget(self._tree)
 
         value_bar = QWidget()
         vb_layout = QHBoxLayout(value_bar)
@@ -96,9 +145,32 @@ class TreeViewer(QWidget):
         self._value_field = QLineEdit()
         self._value_field.setReadOnly(True)
         vb_layout.addWidget(self._value_field, 1)
-        layout.addWidget(value_bar)
 
-        self._tree.selectionModel().selectionChanged.connect(self._update_value_field)
+        self._mapped_view: ByteMappedTreeHex | None = None
+        if self._raw is not None:
+            self._mapped_view = ByteMappedTreeHex(
+                raw=self._raw,
+                tree=self._tree,
+                model=self._model,
+                range_for_item=_byte_range_from_item,
+                highlight_ranges_for_item=_byte_highlight_ranges_from_item,
+                selection_changed=self._update_value_field,
+                footer=value_bar,
+                hex_visible=self._initial_hex_visible,
+                parent=self,
+            )
+            layout.addWidget(self._mapped_view, 1)
+        else:
+            layout.addWidget(self._tree, 1)
+            layout.addWidget(value_bar)
+            self._tree.selectionModel().selectionChanged.connect(self._update_value_field)
+
+    def _toggle_hex_view(self) -> None:
+        if self._mapped_view is None or self._hex_toggle_btn is None:
+            return
+        visible = not self._mapped_view.is_hex_visible()
+        self._mapped_view.set_hex_visible(visible)
+        self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
 
     def _expand_all(self) -> None:
         self._tree.expandAll()
@@ -112,15 +184,22 @@ class TreeViewer(QWidget):
         root = self._model.invisibleRootItem()
         if isinstance(data, dict):
             for key, value in data.items():
-                self._build_items(root, value, str(key))
+                self._build_items(root, value, str(key), ())
         elif isinstance(data, (list, tuple)):
             for i, value in enumerate(data):
-                self._build_items(root, value, str(i))
+                self._build_items(root, value, str(i), ())
         else:
-            self._build_items(root, data, "value")
+            self._build_items(root, data, "value", ())
         self._tree.expandToDepth(1)
 
-    def _build_items(self, parent: QStandardItem, obj: Any, key: str) -> None:
+    def _build_items(
+        self,
+        parent: QStandardItem,
+        obj: Any,
+        key: str,
+        parent_path: tuple[str, ...],
+    ) -> None:
+        node_path = parent_path + (key,)
         type_name = type(obj).__name__
 
         if isinstance(obj, dict):
@@ -134,30 +213,33 @@ class TreeViewer(QWidget):
             val_item = QStandardItem(f"({len(display_obj)} keys)")
             type_item = QStandardItem(classname if classname else "dict")
             key_item.setData(_ObjRef(obj), _USER_ROLE)
+            self._apply_byte_range_metadata(key_item, node_path)
             key_item.setEditable(False)
             val_item.setEditable(False)
             type_item.setEditable(False)
             parent.appendRow([key_item, val_item, type_item])
             for k, v in display_obj.items():
-                self._build_items(key_item, v, str(k))
+                self._build_items(key_item, v, str(k), node_path)
 
         elif isinstance(obj, (list, tuple)):
             key_item = QStandardItem(str(key))
             val_item = QStandardItem(f"({len(obj)} items)")
             type_item = QStandardItem(type_name)
             key_item.setData(_ObjRef(obj), _USER_ROLE)
+            self._apply_byte_range_metadata(key_item, node_path)
             key_item.setEditable(False)
             val_item.setEditable(False)
             type_item.setEditable(False)
             parent.appendRow([key_item, val_item, type_item])
             for i, v in enumerate(obj):
-                self._build_items(key_item, v, str(i))
+                self._build_items(key_item, v, str(i), node_path)
 
         elif isinstance(obj, bytes):
             key_item = QStandardItem(str(key))
             val_item = QStandardItem(f"<BLOB {len(obj):,} B>")
             type_item = QStandardItem("bytes")
             key_item.setData(_ObjRef(obj), _USER_ROLE)
+            self._apply_byte_range_metadata(key_item, node_path)
             key_item.setEditable(False)
             val_item.setEditable(False)
             type_item.setEditable(False)
@@ -168,10 +250,26 @@ class TreeViewer(QWidget):
             val_item = QStandardItem(str(obj))
             type_item = QStandardItem(type_name)
             key_item.setData(_ObjRef(obj), _USER_ROLE)
+            self._apply_byte_range_metadata(key_item, node_path)
             key_item.setEditable(False)
             val_item.setEditable(False)
             type_item.setEditable(False)
             parent.appendRow([key_item, val_item, type_item])
+
+    def _apply_byte_range_metadata(
+        self,
+        item: QStandardItem,
+        path: tuple[str, ...],
+    ) -> None:
+        meta = self._byte_ranges_by_path.get(path)
+        if meta is None:
+            return
+        byte_range = meta.get("byte_range")
+        if _valid_byte_range(byte_range):
+            item.setData(byte_range, _BYTE_RANGE_ROLE)
+        highlight_ranges = meta.get("highlight_ranges")
+        if isinstance(highlight_ranges, list):
+            item.setData(highlight_ranges, _BYTE_HIGHLIGHT_RANGES_ROLE)
 
     @staticmethod
     def _make_blob(obj: Any) -> bytes:
