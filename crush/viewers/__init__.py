@@ -37,7 +37,14 @@ def _register_builtin_viewers() -> None:
     ViewerRegistry.register("mmkv", lambda r, n, v, p: MMKVViewer(r.data, p))
 
     from crush.viewers.multi_log_viewer import MultiLogViewer
-    ViewerRegistry.register("multi_log", lambda r, n, v, p: MultiLogViewer(n, v, p))
+    # p is always the owning MainWindow (see viewer_factory.make_viewer's one
+    # caller) -- pass its window id through so this viewer's background
+    # workers can be attributed to it, same as the explicit "Open as Multi-
+    # Log Studio" path in MainWindow._open_multi_log_window.
+    ViewerRegistry.register(
+        "multi_log",
+        lambda r, n, v, p: MultiLogViewer(n, v, p, window_id=getattr(p, "_window_id", None)),
+    )
 
     try:
         from crush.viewers.media_viewer import MediaViewer

@@ -8,6 +8,7 @@ import time
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 import logging
 import shutil
@@ -53,6 +54,7 @@ import crush
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS
 from crush.parsers.base import ParseResult
 from crush.core.session import Session
+from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFilter
 from crush.ui.fs_panel import FilesystemPanel
 from crush.ui.props_panel import PropertiesPanel
 from crush.ui.loading_dialog import LoadingDialog
@@ -70,6 +72,7 @@ class _LoadSourceWorker(QObject):
         integrity: bool,
         itunes_zip_prefix: str | None = None,
         password: str = "",
+        window_id: str | None = None,
     ) -> None:
         super().__init__()
         self._session = session
@@ -77,8 +80,13 @@ class _LoadSourceWorker(QObject):
         self._integrity = integrity
         self._itunes_zip_prefix = itunes_zip_prefix
         self._password = password
+        self._window_id = window_id
 
     def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _run(self) -> None:
         from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 
         try:
@@ -235,7 +243,9 @@ class _ExportWorker(QObject):
     finished = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool) -> None:
+    def __init__(
+        self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None
+    ) -> None:
         super().__init__()
         self._vfs = vfs
         self._node = node
@@ -244,8 +254,13 @@ class _ExportWorker(QObject):
         self._hash_lines: list[str] = []
         self._hash_base: Path | None = None
         self._logger = logging.getLogger(__name__)
+        self._window_id = window_id
 
     def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _run(self) -> None:
         try:
             target_root = self._dest_dir / _safe_name(self._node.name or "export")
             self._hash_base = target_root if self._node.is_dir else target_root.parent
@@ -310,14 +325,19 @@ class _ExportLogarchiveWorker(QObject):
     finished = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, vfs: VFS, node: VFSNode, dest_path: str) -> None:
+    def __init__(self, vfs: VFS, node: VFSNode, dest_path: str, window_id: str | None = None) -> None:
         super().__init__()
         self._vfs = vfs
         self._node = node
         self._dest_path = Path(dest_path)
         self._logger = logging.getLogger(__name__)
+        self._window_id = window_id
 
     def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _run(self) -> None:
         try:
             from crush.parsers.unified_log_parser import build_logarchive_from_acquisition
             with tempfile.TemporaryDirectory(prefix="crush_logarchive_") as tmp:
@@ -343,6 +363,7 @@ class _ExportMultiWorker(QObject):
         dest_dir: str,
         integrity: bool,
         filter_text: str,
+        window_id: str | None = None,
     ) -> None:
         super().__init__()
         self._entries = entries
@@ -351,8 +372,13 @@ class _ExportMultiWorker(QObject):
         self._filter_text = filter_text
         self._hash_lines: list[str] = []
         self._logger = logging.getLogger(__name__)
+        self._window_id = window_id
 
     def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _run(self) -> None:
         try:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             export_root = self._dest_dir / f"crush-export-{stamp}"
@@ -422,6 +448,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAcceptDrops(True)
+        self._window_id = uuid.uuid4().hex[:8]
         self._open_windows.append(self)
         self.destroyed.connect(self._remove_window_reference)
         self.session = Session()
@@ -514,7 +541,7 @@ class MainWindow(QMainWindow):
         self._show_empty_view()
 
         # Left dock: filesystem panel
-        self._fs_panel = FilesystemPanel(self.session, self)
+        self._fs_panel = FilesystemPanel(self.session, self, window_id=self._window_id)
         self._fs_panel.node_activated.connect(self._open_node)
         self._fs_panel.node_selected.connect(self._on_node_selected)
         self._fs_panel.open_requested.connect(self._open_node_mode)
@@ -791,7 +818,8 @@ class MainWindow(QMainWindow):
 
         self._load_thread = QThread(self)
         self._load_worker = _LoadSourceWorker(
-            self.session, path, self.session.integrity_mode, itunes_zip_prefix, password
+            self.session, path, self.session.integrity_mode, itunes_zip_prefix, password,
+            window_id=self._window_id,
         )
         self._load_worker.moveToThread(self._load_thread)
         self._load_thread.started.connect(self._load_worker.run)
@@ -960,7 +988,9 @@ class MainWindow(QMainWindow):
         self._export_progress.show()
 
         self._export_thread = QThread(self)
-        self._export_worker = _ExportWorker(vfs, node, dest_dir, self.session.integrity_mode)
+        self._export_worker = _ExportWorker(
+            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id
+        )
         self._export_worker.moveToThread(self._export_thread)
         self._export_thread.started.connect(self._export_worker.run)
         self._export_worker.finished.connect(self._on_export_finished)
@@ -993,7 +1023,8 @@ class MainWindow(QMainWindow):
         self._export_progress.show()
         self._export_thread = QThread(self)
         self._export_worker = _ExportMultiWorker(
-            entries, dest_dir, self.session.integrity_mode, filter_text
+            entries, dest_dir, self.session.integrity_mode, filter_text,
+            window_id=self._window_id,
         )
         self._export_worker.moveToThread(self._export_thread)
         self._export_thread.started.connect(self._export_worker.run)
@@ -1061,7 +1092,9 @@ class MainWindow(QMainWindow):
         self._logarchive_progress.show()
 
         self._logarchive_thread = QThread(self)
-        self._logarchive_worker = _ExportLogarchiveWorker(vfs, node, str(dest_path))
+        self._logarchive_worker = _ExportLogarchiveWorker(
+            vfs, node, str(dest_path), window_id=self._window_id
+        )
         self._logarchive_worker.moveToThread(self._logarchive_thread)
         self._logarchive_thread.started.connect(self._logarchive_worker.run)
         self._logarchive_worker.finished.connect(self._on_logarchive_finished)
@@ -1095,6 +1128,10 @@ class MainWindow(QMainWindow):
 
     def _open_node(self, node: VFSNode, vfs: VFS) -> None:
         """Called when the user double-clicks a file in the FS panel."""
+        with window_log_scope(self._window_id):
+            self._open_node_impl(node, vfs)
+
+    def _open_node_impl(self, node: VFSNode, vfs: VFS) -> None:
         self._hash_node_if_integrity(node, vfs)
         import crush.parsers  # noqa: F401 — triggers parser registration
         from crush.core.registry import ParserRegistry
@@ -1127,6 +1164,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Parse error", str(exc))
 
     def _open_node_mode(self, node: VFSNode, vfs: VFS, mode: str) -> None:
+        with window_log_scope(self._window_id):
+            self._open_node_mode_impl(node, vfs, mode)
+
+    def _open_node_mode_impl(self, node: VFSNode, vfs: VFS, mode: str) -> None:
         if mode == "hex":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.base import ParseResult
@@ -1423,7 +1464,7 @@ class MainWindow(QMainWindow):
         independent top-level window in the OS task bar.
         """
         from crush.viewers.multi_log_viewer import MultiLogViewer
-        viewer = MultiLogViewer(node, vfs, parent=None)
+        viewer = MultiLogViewer(node, vfs, parent=None, window_id=self._window_id)
         viewer.setWindowFlags(Qt.WindowType.Window)
         viewer.setWindowTitle(f"Multi-Log Studio — {node.name}")
         viewer.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -1498,6 +1539,19 @@ class MainWindow(QMainWindow):
         (the tab's short, technical dedup path) since a SQL query can be
         arbitrarily long and shouldn't bloat the path or tab tooltip.
         """
+        with window_log_scope(self._window_id):
+            self._open_bytes_with_format_impl(
+                data, filename_hint, parser_display_name, source_path, extra_metadata
+            )
+
+    def _open_bytes_with_format_impl(
+        self,
+        data: bytes,
+        filename_hint: str,
+        parser_display_name: object,
+        source_path: str = "",
+        extra_metadata: dict[str, str] | None = None,
+    ) -> None:
         import crush.parsers  # noqa: F401 — ensures all parsers are registered
         from crush.core.registry import ParserRegistry
         from crush.core.vfs import BytesVFS
@@ -1576,6 +1630,12 @@ class MainWindow(QMainWindow):
         self, data: bytes, name: str, source_path: str = ""
     ) -> None:
         """Open in-memory bytes (e.g. a BLOB cell) as a new tab using the best parser."""
+        with window_log_scope(self._window_id):
+            self._open_bytes_as_artifact_impl(data, name, source_path)
+
+    def _open_bytes_as_artifact_impl(
+        self, data: bytes, name: str, source_path: str = ""
+    ) -> None:
         import crush.parsers  # noqa: F401 — triggers parser registration
         from crush.core.registry import ParserRegistry
         from crush.core.vfs import BytesVFS
@@ -2462,22 +2522,35 @@ class MainWindow(QMainWindow):
         self._export_thread = None
 
     def _setup_logging(self) -> None:
-        self._logger = logging.getLogger("crush")
+        self._raw_logger = logging.getLogger("crush")
         level_name = os.getenv("CRUSH_LOG_LEVEL", "INFO").upper()
         level = logging.getLevelName(level_name)
         if not isinstance(level, int):
             level = logging.INFO
-        self._logger.setLevel(level)
+        self._raw_logger.setLevel(level)
         self._log_level = level
-        self._logger.propagate = False
+        self._raw_logger.propagate = False
+        # Every self._logger.info/debug/warning/error(...) call in this window
+        # is auto-tagged with this window's id, so the on-screen log pane can
+        # tell its own messages apart from other windows' without touching
+        # each call site individually.
+        self._logger = logging.LoggerAdapter(self._raw_logger, {"window_id": self._window_id})
 
         self._log_signal_handler = _LogSignalHandler()
         self._log_signal_handler.setLevel(level)
         self._log_signal_handler.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(message)s")
         )
+        # These two filters make the on-screen log pane window-specific: the
+        # stamp filter fills in window_id for records that don't already carry
+        # one (worker-thread output via the registry, or a best-effort active-
+        # window guess for other synchronous/GUI-thread callers), and the gate
+        # filter then only lets this window see its own records (plus
+        # unattributable ones).
+        self._log_signal_handler.addFilter(WindowStampFilter())
+        self._log_signal_handler.addFilter(WindowLogFilter(self._window_id))
         self._log_signal_handler.log_line.connect(self._append_log_line)
-        self._logger.addHandler(self._log_signal_handler)
+        self._raw_logger.addHandler(self._log_signal_handler)
 
         self._file_handler: logging.FileHandler | None = None
         self._set_log_path(self._default_log_path())
@@ -2490,14 +2563,14 @@ class MainWindow(QMainWindow):
     def _set_log_path(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         if self._file_handler:
-            self._logger.removeHandler(self._file_handler)
+            self._raw_logger.removeHandler(self._file_handler)
             self._file_handler.close()
         self._file_handler = logging.FileHandler(path, encoding="utf-8")
         self._file_handler.setLevel(getattr(self, "_log_level", logging.INFO))
         self._file_handler.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(message)s")
         )
-        self._logger.addHandler(self._file_handler)
+        self._raw_logger.addHandler(self._file_handler)
         self._log_path = path
         self._status.showMessage(f"Logging to: {path}")
 
