@@ -1691,6 +1691,65 @@ def _make_atx_lzfs_bytes() -> bytes:
     return b"AAPL\r\n\x1a\n" + _make_atx_head_chunk(width=4, height=4) + lzfs_chunk
 
 
+def _make_ktx_bytes(
+    width: int = 4,
+    height: int = 4,
+    gl_internal_format: int = 0x93B0,
+    compressed: bool = False,
+    key_values: bytes = b"",
+    little_endian: bool = True,
+) -> bytes:
+    """Build a KTX 1.1 file the way iOS writes them.
+
+    Layout follows the Khronos KTX 1.1 specification. The Apple LZFSE variant
+    carries `imageSize`, then an `LZFS` marker, then the compressed block size,
+    then the LZFSE block itself.
+    """
+    blocks = -(-width // 4) * (-(-height // 4))
+    astc = bytes(blocks * 16)
+    order = "<" if little_endian else ">"
+    header = (
+        b"\xabKTX 11\xbb\r\n\x1a\n"
+        + (b"\x01\x02\x03\x04" if little_endian else b"\x04\x03\x02\x01")
+        + struct.pack(
+            order + "12I",
+            0,                    # glType (0 for compressed textures)
+            1,                    # glTypeSize
+            0,                    # glFormat
+            gl_internal_format,
+            0x1908,               # glBaseInternalFormat (GL_RGBA)
+            width,
+            height,
+            0,                    # pixelDepth
+            0,                    # numberOfArrayElements
+            1,                    # numberOfFaces
+            1,                    # numberOfMipmapLevels
+            len(key_values),
+        )
+    )
+    if compressed:
+        import liblzfse
+        block = liblzfse.compress(astc)
+        body = (
+            struct.pack(order + "I", len(block) + 8)
+            + b"LZFS"
+            + struct.pack(order + "I", len(block))
+            + block
+        )
+    else:
+        body = struct.pack(order + "I", len(astc)) + astc
+    return header + key_values + body
+
+
+def _ktx_apple_key_values() -> bytes:
+    """A key/value block carrying the Compression_APPLE entry iOS writes."""
+    out = b""
+    for key, value in ((b"ColorSpace_APPLE", b"1"), (b"Compression_APPLE", b"1")):
+        entry = key + b"\x00" + value + b"\x00"
+        out += struct.pack("<I", len(entry)) + entry
+        out += b"\x00" * ((-len(entry)) % 4)
+    return out
+
 def test_abx_decode_unknown_value_type_reports_error() -> None:
     # START_TAG with an unassigned type nibble (0xE0) instead of a real ABX type.
     magic = b"ABX\x00"
@@ -1866,6 +1925,124 @@ def test_image_parser_atx_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Height"] == 4
     assert result.metadata["Pixel format"] == "ASTC 4x4"
     assert result.metadata["Decode status"] == "Decoded ATX to PNG"
+
+
+def test_image_parser_can_parse_ktx_magic(tmp_path: Path) -> None:
+    ktx_path = tmp_path / "snapshot.bin"
+    ktx_path.write_bytes(_make_ktx_bytes())
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "snapshot.bin")
+
+    assert ImageParser().can_parse(node.path, vfs.peek(node))
+
+
+def test_image_parser_ktx_image_decode(tmp_path: Path) -> None:
+    pytest.importorskip("astc_decomp_faster")
+    ktx_path = tmp_path / "snapshot.ktx"
+    ktx_path.write_bytes(_make_ktx_bytes(width=8, height=4))
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "snapshot.ktx")
+    result = ImageParser().parse(node, vfs)
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Format"] == "KTX"
+    assert result.metadata["Width"] == 8
+    assert result.metadata["Height"] == 4
+    assert result.metadata["Payload"] == "ASTC"
+    assert result.metadata["Decode status"] == "Decoded KTX to PNG"
+
+
+def test_image_parser_ktx_lzfse_image_decode(tmp_path: Path) -> None:
+    pytest.importorskip("astc_decomp_faster")
+    pytest.importorskip("liblzfse")
+    ktx_path = tmp_path / "snapshot.ktx"
+    ktx_path.write_bytes(
+        _make_ktx_bytes(width=8, height=8, compressed=True, key_values=_ktx_apple_key_values())
+    )
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "snapshot.ktx")
+    result = ImageParser().parse(node, vfs)
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Format"] == "KTX"
+    assert result.metadata["Payload"] == "LZFSE-compressed ASTC"
+    assert "Compression_APPLE" in result.metadata["Key/value entries"]
+    assert result.metadata["Decode status"] == "Decoded KTX to PNG"
+
+
+def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Path) -> None:
+    # 0x881A is GL_RGBA16F, not ASTC — it must not be decoded as an ASTC 4x4 texture.
+    ktx_path = tmp_path / "texture.ktx"
+    ktx_path.write_bytes(_make_ktx_bytes(width=8, height=8, gl_internal_format=0x881A))
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "texture.ktx")
+    result = ImageParser().parse(node, vfs)
+
+    assert result.viewer_type == "text"
+    assert result.metadata["Format"] == "KTX"
+    assert result.metadata["Pixel format"] == "Unsupported (glInternalFormat 0x881A)"
+    assert result.metadata["Decode status"] == "KTX metadata parsed; image decode unavailable"
+
+
+def test_ktx_big_endian_decodes_to_the_same_pixels() -> None:
+    # No file in any tested extraction is big-endian, so this branch is exercised
+    # with a constructed file rather than a real one.
+    pytest.importorskip("astc_decomp_faster")
+    from crush.parsers.apple_ktx import decode_ktx
+
+    little = decode_ktx(_make_ktx_bytes(width=8, height=4))
+    big = decode_ktx(_make_ktx_bytes(width=8, height=4, little_endian=False))
+
+    assert little.header is not None and little.header.little_endian
+    assert big.header is not None and not big.header.little_endian
+    assert big.header.width == 8 and big.header.height == 4
+    assert little.image is not None and big.image is not None
+    assert little.image.pixels == big.image.pixels
+
+
+def test_ktx_mislabelled_byte_order_is_refused_not_guessed() -> None:
+    from crush.parsers.apple_ktx import decode_ktx
+
+    data = bytearray(_make_ktx_bytes(little_endian=False))
+    data[12:16] = b"\x01\x02\x03\x04"  # claim little-endian over big-endian fields
+    result = decode_ktx(bytes(data))
+
+    assert result.image is None
+    assert any("unsupported KTX pixel format" in w for w in result.warnings)
+
+
+def test_ktx_rejects_other_versions() -> None:
+    from crush.parsers.apple_ktx import decode_ktx
+
+    result = decode_ktx(b"\xabKTX 20\xbb\r\n\x1a\n" + bytes(64))
+
+    assert result.header is None
+    assert result.image is None
+    assert result.warnings == ("Unsupported KTX version",)
+
+
+def test_ktx_rejects_atx_container() -> None:
+    from crush.parsers.apple_ktx import decode_ktx
+
+    result = decode_ktx(_make_atx_metadata_bytes())
+
+    assert result.header is None
+    assert result.warnings == ("Not a KTX 1.1 file",)
+
+
+def test_ktx_truncated_key_value_block_warns_without_raising() -> None:
+    from crush.parsers.apple_ktx import decode_ktx
+
+    truncated = _make_ktx_bytes(key_values=_ktx_apple_key_values())[:70]
+    result = decode_ktx(truncated)
+
+    assert result.header is not None
+    assert result.image is None
+    assert any("key/value" in w.lower() for w in result.warnings)
 
 # ---------------------------------------------------------------------------
 # HexFallbackParser — format identification via FormatDatabase
