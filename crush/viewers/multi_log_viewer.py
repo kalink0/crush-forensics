@@ -87,6 +87,7 @@ import time
 from crush.core.log_db import FilterSpec, LogDatabase, _INSERT_SQL, _ts_to_unix, _unix_to_ts
 
 from crush.core.vfs import VFS, VFSNode
+from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _log = logging.getLogger("crush")
@@ -583,6 +584,7 @@ class LogLoaderWorker(QThread):
         profile:   Any = None,
         parent:    QWidget | None = None,
         temp_dir:  str | None = None,
+        window_id: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._node        = node
@@ -593,6 +595,7 @@ class LogLoaderWorker(QThread):
         self._profile     = profile
         self._cancel_flag = False
         self._converter: Any = None
+        self._window_id   = window_id
 
     def cancel(self) -> None:
         self._cancel_flag = True
@@ -657,6 +660,10 @@ class LogLoaderWorker(QThread):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _run(self) -> None:
         self._cancel_flag = False
         con = LogDatabase.open_worker_connection(self._db_path)
         try:
@@ -1202,8 +1209,14 @@ class MultiLogViewer(QWidget):
         node: VFSNode,
         vfs: VFS,
         parent: QWidget | None = None,
+        window_id: str | None = None,
     ) -> None:
         super().__init__(parent)
+        self._window_id           = window_id
+        # Tags every self._logger.info/error(...) call below with this
+        # window's id, so a Multi-Log Studio window opened from window A
+        # doesn't show its loading/error messages in window B's log pane too.
+        self._logger              = logging.LoggerAdapter(_log, {"window_id": window_id})
         self._db                 = LogDatabase()
         self._model              = MultiLogModel(self._db, self)
         self._display_tz: tzinfo = timezone.utc
@@ -1266,9 +1279,12 @@ class MultiLogViewer(QWidget):
         self._load_start_times[sid] = time.monotonic()
         self._model.register_source(sid, node.name, color)
         self._add_source_chip(sid, node.name, color)
-        _log.info("[Multi-Log] Loading: %s", node.name)
+        self._logger.info("[Multi-Log] Loading: %s", node.name)
 
-        worker = LogLoaderWorker(node, vfs, sid, self._db.path, parent=self, temp_dir=self._log_temp_dir())
+        worker = LogLoaderWorker(
+            node, vfs, sid, self._db.path, parent=self, temp_dir=self._log_temp_dir(),
+            window_id=self._window_id,
+        )
         worker.progress.connect(self._on_progress)
         worker.load_finished.connect(self._on_load_finished)
         worker.error.connect(self._on_error)
@@ -1611,7 +1627,7 @@ class MultiLogViewer(QWidget):
         if not self._status_anim_timer.isActive():
             self._status_anim_timer.start()
         src_name = self._model.source_name(source_id)
-        _log.info("[Multi-Log] %s — %s", src_name, text)
+        self._logger.info("[Multi-Log] %s — %s", src_name, text)
 
     def _on_status_anim_tick(self) -> None:
         color = self._status_anim_colors[
@@ -1634,7 +1650,7 @@ class MultiLogViewer(QWidget):
         elapsed = time.monotonic() - self._load_start_times.pop(source_id, time.monotonic())
         src_name = self._model.source_name(source_id)
         total = metadata.get("Total entries", str(self._model.total_count()))
-        _log.info(
+        self._logger.info(
             "[Multi-Log] %s — %s entries loaded (%s) in %.1fs",
             src_name, total, fmt, elapsed,
         )
@@ -1674,7 +1690,7 @@ class MultiLogViewer(QWidget):
         self._stop_status_anim()
         src_name = self._model.source_name(source_id) or "?"
         self._fmt_label.setText(f"Error ({src_name}): {message}")
-        _log.error("[Multi-Log] Error loading %s: %s", src_name, message)
+        self._logger.error("[Multi-Log] Error loading %s: %s", src_name, message)
         if all(not w.isRunning() for w in self._workers.values()):
             self._progress.setVisible(False)
 
@@ -1723,7 +1739,8 @@ class MultiLogViewer(QWidget):
 
         # Launch a fresh worker with the custom profile
         worker = LogLoaderWorker(
-            node, vfs, source_id, self._db.path, profile=profile, parent=self, temp_dir=self._log_temp_dir()
+            node, vfs, source_id, self._db.path, profile=profile, parent=self,
+            temp_dir=self._log_temp_dir(), window_id=self._window_id,
         )
         worker.progress.connect(self._on_progress)
         worker.load_finished.connect(self._on_load_finished)

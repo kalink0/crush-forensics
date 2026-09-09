@@ -23,6 +23,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import QWidget
 
 from crush.ui.loading_dialog import LoadingDialog
+from crush.ui.log_scope import window_log_scope
 
 # Strong references to in-flight (dialog, thread, worker) tuples, keyed by
 # the owning widget's id(). QThread/QObject don't keep themselves alive --
@@ -36,11 +37,16 @@ class _BusyWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, work_fn: Callable[[], object]) -> None:
+    def __init__(self, work_fn: Callable[[], object], window_id: str | None = None) -> None:
         super().__init__()
         self._work_fn = work_fn
+        self._window_id = window_id
 
     def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _run(self) -> None:
         try:
             result = self._work_fn()
         except Exception as exc:  # noqa: BLE001 - reported to caller, not swallowed
@@ -101,7 +107,13 @@ def run_with_busy_dialog(
     """
     dialog = LoadingDialog(text, owner)
     thread = QThread(owner)
-    worker = _BusyWorker(work_fn)
+    # owner.window() deterministically walks the real Qt parent chain to the
+    # top-level window *owner* lives in -- unlike guessing from OS focus,
+    # this can't attribute work_fn's log output (if any) to the wrong window
+    # when more than one is open. Falls back to no attribution (shown in
+    # every window's pane) only if owner isn't parented under a MainWindow.
+    window_id = getattr(owner.window(), "_window_id", None)
+    worker = _BusyWorker(work_fn, window_id=window_id)
     worker.moveToThread(thread)
 
     key = id(owner)
