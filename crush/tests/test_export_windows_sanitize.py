@@ -16,13 +16,47 @@ media from Linux or macOS. Every rename must be logged and recorded in a
 """
 from __future__ import annotations
 
-from pathlib import Path
+import io
+from typing import IO
 
 import pytest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from crush.core.vfs import DirectoryVFS
+from crush.core.vfs import VFS, DirectoryVFS, VFSNode
 from crush.ui.main_window import MainWindow, _safe_name
+
+
+class _FakeVFS(VFS):
+    """A VFS not backed by a real OS path.
+
+    A DirectoryVFS can't stand in for a source containing a name that's
+    invalid on the *current* host filesystem: on Windows, writing a file
+    literally named "weird:name?.txt" doesn't create that name at all —
+    the colon is parsed as an NTFS Alternate Data Stream separator, so the
+    "unsafe" name a test tries to construct silently vanishes before the
+    code under test ever sees it. Forensic VFS names (archive members,
+    mobile-backup entries, parsed records) commonly aren't real host paths
+    either, so this fake matches that shape.
+    """
+
+    def __init__(self, root_node: VFSNode, contents: dict[str, bytes]) -> None:
+        self._root = root_node
+        self._contents = contents
+
+    def root(self) -> VFSNode:
+        return self._root
+
+    def read(self, node: VFSNode) -> bytes:
+        return self._contents[node.path]
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        return io.BytesIO(self._contents[node.path])
+
+    def file_count(self, node: VFSNode) -> int:
+        return 1 if not node.is_dir else len(node.children)
+
+    def total_size(self, node: VFSNode) -> int:
+        return node.size
 
 
 @pytest.mark.parametrize(
@@ -66,18 +100,17 @@ def test_safe_name_handles_empty_and_dot_names() -> None:
     assert _safe_name("..") == ("_", True)
 
 
-def _make_source_with_unsafe_name(tmp_path: Path) -> tuple[Path, "DirectoryVFS"]:
-    source_dir = tmp_path / "source"
-    source_dir.mkdir()
-    (source_dir / "weird:name?.txt").write_text("payload")
-    vfs = DirectoryVFS(source_dir)
-    return source_dir, vfs
+def _make_fake_source_with_unsafe_name() -> tuple[VFSNode, _FakeVFS]:
+    child = VFSNode(name="weird:name?.txt", path="/source/weird:name?.txt", is_dir=False, size=7)
+    root = VFSNode(name="source", path="/source", is_dir=True, children=[child])
+    vfs = _FakeVFS(root, {child.path: b"payload"})
+    return root, vfs
 
 
 def test_export_node_sanitizes_unsafe_child_names_and_records_renames(
     qapp, tmp_path, monkeypatch
 ) -> None:
-    source_dir, vfs = _make_source_with_unsafe_name(tmp_path)
+    root, vfs = _make_fake_source_with_unsafe_name()
     dest_dir = tmp_path / "dest"
     dest_dir.mkdir()
 
@@ -86,14 +119,14 @@ def test_export_node_sanitizes_unsafe_child_names_and_records_renames(
 
     win = MainWindow()
     try:
-        win._export_node(vfs.root(), vfs)
+        win._export_node(root, vfs)
         win._export_thread.wait(5000)
         qapp.processEvents()
 
-        target_root = dest_dir / source_dir.name
+        target_root = dest_dir / root.name
         exported = target_root / "weird_name_.txt"
         assert exported.exists()
-        assert exported.read_text() == "payload"
+        assert exported.read_bytes() == b"payload"
 
         renames = (target_root / "crush-export-renames.txt").read_text()
         assert "weird:name?.txt" in renames
