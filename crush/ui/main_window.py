@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import time
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -253,6 +254,7 @@ class _ExportWorker(QObject):
         self._integrity = integrity
         self._hash_lines: list[str] = []
         self._hash_base: Path | None = None
+        self._rename_lines: list[str] = []
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
 
@@ -262,7 +264,10 @@ class _ExportWorker(QObject):
 
     def _run(self) -> None:
         try:
-            target_root = self._dest_dir / _safe_name(self._node.name or "export")
+            root_name, changed = _safe_name(self._node.name or "export")
+            target_root = self._dest_dir / root_name
+            if changed:
+                self._record_rename(self._node.path, target_root)
             self._hash_base = target_root if self._node.is_dir else target_root.parent
             if self._node.is_dir:
                 self._export_dir(self._node, target_root)
@@ -270,15 +275,39 @@ class _ExportWorker(QObject):
                 target_root.parent.mkdir(parents=True, exist_ok=True)
                 self._export_file(self._node, target_root)
             self._write_hashes_file(target_root)
+            self._write_renames_file(target_root)
         except Exception as exc:
             self.failed.emit(str(exc))
             return
         self.finished.emit(str(target_root))
 
+    def _record_rename(self, original_path: str, sanitized_target: Path) -> None:
+        self._rename_lines.append(f"{original_path}\t->\t{sanitized_target}")
+        self._logger.warning(
+            "Export: sanitized name for Windows-safe filesystem compatibility: %s -> %s",
+            original_path, sanitized_target,
+        )
+
+    def _write_renames_file(self, target_root: Path) -> None:
+        if not self._rename_lines:
+            return
+        base = self._hash_base if self._hash_base is not None else target_root.parent
+        header = (
+            "# Names below contained characters invalid on Windows filesystems\n"
+            "# (or were reserved device names) and were sanitized for export.\n"
+            "# original evidence path -> exported filesystem path\n"
+        )
+        (base / "crush-export-renames.txt").write_text(
+            header + "\n".join(self._rename_lines) + "\n", encoding="utf-8"
+        )
+
     def _export_dir(self, node: VFSNode, target: Path) -> None:
         target.mkdir(parents=True, exist_ok=True)
         for child in node.children:
-            child_target = target / _safe_name(child.name)
+            safe_child_name, changed = _safe_name(child.name)
+            child_target = target / safe_child_name
+            if changed:
+                self._record_rename(child.path, child_target)
             if child.is_dir:
                 self._export_dir(child, child_target)
             else:
@@ -371,6 +400,7 @@ class _ExportMultiWorker(QObject):
         self._integrity = integrity
         self._filter_text = filter_text
         self._hash_lines: list[str] = []
+        self._rename_lines: list[str] = []
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
 
@@ -384,15 +414,45 @@ class _ExportMultiWorker(QObject):
             export_root = self._dest_dir / f"crush-export-{stamp}"
             export_root.mkdir(parents=True, exist_ok=True)
             for node, vfs, virtual_path in self._entries:
-                rel = virtual_path.lstrip("/\\")
-                target = export_root / Path(rel)
+                parts = _split_virtual_path(virtual_path)
+                safe_parts = []
+                changed_any = False
+                for part in parts:
+                    safe_part, changed = _safe_name(part)
+                    safe_parts.append(safe_part)
+                    changed_any = changed_any or changed
+                if not safe_parts:
+                    safe_parts = ["_"]
+                target = export_root.joinpath(*safe_parts)
+                if changed_any:
+                    self._record_rename(virtual_path, target)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                self._export_file(node, vfs, target, rel)
+                self._export_file(node, vfs, target, "/".join(safe_parts))
             self._write_hashes_file(export_root, stamp)
+            self._write_renames_file(export_root)
         except Exception as exc:
             self.failed.emit(str(exc))
             return
         self.finished.emit(str(export_root))
+
+    def _record_rename(self, original_path: str, sanitized_target: Path) -> None:
+        self._rename_lines.append(f"{original_path}\t->\t{sanitized_target}")
+        self._logger.warning(
+            "Export: sanitized name for Windows-safe filesystem compatibility: %s -> %s",
+            original_path, sanitized_target,
+        )
+
+    def _write_renames_file(self, export_root: Path) -> None:
+        if not self._rename_lines:
+            return
+        header = (
+            "# Names below contained characters invalid on Windows filesystems\n"
+            "# (or were reserved device names) and were sanitized for export.\n"
+            "# original evidence path -> exported filesystem path\n"
+        )
+        (export_root / "crush-export-renames.txt").write_text(
+            header + "\n".join(self._rename_lines) + "\n", encoding="utf-8"
+        )
 
     def _export_file(self, node: VFSNode, vfs: VFS, target: Path, rel_path: str) -> None:
         if not self._integrity:
@@ -429,11 +489,38 @@ class _ExportMultiWorker(QObject):
         )
 
 
-def _safe_name(name: str) -> str:
-    cleaned = name.replace("/", "_").replace("\\", "_").strip()
+# Characters NTFS/Windows reject outright, plus C0 control characters.
+# Sanitized unconditionally (not only when os.name == "nt") so an export
+# also stays usable on exFAT/NTFS media mounted from Linux or macOS.
+_WINDOWS_INVALID_CHARS_RE = re.compile(r'[<>:"|?*\x00-\x1f]')
+_WINDOWS_RESERVED_STEMS = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(10)),
+    *(f"LPT{i}" for i in range(10)),
+}
+
+
+def _safe_name(name: str) -> tuple[str, bool]:
+    """Sanitize a single path component for cross-platform export.
+
+    Returns (sanitized_name, was_changed) — callers must log/record any
+    change themselves so a renamed export entry is never silent (forensic
+    traceability back to the original evidence name).
+    """
+    original = name
+    cleaned = name.replace("/", "_").replace("\\", "_")
+    cleaned = _WINDOWS_INVALID_CHARS_RE.sub("_", cleaned)
+    cleaned = cleaned.strip().rstrip(". ")
     if cleaned in {"", ".", ".."}:
-        return "_"
-    return cleaned
+        cleaned = "_"
+    elif cleaned.split(".", 1)[0].upper() in _WINDOWS_RESERVED_STEMS:
+        cleaned = f"_{cleaned}"
+    return cleaned, cleaned != original
+
+
+def _split_virtual_path(virtual_path: str) -> list[str]:
+    rel = virtual_path.lstrip("/\\")
+    return [p for p in re.split(r"[\\/]+", rel) if p not in ("", ".")]
 
 
 class MainWindow(QMainWindow):
@@ -962,7 +1049,8 @@ class MainWindow(QMainWindow):
         if not dest_dir:
             return
 
-        target_root = Path(dest_dir) / _safe_name(node.name or "export")
+        safe_root_name, _ = _safe_name(node.name or "export")
+        target_root = Path(dest_dir) / safe_root_name
         if target_root.exists():
             reply = QMessageBox.question(
                 self,
@@ -1069,8 +1157,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Export", "An export is already running.")
             return
 
-        archive_name = node.name if node.name.endswith(".logarchive") else f"{node.name}.logarchive"
+        safe_base, changed = _safe_name(node.name)
+        archive_name = safe_base if safe_base.endswith(".logarchive") else f"{safe_base}.logarchive"
         dest_path = Path(dest_dir) / archive_name
+        if changed:
+            self._logger.warning(
+                "Export: sanitized name for Windows-safe filesystem compatibility: %s -> %s",
+                node.path, dest_path,
+            )
         if dest_path.exists():
             reply = QMessageBox.question(
                 self,
