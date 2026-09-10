@@ -1846,6 +1846,460 @@ def _decode_timestamp(val: int) -> str:
         return str(val)
 
 
+# ---------------------------------------------------------------------------
+# Byte-provenance decoders — siblings of the value decoders above, computed
+# independently (re-deriving offsets from the same header fields, never
+# reusing a value decoder's internal state) so this section stays purely
+# additive: a bug here can affect only where the Hex pane highlights, never
+# what a value actually decodes to. See PRIORITY TODO: value byte
+# provenance for the wider plan this implements the Realm half of.
+# ---------------------------------------------------------------------------
+
+def _ref_target_extent(data: bytes, ref: int) -> tuple[int, int] | None:
+    """Byte range of one Realm array node's own header + immediate payload
+    (not recursively its children, if it's an inner B+-tree node) -- used
+    to point at "where a List/Set/Dictionary's own top structure lives" as
+    a single, unambiguous (if coarse) location, without walking every leaf
+    of a row's own nested tree.
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None:
+        return None
+    return (ref, ref + 8 + hdr["Payload bytes (raw)"])
+
+
+def _scalar_leaf_ranges(
+    data: bytes, col_offset: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Byte range of each element in a flat Realm scalar array (mirrors
+    _read_scalar_leaf's index math). Bit-packed sub-byte storage (width < 8,
+    scheme 0 -- common for small Int/Bool/Link columns, e.g. a sequential
+    primary key) still gets a range: the single byte containing that row's
+    bits. That byte may be shared with neighboring rows (up to 8/width rows
+    pack into one byte), but it is never a guess -- those bits really are
+    in there -- and byte is the hex view's own display granularity, so
+    there is no narrower unit to point at. None only for width == 0 (no
+    storage at all -- every value is the implicit constant 0).
+    """
+    hdr = _parse_array_header(data, col_offset)
+    if hdr is None:
+        return None
+    count = hdr["Element count (size)"]
+    if count == 0:
+        return []
+    width = hdr["width"]
+    scheme = hdr["width_scheme"]
+    payload_start = col_offset + 8
+    if scheme == 0 and 0 < width < 8:
+        return [
+            (
+                payload_start + (i * width) // 8,
+                payload_start + (i * width) // 8 + 1,
+            )
+            for i in range(count)
+        ]
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return [None] * count
+    return [
+        (payload_start + i * eb, payload_start + (i + 1) * eb) for i in range(count)
+    ]
+
+
+def _array_int_null_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_int_null: row i's range is slot i+1 of the same
+    flat array (slot 0 is the null-sentinel, not a row's own value)."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    count = hdr["Element count (size)"]
+    if count == 0:
+        return []
+    ranges = _scalar_leaf_ranges(data, ref, file_size)
+    if not ranges:
+        return None
+    return ranges[1:]
+
+
+def _array_string_short_ranges(ref: int, hdr: dict[str, Any]) -> list[tuple[int, int] | None]:
+    """Mirrors _read_array_string_short: fixed W-byte slots."""
+    width = hdr["width"]
+    count = hdr["Element count (size)"]
+    if width == 0:
+        return [None] * count
+    payload_start = ref + 8
+    return [
+        (payload_start + i * width, payload_start + (i + 1) * width) for i in range(count)
+    ]
+
+
+def _array_small_blobs_ranges(
+    data: bytes, ref: int, hdr: dict[str, Any],
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_small_blobs: row i's bytes are blob[prev:end],
+    from the offsets sub-array -- a null row (nulls[i] nonzero) has no
+    bytes of its own to point at."""
+    if hdr["Element count (size)"] != 3:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    offs_ref = _read_ref(data, ref + 8, 0, eb)
+    blob_ref = _read_ref(data, ref + 8, 1, eb)
+    nulls_ref = _read_ref(data, ref + 8, 2, eb)
+    offsets = _read_uint_array(data, offs_ref)
+    nulls = _read_uint_array(data, nulls_ref)
+    ranges: list[tuple[int, int] | None] = []
+    prev = 0
+    for i, end in enumerate(offsets):
+        is_null = nulls[i] != 0 if i < len(nulls) else False
+        ranges.append(
+            None if is_null or end == prev else (blob_ref + 8 + prev, blob_ref + 8 + end)
+        )
+        prev = end
+    return ranges
+
+
+def _array_big_blobs_ranges(
+    data: bytes, ref: int, hdr: dict[str, Any], file_size: int,
+) -> list[tuple[int, int] | None]:
+    """Mirrors _read_array_big_blobs: row i's bytes are the standalone blob
+    array its own ref points to."""
+    eb = _elem_bytes(hdr)
+    count = hdr["Element count (size)"]
+    if eb < 1:
+        return [None] * count
+    ranges: list[tuple[int, int] | None] = []
+    for i in range(count):
+        blob_ref = _read_ref(data, ref + 8, i, eb)
+        if blob_ref <= 0 or blob_ref >= file_size:
+            ranges.append(None)
+            continue
+        blob_hdr = _parse_array_header(data, blob_ref)
+        if blob_hdr is None:
+            ranges.append(None)
+            continue
+        size = blob_hdr["Element count (size)"]
+        ranges.append((blob_ref + 8, blob_ref + 8 + size))
+    return ranges
+
+
+def _array_string_or_binary_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_string_or_binary's header-driven dispatch."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None:
+        return None
+    if not hdr["has_refs"]:
+        return _array_string_short_ranges(ref, hdr)
+    if not hdr["context_flag"]:
+        return _array_small_blobs_ranges(data, ref, hdr)
+    return _array_big_blobs_ranges(data, ref, hdr, file_size)
+
+
+def _array_timestamp_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[list[tuple[int, int]] | None] | None:
+    """Mirrors _read_array_timestamp: row i's bytes are its seconds slot
+    (ArrayIntNull) plus, when present, its nanoseconds slot -- two
+    independent flat arrays, so up to 2 ranges per row."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] != 2:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    secs_ref = _read_ref(data, ref + 8, 0, eb)
+    nanos_ref = _read_ref(data, ref + 8, 1, eb)
+
+    secs_ranges = _array_int_null_ranges(data, secs_ref, file_size)
+    if secs_ranges is None:
+        return None
+
+    nanos_ranges: list[tuple[int, int] | None] | None = None
+    nanos_hdr = _parse_array_header(data, nanos_ref)
+    if nanos_hdr is not None and not nanos_hdr["has_refs"]:
+        nanos_ranges = _scalar_leaf_ranges(data, nanos_ref, file_size)
+
+    result: list[list[tuple[int, int]] | None] = []
+    for i, sr in enumerate(secs_ranges):
+        if sr is None:
+            result.append(None)
+            continue
+        row: list[tuple[int, int]] = [sr]
+        if nanos_ranges and i < len(nanos_ranges) and nanos_ranges[i] is not None:
+            row.append(nanos_ranges[i])  # type: ignore[arg-type]
+        result.append(row)
+    return result
+
+
+def _array_float_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_float: flat fixed-width (4/8B) array."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"] or hdr["width"] not in (4, 8):
+        return None
+    count = hdr["Element count (size)"]
+    if count == 0:
+        return []
+    elem_size = hdr["width"]
+    payload_start = ref + 8
+    return [
+        (payload_start + i * elem_size, payload_start + (i + 1) * elem_size)
+        for i in range(count)
+    ]
+
+
+def _array_decimal128_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_decimal128: element width 0/4/8/16B."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    width = hdr["width"]
+    count = hdr["Element count (size)"]
+    if width == 0:
+        return [None] * count
+    payload_start = ref + 8
+    return [
+        (payload_start + i * width, payload_start + (i + 1) * width) for i in range(count)
+    ]
+
+
+def _array_fixed_bytes_ranges(
+    data: bytes, ref: int, file_size: int, elem_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_fixed_bytes: elements packed in blocks of 8,
+    with 1 null-bitvector byte prefixing each block. A genuine null still
+    gets a range (its own dedicated bytes, even if they just encode
+    "null") -- only a payload too short to hold this element (truncation)
+    gets None, matching the decoder's own truncation handling.
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    total_bytes = hdr["Element count (size)"]
+    if total_bytes <= 0:
+        return []
+    block_size = elem_size * 8 + 1
+    data_bytes = total_bytes - -(-total_bytes // block_size)
+    n = max(data_bytes // elem_size, 0)
+    ranges: list[tuple[int, int] | None] = []
+    for i in range(n):
+        block_idx, offset = divmod(i, 8)
+        base = block_idx * block_size
+        if base >= total_bytes:
+            ranges.append(None)
+            continue
+        start = base + 1 + offset * elem_size
+        if start + elem_size > total_bytes:
+            ranges.append(None)
+            continue
+        ranges.append((ref + 8 + start, ref + 8 + start + elem_size))
+    return ranges
+
+
+def _array_typed_link_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_array_typed_link: 2 contiguous int64 elements per row
+    (table_key+1, obj_key+1) -- one merged range spanning both."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or hdr["has_refs"]:
+        return None
+    elem_ranges = _scalar_leaf_ranges(data, ref, file_size)
+    if not elem_ranges or len(elem_ranges) % 2 != 0:
+        return None
+    result: list[tuple[int, int] | None] = []
+    for i in range(0, len(elem_ranges), 2):
+        a, b = elem_ranges[i], elem_ranges[i + 1]
+        result.append((a[0], b[1]) if a is not None and b is not None else None)
+    return result
+
+
+def _collection_column_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Coarse byte-provenance for a List/Set column: row i's range is its
+    own collection's top array node (header + immediate payload), not a
+    per-element decomposition -- walking every element's own nested
+    BPlusTree is real extra work left for a later increment (see PRIORITY
+    TODO: value byte provenance). Still an unambiguous, non-guessed
+    location, just coarser-grained than a scalar cell.
+    """
+    hdr = _parse_array_header(data, col_ref)
+    if hdr is None or not hdr["has_refs"]:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    count = hdr["Element count (size)"]
+    ranges: list[tuple[int, int] | None] = []
+    for i in range(count):
+        row_ref = _read_ref(data, col_ref + 8, i, eb)
+        ranges.append(_ref_target_extent(data, row_ref) if 0 < row_ref < file_size else None)
+    return ranges
+
+
+def _dictionary_column_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Coarse byte-provenance for a Dictionary column: row i's range is its
+    own 2-slot "dictionary top" array (see _read_dictionary_column) -- same
+    coarse-grained tradeoff as _collection_column_ranges.
+    """
+    hdr = _parse_array_header(data, col_ref)
+    if hdr is None or not hdr["has_refs"]:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    count = hdr["Element count (size)"]
+    ranges: list[tuple[int, int] | None] = []
+    for i in range(count):
+        top_ref = _read_ref(data, col_ref + 8, i, eb)
+        ranges.append(_ref_target_extent(data, top_ref) if 0 < top_ref < file_size else None)
+    return ranges
+
+
+def _array_mixed_ranges(
+    data: bytes, ref: int, file_size: int,
+) -> list[list[tuple[int, int]] | None] | None:
+    """Byte-provenance for a Mixed column, mirroring _read_array_mixed's
+    dispatch. Every row always gets its own composite-selector cell's
+    range (each row has one dedicated slot there, unlike the shared
+    sub-columns below it) -- for inline-encoded values (Int/Bool whose
+    payload_idx_flag is 0) that slot IS the whole value already. For
+    indirected types, a second range covering the resolved payload cell is
+    added on top when resolvable (List/Set/Dictionary point at their
+    collection's own top structure, same coarse treatment as
+    _collection_column_ranges/_dictionary_column_ranges).
+    """
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] < 4:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+
+    composite_ref = _read_ref(data, ref + 8, 0, eb)
+    ints_ref = _read_ref(data, ref + 8, 1, eb)
+    pairs_ref = _read_ref(data, ref + 8, 2, eb)
+    strings_ref = _read_ref(data, ref + 8, 3, eb)
+    refs_ref = _read_ref(data, ref + 8, 4, eb) if hdr["Element count (size)"] >= 5 else 0
+
+    composite = _read_scalar_leaf(data, composite_ref, file_size)
+    composite_ranges = _scalar_leaf_ranges(data, composite_ref, file_size)
+    if composite is None or composite_ranges is None:
+        return None
+
+    int_ranges = (
+        _scalar_leaf_ranges(data, ints_ref, file_size) if 0 < ints_ref < file_size else None
+    )
+    pair_ranges = (
+        _scalar_leaf_ranges(data, pairs_ref, file_size) if 0 < pairs_ref < file_size else None
+    )
+    ref_vals = (
+        _read_scalar_leaf(data, refs_ref, file_size) if 0 < refs_ref < file_size else None
+    )
+    string_ranges = (
+        _array_string_or_binary_ranges(data, strings_ref, file_size)
+        if 0 < strings_ref < file_size else None
+    )
+
+    def pair_range(idx: int) -> tuple[int, int] | None:
+        if not pair_ranges or idx * 2 + 1 >= len(pair_ranges):
+            return None
+        a, b = pair_ranges[idx * 2], pair_ranges[idx * 2 + 1]
+        return (a[0], b[1]) if a is not None and b is not None else None
+
+    results: list[list[tuple[int, int]] | None] = []
+    for i, val in enumerate(composite):
+        if not val:
+            results.append(None)
+            continue
+        composite_range = composite_ranges[i]
+        row: list[tuple[int, int]] = [composite_range] if composite_range is not None else []
+        val = int(val)
+        data_type = (val & _MIXED_DATA_TYPE_MASK) - 1
+        payload_idx_flag = (val & _MIXED_PAYLOAD_IDX_MASK) >> 5
+        payload_val = val >> _MIXED_DATA_SHIFT
+
+        extra: tuple[int, int] | None = None
+        if data_type in (0, 9, 10, 12) and payload_idx_flag != 0:  # Int overflow/Float/Double/Link
+            if int_ranges and payload_val < len(int_ranges):
+                extra = int_ranges[payload_val]
+        elif data_type in (2, 4, 15, 17):  # String/Binary/ObjectId/UUID
+            if string_ranges and payload_val < len(string_ranges):
+                extra = string_ranges[payload_val]
+        elif data_type in (8, 11, 16):  # Timestamp/Decimal128/TypedLink
+            extra = pair_range(payload_val)
+        elif data_type in (19, 20, 21):  # List/Set/Dictionary
+            if ref_vals and payload_val < len(ref_vals):
+                target = ref_vals[payload_val]
+                if target:
+                    extra = _ref_target_extent(data, int(target))
+        if extra is not None:
+            row.append(extra)
+        results.append(row if row else None)
+    return results
+
+
+def _decode_column_value_ranges(
+    data: bytes,
+    col_ref: int,
+    file_size: int,
+    info: dict[str, Any],
+) -> list[Any] | None:
+    """Byte-provenance sibling of _decode_column_values -- same dispatch,
+    computed independently (re-parsing headers, not sharing state with the
+    value decoders) so this stays a purely additive, zero-risk addition
+    alongside the already-verified value decode path. Returns one entry
+    per row, aligned with _decode_column_values' output: a single
+    (start, end) range, a list of ranges (a value split across more than
+    one physical array -- Timestamp, Mixed), or None where no unambiguous
+    range could be resolved.
+    """
+    if info["is_dictionary"]:
+        return _dictionary_column_ranges(data, col_ref, file_size)
+
+    type_code = info["type_code"]
+
+    if info["is_list"] or info["is_set"] or type_code == 13:
+        return _collection_column_ranges(data, col_ref, file_size)
+
+    if type_code == 0:  # Int
+        if info["nullable"]:
+            return _array_int_null_ranges(data, col_ref, file_size)
+        return _scalar_leaf_ranges(data, col_ref, file_size)
+    if type_code == 1:  # Bool
+        return _scalar_leaf_ranges(data, col_ref, file_size)
+    if type_code in (2, 4):  # String, Binary
+        return _array_string_or_binary_ranges(data, col_ref, file_size)
+    if type_code == 8:  # Timestamp
+        return _array_timestamp_ranges(data, col_ref, file_size)
+    if type_code in (9, 10):  # Float, Double
+        return _array_float_ranges(data, col_ref, file_size)
+    if type_code == 11:  # Decimal128
+        return _array_decimal128_ranges(data, col_ref, file_size)
+    if type_code == 12:  # Link
+        return _scalar_leaf_ranges(data, col_ref, file_size)
+    if type_code == 15:  # ObjectId
+        return _array_fixed_bytes_ranges(data, col_ref, file_size, 12)
+    if type_code == 17:  # UUID
+        return _array_fixed_bytes_ranges(data, col_ref, file_size, 16)
+    if type_code == 6:  # Mixed
+        return _array_mixed_ranges(data, col_ref, file_size)
+    if type_code == 16:  # TypedLink
+        return _array_typed_link_ranges(data, col_ref, file_size)
+    return None
+
+
 def _decode_column_values(
     data: bytes,
     col_ref: int,
@@ -2029,6 +2483,13 @@ def _extract_table_data(
             continue
 
         columns: dict[int, list[Any]] = {info["user_col_idx"]: [] for info in col_infos}
+        # Byte-provenance sibling of `columns`, same shape/alignment --
+        # computed independently via _decode_column_value_ranges (see
+        # PRIORITY TODO: value byte provenance) so a bug there can never
+        # corrupt the actual decoded values above it. Each entry is one of:
+        # a single (start, end) range, a list of ranges (a value split
+        # across more than one physical array), or None.
+        byte_ranges: dict[int, list[Any]] = {info["user_col_idx"]: [] for info in col_infos}
         obj_keys: list[Any] = []
         row_count_total = 0
         row_count_estimated = False
@@ -2055,10 +2516,13 @@ def _extract_table_data(
                     continue  # BackLink or otherwise-unmapped cluster slot
                 col_ref = _read_ref(data, leaf_ref + 8, c_idx, leaf_eb)
                 values: list[Any] | None
+                ranges: list[Any] | None
                 if col_ref <= 0 or col_ref >= file_size:
                     values = None
+                    ranges = None
                 else:
                     values = _decode_column_values(data, col_ref, file_size, col_info)
+                    ranges = _decode_column_value_ranges(data, col_ref, file_size, col_info)
                 if values is None:
                     values = [None] * leaf_row_count
                 elif len(values) < leaf_row_count:
@@ -2066,6 +2530,13 @@ def _extract_table_data(
                 elif len(values) > leaf_row_count:
                     values = values[:leaf_row_count]
                 columns[col_info["user_col_idx"]].extend(values)
+                if ranges is None:
+                    ranges = [None] * leaf_row_count
+                elif len(ranges) < leaf_row_count:
+                    ranges = ranges + [None] * (leaf_row_count - len(ranges))
+                elif len(ranges) > leaf_row_count:
+                    ranges = ranges[:leaf_row_count]
+                byte_ranges[col_info["user_col_idx"]].extend(ranges)
 
             if leaf_local_keys is not None:
                 obj_keys.extend(key_offset + k for k in leaf_local_keys)
@@ -2079,6 +2550,7 @@ def _extract_table_data(
                 "row_count": row_count_total,
                 "row_count_estimated": row_count_estimated,
                 "columns": columns,
+                "byte_ranges": byte_ranges,
                 "column_names": col_names,
                 "column_types": col_type_names,
                 "column_target_tables": col_target_tables,
@@ -2702,6 +3174,313 @@ def _decode_pre_cluster_linklist_column(
     return values
 
 
+# ---------------------------------------------------------------------------
+# Pre-Cluster byte-provenance decoders — same purpose and independence-from-
+# the-value-decoders principle as the modern path's equivalents above (see
+# that section's comment). Old-format columns are each their own top-level
+# B+-tree (see module docstring / _extract_pre_cluster_table_data), so
+# these walk leaves themselves rather than being handed one leaf_ref like
+# the modern per-Cluster-leaf decoders are.
+# ---------------------------------------------------------------------------
+
+def _pre_cluster_scalar_column_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _walk_pre_cluster_int_column: ranges for a plain top-level
+    B+-tree integer column (used directly for Int/Bool/OldDateTime/Link,
+    and for Mixed's m_types/m_data sub-columns)."""
+    if col_ref <= 0 or col_ref >= file_size:
+        return None
+    leaves = _walk_bplustree_leaves(data, col_ref, file_size)
+    if not leaves:
+        leaves = [(col_ref, 0)]
+    ranges: list[tuple[int, int] | None] = []
+    for leaf_ref, _offset in leaves:
+        leaf_ranges = _scalar_leaf_ranges(data, leaf_ref, file_size)
+        if leaf_ranges is None:
+            return None
+        ranges.extend(leaf_ranges)
+    return ranges
+
+
+def _pre_cluster_medium_string_or_binary_ranges(
+    data: bytes, ref: int, file_size: int, *, is_string: bool,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_pre_cluster_medium_string_or_binary."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None or not hdr["has_refs"] or hdr["context_flag"]:
+        return None
+    count = hdr["Element count (size)"]
+    if count not in (2, 3):
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+
+    offsets_ref = _read_ref(data, ref + 8, 0, eb)
+    blob_ref = _read_ref(data, ref + 8, 1, eb)
+    nulls_ref = _read_ref(data, ref + 8, 2, eb) if count == 3 else 0
+    offsets = _read_uint_array(data, offsets_ref)
+    nulls = _read_uint_array(data, nulls_ref) if nulls_ref > 0 else None
+
+    ranges: list[tuple[int, int] | None] = []
+    prev = 0
+    for i, end in enumerate(offsets):
+        if nulls is not None and i < len(nulls):
+            is_null = (nulls[i] == 0) if is_string else (nulls[i] != 0)
+        else:
+            is_null = False
+        if is_null or end == prev:
+            ranges.append(None)
+            prev = end
+            continue
+        chunk_end = end - 1 if is_string else end
+        ranges.append((blob_ref + 8 + prev, blob_ref + 8 + chunk_end))
+        prev = end
+    return ranges
+
+
+def _pre_cluster_string_or_binary_ranges(
+    data: bytes, ref: int, file_size: int, *, is_string: bool,
+) -> list[tuple[int, int] | None] | None:
+    """Mirrors _read_pre_cluster_string_or_binary's header-driven dispatch."""
+    hdr = _parse_array_header(data, ref)
+    if hdr is None:
+        return None
+    if not hdr["has_refs"]:
+        return _array_string_short_ranges(ref, hdr)
+    if hdr["context_flag"]:
+        return _array_big_blobs_ranges(data, ref, hdr, file_size)
+    return _pre_cluster_medium_string_or_binary_ranges(data, ref, file_size, is_string=is_string)
+
+
+def _pre_cluster_timestamp_column_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[list[tuple[int, int]] | None] | None:
+    """Mirrors _decode_pre_cluster_timestamp_column: a table-wide 2-slot
+    [m_seconds root, m_nanoseconds root] array, each side independently a
+    full, possibly-multi-leaf B+-tree -- unlike the modern format's single-
+    Cluster-leaf-bounded ArrayTimestamp cell."""
+    hdr = _parse_array_header(data, col_ref)
+    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] != 2:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+    secs_root = _read_ref(data, col_ref + 8, 0, eb)
+    nanos_root = _read_ref(data, col_ref + 8, 1, eb)
+
+    secs_ranges: list[tuple[int, int] | None] = []
+    if secs_root > 0:
+        for leaf_ref, _offset in (
+            _walk_bplustree_leaves(data, secs_root, file_size) or [(secs_root, 0)]
+        ):
+            leaf_ranges = _array_int_null_ranges(data, leaf_ref, file_size)
+            if leaf_ranges is None:
+                return None
+            secs_ranges.extend(leaf_ranges)
+
+    nanos_ranges: list[tuple[int, int] | None] = []
+    if nanos_root > 0:
+        for leaf_ref, _offset in (
+            _walk_bplustree_leaves(data, nanos_root, file_size) or [(nanos_root, 0)]
+        ):
+            leaf_ranges = _scalar_leaf_ranges(data, leaf_ref, file_size)
+            if leaf_ranges is None:
+                return None
+            nanos_ranges.extend(leaf_ranges)
+
+    result: list[list[tuple[int, int]] | None] = []
+    for i, sr in enumerate(secs_ranges):
+        if sr is None:
+            result.append(None)
+            continue
+        row: list[tuple[int, int]] = [sr]
+        if i < len(nanos_ranges) and nanos_ranges[i] is not None:
+            row.append(nanos_ranges[i])  # type: ignore[arg-type]
+        result.append(row)
+    return result
+
+
+def _pre_cluster_ref_column_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Coarse byte-provenance shared by old-format LinkList and Table
+    (subtable) columns: both are a top-level B+-tree of per-row refs, each
+    pointing at that row's own nested structure -- same "point at the
+    target's own top array" treatment as _collection_column_ranges in the
+    modern-path section above. A leaf whose width is 0 (Realm's all-zero
+    compact encoding -- every ref in it is implicitly 0/empty, no payload
+    bytes stored at all) contributes None for each of its rows.
+    """
+    leaves = _walk_bplustree_leaves(data, col_ref, file_size)
+    if not leaves:
+        leaves = [(col_ref, 0)]
+    ranges: list[tuple[int, int] | None] = []
+    for leaf_ref, _offset in leaves:
+        leaf_hdr = _parse_array_header(data, leaf_ref)
+        if leaf_hdr is None or not leaf_hdr["has_refs"]:
+            return None
+        count = leaf_hdr["Element count (size)"]
+        if leaf_hdr["width"] == 0:
+            ranges.extend([None] * count)
+            continue
+        eb = _elem_bytes(leaf_hdr)
+        if eb < 1:
+            return None
+        for i in range(count):
+            row_ref = _read_ref(data, leaf_ref + 8, i, eb)
+            ranges.append(
+                _ref_target_extent(data, row_ref) if 0 < row_ref < file_size else None
+            )
+    return ranges
+
+
+def _pre_cluster_string_enum_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[tuple[int, int] | None] | None:
+    """Primary, unambiguous range only: the row's own index cell into the
+    shared keys array. The string bytes that index resolves to are NOT
+    this row's exclusive storage (other rows with the same enum value
+    share them), so -- unlike Timestamp/Mixed's split values -- no second
+    range is added here; that would misleadingly look like "this row's own
+    bytes" when it is really shared, cross-row storage.
+    """
+    leaves = _walk_bplustree_leaves(data, col_ref, file_size)
+    if not leaves:
+        leaves = [(col_ref, 0)]
+    ranges: list[tuple[int, int] | None] = []
+    for leaf_ref, _offset in leaves:
+        leaf_hdr = _parse_array_header(data, leaf_ref)
+        if leaf_hdr is not None and leaf_hdr["width"] == 0:
+            ranges.extend([None] * leaf_hdr["Element count (size)"])
+            continue
+        leaf_ranges = _scalar_leaf_ranges(data, leaf_ref, file_size)
+        if leaf_ranges is None:
+            return None
+        ranges.extend(leaf_ranges)
+    return ranges
+
+
+def _pre_cluster_mixed_column_ranges(
+    data: bytes, col_ref: int, file_size: int,
+) -> list[list[tuple[int, int]] | None] | None:
+    """Byte-provenance for an old-format Mixed column, mirroring
+    _decode_pre_cluster_mixed_column's dispatch. Every row always gets its
+    own m_data cell's range (one dedicated int64 slot per row regardless of
+    type -- the pre-Cluster equivalent of modern Mixed's composite selector
+    cell: inline for Int/IntNeg/Bool/Float/Double/DoubleNeg/OldDateTime,
+    an index into a shared sub-column for String/Binary/Timestamp). For
+    those indexed types, a second range covering the resolved shared
+    payload is added when resolvable.
+    """
+    hdr = _parse_array_header(data, col_ref)
+    if hdr is None or not hdr["has_refs"] or hdr["Element count (size)"] < 3:
+        return None
+    eb = _elem_bytes(hdr)
+    if eb < 1:
+        return None
+
+    types_ref = _read_ref(data, col_ref + 8, 0, eb)
+    data_ref = _read_ref(data, col_ref + 8, 1, eb)
+    binary_ref = _read_ref(data, col_ref + 8, 2, eb)
+    timestamp_ref = _read_ref(data, col_ref + 8, 3, eb) if hdr["Element count (size)"] > 3 else 0
+
+    types = _walk_pre_cluster_int_column(data, types_ref, file_size)
+    raw_data = _walk_pre_cluster_int_column(data, data_ref, file_size)
+    data_ranges = _pre_cluster_scalar_column_ranges(data, data_ref, file_size)
+    if types is None or raw_data is None or data_ranges is None:
+        return None
+
+    binary_ranges = (
+        _pre_cluster_string_or_binary_ranges(data, binary_ref, file_size, is_string=False)
+        if binary_ref > 0 else None
+    )
+    timestamp_ranges = (
+        _pre_cluster_timestamp_column_ranges(data, timestamp_ref, file_size)
+        if timestamp_ref > 0 else None
+    )
+
+    results: list[list[tuple[int, int]] | None] = []
+    for i, t in enumerate(types):
+        dr = data_ranges[i] if i < len(data_ranges) else None
+        raw_val = raw_data[i] if i < len(raw_data) else None
+        if t is None or dr is None or raw_val is None:
+            results.append(None)
+            continue
+        mixtype = int(t)
+        row: list[tuple[int, int]] = [dr]
+        raw_u64 = int(raw_val) & _U64_MASK
+        value = raw_u64 >> 1
+
+        if mixtype == 8 and timestamp_ranges is not None and value < len(timestamp_ranges):
+            extra_ts = timestamp_ranges[value]
+            if extra_ts:
+                row.extend(extra_ts)
+        elif mixtype in (2, 4) and binary_ranges is not None and value < len(binary_ranges):
+            extra_bin = binary_ranges[value]
+            if extra_bin is not None:
+                row.append(extra_bin)
+        results.append(row)
+    return results
+
+
+def _decode_pre_cluster_column_value_ranges(
+    data: bytes,
+    col_ref: int,
+    file_size: int,
+    col_info: dict[str, Any],
+) -> list[Any] | None:
+    """Byte-provenance sibling of _decode_pre_cluster_column_values -- same
+    dispatch, computed independently (see _decode_column_value_ranges, the
+    modern-format equivalent, for the general design principle).
+    """
+    if col_ref <= 0 or col_ref >= file_size:
+        return None
+    type_code = col_info["type_code"]
+    nullable = col_info["nullable"]
+
+    if type_code == 8:  # Timestamp
+        return _pre_cluster_timestamp_column_ranges(data, col_ref, file_size)
+    if type_code in (13, 5):  # LinkList, Table (subtable)
+        return _pre_cluster_ref_column_ranges(data, col_ref, file_size)
+    if type_code == 3:  # StringEnum
+        return _pre_cluster_string_enum_ranges(data, col_ref, file_size)
+    if type_code == 6:  # Mixed
+        return _pre_cluster_mixed_column_ranges(data, col_ref, file_size)
+
+    leaves = _walk_bplustree_leaves(data, col_ref, file_size)
+    if not leaves:
+        leaves = [(col_ref, 0)]
+
+    ranges: list[Any] = []
+    for leaf_ref, _offset in leaves:
+        leaf_ranges: list[Any] | None
+        if type_code == 0:  # int
+            leaf_ranges = (
+                _array_int_null_ranges(data, leaf_ref, file_size) if nullable
+                else _scalar_leaf_ranges(data, leaf_ref, file_size)
+            )
+        elif type_code == 1:  # bool
+            leaf_ranges = _scalar_leaf_ranges(data, leaf_ref, file_size)
+        elif type_code in (2, 4):  # string, binary
+            leaf_ranges = _pre_cluster_string_or_binary_ranges(
+                data, leaf_ref, file_size, is_string=(type_code == 2),
+            )
+        elif type_code in (9, 10):  # float, double
+            leaf_ranges = _array_float_ranges(data, leaf_ref, file_size)
+        elif type_code == 7:  # OldDateTime
+            leaf_ranges = _scalar_leaf_ranges(data, leaf_ref, file_size)
+        elif type_code == 12:  # Link
+            leaf_ranges = _scalar_leaf_ranges(data, leaf_ref, file_size)
+        else:
+            return None
+        if leaf_ranges is None:
+            return None
+        ranges.extend(leaf_ranges)
+    return ranges
+
+
 def _decode_pre_cluster_column_values(
     data: bytes,
     col_ref: int,
@@ -2821,6 +3600,11 @@ def _extract_pre_cluster_table_data(
     )
 
     columns: dict[int, list[Any]] = {}
+    # Byte-provenance sibling of `columns`, same shape/alignment -- computed
+    # independently via _decode_pre_cluster_column_value_ranges so a bug
+    # there can never corrupt the actual decoded values above it (see the
+    # modern-path _extract_table_data's identical comment).
+    byte_ranges: dict[int, list[Any]] = {}
     column_names: list[str] = []
     column_types: list[str] = []
     unsupported_columns: list[str] = []
@@ -2844,6 +3628,17 @@ def _extract_pre_cluster_table_data(
             # explicitly below rather than shown as a silent empty column.
             unsupported_columns.append(col["name"])
         columns[user_idx] = values if values is not None else []
+
+        ranges = _decode_pre_cluster_column_value_ranges(data, col_ref, file_size, col)
+        target_len = len(columns[user_idx])
+        if ranges is None:
+            ranges = [None] * target_len
+        elif len(ranges) < target_len:
+            ranges = ranges + [None] * (target_len - len(ranges))
+        elif len(ranges) > target_len:
+            ranges = ranges[:target_len]
+        byte_ranges[user_idx] = ranges
+
         if values is not None and not row_count_known:
             row_count = len(values)
             row_count_known = True
@@ -2857,6 +3652,7 @@ def _extract_pre_cluster_table_data(
             if col["name"] in unsupported_columns:
                 type_name = _PRE_CLUSTER_COL_TYPES.get(col["type_code"], f"type_{col['type_code']}")
                 columns[user_idx] = [f"<unsupported: {type_name}>"] * row_count
+                byte_ranges[user_idx] = [None] * row_count
 
     column_target_tables: list[str | None] = []
     for col in visible_cols:
@@ -2870,6 +3666,7 @@ def _extract_pre_cluster_table_data(
         "row_count": row_count,
         "row_count_estimated": not row_count_known,
         "columns": columns,
+        "byte_ranges": byte_ranges,
         "column_names": column_names,
         "column_types": column_types,
         "column_target_tables": column_target_tables,
@@ -3190,6 +3987,14 @@ class RealmParser(AbstractParser):
         data: dict[str, Any] = {
             "header": header_info,
             "preview": preview,
+            # Full (already-decrypted, if applicable) file bytes -- every
+            # offset in each table's "byte_ranges" is relative to exactly
+            # this buffer, not the original on-disk ciphertext for an
+            # encrypted file. RealmViewer feeds this to a RealmCellLocator
+            # (crush/core/realm_offsets.py) for the embedded Hex pane's
+            # real byte-provenance, distinct from "preview" above (which is
+            # truncated and only meant for the standalone Hex Preview tab).
+            "__realm_file_bytes": full_data,
             "top_refs": top_refs,
             "schema": schema,
             "tables": tables,

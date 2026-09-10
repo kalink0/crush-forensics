@@ -115,6 +115,43 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Qt safety net
+# ---------------------------------------------------------------------------
+#
+# No test should ever launch a real external application (a file manager, a
+# browser) -- that's a side effect on the developer's own desktop, not on
+# anything the test controls or cleans up. This has actually happened: a
+# MainWindow left open by one test (see the general Qt-widget-leak note
+# below) can have a queued cross-thread "export finished" signal delivered
+# arbitrarily late, during a completely unrelated later test's own Qt event
+# loop -- by which point that first test's QMessageBox mock has already been
+# reverted, so the real "Open location?" dialog and, if answered yes, a real
+# `xdg-open` call can fire. Blocking the one real-world side effect at its
+# source, for the whole session, makes that failure mode inert regardless of
+# which other bug caused the stray signal.
+@pytest.fixture(autouse=True)
+def _no_real_external_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    import crush.ui as _crush_ui
+    monkeypatch.setattr(_crush_ui, "open_url", lambda url: None)
+
+# NOTE: a companion autouse fixture that force-closed every leftover
+# top-level widget after each test (to plug the general MainWindow-leak
+# problem described in the module docstring at the top of this section) was
+# tried here and reverted -- it made the suite crash the whole pytest
+# process (SIGABRT/segfault) intermittently, not consistently, which points
+# to one or more tests leaving a QThread worker still running when its
+# owning widget gets torn down. That's a real bug worth fixing, but a blind
+# global "close everything" is the wrong way to do it: it does not know
+# which threads are safe to interrupt, and papering over the crash by luck
+# of timing is worse than the leak it was meant to fix. Fixing it properly
+# means going test by test and making sure each worker thread is stopped
+# and joined (not just the widget closed) before the test ends -- see the
+# three tests fixed alongside this fixture (test_cli_focus.py,
+# test_export_overwrite_confirm.py, test_send_biome_to_peach.py) for the
+# pattern to extend elsewhere.
+
+
+# ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 

@@ -37,10 +37,13 @@ def test_export_node_asks_before_overwriting_existing_target(qapp, tmp_path, mon
     monkeypatch.setattr(QMessageBox, "question", fake_question)
 
     win = MainWindow()
-    win._export_node(vfs.root(), vfs)
+    try:
+        win._export_node(vfs.root(), vfs)
 
-    assert len(questions) == 1
-    assert not win._thread_is_running(getattr(win, "_export_thread", None))
+        assert len(questions) == 1
+        assert not win._thread_is_running(getattr(win, "_export_thread", None))
+    finally:
+        win.close()
 
 
 def test_export_node_proceeds_when_overwrite_confirmed(qapp, tmp_path, monkeypatch) -> None:
@@ -53,10 +56,18 @@ def test_export_node_proceeds_when_overwrite_confirmed(qapp, tmp_path, monkeypat
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
 
     win = MainWindow()
-    win._export_node(vfs.root(), vfs)
+    try:
+        win._export_node(vfs.root(), vfs)
 
-    assert win._thread_is_running(win._export_thread)
-    win._export_thread.wait(5000)
+        assert win._thread_is_running(win._export_thread)
+        win._export_thread.wait(5000)
+        # Drain the queued cross-thread "finished" signal now, while our own
+        # mocks above are still active, instead of leaving it pending for
+        # whichever later, unrelated test's event loop happens to flush it
+        # first (see conftest._no_real_external_open for what that caused).
+        qapp.processEvents()
+    finally:
+        win.close()
 
 
 def test_export_node_does_not_prompt_when_target_is_new(qapp, tmp_path, monkeypatch) -> None:
@@ -69,8 +80,12 @@ def test_export_node_does_not_prompt_when_target_is_new(qapp, tmp_path, monkeypa
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: questions.append(a))
 
     win = MainWindow()
-    win._export_node(vfs.root(), vfs)
+    try:
+        win._export_node(vfs.root(), vfs)
 
-    assert questions == []
-    assert win._thread_is_running(win._export_thread)
-    win._export_thread.wait(5000)
+        assert questions == []
+        assert win._thread_is_running(win._export_thread)
+        win._export_thread.wait(5000)
+        qapp.processEvents()
+    finally:
+        win.close()

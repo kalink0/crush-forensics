@@ -45,26 +45,29 @@ def test_send_biome_to_peach_preserves_relative_directory_structure(
     monkeypatch.setattr(peach_launcher, "launch_peach", fake_launch_peach)
 
     win = MainWindow()
-    win._send_biome_to_peach(root_node, vfs, [node_a, node_b])
+    try:
+        win._send_biome_to_peach(root_node, vfs, [node_a, node_b])
 
-    assert len(captured["sources"]) == 1
-    materialized = captured["sources"][0]
-    cleanup_dir = captured["cleanup_dirs"][0]
+        assert len(captured["sources"]) == 1
+        materialized = captured["sources"][0]
+        cleanup_dir = captured["cleanup_dirs"][0]
 
-    # The source handed to peach must structurally end in "biome/streams" --
-    # that's the suffix peach's CLI source-kind heuristic looks for to
-    # default the new source to Biome instead of AUL -- while cleanup
-    # still targets the actual mkdtemp() root above that wrapper.
-    assert materialized.name == "streams"
-    assert materialized.parent.name == "biome"
-    assert materialized.parent.parent == cleanup_dir
+        # The source handed to peach must structurally end in "biome/streams" --
+        # that's the suffix peach's CLI source-kind heuristic looks for to
+        # default the new source to Biome instead of AUL -- while cleanup
+        # still targets the actual mkdtemp() root above that wrapper.
+        assert materialized.name == "streams"
+        assert materialized.parent.name == "biome"
+        assert materialized.parent.parent == cleanup_dir
 
-    # `rel` is preserved unchanged below the synthetic wrapper, so the
-    # fixture's own "streams" subfolder (relative to root_dir) still shows
-    # up here too -- harmless duplication, since peach's SEGB detection
-    # only inspects each file's last 2-3 path components regardless of
-    # what sits above them.
-    copied_a = materialized / "streams" / "restricted" / "Device.Wireless.Bluetooth" / "local" / "file_a"
-    copied_b = materialized / "streams" / "public" / "Backlight" / "local" / "file_b"
-    assert copied_a.read_bytes() == b"SEGBaaaa"
-    assert copied_b.read_bytes() == b"SEGBbbbb"
+        # `rel` is preserved unchanged below the synthetic wrapper, so the
+        # fixture's own "streams" subfolder (relative to root_dir) still shows
+        # up here too -- harmless duplication, since peach's SEGB detection
+        # only inspects each file's last 2-3 path components regardless of
+        # what sits above them.
+        copied_a = materialized / "streams" / "restricted" / "Device.Wireless.Bluetooth" / "local" / "file_a"
+        copied_b = materialized / "streams" / "public" / "Backlight" / "local" / "file_b"
+        assert copied_a.read_bytes() == b"SEGBaaaa"
+        assert copied_b.read_bytes() == b"SEGBbbbb"
+    finally:
+        win.close()

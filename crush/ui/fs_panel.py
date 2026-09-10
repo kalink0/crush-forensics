@@ -28,6 +28,7 @@ from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
+from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
@@ -98,9 +99,17 @@ class FilesystemPanel(QWidget):
     _search_results_ready = Signal(object)  # internal: list of result dicts
     _prescan_activity = Signal(str, bool)   # internal: (activity_name, is_start)
 
-    def __init__(self, session: Session, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, session: Session, parent: QWidget | None = None, window_id: str | None = None
+    ) -> None:
         super().__init__(parent)
         self._session = session
+        self._window_id = window_id
+        # Tags every self._logger call below with this panel's owning window,
+        # regardless of which thread makes the call (GUI thread or the type
+        # pre-scan background thread), so its messages don't show up in
+        # another open window's log pane too.
+        self._logger = logging.LoggerAdapter(_logger, {"window_id": window_id})
         self._vfs_list: list[VFS] = []
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels(["Name", "Size", "Files", "Total Size", "Type"])
@@ -200,7 +209,7 @@ class FilesystemPanel(QWidget):
 
     def load_vfs(self, vfs: VFS) -> None:
         """Replace the tree with a new VFS source."""
-        _logger.debug("FilesystemPanel.load_vfs: start")
+        self._logger.debug("FilesystemPanel.load_vfs: start")
         self._vfs_list = [vfs]
         self._vfs = vfs
         self._build_timer.stop()
@@ -225,11 +234,11 @@ class FilesystemPanel(QWidget):
             self._add_placeholder(row[0])
         self._start_prescan([vfs], self._prescan_gen)
         self.load_finished.emit()
-        _logger.debug("FilesystemPanel.load_vfs: emitted load_finished")
+        self._logger.debug("FilesystemPanel.load_vfs: emitted load_finished")
 
     def append_vfs(self, vfs: VFS) -> None:
         """Append a new VFS source to the existing tree."""
-        _logger.debug("FilesystemPanel.append_vfs: start")
+        self._logger.debug("FilesystemPanel.append_vfs: start")
         self._vfs_list.append(vfs)
         self._vfs = vfs
         root_node = vfs.root()
@@ -242,13 +251,13 @@ class FilesystemPanel(QWidget):
         self._prescan_gen += 1
         self._start_prescan([vfs], self._prescan_gen)
         self.load_finished.emit()
-        _logger.debug("FilesystemPanel.append_vfs: emitted load_finished")
+        self._logger.debug("FilesystemPanel.append_vfs: emitted load_finished")
 
     def close_vfs(self, vfs: VFS) -> None:
         """Remove a VFS source from the tree."""
         if vfs not in self._vfs_list:
             return
-        _logger.debug("FilesystemPanel.close_vfs: start")
+        self._logger.debug("FilesystemPanel.close_vfs: start")
         self._vfs_list = [item for item in self._vfs_list if item is not vfs]
         self._vfs = self._vfs_list[-1] if self._vfs_list else None
         self._build_timer.stop()
@@ -278,7 +287,7 @@ class FilesystemPanel(QWidget):
 
         if self._vfs_list:
             self._start_prescan(list(self._vfs_list), self._prescan_gen)
-        _logger.debug("FilesystemPanel.close_vfs: done")
+        self._logger.debug("FilesystemPanel.close_vfs: done")
 
     # ------------------------------------------------------------------
     # Internals
@@ -909,11 +918,13 @@ class FilesystemPanel(QWidget):
         return label
 
     def _start_prescan(self, vfs_list: list[VFS], gen: int) -> None:
-        threading.Thread(
-            target=self._prescan_worker,
-            args=(vfs_list, gen),
-            daemon=True,
-        ).start()
+        window_id = self._window_id
+
+        def _run() -> None:
+            with window_log_scope(window_id):
+                self._prescan_worker(vfs_list, gen)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _on_prescan_activity(self, name: str, is_start: bool) -> None:
         if is_start:
@@ -937,7 +948,7 @@ class FilesystemPanel(QWidget):
             n_workers = self._prescan_workers
         else:
             n_workers = 1
-        _logger.info("Type pre-scan started (workers=%d)", n_workers)
+        self._logger.info("Type pre-scan started (workers=%d)", n_workers)
         self._prescan_activity.emit("Indexing types", True)
         t0 = time.monotonic()
 
@@ -961,7 +972,7 @@ class FilesystemPanel(QWidget):
                 stack.extend(node.children)
 
         total = len(all_nodes)
-        _logger.info("Type pre-scan: %d files to index", total)
+        self._logger.info("Type pre-scan: %d files to index", total)
 
         chunk_size = max(1, (total + n_workers - 1) // n_workers)
         chunks = [all_nodes[i : i + chunk_size] for i in range(0, total, chunk_size)]
@@ -983,16 +994,16 @@ class FilesystemPanel(QWidget):
                     if self._prescan_gen != gen:
                         for f in futures:
                             f.cancel()
-                        _logger.info("Type pre-scan cancelled")
+                        self._logger.info("Type pre-scan cancelled")
                         return
                     try:
                         future.result()
                     except Exception as exc:
-                        _logger.debug("Pre-scan chunk error: %s", exc)
+                        self._logger.debug("Pre-scan chunk error: %s", exc)
         finally:
             if self._prescan_gen == gen:
                 elapsed = time.monotonic() - t0
-                _logger.info(
+                self._logger.info(
                     "Type pre-scan complete: %d files indexed in %.1f s", total, elapsed
                 )
                 self._prescan_activity.emit("Indexing types", False)
@@ -1016,14 +1027,14 @@ class FilesystemPanel(QWidget):
             self._activities.add(name)
             if hasattr(self, "_emit_background_status"):
                 self._emit_background_status()
-            _logger.debug("FilesystemPanel activity start: %s", name)
+            self._logger.debug("FilesystemPanel activity start: %s", name)
 
     def _activity_end(self, name: str) -> None:
         if name in self._activities:
             self._activities.discard(name)
             if hasattr(self, "_emit_background_status"):
                 self._emit_background_status()
-            _logger.debug("FilesystemPanel activity end: %s", name)
+            self._logger.debug("FilesystemPanel activity end: %s", name)
 
     def _emit_background_status(self) -> None:
         if not self._activities:

@@ -58,6 +58,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.cell_locator import CellLocator
 from crush.core.sqlite_freeblocks import scan_database_freeblocks
 from crush.core.sqlite_freelist import (
     carve_freelist_rows,
@@ -73,10 +74,9 @@ from crush.core.sqlite_structure import (
 )
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
+    SqliteCellLocator,
     build_page_table_map,
     build_wal_page_overlay,
-    locate_cell,
-    locate_offset,
     parse_table_leaf_page,
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
@@ -558,6 +558,22 @@ class TableViewer(QWidget):
         else:
             self._db_path = None
         self._db_conn: sqlite3.Connection | None = None
+        # Embedded Hex pane byte-provenance: a caller (e.g. RealmViewer) may
+        # supply its own CellLocator against the real source file, via
+        # "__cell_locator" -- takes priority over the default SqliteCellLocator
+        # built from __db_path (which, for Realm, points at a synthetic
+        # SQLite copy of the data used only for querying/sorting, not for
+        # hex bytes -- see crush/core/realm_offsets.py).
+        external_locator = data.get("__cell_locator") if isinstance(data, dict) else None
+        self._cell_locator: CellLocator | None
+        if external_locator is not None:
+            self._cell_locator = external_locator
+        elif self._db_path is not None:
+            self._cell_locator = SqliteCellLocator(
+                self._db_path, self._get_page_size, self._ensure_page_table_map, self._get_wal_data,
+            )
+        else:
+            self._cell_locator = None
         self._summary_label = "Summary (generated)"
         self._db_structure_label = "DB Structure (generated)"
         self._file_structure_label = "File Structure (generated)"
@@ -3066,15 +3082,15 @@ class TableViewer(QWidget):
                 self._sync_hex_pane(self._table_view.currentIndex())
 
     def _ensure_hex_pane_loaded(self) -> None:
-        if self._hex_pane_loaded or self._db_path is None:
+        if self._hex_pane_loaded or self._cell_locator is None:
             return
-        try:
-            data = self._db_path.read_bytes()
-        except OSError:
+        file_kind = self._cell_locator.default_file_kind()
+        data = self._cell_locator.read_file(file_kind)
+        if data is None:
             return
         self._hex_viewer.set_data(data)
-        self._hex_file_kind = "base"
-        self._hex_file_label.setText(f"{self._source_name}  ·  db file")
+        self._hex_file_kind = file_kind
+        self._hex_file_label.setText(f"{self._source_name}  ·  {self._cell_locator.label_for(file_kind)}")
         self._hex_pane_loaded = True
 
     def _sync_hex_pane(self, current: QModelIndex | None) -> None:
@@ -3098,40 +3114,26 @@ class TableViewer(QWidget):
             rowid is None or col_idx is None or col_idx < 0
             or self._is_pseudo_table(table_name)
             or self._query_results_active
-            or self._db_path is None
+            or self._cell_locator is None
         ):
             self._hex_viewer.clear_byte_range_highlight()
             return
 
         self._ensure_hex_pane_loaded()
-        page_size = self._get_page_size()
-        if page_size == 0:
-            self._hex_viewer.clear_byte_range_highlight()
-            return
-        page_table_map = self._ensure_page_table_map()
-
-        location = locate_cell(
-            self._db_path, table_name, int(rowid), col_idx, page_size,
-            page_table_map, self._get_wal_data(),
-        )
+        location = self._cell_locator.locate_cell(table_name, rowid, col_idx)
         if location is None:
             self._hex_viewer.clear_byte_range_highlight()
             return
 
         if location.file_kind != self._hex_file_kind:
-            target_path = (
-                Path(str(self._db_path) + "-wal")
-                if location.file_kind == "wal" else self._db_path
-            )
-            try:
-                data = target_path.read_bytes()
-            except OSError:
+            data = self._cell_locator.read_file(location.file_kind)
+            if data is None:
                 self._hex_viewer.clear_byte_range_highlight()
                 return
             self._hex_viewer.set_data(data)
             self._hex_file_kind = location.file_kind
-            suffix = "-wal file" if location.file_kind == "wal" else "db file"
-            self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
+            label = self._cell_locator.label_for(location.file_kind)
+            self._hex_file_label.setText(f"{self._source_name}  ·  {label}")
 
         ranges = list(location.row_ranges)
         if location.column_ranges:
@@ -3190,10 +3192,11 @@ class TableViewer(QWidget):
 
     def _on_hex_offset_focused(self, offset: int) -> None:
         """Hex → Table: clicking a byte in the pane selects the matching
-        table cell, when resolvable (see locate_offset()'s docstring for
-        the cases it can't -- e.g. a click landing on an overflow-only
-        page -- where this is simply a no-op, never a wrong selection)."""
-        if self._hex_file_kind is None or self._db_path is None:
+        table cell, when resolvable (see CellLocator.locate_offset()'s
+        docstring for the cases it can't -- e.g. a click landing on a
+        SQLite overflow-only page -- where this is simply a no-op, never a
+        wrong selection)."""
+        if self._hex_file_kind is None or self._cell_locator is None:
             return
         table_name = self._table_combo.currentText()
         if table_name == self._file_structure_label:
@@ -3201,15 +3204,8 @@ class TableViewer(QWidget):
             return
         if self._is_pseudo_table(table_name) or self._query_results_active:
             return
-        page_size = self._get_page_size()
-        if page_size == 0:
-            return
-        page_table_map = self._ensure_page_table_map()
 
-        result = locate_offset(
-            self._db_path, table_name, offset, self._hex_file_kind, page_size,
-            page_table_map, self._get_wal_data(),
-        )
+        result = self._cell_locator.locate_offset(table_name, self._hex_file_kind, offset)
         if result is None:
             return
         rowid, col_idx = result

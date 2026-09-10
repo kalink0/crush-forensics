@@ -50,16 +50,22 @@ def sample_folder(tmp_path: Path) -> Path:
 
 def test_focus_opens_the_target_file_inside_a_folder(qapp, sample_folder: Path) -> None:
     win = MainWindow()
-    _load_and_wait(win, str(sample_folder), "Documents/note.txt")
-    assert win._viewer_tabs.count() == 1
-    assert win._viewer_tabs.tabText(0) == "note.txt"
+    try:
+        _load_and_wait(win, str(sample_folder), "Documents/note.txt")
+        assert win._viewer_tabs.count() == 1
+        assert win._viewer_tabs.tabText(0) == "note.txt"
+    finally:
+        win.close()
 
 
 def test_focus_missing_target_shows_explicit_status_and_opens_nothing(qapp, sample_folder: Path) -> None:
     win = MainWindow()
-    _load_and_wait(win, str(sample_folder), "Documents/does_not_exist.txt")
-    assert win._viewer_tabs.count() == 0
-    assert "not found" in win._status.currentMessage()
+    try:
+        _load_and_wait(win, str(sample_folder), "Documents/does_not_exist.txt")
+        assert win._viewer_tabs.count() == 0
+        assert "not found" in win._status.currentMessage()
+    finally:
+        win.close()
 
 
 def test_focus_on_single_file_target_still_opens_it(qapp, sample_folder: Path) -> None:
@@ -67,7 +73,10 @@ def test_focus_on_single_file_target_still_opens_it(qapp, sample_folder: Path) -
     must still open via the existing single-file auto-open behavior —
     --focus being pointless here shouldn't block that."""
     win = MainWindow()
-    single_file = sample_folder / "readme.txt"
-    _load_and_wait(win, str(single_file), "whatever.txt")
-    assert win._viewer_tabs.count() == 1
-    assert win._viewer_tabs.tabText(0) == "readme.txt"
+    try:
+        single_file = sample_folder / "readme.txt"
+        _load_and_wait(win, str(single_file), "whatever.txt")
+        assert win._viewer_tabs.count() == 1
+        assert win._viewer_tabs.tabText(0) == "readme.txt"
+    finally:
+        win.close()
