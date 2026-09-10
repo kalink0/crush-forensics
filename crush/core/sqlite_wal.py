@@ -292,6 +292,9 @@ class RowByteLayout:
     given page number currently lives in the base file or a -wal frame.
     """
     page_local_range: tuple[int, int]        # (cell_offset, end-of-inline-payload) within `page`
+    payload_size: int
+    payload_size_range: tuple[int, int]      # varint bytes for payload size, page-relative
+    rowid_range: tuple[int, int]             # varint bytes for rowid, page-relative
     payload_start_in_page: int               # where the inline payload itself begins, within `page`
     inline_payload_size: int
     overflow_segments: list[tuple[int, int]]  # (overflow_page_num, bytes_taken), in chain order
@@ -304,6 +307,7 @@ def parse_table_leaf_page(
     *,
     page_size: int = 0,
     overflow_reader: Callable[[int], bytes | None] | None = None,
+    btree_offset: int = 0,
     want_ranges: Literal[False] = False,
 ) -> list[tuple[int, list[Any]]] | None: ...
 @overload
@@ -312,6 +316,7 @@ def parse_table_leaf_page(
     *,
     page_size: int = 0,
     overflow_reader: Callable[[int], bytes | None] | None = None,
+    btree_offset: int = 0,
     want_ranges: Literal[True],
 ) -> list[tuple[int, list[Any], RowByteLayout]] | None: ...
 def parse_table_leaf_page(
@@ -319,6 +324,7 @@ def parse_table_leaf_page(
     *,
     page_size: int = 0,
     overflow_reader: Callable[[int], bytes | None] | None = None,
+    btree_offset: int = 0,
     want_ranges: bool = False,
 ) -> list[tuple[int, list[Any]]] | list[tuple[int, list[Any], RowByteLayout]] | None:
     """Parse a SQLite table-leaf page (type 0x0D).
@@ -335,19 +341,19 @@ def parse_table_leaf_page(
     layout back — returns (rowid, values, RowByteLayout) tuples instead.
     Existing callers that don't pass it are unaffected.
     """
-    if len(page) < 8:
+    if btree_offset < 0 or len(page) < btree_offset + 8:
         return None
-    page_type = page[0]
+    page_type = page[btree_offset]
     if page_type != PAGE_TYPE_TABLE_LEAF:
         return None
 
     # cell_count at offset 3 (2 bytes)
-    cell_count = struct.unpack_from(">H", page, 3)[0]
+    cell_count = struct.unpack_from(">H", page, btree_offset + 3)[0]
     if cell_count == 0:
         return []
 
     # Cell pointer array starts at offset 8 (table-leaf has no rightmost-pointer)
-    ptr_area_start = 8
+    ptr_area_start = btree_offset + 8
     rows: list[tuple[int, list[Any]]] = []
     row_layouts: list[RowByteLayout] = []
     usable_size = page_size or len(page)
@@ -361,8 +367,10 @@ def parse_table_leaf_page(
             continue
         try:
             pos = cell_offset
+            payload_size_start = pos
             payload_size, n = _read_varint(page, pos)
             pos += n
+            rowid_start = pos
             rowid, n = _read_varint(page, pos)
             pos += n
 
@@ -386,6 +394,9 @@ def parse_table_leaf_page(
             if want_ranges:
                 row_layouts.append(RowByteLayout(
                     page_local_range=(cell_offset, pos + inline_size),
+                    payload_size=payload_size,
+                    payload_size_range=(payload_size_start, rowid_start),
+                    rowid_range=(rowid_start, pos),
                     payload_start_in_page=pos,
                     inline_payload_size=inline_size,
                     overflow_segments=overflow_segments,
@@ -405,6 +416,16 @@ def parse_table_leaf_page(
 def get_page_type(page: bytes) -> int | None:
     """Return the page-type byte, or None if the page is too short."""
     return page[0] if page else None
+
+
+def get_btree_page_type(page: bytes, page_num: int) -> int | None:
+    """Return the SQLite b-tree page-type byte for a database page.
+
+    Page 1 begins with the 100-byte database header, so its b-tree page header
+    starts at byte 100. All other pages start their b-tree header at byte 0.
+    """
+    offset = 100 if page_num == 1 else 0
+    return page[offset] if len(page) > offset else None
 
 
 # ---------------------------------------------------------------------------
@@ -537,9 +558,10 @@ def _walk_interior(
     visited.add(page_num)
 
     page = _read_page(page_num, wal_pages, page_size, db_file, page_count)
-    if page is None or len(page) < 1:
+    btree_offset = 100 if page_num == 1 else 0
+    if page is None or len(page) <= btree_offset:
         return
-    page_type = page[0]
+    page_type = page[btree_offset]
     if page_type not in (PAGE_TYPE_TABLE_INTERIOR, PAGE_TYPE_TABLE_LEAF):
         return
     if page_type != PAGE_TYPE_TABLE_INTERIOR:
@@ -547,16 +569,16 @@ def _walk_interior(
 
     # Interior page header: type(1) + freeblock(2) + cell_count(2) +
     #                       content_start(2) + fragmented(1) + rightmost(4) = 12
-    if len(page) < 12:
+    if len(page) < btree_offset + 12:
         return
-    cell_count = struct.unpack_from(">H", page, 3)[0]
-    rightmost  = struct.unpack_from(">I", page, 8)[0]
+    cell_count = struct.unpack_from(">H", page, btree_offset + 3)[0]
+    rightmost  = struct.unpack_from(">I", page, btree_offset + 8)[0]
     mapping[rightmost] = table_name
     _walk_interior(
         rightmost, table_name, mapping, wal_pages, page_size, visited, db_file, page_count
     )
 
-    ptr_area_start = 12
+    ptr_area_start = btree_offset + 12
     for i in range(cell_count):
         ptr_off = ptr_area_start + i * 2
         if ptr_off + 2 > len(page):
@@ -783,7 +805,7 @@ def locate_cell(
 
     for page_num in table_pages:
         page = read_page(page_num)
-        if page is None or get_page_type(page) != PAGE_TYPE_TABLE_LEAF:
+        if page is None or get_btree_page_type(page, page_num) != PAGE_TYPE_TABLE_LEAF:
             continue
         located = page_locator(page_num)
         if located is None:
@@ -791,7 +813,11 @@ def locate_cell(
         home_file_kind, page_file_offset = located
 
         parsed = parse_table_leaf_page(
-            page, page_size=page_size, overflow_reader=read_page, want_ranges=True
+            page,
+            page_size=page_size,
+            overflow_reader=read_page,
+            btree_offset=100 if page_num == 1 else 0,
+            want_ranges=True,
         )
         if not parsed:
             continue
@@ -871,11 +897,15 @@ def locate_offset(
         return None
 
     page = read_page(page_num)
-    if page is None or get_page_type(page) != PAGE_TYPE_TABLE_LEAF:
+    if page is None or get_btree_page_type(page, page_num) != PAGE_TYPE_TABLE_LEAF:
         return None
 
     parsed = parse_table_leaf_page(
-        page, page_size=page_size, overflow_reader=read_page, want_ranges=True
+        page,
+        page_size=page_size,
+        overflow_reader=read_page,
+        btree_offset=100 if page_num == 1 else 0,
+        want_ranges=True,
     )
     if not parsed:
         return None

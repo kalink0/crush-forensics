@@ -3,7 +3,7 @@
 """Hex viewer — displays raw bytes as hex + ASCII, 16 bytes per row."""
 from __future__ import annotations
 
-from PySide6.QtCore import QRegularExpression, Qt, Signal
+from PySide6.QtCore import QPoint, QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -307,7 +307,7 @@ class HexViewer(QWidget):
                 normalized.append((start, end))
         self._focus_ranges = normalized
         self._focus_range = normalized[0] if normalized else None
-        if scroll and self._focus_range is not None:
+        if scroll and self._focus_range is not None and not self._focus_target_visible():
             target_page = self._focus_range[0] // _PAGE_BYTES
             if target_page != self._page:
                 self._page = target_page
@@ -342,6 +342,27 @@ class HexViewer(QWidget):
         self._text.setTextCursor(cursor)
         self._suppress_focus_signal = False
         self._text.centerCursor()
+
+    def _focus_target_visible(self) -> bool:
+        """Whether the scroll target (the first focus range's start byte) is
+        already in view -- not just any single byte of any focus range, which
+        would count a range as "visible" even when only one edge byte is
+        barely on-screen and the rest is scrolled out of view."""
+        if self._focus_range is None:
+            return False
+        first_cursor = self._text.cursorForPosition(QPoint(0, 0))
+        last_cursor = self._text.cursorForPosition(
+            QPoint(0, max(0, self._text.viewport().height() - 1))
+        )
+        first_line = first_cursor.blockNumber()
+        last_line = last_cursor.blockNumber()
+        if first_line < 0 or last_line < 0:
+            return False
+        page_start = self._page * _PAGE_BYTES
+        visible_start = page_start + first_line * _BYTES_PER_ROW
+        visible_end = page_start + (last_line + 1) * _BYTES_PER_ROW
+        target = self._focus_range[0]
+        return visible_start <= target < visible_end
 
     # ------------------------------------------------------------------
     # Search — collect / navigate
@@ -436,6 +457,14 @@ class HexViewer(QWidget):
             self._load_page()
         page_offset = byte_idx - self._page * _PAGE_BYTES
         self._scroll_to_offset(page_offset)
+        # _scroll_to_offset() suppresses byteOffsetFocused to avoid a loop
+        # when *it's* called from highlight_byte_ranges() re-centering on an
+        # externally driven selection -- but a search jump is never driven
+        # by such a selection, so there's no loop risk here, and consumers
+        # (e.g. the SQLite File Structure tree, or ByteMappedTreeHex for
+        # Realm/protobuf/ABX) should sync to a search hit like any other
+        # click.
+        self.byteOffsetFocused.emit(byte_idx)
 
     def _update_count_label(self) -> None:
         n = len(self._search_hits)
