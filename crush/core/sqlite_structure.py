@@ -18,6 +18,7 @@ from crush.core.sqlite_wal import (
     PAGE_TYPE_TABLE_INTERIOR,
     PAGE_TYPE_TABLE_LEAF,
     RowByteLayout,
+    _column_ranges_from_layout,
     build_wal_page_index,
     parse_table_leaf_page,
 )
@@ -215,6 +216,7 @@ def _cell_nodes(
     file_kind: str,
     file_offset: int,
     read_page: Any,
+    page_locator: Any,
     column_names: list[str],
 ) -> StructureNode | None:
     if len(page) <= btree_offset or page[btree_offset] != PAGE_TYPE_TABLE_LEAF:
@@ -264,11 +266,11 @@ def _cell_nodes(
                 (file_offset + layout.rowid_range[0], file_offset + layout.rowid_range[1]),
             ),
         )
-        for col, (value, logical_range) in enumerate(zip(values, layout.column_logical_ranges)):
+        for col, value in enumerate(values):
             value_text = _display_cell_value(value)
-            physical = _column_physical_ranges(
-                logical_range, layout, file_offset, file_kind, page_num, page_size
-            )
+            physical = _column_ranges_from_layout(
+                layout, col, file_offset, file_kind, page_locator
+            ) or []
             column_label = _column_label(col, column_names)
             item.children.append(
                 StructureNode(
@@ -319,31 +321,6 @@ def _cell_layout_nodes(
                           for pn, size in layout.overflow_segments
                       ]),
     ]
-
-
-def _column_physical_ranges(
-    logical_range: tuple[int, int],
-    layout: RowByteLayout,
-    file_offset: int,
-    file_kind: str,
-    page_num: int,
-    page_size: int,
-) -> list[tuple[int, int]]:
-    start, end = logical_range
-    ranges: list[tuple[int, int]] = []
-    if start < end and start < layout.inline_payload_size:
-        seg_end = min(end, layout.inline_payload_size)
-        base = file_offset + layout.payload_start_in_page
-        ranges.append((base + start, base + seg_end))
-    cursor = layout.inline_payload_size
-    for overflow_page, taken in layout.overflow_segments:
-        seg_start = max(start, cursor)
-        seg_end = min(end, cursor + taken)
-        if seg_start < seg_end and file_kind == "base":
-            overflow_base = (overflow_page - 1) * page_size + 4
-            ranges.append((overflow_base + seg_start - cursor, overflow_base + seg_end - cursor))
-        cursor += taken
-    return ranges
 
 
 def _freeblock_nodes(page: bytes, btree_offset: int, file_kind: str, file_offset: int) -> StructureNode | None:
@@ -466,21 +443,18 @@ def build_sqlite_structure_tree(
                 return wal_index[page_num][1]
             return _read_base_page(fh, page_num, page_size)
 
+        def page_locator(page_num: int) -> tuple[str, int] | None:
+            return _page_file_location(page_num, page_size, wal_index)
+
         for page_num in range(1, page_count + 1):
             page = read_page(page_num)
             if page is None:
                 continue
             page_file_kind, page_file_offset = _page_file_location(page_num, page_size, wal_index)
-            if page_num == 1:
-                node_file_kind = "base"
-                node_file_offset = 0
-                detail_file_kind = page_file_kind
-                detail_file_offset = page_file_offset
-            else:
-                node_file_kind = page_file_kind
-                node_file_offset = page_file_offset
-                detail_file_kind = page_file_kind
-                detail_file_offset = page_file_offset
+            node_file_kind = page_file_kind
+            node_file_offset = page_file_offset
+            detail_file_kind = page_file_kind
+            detail_file_offset = page_file_offset
             btree_offset = 100 if page_num == 1 else 0
             owner = page_table_map.get(page_num, "")
             column_names = _column_names_for_page(page_num, owner, table_columns)
@@ -501,6 +475,7 @@ def build_sqlite_structure_tree(
                     detail_file_kind,
                     detail_file_offset,
                     read_page,
+                    page_locator,
                     column_names,
                     page_file_kind != "base",
                 )
@@ -566,6 +541,7 @@ def _page_detail_nodes(
     file_kind: str,
     file_offset: int,
     read_page: Any,
+    page_locator: Any,
     column_names: list[str],
     has_wal_override: bool = False,
 ) -> list[StructureNode]:
@@ -593,7 +569,8 @@ def _page_detail_nodes(
     if ptrs is not None:
         nodes.append(ptrs)
     cells = _cell_nodes(
-        page, page_size, page_num, btree_offset, file_kind, file_offset, read_page, column_names
+        page, page_size, page_num, btree_offset, file_kind, file_offset,
+        read_page, page_locator, column_names
     )
     if cells is not None:
         nodes.append(cells)

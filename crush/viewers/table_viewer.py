@@ -1115,7 +1115,8 @@ class TableViewer(QWidget):
 
             page_start = f["offset"] + 24
             page_bytes = wal_data[page_start: page_start + self._wal_page_size]
-            parsed = parse_table_leaf_page(page_bytes)
+            btree_offset = 100 if f["page"] == 1 else 0
+            parsed = parse_table_leaf_page(page_bytes, btree_offset=btree_offset)
             if not parsed:
                 continue
 
@@ -1460,7 +1461,10 @@ class TableViewer(QWidget):
             if f["salt_ok"] and wal_data is not None and self._wal_page_size:
                 page_start = f["offset"] + 24
                 page_bytes = wal_data[page_start: page_start + self._wal_page_size]
-                decoded = parse_table_leaf_page(page_bytes, page_size=self._wal_page_size)
+                btree_offset = 100 if f["page"] == 1 else 0
+                decoded = parse_table_leaf_page(
+                    page_bytes, page_size=self._wal_page_size, btree_offset=btree_offset
+                )
                 if decoded is None:
                     content_text = "(not a leaf page)"
                 elif not decoded:
@@ -2322,12 +2326,7 @@ class TableViewer(QWidget):
         page_table_map = self._ensure_page_table_map()
         conn = self._ensure_db()
         table_columns = self._table_record_columns(conn) if conn is not None else {}
-        if self._freelist_cache is not None:
-            freelist_entries = self._freelist_cache[0]
-        else:
-            freelist_entries = walk_freelist_pages(
-                self._db_path, page_size, self._get_wal_page_overlay()
-            )
+        freelist_entries = self._get_freelist_data()[0]
         try:
             nodes = build_sqlite_structure_tree(
                 self._db_path,
@@ -3146,7 +3145,7 @@ class TableViewer(QWidget):
             self._hex_viewer.set_data(data)
             self._hex_file_kind = str(file_kind)
             suffix = "-wal file" if file_kind == "wal" else "db file"
-            self._hex_file_label.setText(f"{self._source_name}  Â·  {suffix}")
+            self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
         self._hex_viewer.highlight_byte_ranges(ranges)
 
     def _on_hex_offset_focused(self, offset: int) -> None:
@@ -3214,15 +3213,35 @@ class TableViewer(QWidget):
         offset: int,
         file_kind: str,
     ) -> QStandardItem | None:
-        match: QStandardItem | None = None
+        item, _span = self._find_structure_item_for_offset_ex(parent, offset, file_kind)
+        return item
+
+    def _find_structure_item_for_offset_ex(
+        self,
+        parent: QStandardItem,
+        offset: int,
+        file_kind: str,
+    ) -> tuple[QStandardItem | None, int]:
+        """Return the narrowest-range match for *offset*, depth-first.
+
+        Sibling subtrees can legitimately have overlapping ranges (e.g. the
+        dedicated database-header breakdown and the generic Page 1 area both
+        cover the same header bytes), so ties aren't resolved by iteration
+        order -- the match with the smallest covering byte range wins,
+        recursively, since a more specific entry always describes fewer
+        bytes than the coarse one that contains it.
+        """
+        best: QStandardItem | None = None
+        best_span = -1
         for row in range(parent.rowCount()):
             item = parent.child(row, 0)
             if item is None:
                 continue
-            child_match = self._find_structure_item_for_offset(item, offset, file_kind)
-            if child_match is not None:
-                match = child_match
-                continue
+            child_match, child_span = self._find_structure_item_for_offset_ex(
+                item, offset, file_kind
+            )
+            if child_match is not None and (best is None or child_span < best_span):
+                best, best_span = child_match, child_span
             item_file_kind = item.data(_STRUCTURE_FILE_KIND_ROLE) or "base"
             if item_file_kind != file_kind:
                 continue
@@ -3230,10 +3249,12 @@ class TableViewer(QWidget):
             if not isinstance(ranges, list):
                 rng = item.data(_STRUCTURE_BYTE_RANGE_ROLE)
                 ranges = [rng] if _valid_structure_range(rng) else []
-            if not any(start <= offset < end for start, end in ranges):
-                continue
-            match = item
-        return match
+            matching_spans = [end - start for start, end in ranges if start <= offset < end]
+            if matching_spans:
+                span = min(matching_spans)
+                if best is None or span < best_span:
+                    best, best_span = item, span
+        return best, best_span
 
     def _on_table_scroll_activity(self, _value: int = 0) -> None:
         if not self._table_interaction_active:
