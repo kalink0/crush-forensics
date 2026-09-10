@@ -457,6 +457,14 @@ class HexViewer(QWidget):
             self._load_page()
         page_offset = byte_idx - self._page * _PAGE_BYTES
         self._scroll_to_offset(page_offset)
+        # _scroll_to_offset() suppresses byteOffsetFocused to avoid a loop
+        # when *it's* called from highlight_byte_ranges() re-centering on an
+        # externally driven selection -- but a search jump is never driven
+        # by such a selection, so there's no loop risk here, and consumers
+        # (e.g. the SQLite File Structure tree, or ByteMappedTreeHex for
+        # Realm/protobuf/ABX) should sync to a search hit like any other
+        # click.
+        self.byteOffsetFocused.emit(byte_idx)
 
     def _update_count_label(self) -> None:
         n = len(self._search_hits)

@@ -66,7 +66,11 @@ from crush.core.sqlite_freelist import (
     value_matches_affinity,
     walk_freelist_pages,
 )
-from crush.core.sqlite_structure import StructureNode, build_sqlite_structure_tree
+from crush.core.sqlite_structure import (
+    StructureNode,
+    build_page_detail_nodes,
+    build_sqlite_structure_tree,
+)
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     build_page_table_map,
@@ -100,6 +104,10 @@ _ROWID_ROLE = Qt.ItemDataRole.UserRole + 1
 _STRUCTURE_FILE_KIND_ROLE = Qt.ItemDataRole.UserRole + 20
 _STRUCTURE_BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 21
 _STRUCTURE_HIGHLIGHT_RANGES_ROLE = Qt.ItemDataRole.UserRole + 22
+# Set on a "Page N" item until its detail children (cells/columns/etc.) are
+# actually built -- cleared once populated, so it doubles as the "already
+# loaded?" check. See _populate_structure_page_if_needed().
+_STRUCTURE_LAZY_PAGE_ROLE = Qt.ItemDataRole.UserRole + 23
 
 
 def _valid_structure_range(value: object) -> bool:
@@ -571,6 +579,7 @@ class TableViewer(QWidget):
         self._freeblocks_cache: list[dict] | None = None
         self._unallocated_cache: list[dict] | None = None
         self._page_table_map: dict[int, str] = {}  # page_num → table_name
+        self._structure_table_columns: dict[str, list[str]] = {}
         self._table_interaction_active = False
         self._hex_pane_loaded = False
         self._hex_file_kind: str | None = None  # "base" or "wal" -- whichever is currently loaded
@@ -786,6 +795,7 @@ class TableViewer(QWidget):
         self._structure_tree.selectionModel().currentChanged.connect(
             self._on_structure_current_changed
         )
+        self._structure_tree.expanded.connect(self._on_structure_item_expanded)
         self._structure_tree.setVisible(False)
 
         self._cell_detail_panel = QWidget()
@@ -890,6 +900,8 @@ class TableViewer(QWidget):
     def _load_table_impl(self, table_name: str) -> None:
         self._freelist_table_filter.setVisible(False)
         self._freelist_table_filter_label.setVisible(False)
+        # File Structure has no text search of its own -- see _apply_filter.
+        self._search.setVisible(table_name != self._file_structure_label)
         if table_name != self._file_structure_label:
             self._set_structure_view_visible(False)
         if table_name == self._summary_label:
@@ -2325,14 +2337,13 @@ class TableViewer(QWidget):
 
         page_table_map = self._ensure_page_table_map()
         conn = self._ensure_db()
-        table_columns = self._table_record_columns(conn) if conn is not None else {}
+        self._structure_table_columns = self._table_record_columns(conn) if conn is not None else {}
         freelist_entries = self._get_freelist_data()[0]
         try:
             nodes = build_sqlite_structure_tree(
                 self._db_path,
                 page_size,
                 page_table_map,
-                table_columns,
                 freelist_entries,
                 self._get_wal_data(),
             )
@@ -2346,14 +2357,19 @@ class TableViewer(QWidget):
         root = self._structure_model.invisibleRootItem()
         for node in nodes:
             self._append_structure_node(root, node)
-        self._filter_structure_items(root, self._search.text().lower())
-        self._structure_tree.expandToDepth(1)
+        # depth 0 only -- expandToDepth(1) would also expand every "Page N"
+        # item itself, firing this tab's lazy-populate-on-expand for all of
+        # them immediately and reintroducing the exact eager-decode hang
+        # this lazy loading exists to avoid.
+        self._structure_tree.expandToDepth(0)
         pages = next((n for n in nodes if n.label == "Pages"), None)
         page_count = len(pages.children) if pages is not None else 0
         self._row_count_label.setText(f"({page_count:,} pages)")
         self._sql_status.setText(
             "Select a structure item to highlight its bytes; click the hex pane to "
-            "select the deepest matching header, page, cell, freeblock, or unallocated entry."
+            "select the deepest matching header, page, cell, freeblock, or unallocated entry. "
+            "Pages load their cell/column detail on first expand. To find specific content, "
+            "query the table itself (SQL) and use Locate in Hex, or search in the hex pane."
         )
         if self._hex_panel.isVisible():
             self._ensure_hex_pane_loaded()
@@ -2376,6 +2392,47 @@ class TableViewer(QWidget):
         parent.appendRow([label, value, kind])
         for child in node.children:
             self._append_structure_node(label, child)
+        if node.lazy_page is not None:
+            label.setData(node.lazy_page, _STRUCTURE_LAZY_PAGE_ROLE)
+            placeholder = QStandardItem("Loading…")
+            placeholder.setEditable(False)
+            placeholder.setSelectable(False)
+            label.appendRow([placeholder, QStandardItem(""), QStandardItem("")])
+
+    def _on_structure_item_expanded(self, index: QModelIndex) -> None:
+        item = self._structure_model.itemFromIndex(index)
+        if item is not None:
+            self._populate_structure_page_if_needed(item)
+
+    def _populate_structure_page_if_needed(self, item: QStandardItem) -> bool:
+        """Build a "Page N" item's detail children (header/cells/etc.) the
+        first time it's expanded -- see StructureNode.lazy_page. Returns
+        whether this item actually needed (and got) populating, so callers
+        that jump straight to a byte offset can tell whether to re-search
+        the now-real children for a more specific match."""
+        page_num = item.data(_STRUCTURE_LAZY_PAGE_ROLE)
+        if page_num is None:
+            return False
+        item.setData(None, _STRUCTURE_LAZY_PAGE_ROLE)
+        item.removeRows(0, item.rowCount())
+        if self._db_path is None:
+            return True
+        page_size = self._get_page_size()
+        try:
+            detail_nodes = build_page_detail_nodes(
+                self._db_path,
+                page_size,
+                page_num,
+                self._ensure_page_table_map(),
+                self._structure_table_columns,
+                self._get_wal_data(),
+            )
+        except Exception as exc:
+            self._append_structure_node(item, StructureNode("Error", f"{exc}"))
+            return True
+        for node in detail_nodes:
+            self._append_structure_node(item, node)
+        return True
 
     def _load_db_info(self) -> None:
         """Show all PRAGMA settings with decoded enum values and descriptions."""
@@ -2479,8 +2536,14 @@ class TableViewer(QWidget):
         self._sql_status.setText("")
 
     def _apply_filter(self, text: str) -> None:
+        # File Structure has no text search of its own -- see _load_file_structure's
+        # docstring-equivalent comment for why (would need to either skip
+        # not-yet-expanded pages' cell content, silently incomplete, or
+        # decode everything to search it, reintroducing the hang this tab's
+        # lazy loading exists to avoid). Filter rows by table content: use
+        # SQL on the table itself, then "Locate in Hex" / a Hex-pane search
+        # to jump to the physical bytes from there.
         if self._table_combo.currentText() == self._file_structure_label:
-            self._filter_structure_items(self._structure_model.invisibleRootItem(), text.lower())
             return
         self._proxy_model.setFilterFixedString(text)
         visible = self._proxy_model.rowCount()
@@ -2491,29 +2554,6 @@ class TableViewer(QWidget):
         else:
             word = "row" if total == 1 else "rows"
             self._row_count_label.setText(f"({total:,} {word})")
-
-    def _filter_structure_items(self, parent: QStandardItem, text: str) -> bool:
-        any_visible = False
-        for row in range(parent.rowCount()):
-            key_item = parent.child(row, 0)
-            value_item = parent.child(row, 1)
-            kind_item = parent.child(row, 2)
-            if key_item is None:
-                continue
-            child_visible = self._filter_structure_items(key_item, text)
-            haystack = " ".join(
-                item.text().lower()
-                for item in (key_item, value_item, kind_item)
-                if item is not None
-            )
-            visible = not text or text in haystack or child_visible
-            self._structure_tree.setRowHidden(
-                row,
-                self._structure_model.indexFromItem(parent),
-                not visible,
-            )
-            any_visible = any_visible or visible
-        return any_visible
 
     def _ensure_db(self) -> sqlite3.Connection | None:
         if not self._db_path or not self._db_path.exists():
@@ -3198,6 +3238,15 @@ class TableViewer(QWidget):
         )
         if item is None:
             return
+        # A match that landed on a not-yet-expanded "Page N" item is only
+        # as specific as that coarse page-level range -- populate it and
+        # look again, so jumping from a hex click still resolves to the
+        # actual field/cell/column instead of stopping at the page.
+        if self._populate_structure_page_if_needed(item):
+            self._structure_tree.expand(self._structure_model.indexFromItem(item))
+            refined = self._find_structure_item_for_offset(item, offset, self._hex_file_kind)
+            if refined is not None:
+                item = refined
         index = self._structure_model.indexFromItem(item)
         if not index.isValid():
             return

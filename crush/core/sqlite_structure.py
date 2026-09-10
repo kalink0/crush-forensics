@@ -33,6 +33,11 @@ class StructureNode:
     byte_range: tuple[int, int] | None = None
     highlight_ranges: list[tuple[int, int]] = field(default_factory=list)
     children: list["StructureNode"] = field(default_factory=list)
+    # Set on a "Page N" node instead of populating `children` eagerly -- the
+    # UI builds this page's detail nodes (via build_page_detail_nodes()) only
+    # once its item is actually expanded, so opening a database with many
+    # rows doesn't require decoding every row of every page up front.
+    lazy_page: int | None = None
 
 
 _PAGE_TYPE_NAMES = {
@@ -406,7 +411,6 @@ def build_sqlite_structure_tree(
     db_path: Path,
     page_size: int,
     page_table_map: dict[int, str],
-    table_columns: dict[str, list[str]],
     freelist_entries: list[dict[str, Any]],
     wal_data: bytes | None = None,
 ) -> list[StructureNode]:
@@ -443,46 +447,87 @@ def build_sqlite_structure_tree(
                 return wal_index[page_num][1]
             return _read_base_page(fh, page_num, page_size)
 
-        def page_locator(page_num: int) -> tuple[str, int] | None:
-            return _page_file_location(page_num, page_size, wal_index)
-
         for page_num in range(1, page_count + 1):
             page = read_page(page_num)
             if page is None:
                 continue
             page_file_kind, page_file_offset = _page_file_location(page_num, page_size, wal_index)
-            node_file_kind = page_file_kind
-            node_file_offset = page_file_offset
-            detail_file_kind = page_file_kind
-            detail_file_offset = page_file_offset
             btree_offset = 100 if page_num == 1 else 0
             owner = page_table_map.get(page_num, "")
-            column_names = _column_names_for_page(page_num, owner, table_columns)
             allocation = _allocation_status(page_num, owner, freelist_kinds)
+            # Detail children (header/cell-pointer/cells/freeblocks/unallocated)
+            # are deliberately NOT built here -- decoding every row and column
+            # of every table-leaf page in the file up front is what made this
+            # view hang on any database with a non-trivial row count. The UI
+            # populates a page's children lazily, on first expand, via
+            # build_page_detail_nodes() below. Nothing is dropped or sampled --
+            # every page is still listed, and every page's full detail is still
+            # reachable, just computed on demand instead of eagerly.
             page_node = StructureNode(
                 f"Page {page_num}",
                 _format_page_value(page_num, page, btree_offset, allocation, owner, page_file_kind),
                 "database page",
-                node_file_kind,
-                (node_file_offset, node_file_offset + len(page)),
-            )
-            page_node.children.extend(
-                _page_detail_nodes(
-                    page,
-                    page_num,
-                    page_size,
-                    btree_offset,
-                    detail_file_kind,
-                    detail_file_offset,
-                    read_page,
-                    page_locator,
-                    column_names,
-                    page_file_kind != "base",
-                )
+                page_file_kind,
+                (page_file_offset, page_file_offset + len(page)),
+                lazy_page=page_num,
             )
             pages_node.children.append(page_node)
         roots.append(pages_node)
         return roots
+
+
+def build_page_detail_nodes(
+    db_path: Path,
+    page_size: int,
+    page_num: int,
+    page_table_map: dict[int, str],
+    table_columns: dict[str, list[str]],
+    wal_data: bytes | None = None,
+) -> list[StructureNode]:
+    """Return one page's detail children (header/cell-pointer/cells/freeblocks/
+    unallocated) -- the counterpart to build_sqlite_structure_tree()'s
+    lazily-populated "Page N" nodes. Reads only what's needed for this page
+    (plus any overflow pages its cells reference), not the whole file."""
+    if page_size <= 0:
+        return []
+    try:
+        file_size = db_path.stat().st_size
+    except OSError:
+        return []
+
+    wal_index = build_wal_page_index(wal_data, page_size)
+    page_count = max(file_size // page_size, max(wal_index, default=0))
+    if not (1 <= page_num <= page_count):
+        return []
+
+    with open(db_path, "rb") as fh:
+        def read_page(pn: int) -> bytes | None:
+            if pn in wal_index:
+                return wal_index[pn][1]
+            return _read_base_page(fh, pn, page_size)
+
+        def page_locator(pn: int) -> tuple[str, int] | None:
+            return _page_file_location(pn, page_size, wal_index)
+
+        page = read_page(page_num)
+        if page is None:
+            return []
+        file_kind, file_offset = _page_file_location(page_num, page_size, wal_index)
+        btree_offset = 100 if page_num == 1 else 0
+        owner = page_table_map.get(page_num, "")
+        column_names = _column_names_for_page(page_num, owner, table_columns)
+        return _page_detail_nodes(
+            page,
+            page_num,
+            page_size,
+            btree_offset,
+            file_kind,
+            file_offset,
+            read_page,
+            page_locator,
+            column_names,
+            file_kind != "base",
+        )
 
 
 def _database_header_nodes(header: bytes) -> list[StructureNode]:
