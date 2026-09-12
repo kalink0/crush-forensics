@@ -16,6 +16,7 @@ XML_PLIST_SIG: Final = b"<?xml"
 ABX_MAGIC: Final = b"ABX\x00"
 SEGB_MAGIC: Final = b"SEGB"
 AAPL_ATX_MAGIC: Final = b"AAPL\r\n\x1a\n"
+KTX11_MAGIC: Final = b"\xabKTX 11\xbb\r\n\x1a\n"
 # SEGB v1 header is 56 bytes; magic sits at the last 4 bytes (offset 52 = 0x34)
 _SEGB_V1_MAGIC_OFFSET: Final = 52
 # Realm: 24-byte file header, mnemonic "T-DB" at offset 16
@@ -59,6 +60,8 @@ def detect_fast_label(peek_bytes: bytes, path: str) -> str:
         return "JXL"
     if peek_bytes.startswith(AAPL_ATX_MAGIC):
         return "ATX"
+    if peek_bytes.startswith(KTX11_MAGIC):
+        return "KTX"
 
     # Ogg-container codecs — check before filetype (which only returns "Media").
     # First page payload sits at offset 28 for the standard single-segment first page.

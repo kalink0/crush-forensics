@@ -9,6 +9,7 @@ from typing import Any
 
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.apple_atx import AAPL_MAGIC, decode_atx, is_atx
+from crush.parsers.apple_ktx import KTX11_MAGIC, decode_ktx, is_ktx
 from crush.parsers.base import AbstractParser, ParseResult
 
 # ISOBMFF brands that identify HEIF/HEIC/AVIF containers
@@ -30,6 +31,7 @@ class ImageParser(AbstractParser):
         ".heic", ".heif", ".avif",
         ".jxl",
         ".atx",
+        ".ktx",
     ]
     DISPLAY_NAME = "Image"
 
@@ -46,6 +48,8 @@ class ImageParser(AbstractParser):
             "Format": ext or "Image",
             "File size": f"{node.size:,} B",
         }
+        if is_ktx(raw):
+            return self._parse_ktx(raw, meta)
         if is_atx(raw):
             result = decode_atx(raw)
             if result.header:
@@ -94,11 +98,49 @@ class ImageParser(AbstractParser):
         return ParseResult(viewer_type="image", data=raw, metadata=meta)
 
 
+    def _parse_ktx(self, raw: bytes, meta: dict[str, Any]) -> ParseResult:
+        result = decode_ktx(raw)
+        if result.header:
+            meta.update({
+                "Format": "KTX",
+                "Width": result.header.width,
+                "Height": result.header.height,
+                "Depth": result.header.depth,
+                "Array layers": result.header.array_layers,
+                "Faces": result.header.faces,
+                "Mipmaps": result.header.mipmap_count,
+                "Pixel format": result.header.pixel_format,
+                "Byte order": "little-endian" if result.header.little_endian else "big-endian",
+            })
+        if result.key_values:
+            meta["Key/value entries"] = ", ".join(result.key_values)
+        if result.payload:
+            meta.update({
+                "Payload": "LZFSE-compressed ASTC" if result.payload.compressed else "ASTC",
+                "Payload bytes": f"{len(result.payload.data):,} B",
+                "Declared payload bytes": f"{result.payload.declared_size:,} B",
+            })
+        if result.warnings:
+            meta["KTX warnings"] = "; ".join(result.warnings)
+        if result.image:
+            out = io.BytesIO()
+            result.image.to_pil().save(out, "PNG")
+            meta["Decode status"] = "Decoded KTX to PNG"
+            return ParseResult(viewer_type="image", data=out.getvalue(), metadata=meta)
+        meta["Decode status"] = "KTX metadata parsed; image decode unavailable"
+        detail = meta["Decode status"]
+        if result.warnings:
+            detail = f"{detail}\n\n" + "\n".join(result.warnings)
+        return ParseResult(viewer_type="text", data=detail, metadata=meta)
+
+
 def _looks_like_image(peek: bytes) -> bool:
     if len(peek) < 4:
         return False
     if peek.startswith(AAPL_MAGIC):
         return True  # Apple ATX texture archive
+    if peek.startswith(KTX11_MAGIC):
+        return True  # Khronos KTX 1.1 texture
     if peek.startswith(b"\xFF\xD8\xFF"):
         return True  # JPEG
     if peek.startswith(b"\x89PNG\r\n\x1a\n"):

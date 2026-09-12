@@ -127,6 +127,7 @@ _MKV_EBML_MAGIC   = b"\x1a\x45\xdf\xa3" + b"\x00" * 124
 _AVI_MAGIC        = b"RIFF\x00\x00\x00\x00AVI " + b"\x00" * 116
 _AAC_ADTS_MAGIC   = b"\xff\xf1" + b"\x00" * 126
 _ATX_MAGIC        = b"AAPL\r\n\x1a\n" + b"\x00" * 120
+_KTX_MAGIC        = b"\xabKTX 11\xbb\r\n\x1a\n" + b"\x00" * 120
 
 
 @pytest.mark.parametrize("magic,expected_short_name", [
@@ -172,6 +173,13 @@ def test_identify_atx_by_magic() -> None:
     fmt = FormatDatabase.get().identify(_ATX_MAGIC, "unknown_file")
     assert fmt is not None
     assert fmt.short_name == "ATX"
+    assert fmt.parser_class == "ImageParser"
+
+
+def test_identify_ktx_by_magic() -> None:
+    fmt = FormatDatabase.get().identify(_KTX_MAGIC, "unknown_file")
+    assert fmt is not None
+    assert fmt.short_name == "KTX"
     assert fmt.parser_class == "ImageParser"
 
 

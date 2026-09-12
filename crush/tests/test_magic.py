@@ -22,6 +22,7 @@ _JXL_BARE      = b"\xFF\x0A" + b"\x00" * 20
 _JPEG          = b"\xFF\xD8\xFF\xE0" + b"\x00" * 100
 _PNG           = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 _ATX           = b"AAPL\r\n\x1a\n" + b"\x00" * 100
+_KTX           = b"\xabKTX 11\xbb\r\n\x1a\n" + b"\x00" * 100
 
 # ---------------------------------------------------------------------------
 # ISOBMFF image brands
@@ -74,6 +75,10 @@ def test_detect_jxl_bare_codestream() -> None:
 
 def test_detect_atx() -> None:
     assert detect_fast_label(_ATX, "image.atx") == "ATX"
+
+
+def test_detect_ktx() -> None:
+    assert detect_fast_label(_KTX, "snapshot.ktx") == "KTX"
 
 # ---------------------------------------------------------------------------
 # OGG container codecs
