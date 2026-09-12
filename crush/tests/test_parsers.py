@@ -1691,6 +1691,16 @@ def _make_atx_lzfs_bytes() -> bytes:
     return b"AAPL\r\n\x1a\n" + _make_atx_head_chunk(width=4, height=4) + lzfs_chunk
 
 
+# A valid ASTC void-extent (constant colour) block: the 8-byte header seen in the
+# TempImageArrayFiller.ktx textures iOS ships, then RGBA as little-endian uint16.
+# An all-zero block is not a valid ASTC encoding and decoded to different bytes on
+# two calls on Windows CI, so fixtures must use a real encoding.
+_KTX_VOID_EXTENT_BLOCK = bytes.fromhex("fcfdffffffffffff") + struct.pack(
+    "<4H", 0xFFFF, 0x8000, 0x0000, 0xFFFF
+)
+_KTX_VOID_EXTENT_RGBA8 = (255, 128, 0, 255)
+
+
 def _make_ktx_bytes(
     width: int = 4,
     height: int = 4,
@@ -1706,7 +1716,7 @@ def _make_ktx_bytes(
     then the LZFSE block itself.
     """
     blocks = -(-width // 4) * (-(-height // 4))
-    astc = bytes(blocks * 16)
+    astc = _KTX_VOID_EXTENT_BLOCK * blocks
     order = "<" if little_endian else ">"
     header = (
         b"\xabKTX 11\xbb\r\n\x1a\n"
@@ -2002,6 +2012,7 @@ def test_ktx_big_endian_decodes_to_the_same_pixels() -> None:
     assert big.header.width == 8 and big.header.height == 4
     assert little.image is not None and big.image is not None
     assert little.image.pixels == big.image.pixels
+    assert little.image.pixels == bytes(_KTX_VOID_EXTENT_RGBA8) * (8 * 4)
 
 
 def test_ktx_mislabelled_byte_order_is_refused_not_guessed() -> None:
