@@ -2649,6 +2649,59 @@ FORMATS: list[dict[str, Any]] = [
         "status": "reviewed",
     },
     {
+        "name": "EWF Acquisition",
+        "short_name": "EWF",
+        "category": "disk image",
+        "forensic_relevance": (
+            "Expert Witness Format (EWF) — the .E01 forensic disk image format "
+            "written and read by many acquisition tools (EnCase, FTK Imager, "
+            "ewfacquire/libewf, X-Ways, and others). EWF-E01 (version 1) is "
+            "reportedly based on ASR Data's earlier Expert Witness Compression "
+            "Format; EnCase itself was originally named 'Expert Witness' before "
+            "a trademark dispute with ASR Data over that name. "
+            "Typically the primary evidence file in a case: a bit-for-bit "
+            "physical or logical disk acquisition, stored as one or more "
+            "numbered segments (.E01, .E02, ...), optionally compressed and "
+            "hashed at acquisition time. "
+            "This EWF-E01 (version 1) format is the one EnCase 6/7 and FTK "
+            "Imager write and by far the most common in the field; the newer "
+            "EWF2 (.Ex01) and logical .L01/.Lx01 variants are not covered here. "
+            "The acquisition stores its own MD5/SHA1 of the media in a dedicated "
+            "hash section, written by the acquisition tool — recomputing and "
+            "comparing against it verifies the acquisition has not been altered "
+            "since it was made, independent of any chain-of-custody paperwork."
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x45\x56\x46\x09\x0d\x0a\xff\x00",
+                "description": "EWF-E01 signature ('EVF' + control bytes)",
+            }
+        ],
+        "extensions": [".e01"],
+        "links": [
+            (
+                "EnCase image file format — history and format versions (Forensics Wiki)",
+                "https://forensics.wiki/encase_image_file_format/",
+            ),
+            (
+                "Expert Witness Compression Format (EWF) — libewf project",
+                "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc",
+            ),
+            (
+                "abrignoni/ewfprobe — pure-Python EWF-E01 reader",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+            (
+                "abrignoni/qnxprobe — raw image / partition reader used alongside ewfprobe",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
         "name": "Apple Unified Log (tracev3)",
         "short_name": "tracev3",
         "category": "log",

@@ -18,6 +18,7 @@ import threading
 import zipfile
 import zlib
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import io
 from io import BytesIO
@@ -1116,6 +1117,144 @@ class SevenZipVFS(VFS):
         return total
 
 
+class RawImageVFS(VFS):
+    """VFS backed by a raw disk image (.img/.dd/split .001 set) or an
+    EWF (Expert Witness Format, .E01 + segments) acquisition, read in place
+    via the vendored qnxprobe (+ ewfprobe) readers — no mounting, no admin
+    rights, and only the files an examiner actually opens leave the image.
+
+    One top-level child per volume qnxprobe finds (a partition table entry
+    or a bare filesystem), named after qnxprobe's own LBA-based identity so
+    two volumes can never collide. A volume whose filesystem qnxprobe
+    recognises but cannot walk still appears, as a non-browsable leaf
+    carrying its size, rather than being silently dropped — this project's
+    standing rule is that unsupported content must always surface as an
+    explicit status, never render as a silent empty/zero result.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        from crush.core.raw_image import build_volume_node, open_raw_image
+
+        self._path = Path(path)
+        self._handle = open_raw_image(self._path)
+        self._lock = threading.Lock()
+        self._read_map: dict[str, Any] = {}
+
+        root = VFSNode(name=self._path.name, path="/", is_dir=True)
+        for vol in self._handle.volumes:
+            root.children.append(build_volume_node(vol, self._read_map))
+        root.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
+        self._tree = root
+
+        self._file_counts: dict[str, int] = {}
+        self._total_sizes: dict[str, int] = {}
+        self._compute_file_counts(self._tree)
+        self._compute_total_sizes(self._tree)
+
+    def root(self) -> VFSNode:
+        return self._tree
+
+    def _resolve_entry(self, node: VFSNode) -> Any:
+        from crush.core.raw_image import RawImageFileUnreadableError
+
+        entry = self._read_map.get(node.path)
+        if entry is None:
+            raise RawImageFileUnreadableError(f"No such entry: {node.path}")
+        return entry
+
+    def read(self, node: VFSNode) -> bytes:
+        from crush.core.raw_image import read_deleted_file, read_raw_region, read_walker_file
+
+        entry = self._resolve_entry(node)
+        with self._lock:
+            if entry.deleted is not None:
+                return read_deleted_file(entry.walker, entry.deleted, entry.size)
+            if entry.walker is None:
+                # A volume qnxprobe recognises but can't walk (or doesn't
+                # recognise at all) -- still fully readable as the raw bytes
+                # of that region, never hidden.
+                return read_raw_region(self._handle.image, entry.base, entry.size)
+            return read_walker_file(entry.walker, entry.node, entry.size)
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        return BytesIO(self.read(node))
+
+    def peek(self, node: VFSNode, n: int = 32) -> bytes:
+        from crush.core.raw_image import peek_deleted_file, peek_raw_region, peek_walker_file
+
+        entry = self._resolve_entry(node)
+        with self._lock:
+            if entry.deleted is not None:
+                return peek_deleted_file(entry.walker, entry.deleted, entry.size, n)
+            if entry.walker is None:
+                return peek_raw_region(self._handle.image, entry.base, entry.size, n)
+            return peek_walker_file(entry.walker, entry.node, entry.size, n)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def volume_info(self, node: VFSNode) -> dict[str, str] | None:
+        """qnxprobe's own diagnosis for a node that needs an explicit status
+        rather than looking like an ordinary, unremarkable file: a recovered
+        deleted file, an unallocated gap, or a partition whose filesystem is
+        recognised but has no walker, or isn't recognised at all. None for a
+        normal, live, walker-backed file. This project's rule is that
+        unsupported (and recovered-but-uncertain) content must always carry
+        an explicit status.
+        """
+        entry = self._read_map.get(node.path)
+        if entry is None:
+            return None
+        if entry.deleted is not None:
+            status = (
+                "recovered (content intact)" if entry.deleted.recoverable
+                else f"not recoverable: {entry.deleted.reason}"
+            )
+            return {"kind": "deleted file", "note": status}
+        if entry.walker is not None:
+            return None
+        return {"kind": entry.kind, "note": entry.note}
+
+    def is_ewf(self) -> bool:
+        """True when this source is an EWF (.E01) acquisition."""
+        return self._handle.is_ewf
+
+    def verify_ewf(
+        self, progress: Callable[[int, int], None] | None = None
+    ) -> dict[str, Any]:
+        """Recompute this EWF acquisition's MD5/SHA1 and compare them to the
+        acquisition's own stored hashes. Only valid when is_ewf() is True."""
+        from crush.core.raw_image import verify_ewf
+
+        return verify_ewf(self._handle, progress=progress)
+
+    def file_count(self, node: VFSNode) -> int:
+        return self._file_counts.get(node.path, 0)
+
+    def total_size(self, node: VFSNode) -> int:
+        return self._total_sizes.get(node.path, 0)
+
+    def _compute_file_counts(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._file_counts[node.path] = 1
+            return 1
+        total = 0
+        for child in node.children:
+            total += self._compute_file_counts(child)
+        self._file_counts[node.path] = total
+        return total
+
+    def _compute_total_sizes(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._total_sizes[node.path] = node.size
+            return node.size
+        total = 0
+        for child in node.children:
+            total += self._compute_total_sizes(child)
+        self._total_sizes[node.path] = total
+        return total
+
+
 class BytesVFS(VFS):
     """VFS backed by a single in-memory bytes object (for artifact chaining)."""
 
@@ -1228,6 +1367,13 @@ def open_vfs(path: str | Path, *, password: str = "") -> VFS:
         return TarVFS(p) if _is_gzip_wrapped_tar(p) else GzipVFS(p)
     if p.suffix.lower() == ".ab" or _is_android_backup(p):
         return AndroidBackupVFS(p, password=password)
+    if p.suffix.lower() in (".img", ".dd", ".raw", ".e01", ".001"):
+        from crush.core.raw_image import RawImageOpenError
+
+        try:
+            return RawImageVFS(p)
+        except RawImageOpenError:
+            pass  # extension matched, but it isn't a readable image
     if p.is_file():
         return FileVFS(p)
     raise ValueError(f"Unsupported source type: {p}")

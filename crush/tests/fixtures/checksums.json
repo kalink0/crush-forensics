@@ -22,5 +22,13 @@
   "protobuf_basic_wire_types.pb": "4660558b020a4c105c9d74cda639b3212459a79e32e6b1cafce2798d4c43e943",
   "protobuf_nested_mixed_payloads.expected.json": "b81d21e1643a6947ee0fe4ae4d0a9284512ebf3dd863c735413325cd827635d3",
   "protobuf_nested_mixed_payloads.pb": "7177b380611630faf28c6a68c11a2d545abce538add2807ac99c9a62a6f60f4c",
-  "protobuf_test_messages.proto": "946a095e2873924d5a4ecdf3a052876ff616740886eda111c30a2ce619a70e60"
+  "protobuf_test_messages.proto": "946a095e2873924d5a4ecdf3a052876ff616740886eda111c30a2ce619a70e60",
+  "raw_ntfs.img.gz": "de0b018df385a26bc36f15410e3c6625c4fbaab41c0e2bda501c01a89f734c31",
+  "raw_ntfs.sha256": "38883f159615ef0d7c9125f7828ae8e5a17362a3a73ede40e6c6931662c3355c",
+  "raw_ntfs.E01": "140bf5bc97038fb442803b0d590503f098bdc9977d170ba86f520f71f9a96ba4",
+  "raw_fat32_deleted.img.gz": "a62477e04303e4624f067510b9a540b02dea26dcb5db27f6b7a4de35dc4dc3b7",
+  "raw_fat32_deleted.sha256": "3c7ebc6eb1cd59fb84a80cb21563e334708ecad43f02ff02a12e96be005423cf",
+  "raw_exfat_deleted.img.gz": "77814a9c262a2a7edb57af23f132f520ca581448dae734fe765554e9aa9fcbe0",
+  "raw_exfat_deleted.sha256": "3c7ebc6eb1cd59fb84a80cb21563e334708ecad43f02ff02a12e96be005423cf",
+  "raw_ntfs.deleted.sha256": "345aac3513a72bd9efb9b47d6ac23b2dadb109b2b6865eae0d5332032580a230"
 }
