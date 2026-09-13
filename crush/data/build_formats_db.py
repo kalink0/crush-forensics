@@ -937,6 +937,50 @@ FORMATS: list[dict[str, Any]] = [
         "status": "reviewed",
     },
     {
+        "name": "Khronos KTX 1.1 Texture",
+        "short_name": "KTX",
+        "category": "document",
+        "forensic_relevance": (
+            "Khronos texture container. On iOS the payload is normally ASTC 4x4, "
+            "optionally LZFSE-compressed, flagged by a Compression_APPLE entry in the "
+            "key/value block. Observed holding application snapshots "
+            "(Library/Caches/Snapshots and SplashBoard/Snapshots), Safari tab thumbnails "
+            "(Library/Safari/Thumbnails) and, less often, Photos attachment previews. "
+            "Snapshots appear in this container and in Apple's AAPL/ATX one depending on "
+            "the release; the Safari thumbnails in every tested image were this container "
+            "and not ATX. A snapshot is the "
+            "image the system captured of an app's screen when it was last backgrounded, so "
+            "decoding one can show on-screen content at that moment. The same extension is "
+            "also used by textures shipped inside system frameworks and apps, which carry "
+            "other pixel formats and are not user content."
+        ),
+        "platforms": ["iOS", "macOS"],
+        "parser_class": "ImageParser",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xabKTX 11\xbb\r\n\x1a\n",
+                "description": "Khronos KTX 1.1 file identifier",
+            }
+        ],
+        "extensions": [".ktx"],
+        "links": [
+            (
+                "KTX File Format Specification v1.1 (Khronos)",
+                "https://registry.khronos.org/KTX/specs/1.0/ktxspec.v1.html",
+            ),
+            (
+                "KHR_texture_compression_astc_hdr (glInternalFormat enum values)",
+                "https://registry.khronos.org/OpenGL/extensions/KHR/KHR_texture_compression_astc_hdr.txt",
+            ),
+            (
+                "ios_ktx2png reference implementation (Yogesh Khatri, MIT)",
+                "https://github.com/ydkhatri/MacForensics/tree/master/IOS_KTX_TO_PNG",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
         "name": "iOS Crash Report",
         "short_name": "IPS / crash",
         "category": "log",

@@ -249,7 +249,7 @@ def _decode_image(header: AtxHeader, payload: TexturePayload, warnings: list[str
 
     if payload.compressed:
         astc_data, padded_width, padded_height = _linear_lzfs_payload(header, payload)
-        image = _decode_astc_4x4(astc_data, padded_width, padded_height)
+        image = decode_astc_4x4(astc_data, padded_width, padded_height)
     else:
         image, padded_width, padded_height = _decode_macro_tiled_payload(header, payload)
 
@@ -310,7 +310,7 @@ def _decode_macro_tiled_payload(header: AtxHeader, payload: TexturePayload) -> t
             payload,
             swap_morton_xy=swap_morton_xy,
         )
-        image = _decode_astc_4x4(astc_data, padded_width, padded_height)
+        image = decode_astc_4x4(astc_data, padded_width, padded_height)
         cropped = image.crop((0, 0, header.width, header.height)).convert("RGB")
         candidates.append((
             _grid_seam_score(cropped, DEFAULT_MACRO_BLOCKS * ASTC_BLOCK_WIDTH),
@@ -323,7 +323,7 @@ def _decode_macro_tiled_payload(header: AtxHeader, payload: TexturePayload) -> t
     return image, padded_width, padded_height
 
 
-def _decode_astc_4x4(astc_data: bytes, width: int, height: int) -> "PILImage":
+def decode_astc_4x4(astc_data: bytes, width: int, height: int) -> "PILImage":
     import astc_decomp_faster  # type: ignore[import-not-found]  # noqa: F401  # registers PIL ASTC decoder on import
     from PIL import Image
 

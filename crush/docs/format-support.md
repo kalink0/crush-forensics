@@ -125,15 +125,17 @@ Limitations
 - Parse failures fall back to Hex Viewer.
 
 ### Images
-- Routes supported image formats to the Image Viewer: JPEG, PNG, GIF, BMP, WebP, TIFF, HEIC/HEIF/AVIF, JPEG XL, and Apple ATX texture archives (`.atx`, magic `AAPL\r\n\x1a\n` — iOS PosterBoard/wallpaper assets).
+- Routes supported image formats to the Image Viewer: JPEG, PNG, GIF, BMP, WebP, TIFF, HEIC/HEIF/AVIF, JPEG XL, Apple ATX texture archives (`.atx`, magic `AAPL\r\n\x1a\n` — iOS PosterBoard/wallpaper assets), and Khronos KTX 1.1 textures (`.ktx`, magic `\xabKTX 11\xbb\r\n\x1a\n` — iOS app snapshots, Safari tab thumbnails and some Photos attachment previews). `.ktx` is used for both this container and Apple's ATX one; snapshots appear in either depending on the release, and Safari tab thumbnails were this container in every tested image.
 - Extracts a focused set of EXIF metadata (camera, time, GPS, dimensions).
 - ATX is parsed as a chunked container (`HEAD`/`FILL`/`astc`/`LZFS` chunks); a raw ASTC 4x4 payload is decoded to an image, with width/height/depth/array layers/mipmap count/pixel format/texture UUID shown in the Properties panel. ASTC's Morton-order block layout has two plausible X/Y interpretations the format itself doesn't disambiguate — both are decoded and the one with smoother macro-tile boundaries is kept, flagged as a heuristic rather than a spec-verified decode.
+- KTX 1.1 is parsed to the Khronos specification; an ASTC 4x4 payload (`glInternalFormat` 0x93B0) is decoded to an image, with dimensions, depth, array layers, faces, mipmap count, pixel format, byte order and the key/value entries shown in the Properties panel. iOS also writes an LZFSE-compressed variant, flagged by a `Compression_APPLE` key/value entry and carrying an `LZFS` marker ahead of the compressed block; that is decompressed before decoding. An app snapshot is the image the system captured when the app was last backgrounded, so a decoded snapshot can show what was on screen at that point.
 
 Limitations
 - EXIF coverage is not complete; only a subset of tags is shown.
 - Decoding depends on Qt image codecs installed on the system.
 - IFD entries are capped at 512 per directory, and SHORT/LONG/RATIONAL tag arrays at 8 items; data beyond the cap is not read. HEIF/HEIC/AVIF: the TIFF block's start offset inside the container's `exif` payload is located by pattern/offset heuristics (pillow-heif doesn't expose it directly) — on an HEIF variant whose prefix doesn't match, EXIF silently comes back empty rather than partially wrong.
 - ATX: only plain (uncompressed) ASTC 4x4 payloads decode to an image; other pixel formats and `LZFS`-compressed payloads are parsed for metadata only, shown as text. The Morton-orientation choice is a heuristic (see above), not a documented Apple flag.
+- KTX: only ASTC 4x4 decodes to an image. The same extension is used for textures shipped inside system frameworks and apps, which carry other pixel formats (other ASTC block sizes, PVRTC, uncompressed) and are parsed for metadata only, shown as text. KTX 2.0 is not read. Only the first mipmap level, array layer and face is decoded; a file declaring more than one is decoded to its first image with a warning.
 
 ### Media (Audio/Video)
 - Routes supported media formats to the Media Viewer (playback).
