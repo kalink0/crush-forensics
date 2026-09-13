@@ -4,6 +4,8 @@ All notable changes to Crush will be documented in this file.
 
 ## v0.19.0 - 2026-09-13
 
+**Focus: Embedded, bidirectional Hex pane — a general byte-provenance feature, now covering Protobuf, Plist/XML Tree, SQLite Table (including WAL Frames, WAL history, Freeblocks, Unallocated Space) and File Structure, and Realm DB viewers, with more viewers planned; Khronos KTX 1.1 texture support; Biome/SEGB improvements; bundled peach updated to v0.7.0.**
+
 ### New Features
 
 - Khronos KTX 1.1 textures (`.ktx`) are now parsed and decoded. Crush already read Apple's AAPL/ATX container, which shares the `.ktx` extension, but not the Khronos one. Across 26 iOS extractions the difference matters most for Safari tab thumbnails (`Library/Safari/Thumbnails`), which were KTX 1.1 in every case and ATX in none, so they did not decode at all before; application snapshots use both containers depending on the release. An ASTC 4x4 payload is decoded to an image, and Apple's LZFSE-compressed variant (flagged by a `Compression_APPLE` key/value entry and carrying an `LZFS` marker ahead of the compressed block) is decompressed first. Dimensions, byte order, pixel format and the key/value entries are shown in the Properties panel. Other pixel formats are reported as metadata with a warning rather than decoded into a wrong image. No new dependencies: it reuses the `astc_decomp_faster` and `pyliblzfse` decoders the ATX reader already uses. ([@abrignoni](https://github.com/abrignoni), [#93](https://github.com/kalink0/crush-forensics/pull/93), closes [#91](https://github.com/kalink0/crush-forensics/issues/91))
