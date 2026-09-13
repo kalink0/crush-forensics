@@ -2,6 +2,12 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- Fixed the SQLite parser losing an entire table's rows whenever a single `TEXT`-affinity value wasn't valid UTF-8 (SQLite is dynamically typed, so this can happen with data a native, non-Python writer produced) — every other row in that table, including unrelated ones with no problem at all, disappeared behind a single `(error)` placeholder. A lenient `text_factory` now falls back to the exact original bytes for just that one value (shown via the table viewer's existing BLOB handling) instead of failing the whole table.
+
 ## v0.19.0 - 2026-09-13
 
 **Focus: Embedded, bidirectional Hex pane — a general byte-provenance feature, now covering Protobuf, Plist/XML Tree, SQLite Table (including WAL Frames, WAL history, Freeblocks, Unallocated Space) and File Structure, and Realm DB viewers, with more viewers planned; Khronos KTX 1.1 texture support; Biome/SEGB improvements; bundled peach updated to v0.7.0.**

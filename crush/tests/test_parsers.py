@@ -59,6 +59,55 @@ def test_sqlite_parser_parse(tmp_path: Path) -> None:
     assert result.data["messages"]["rows"][0][1] == "hello"
 
 
+def test_sqlite_parser_survives_non_utf8_text_column(tmp_path: Path) -> None:
+    """SQLite is dynamically typed: a real app (typically via a native, non-
+    Python binding) can write bytes that aren't valid UTF-8 into a column
+    declared TEXT -- SQLite itself never validates this on write. Reproduced
+    here by binary-patching a known-length placeholder value's on-disk bytes
+    after creation, since Python's own sqlite3 API can't produce this
+    (a bound `str` is always valid UTF-8 once encoded, and a bound `bytes`
+    value is stored as BLOB, not TEXT, so text_factory never even sees it).
+
+    Before the fix, one bad value made the whole table's read raise and
+    every row -- even unrelated, perfectly good ones -- disappear behind a
+    single "(error)" placeholder row.
+    """
+    db_path = tmp_path / "meta.db"
+    placeholder = "PLACEHOLDERXX"  # ASCII, fixed length, easy to locate and replace in place
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE meta (id INTEGER PRIMARY KEY, value TEXT)")
+    conn.executemany(
+        "INSERT INTO meta (value) VALUES (?)",
+        [("good_row_one",), (placeholder,), ("good_row_two",)],
+    )
+    conn.commit()
+    conn.close()
+
+    raw = bytearray(db_path.read_bytes())
+    needle = placeholder.encode("ascii")
+    offset = bytes(raw).index(needle)
+    invalid_utf8 = bytes([0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C])
+    assert len(invalid_utf8) == len(needle)
+    with pytest.raises(UnicodeDecodeError):
+        invalid_utf8.decode("utf-8")  # sanity: this really isn't valid UTF-8
+    raw[offset : offset + len(needle)] = invalid_utf8
+    db_path.write_bytes(bytes(raw))
+
+    vfs = DirectoryVFS(tmp_path)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == "meta.db")
+
+    parser = SQLiteParser()
+    result = parser.parse(node, vfs)
+
+    rows = result.data["meta"]["rows"]
+    values = [row[1] for row in rows]
+    assert "good_row_one" in values
+    assert "good_row_two" in values
+    bad_values = [v for v in values if isinstance(v, bytes)]
+    assert bad_values == [invalid_utf8]
+
+
 def _make_sqlcipher(path: Path, password: str, *, wal: bool = False) -> None:
     from sqlcipher3 import dbapi2 as sqlcipher
 

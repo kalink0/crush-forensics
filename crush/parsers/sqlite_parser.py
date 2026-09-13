@@ -15,6 +15,25 @@ _SQLITE_MAGIC = b"SQLite format 3\x00"
 _ROW_LIMIT = 10_000
 _logger = logging.getLogger(__name__)
 
+
+def _lenient_text_factory(raw: bytes) -> str | bytes:
+    """SQLite is dynamically typed: a column declared TEXT can still hold
+    bytes an app wrote that aren't valid UTF-8 (e.g. a generic key/value
+    "meta" table whose "value" column mixes real text and serialized
+    binary data). The sqlite3 driver's default text_factory decodes every
+    fetched TEXT value as UTF-8 and raises on the first one that isn't,
+    which previously failed the *entire* table's read -- every other row,
+    including ones with no problem at all, was lost along with it. Falling
+    back to the exact original bytes (not a lossy decode) for just that
+    one value keeps the rest of the table readable and lets the table
+    viewer's existing BLOB handling (hex view, "Inspect Cell") show it,
+    rather than losing or corrupting the data.
+    """
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw
+
 # SQLCipher's legacy compatibility presets (page size / KDF iteration count /
 # KDF+HMAC digest algorithm), tried in order after the linked library's own
 # current default. An older/legacy app frequently keeps an older SQLCipher
@@ -109,6 +128,7 @@ def _connect_sqlcipher(
 
     def _try_open(compat: int | None, custom: SQLCipherParams | None) -> Any:
         conn = sqlcipher.connect(f"file:{tmp_path}?mode=ro", uri=True)
+        conn.text_factory = _lenient_text_factory
         try:
             _apply_key(conn)
             if compat is not None:
@@ -245,6 +265,7 @@ class SQLiteParser(AbstractParser):
             if conn is None:
                 conn = sqlite3.connect(f"file:{tmp_path}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
+                conn.text_factory = _lenient_text_factory
             else:
                 # sqlcipher3's Cursor type isn't accepted by stdlib
                 # sqlite3.Row's constructor -- use the matching Row class
