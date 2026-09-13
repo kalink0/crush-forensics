@@ -18,8 +18,8 @@ from crush.core.sqlite_wal import (
     PAGE_TYPE_TABLE_INTERIOR,
     PAGE_TYPE_TABLE_LEAF,
     RowByteLayout,
-    _column_ranges_from_layout,
     build_wal_page_index,
+    column_ranges_from_layout,
     parse_table_leaf_page,
 )
 
@@ -273,7 +273,7 @@ def _cell_nodes(
         )
         for col, value in enumerate(values):
             value_text = _display_cell_value(value)
-            physical = _column_ranges_from_layout(
+            physical = column_ranges_from_layout(
                 layout, col, file_offset, file_kind, page_locator
             ) or []
             column_label = _column_label(col, column_names)
