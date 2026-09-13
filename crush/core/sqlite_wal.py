@@ -691,12 +691,15 @@ def _resolve_pieces(
     return out
 
 
-def _page_accessors(
+def page_accessors(
     db_path: Path, page_size: int, wal_index: dict[int, tuple[int, bytes]]
 ) -> tuple[Callable[[int], tuple[str, int] | None], Callable[[int], bytes | None]]:
     """Shared (page_locator, read_page) pair, preferring a page's -wal
     version when one exists (i.e. resolving each page's *current* content)
-    -- used by locate_cell() and by locate_offset()'s "wal" mode."""
+    -- used by locate_cell(), by locate_offset()'s "wal" mode, and by
+    table_viewer.py's _inject_wal_rows() to resolve a WAL-history row's own
+    column byte ranges (its page is already known, unlike locate_cell()'s
+    page_table_map search)."""
 
     def page_locator(page_num: int) -> tuple[str, int] | None:
         if page_num in wal_index:
@@ -717,7 +720,7 @@ def _page_accessors(
 def _raw_base_accessors(
     db_path: Path, page_size: int
 ) -> tuple[Callable[[int], tuple[str, int] | None], Callable[[int], bytes | None]]:
-    """Like _page_accessors(), but never consults the -wal file at all --
+    """Like page_accessors(), but never consults the -wal file at all --
     for locate_offset()'s "base" mode, where the caller (a Hex pane showing
     the base file's own raw bytes, unmerged with any WAL frame) needs
     ranges decoded strictly from what's actually at those offsets in the
@@ -735,7 +738,7 @@ def _raw_base_accessors(
     return page_locator, read_page
 
 
-def _row_ranges_from_layout(
+def row_ranges_from_layout(
     layout: RowByteLayout,
     page_file_offset: int,
     home_file_kind: str,
@@ -754,7 +757,7 @@ def _row_ranges_from_layout(
     return row_ranges
 
 
-def _column_ranges_from_layout(
+def column_ranges_from_layout(
     layout: RowByteLayout,
     column_index: int,
     page_file_offset: int,
@@ -799,7 +802,7 @@ def locate_cell(
         return None
 
     wal_index = build_wal_page_index(wal_data, page_size)
-    page_locator, read_page = _page_accessors(db_path, page_size, wal_index)
+    page_locator, read_page = page_accessors(db_path, page_size, wal_index)
 
     table_pages = [pn for pn, name in page_table_map.items() if name == table_name]
 
@@ -826,9 +829,9 @@ def locate_cell(
             if entry_rowid != rowid:
                 continue
 
-            row_ranges = _row_ranges_from_layout(layout, page_file_offset, home_file_kind, page_locator)
+            row_ranges = row_ranges_from_layout(layout, page_file_offset, home_file_kind, page_locator)
             column_ranges = (
-                _column_ranges_from_layout(
+                column_ranges_from_layout(
                     layout, column_index, page_file_offset, home_file_kind, page_locator
                 )
                 if column_index is not None
@@ -886,7 +889,7 @@ def locate_offset(
                 page_num = pn
                 page_file_offset = frame_offset
                 break
-        page_locator, read_page = _page_accessors(db_path, page_size, wal_index)
+        page_locator, read_page = page_accessors(db_path, page_size, wal_index)
     else:
         candidate = offset // page_size + 1
         page_num = candidate
@@ -911,13 +914,13 @@ def locate_offset(
         return None
 
     for entry_rowid, _values, layout in parsed:
-        row_ranges = _row_ranges_from_layout(layout, page_file_offset, file_kind, page_locator)
+        row_ranges = row_ranges_from_layout(layout, page_file_offset, file_kind, page_locator)
         if not any(start <= offset < end for start, end in row_ranges):
             continue
 
         column_index: int | None = None
         for idx in range(len(layout.column_logical_ranges)):
-            col_ranges = _column_ranges_from_layout(
+            col_ranges = column_ranges_from_layout(
                 layout, idx, page_file_offset, file_kind, page_locator
             )
             if col_ranges and any(s <= offset < e for s, e in col_ranges):

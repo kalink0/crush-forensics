@@ -9,7 +9,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QModelIndex, Qt
 
-from crush.viewers.table_viewer import TableViewer, _format_wal_frame_content
+from crush.core.sqlite_freeblocks import scan_database_freeblocks
+from crush.core.sqlite_unallocated import scan_database_unallocated
+from crush.viewers.table_viewer import (
+    TableViewer,
+    _format_wal_frame_content,
+    _STRUCTURE_BYTE_RANGE_ROLE,
+    _STRUCTURE_FILE_KIND_ROLE,
+)
 
 
 def _make_viewer() -> TableViewer:
@@ -222,6 +229,393 @@ def test_wal_frames_content_column_decodes_row(qapp, tmp_path: Path) -> None:
         assert any("body=hello-wal-content" in c for c in contents)
     finally:
         writer.close()
+
+
+def _make_live_wal_db_with_overflow(path: Path) -> tuple[sqlite3.Connection, str]:
+    """Real WAL-mode DB, page_size small enough that a single big TEXT value
+    spills onto an overflow page -- both the table's leaf page and its
+    overflow page(s) end up WAL-resident (wal_autocheckpoint=0), same
+    overflow shape as test_sqlite_wal_locate.py's fixture but kept live in
+    the -wal file instead of checkpointed to the base file."""
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA page_size=512")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.commit()
+    big_body = "z" * 4000
+    conn.execute("INSERT INTO messages (body) VALUES (?)", (big_body,))
+    conn.commit()
+    return conn, big_body
+
+
+def test_wal_frames_content_column_resolves_overflow_value(qapp, tmp_path: Path) -> None:
+    """Regression: the WAL Frames tab's Content column decoded a frame's
+    page via parse_table_leaf_page() without an overflow_reader, so a value
+    spilling onto an overflow page rendered as the '<OVERFLOW>' sentinel
+    instead of its real content -- even though the same overflow-chasing
+    machinery already backs the embedded Hex pane's locate_cell()/
+    locate_offset()."""
+    db_path = tmp_path / "live.db"
+    writer, big_body = _make_live_wal_db_with_overflow(db_path)
+    try:
+        data = {
+            "__db_path": str(db_path),
+            "messages": {"columns": ["id", "body"], "rows": [[1, big_body]]},
+        }
+        tv = TableViewer(data, source_name="live.db")
+        tv._load_wal_frames()
+
+        model = tv._source_model
+        headers = [
+            model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
+        ]
+        content_col = headers.index("Content")
+        contents = [model.item(r, content_col).text() for r in range(model.rowCount())]
+
+        assert any(big_body in c for c in contents)
+        assert not any("<OVERFLOW>" in c for c in contents)
+    finally:
+        writer.close()
+
+
+def _make_live_wal_db_with_superseded_overflow(path: Path) -> tuple[sqlite3.Connection, str]:
+    """Real WAL-mode DB where the frame holding an overflowing row's leaf
+    page gets superseded by a later commit that only adds a second,
+    unrelated row to the same page -- the first row's overflow chain itself
+    is never rewritten, so the superseded frame's reconstructed value must
+    still match it exactly."""
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA page_size=512")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.commit()
+    big_body = "z" * 4000
+    conn.execute("INSERT INTO messages (id, body) VALUES (1, ?)", (big_body,))
+    conn.commit()
+    conn.execute("INSERT INTO messages (id, body) VALUES (2, 'small')")
+    conn.commit()
+    return conn, big_body
+
+
+def test_inject_wal_rows_resolves_overflow_value(qapp, tmp_path: Path) -> None:
+    """Regression: _inject_wal_rows() (the "Show WAL history" toggle's
+    superseded/uncommitted row injection into the normal table view) called
+    parse_table_leaf_page() without page_size or an overflow_reader at all,
+    so an injected row whose value spilled onto an overflow page rendered as
+    the '<OVERFLOW>' sentinel instead of its real content."""
+    db_path = tmp_path / "live.db"
+    writer, big_body = _make_live_wal_db_with_superseded_overflow(db_path)
+    try:
+        data = {"__db_path": str(db_path)}
+        tv = TableViewer(data, source_name="live.db")
+        tv._get_wal_frames()  # populate _page_table_map, like _load_table_impl does
+
+        injected_rows: list[list[object]] = []
+
+        def _append_row(
+            row_data: list[object],
+            source_label: str | None = None,
+            row_color: object = None,
+            wal_byte_range: tuple[int, int] | None = None,
+            wal_row_ranges: list[tuple[int, int]] | None = None,
+            wal_column_ranges: list[list[tuple[int, int]] | None] | None = None,
+        ) -> None:
+            injected_rows.append(row_data)
+
+        count = tv._inject_wal_rows("messages", ["id", "body"], _append_row)
+
+        assert count >= 1
+        assert any(row[1] == big_body for row in injected_rows)
+        assert not any(row[1] == "<OVERFLOW>" for row in injected_rows)
+    finally:
+        writer.close()
+
+
+def test_normal_table_wal_history_row_hex_sync_highlights_frame(qapp, tmp_path: Path) -> None:
+    """Regression: a WAL-history row injected into a normal table's own view
+    ("Show WAL history" toggle checked) never highlighted anything in the
+    embedded Hex pane -- _sync_hex_pane() required a rowid, which these rows
+    don't have (that's the whole point: several frames on the same page can
+    share one rowid, since this is showing a superseded version of it)."""
+    db_path = tmp_path / "live.db"
+    writer, big_body = _make_live_wal_db_with_superseded_overflow(db_path)
+    try:
+        data = {
+            "__db_path": str(db_path),
+            "messages": {"columns": ["id", "body"], "rows": [[1, big_body], [2, "small"]]},
+        }
+        tv = TableViewer(data, source_name="live.db")
+        tv._table_combo.setCurrentText("messages")
+        tv._load_table("messages")
+
+        tv._wal_toggle.setChecked(True)  # triggers _on_wal_toggle -> reload with WAL rows
+
+        model = tv._source_model
+        headers = [
+            model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
+        ]
+        body_col = headers.index("body")
+        wal_row = next(
+            r for r in range(model.rowCount())
+            if model.item(r, 0).data(_STRUCTURE_BYTE_RANGE_ROLE) is not None
+        )
+        assert model.item(wal_row, body_col).text() == big_body
+
+        # _sync_hex_pane() is gated on the hex panel's real Qt visibility,
+        # which requires the widget to actually be shown, not just its own
+        # setVisible(True) flag (see test_realm_hex_provenance.py).
+        tv.show()
+        tv._toggle_hex_pane()  # loads + shows the pane
+        proxy_idx = tv._proxy_model.mapFromSource(model.index(wal_row, body_col))
+        tv._table_view.setCurrentIndex(proxy_idx)
+
+        assert tv._hex_file_kind == "wal"
+        assert tv._hex_viewer._focus_ranges
+    finally:
+        writer.close()
+
+
+def _make_live_wal_db_with_superseded_row(path: Path) -> sqlite3.Connection:
+    """Real WAL-mode DB where an UPDATE rewrites the same row -- the frame
+    holding its old value becomes Superseded. Both values stay small enough
+    to stay fully inline (no overflow chain), so a column's highlighted
+    bytes reconstruct to an exact, easily comparable string."""
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA page_size=512")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.commit()
+    conn.execute("INSERT INTO messages (id, body) VALUES (1, 'first-version')")
+    conn.commit()
+    conn.execute("UPDATE messages SET body = 'second-version' WHERE id = 1")
+    conn.commit()
+    return conn
+
+
+def test_normal_table_wal_history_row_hex_sync_highlights_column(qapp, tmp_path: Path) -> None:
+    """Regression: a WAL-history row's hex highlight covered the entire WAL
+    frame (24-byte header + whole page) no matter which column was selected,
+    unlike a real row (row bytes, plus one specific column's own bytes drawn
+    on top). Selecting the "body" column of a superseded row must now
+    reconstruct to exactly its own old value, not the whole frame."""
+    db_path = tmp_path / "live.db"
+    writer = _make_live_wal_db_with_superseded_row(db_path)
+    try:
+        data = {
+            "__db_path": str(db_path),
+            "messages": {"columns": ["id", "body"], "rows": [[1, "second-version"]]},
+        }
+        tv = TableViewer(data, source_name="live.db")
+        tv._table_combo.setCurrentText("messages")
+        tv._load_table("messages")
+        tv._wal_toggle.setChecked(True)
+
+        model = tv._source_model
+        headers = [
+            model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
+        ]
+        body_col = headers.index("body")
+        wal_row = next(
+            r for r in range(model.rowCount())
+            if model.item(r, 0).data(_STRUCTURE_BYTE_RANGE_ROLE) is not None
+        )
+        assert model.item(wal_row, body_col).text() == "first-version"
+
+        tv.show()
+        tv._toggle_hex_pane()
+        proxy_idx = tv._proxy_model.mapFromSource(model.index(wal_row, body_col))
+        tv._table_view.setCurrentIndex(proxy_idx)
+
+        assert tv._hex_file_kind == "wal"
+        ranges = tv._hex_viewer._focus_ranges
+        assert ranges
+        # Narrower than the whole frame -- proves column precision, not the
+        # old whole-frame highlight.
+        highlighted_len = sum(e - s for s, e in ranges)
+        assert highlighted_len < 24 + tv._wal_page_size
+
+        # Row range(s) come first, drawn under the column range(s) -- same
+        # order as a real cell's CellLocation.row_ranges + column_ranges.
+        # The column range (the last one here, no overflow on either side)
+        # must be exactly the body value's own bytes, not the row's.
+        wal_data = Path(str(db_path) + "-wal").read_bytes()
+        col_start, col_end = ranges[-1]
+        assert wal_data[col_start:col_end] == b"first-version"
+    finally:
+        writer.close()
+
+
+def test_wal_frames_hex_sync_highlights_selected_frame(qapp, tmp_path: Path) -> None:
+    """Regression: the WAL Frames tab's rows were excluded from the embedded
+    Hex pane's table<->hex sync entirely (_is_pseudo_table()), so selecting a
+    frame while "Show Hex" was open never highlighted anything, and clicking
+    inside that highlight in the hex pane couldn't select anything back
+    either. Each row now carries its own exact byte range in the -wal file
+    (frame header + page) -- used directly, since an individual WAL frame
+    has no rowid/table-name identity the regular CellLocator could resolve."""
+    db_path = tmp_path / "live.db"
+    writer = _make_live_wal_db(db_path)
+    try:
+        data = {
+            "__db_path": str(db_path),
+            "messages": {"columns": ["id", "body"], "rows": [[1, "hello-wal-content"]]},
+        }
+        tv = TableViewer(data, source_name="live.db")
+        tv._load_wal_frames()
+
+        model = tv._source_model
+        headers = [
+            model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
+        ]
+        offset_col = headers.index("Offset (B)")
+        source_row = 0
+        expected_offset = int(model.item(source_row, offset_col).text())
+
+        proxy_idx = tv._proxy_model.mapFromSource(model.index(source_row, 0))
+        tv._sync_wal_hex_pane(proxy_idx)
+
+        assert tv._hex_file_kind == "wal"
+        assert tv._hex_viewer._focus_ranges
+        start, end = tv._hex_viewer._focus_ranges[0]
+        assert start == expected_offset
+        assert end == expected_offset + 24 + tv._wal_page_size
+
+        # Hex → WAL Frames: clicking anywhere inside that range selects the
+        # same row back.
+        tv._select_row_for_byte_offset(expected_offset + 1)
+        selected = tv._table_view.currentIndex()
+        assert selected.isValid()
+        assert tv._proxy_model.mapToSource(selected).row() == source_row
+    finally:
+        writer.close()
+
+
+def _make_single_delete_db(path: Path, page_size: int = 1024) -> None:
+    """Insert 10 rows, delete one from the middle -- a single-row DELETE
+    doesn't free the whole page (freelist_count stays 0), so SQLite splices
+    the cell into the page's freeblock list instead. Same fixture shape as
+    test_sqlite_freeblocks.py's."""
+    conn = sqlite3.connect(str(path))
+    conn.execute(f"PRAGMA page_size={page_size}")
+    conn.execute("PRAGMA secure_delete=OFF")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    for i in range(10):
+        conn.execute(
+            "INSERT INTO messages (body) VALUES (?)", (f"row-{i}-payload-CANARY{i:02d}",)
+        )
+    conn.commit()
+    conn.execute("DELETE FROM messages WHERE id = 5")
+    conn.commit()
+    conn.close()
+
+
+def test_freeblocks_hex_sync_highlights_exact_byte_range(qapp, tmp_path: Path) -> None:
+    """Regression: Freeblocks rows were excluded from the embedded Hex
+    pane's table<->hex sync entirely (_is_pseudo_table()), same gap the WAL
+    Frames tab had. Unlike a WAL frame, a freeblock already carries an exact
+    page-local (offset, size), so the fix gets cell-level precision here,
+    not just whole-page."""
+    db_path = tmp_path / "single_delete.db"
+    page_size = 1024
+    _make_single_delete_db(db_path, page_size)
+
+    freeblocks = scan_database_freeblocks(db_path, page_size)
+    assert freeblocks
+    fb = freeblocks[0]
+    expected_start = (fb["page"] - 1) * page_size + fb["offset"]
+    expected_end = expected_start + fb["size"]
+
+    tv = TableViewer({"__db_path": str(db_path)}, source_name="single_delete.db")
+    tv._reset_source_model()
+    tv._populate_freeblocks_table(freeblocks, {}, set())
+
+    model = tv._source_model
+    page_item = model.item(0, 0)
+    assert page_item.data(_STRUCTURE_FILE_KIND_ROLE) == "base"
+    assert page_item.data(_STRUCTURE_BYTE_RANGE_ROLE) == (expected_start, expected_end)
+
+    tv.show()
+    tv._toggle_hex_pane()
+    proxy_idx = tv._proxy_model.mapFromSource(model.index(0, 0))
+    tv._table_view.setCurrentIndex(proxy_idx)
+
+    assert tv._hex_file_kind == "base"
+    assert tv._hex_viewer._focus_ranges == [(expected_start, expected_end)]
+
+    # The freeblock's own 4-byte header overwrites the first 4 bytes of the
+    # old cell, so only what follows is the actual leftover row data.
+    raw = db_path.read_bytes()
+    assert raw[expected_start + 4:expected_end] == fb["data"]
+
+    # Hex → Freeblocks: clicking anywhere inside that range selects the row.
+    tv._select_row_for_byte_offset(expected_start + 5)
+    selected = tv._table_view.currentIndex()
+    assert selected.isValid()
+    assert tv._proxy_model.mapToSource(selected).row() == 0
+
+
+def _corrupt_page_with_unallocated_gap(
+    db_path: Path, page_num: int, page_size: int, gap_fill: bytes
+) -> None:
+    """Overwrite one on-disk table-leaf page's cell-pointer array so the gap
+    before its cell-content area holds *gap_fill* instead of whatever was
+    there -- deterministic stand-in for the "usually all-zero" real gap
+    (see sqlite_unallocated.py's own docstring), same page shape as
+    test_sqlite_unallocated.py's _make_page()."""
+    with open(db_path, "r+b") as fh:
+        fh.seek((page_num - 1) * page_size)
+        page = bytearray(fh.read(page_size))
+        cell_count = struct.unpack_from(">H", page, 3)[0]
+        ptr_array_end = 8 + cell_count * 2
+        content_start = struct.unpack_from(">H", page, 5)[0] or 65536
+        end = min(ptr_array_end + len(gap_fill), content_start, page_size)
+        page[ptr_array_end:end] = gap_fill[: end - ptr_array_end]
+        fh.seek((page_num - 1) * page_size)
+        fh.write(page)
+
+
+def test_unallocated_space_hex_sync_highlights_exact_byte_range(qapp, tmp_path: Path) -> None:
+    """Regression: Unallocated Space rows had the same missing hex-sync gap
+    as Freeblocks -- fixed the same way, using the entry's own exact
+    page-local (offset, size)."""
+    db_path = tmp_path / "unalloc.db"
+    page_size = 1024
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(f"PRAGMA page_size={page_size}")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO messages (body) VALUES ('hello')")
+    conn.commit()
+    conn.close()
+
+    _corrupt_page_with_unallocated_gap(db_path, 2, page_size, b"stale-pointer-leftover")
+
+    entries = scan_database_unallocated(db_path, page_size)
+    assert entries
+    entry = entries[0]
+    expected_start = (entry["page"] - 1) * page_size + entry["offset"]
+    expected_end = expected_start + entry["size"]
+
+    tv = TableViewer({"__db_path": str(db_path)}, source_name="unalloc.db")
+    tv._reset_source_model()
+    tv._populate_unallocated_table(entries, {}, set())
+
+    model = tv._source_model
+    page_item = model.item(0, 0)
+    assert page_item.data(_STRUCTURE_FILE_KIND_ROLE) == "base"
+    assert page_item.data(_STRUCTURE_BYTE_RANGE_ROLE) == (expected_start, expected_end)
+
+    tv.show()
+    tv._toggle_hex_pane()
+    proxy_idx = tv._proxy_model.mapFromSource(model.index(0, 0))
+    tv._table_view.setCurrentIndex(proxy_idx)
+
+    assert tv._hex_file_kind == "base"
+    assert tv._hex_viewer._focus_ranges == [(expected_start, expected_end)]
+    raw = db_path.read_bytes()
+    assert raw[expected_start:expected_end] == entry["data"]
 
 
 def _make_dropped_table_db(path: Path) -> None:

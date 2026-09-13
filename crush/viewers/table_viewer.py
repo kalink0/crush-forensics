@@ -76,8 +76,12 @@ from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     SqliteCellLocator,
     build_page_table_map,
+    build_wal_page_index,
     build_wal_page_overlay,
+    column_ranges_from_layout,
+    page_accessors,
     parse_table_leaf_page,
+    row_ranges_from_layout,
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
 from crush.core.ts_decode import decode_ts as _decode_ts
@@ -101,6 +105,11 @@ _VIRTUAL_PATH_BAD_CHARS = re.compile(r"[\\/:\x00-\x1f]+")
 # column's display index) storing a real table row's SQLite rowid, when
 # known -- see _append_row()'s rowid param and the embedded Hex pane.
 _ROWID_ROLE = Qt.ItemDataRole.UserRole + 1
+# _STRUCTURE_FILE_KIND_ROLE / _STRUCTURE_BYTE_RANGE_ROLE: which file a row's
+# bytes live in ("base"/"wal") and their range in it. Introduced for the File
+# Structure tree, but also set on WAL Frames rows (_load_wal_frames()) --
+# same need, a row with no rowid/table-name identity a CellLocator could
+# resolve, just knowing its own exact bytes instead. See _sync_wal_hex_pane().
 _STRUCTURE_FILE_KIND_ROLE = Qt.ItemDataRole.UserRole + 20
 _STRUCTURE_BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 21
 _STRUCTURE_HIGHLIGHT_RANGES_ROLE = Qt.ItemDataRole.UserRole + 22
@@ -108,6 +117,19 @@ _STRUCTURE_HIGHLIGHT_RANGES_ROLE = Qt.ItemDataRole.UserRole + 22
 # actually built -- cleared once populated, so it doubles as the "already
 # loaded?" check. See _populate_structure_page_if_needed().
 _STRUCTURE_LAZY_PAGE_ROLE = Qt.ItemDataRole.UserRole + 23
+# Finer-grained companions to _STRUCTURE_BYTE_RANGE_ROLE for a WAL-history
+# row injected by _inject_wal_rows(): _STRUCTURE_BYTE_RANGE_ROLE alone only
+# gets a coarse whole-frame range (enough for the Hex → Table reverse
+# lookup to know which row a click landed in), but a click that lands on
+# one specific COLUMN deserves that column's own exact bytes drawn on top,
+# same as a real row's CellLocation.row_ranges/column_ranges. Row 0's item
+# gets _WAL_ROW_RANGES_ROLE (list[tuple[int, int]], mirroring
+# CellLocation.row_ranges) and _WAL_COLUMN_RANGES_ROLE (one entry per value
+# column, each a list[tuple[int, int]] or None if unresolvable -- e.g. an
+# overflow segment that itself later became WAL-resident and no longer
+# matches the row's own home file).
+_WAL_ROW_RANGES_ROLE = Qt.ItemDataRole.UserRole + 24
+_WAL_COLUMN_RANGES_ROLE = Qt.ItemDataRole.UserRole + 25
 
 
 def _valid_structure_range(value: object) -> bool:
@@ -118,6 +140,18 @@ def _valid_structure_range(value: object) -> bool:
         and isinstance(value[1], int)
         and value[0] <= value[1]
     )
+
+
+def _page_file_location(
+    page_num: int, page_size: int, wal_index: dict[int, tuple[int, bytes]]
+) -> tuple[str, int]:
+    """Which file *page_num* currently lives in ("base"/"wal") and that
+    file's own absolute byte offset for it -- same small helper
+    sqlite_structure.py's File Structure tab uses, duplicated rather than
+    imported to avoid coupling two independent tabs' internals together."""
+    if page_num in wal_index:
+        return "wal", wal_index[page_num][0]
+    return "base", (page_num - 1) * page_size
 
 
 def _virtual_path_component(value: object, fallback: str) -> str:
@@ -1000,13 +1034,33 @@ class TableViewer(QWidget):
         self._source_model.setHorizontalHeaderLabels(headers)
 
         def _append_row(row_data: list[Any], source_label: str | None = None,
-                        row_color: object = None, rowid: int | None = None) -> None:
+                        row_color: object = None, rowid: int | None = None,
+                        wal_byte_range: tuple[int, int] | None = None,
+                        wal_row_ranges: list[tuple[int, int]] | None = None,
+                        wal_column_ranges: list[list[tuple[int, int]] | None] | None = None,
+                        ) -> None:
             row_index = self._source_model.rowCount() + 1
             row_item = QStandardItem(str(row_index))
             row_item.setEditable(False)
             row_item.setData(row_index, Qt.ItemDataRole.UserRole)
             if rowid is not None:
                 row_item.setData(rowid, _ROWID_ROLE)
+            if wal_byte_range is not None:
+                # A row injected from a WAL frame (see _inject_wal_rows()) has
+                # no rowid a CellLocator could resolve -- several frames on
+                # the same page can share one, and the whole point here is
+                # showing a *superseded* version. Stash the frame's own exact
+                # bytes instead, same roles the WAL Frames tab and File
+                # Structure tree use, so _sync_hex_pane()'s fallback can
+                # highlight it directly. wal_row_ranges/wal_column_ranges (when
+                # resolvable) refine that fallback to the row's own cell, and
+                # one specific column's own bytes, instead of the whole frame.
+                row_item.setData("wal", _STRUCTURE_FILE_KIND_ROLE)
+                row_item.setData(wal_byte_range, _STRUCTURE_BYTE_RANGE_ROLE)
+                if wal_row_ranges:
+                    row_item.setData(wal_row_ranges, _WAL_ROW_RANGES_ROLE)
+                if wal_column_ranges is not None:
+                    row_item.setData(wal_column_ranges, _WAL_COLUMN_RANGES_ROLE)
             if row_color:
                 row_item.setForeground(row_color)
             items = [row_item]
@@ -1134,6 +1188,9 @@ class TableViewer(QWidget):
         except OSError:
             return 0
 
+        wal_index = build_wal_page_index(wal_data, self._wal_page_size)
+        page_locator, read_page = page_accessors(self._db_path, self._wal_page_size, wal_index)
+
         injected = 0
         for f in frames:
             if f["status"] == "Active":
@@ -1144,16 +1201,34 @@ class TableViewer(QWidget):
             page_start = f["offset"] + 24
             page_bytes = wal_data[page_start: page_start + self._wal_page_size]
             btree_offset = 100 if f["page"] == 1 else 0
-            parsed = parse_table_leaf_page(page_bytes, btree_offset=btree_offset)
+            parsed = parse_table_leaf_page(
+                page_bytes,
+                page_size=self._wal_page_size,
+                btree_offset=btree_offset,
+                overflow_reader=read_page,
+                want_ranges=True,
+            )
             if not parsed:
                 continue
 
             color = _status_color.get(f["status"])
             label = f"WAL {f['status']} (frame {f['frame']})"
             n_cols = len(columns)
-            for _rowid, values in parsed:
+            byte_range = (f["offset"], f["offset"] + 24 + self._wal_page_size)
+            for _rowid, values, layout in parsed:
                 padded: list[Any] = (values + [None] * n_cols)[:n_cols]
-                append_row(padded, label, color)  # type: ignore[operator]
+                row_ranges = row_ranges_from_layout(layout, page_start, "wal", page_locator)
+                col_ranges: list[list[tuple[int, int]] | None] = [
+                    column_ranges_from_layout(layout, i, page_start, "wal", page_locator)
+                    if i < len(layout.column_logical_ranges) else None
+                    for i in range(n_cols)
+                ]
+                append_row(  # type: ignore[operator]
+                    padded, label, color,
+                    wal_byte_range=byte_range,
+                    wal_row_ranges=row_ranges,
+                    wal_column_ranges=col_ranges,
+                )
                 injected += 1
 
         return injected
@@ -1472,6 +1547,10 @@ class TableViewer(QWidget):
         }
 
         wal_data = self._get_wal_data()
+        wal_page_overlay = self._get_wal_page_overlay()
+
+        def _overflow_reader(page_num: int) -> bytes | None:
+            return _read_freelist_page(self._db_path, page_num, self._wal_page_size, wal_page_overlay)
 
         schema_col_names: dict[str, list[str]] = {}
         conn = self._ensure_db()
@@ -1491,7 +1570,10 @@ class TableViewer(QWidget):
                 page_bytes = wal_data[page_start: page_start + self._wal_page_size]
                 btree_offset = 100 if f["page"] == 1 else 0
                 decoded = parse_table_leaf_page(
-                    page_bytes, page_size=self._wal_page_size, btree_offset=btree_offset
+                    page_bytes,
+                    page_size=self._wal_page_size,
+                    btree_offset=btree_offset,
+                    overflow_reader=_overflow_reader,
                 )
                 if decoded is None:
                     content_text = "(not a leaf page)"
@@ -1511,8 +1593,16 @@ class TableViewer(QWidget):
                     it.setForeground(_c)
                 return it
 
+            frame_item = _item(str(f["frame"]), f["frame"])
+            if self._wal_page_size:
+                frame_item.setData("wal", _STRUCTURE_FILE_KIND_ROLE)
+                frame_item.setData(
+                    (f["offset"], f["offset"] + 24 + self._wal_page_size),
+                    _STRUCTURE_BYTE_RANGE_ROLE,
+                )
+
             self._source_model.appendRow([
-                _item(str(f["frame"]),                   f["frame"]),
+                frame_item,
                 _item(str(f["page"]),                    f["page"]),
                 _item(str(f["tx"]) if f["tx"] else "—",  f["tx"] or 0),
                 _item(f["status"]),
@@ -2020,6 +2110,9 @@ class TableViewer(QWidget):
             ["Page", "Table", "Offset (B)", "Size (B)", "Data"]
         )
 
+        page_size = self._get_page_size()
+        wal_index = build_wal_page_index(self._get_wal_data(), page_size)
+
         with self._dynamic_sort_suspended():
             for fb in freeblocks:
                 page = fb["page"]
@@ -2044,8 +2137,16 @@ class TableViewer(QWidget):
                 else:
                     text = raw.decode("utf-8", errors="replace")
 
+                page_item = QStandardItem(str(page))
+                if page_size:
+                    file_kind, page_file_offset = _page_file_location(page, page_size, wal_index)
+                    page_item.setData(file_kind, _STRUCTURE_FILE_KIND_ROLE)
+                    page_item.setData(
+                        (page_file_offset + fb["offset"], page_file_offset + fb["offset"] + fb["size"]),
+                        _STRUCTURE_BYTE_RANGE_ROLE,
+                    )
                 items = [
-                    QStandardItem(str(page)),
+                    page_item,
                     QStandardItem(origin),
                     QStandardItem(str(fb["offset"])),
                     QStandardItem(str(fb["size"])),
@@ -2147,6 +2248,9 @@ class TableViewer(QWidget):
             ["Page", "Table", "Offset (B)", "Size (B)", "Data"]
         )
 
+        page_size = self._get_page_size()
+        wal_index = build_wal_page_index(self._get_wal_data(), page_size)
+
         with self._dynamic_sort_suspended():
             for entry in entries:
                 page = entry["page"]
@@ -2158,8 +2262,19 @@ class TableViewer(QWidget):
                     origin = "—"
                 text = entry["data"].decode("utf-8", errors="replace")
 
+                page_item = QStandardItem(str(page))
+                if page_size:
+                    file_kind, page_file_offset = _page_file_location(page, page_size, wal_index)
+                    page_item.setData(file_kind, _STRUCTURE_FILE_KIND_ROLE)
+                    page_item.setData(
+                        (
+                            page_file_offset + entry["offset"],
+                            page_file_offset + entry["offset"] + entry["size"],
+                        ),
+                        _STRUCTURE_BYTE_RANGE_ROLE,
+                    )
                 items = [
-                    QStandardItem(str(page)),
+                    page_item,
                     QStandardItem(origin),
                     QStandardItem(str(entry["offset"])),
                     QStandardItem(str(entry["size"])),
@@ -3101,6 +3216,12 @@ class TableViewer(QWidget):
         if not self._hex_panel.isVisible():
             return
 
+        table_name = self._table_combo.currentText()
+        if table_name == self._wal_label:
+            self._sync_wal_hex_pane(current)
+            return
+
+        row_item = None
         rowid = None
         col_idx = None
         if current is not None and current.isValid():
@@ -3109,7 +3230,36 @@ class TableViewer(QWidget):
             rowid = row_item.data(_ROWID_ROLE) if row_item is not None else None
             col_idx = current.column() - 1  # column 0 is "Row"
 
-        table_name = self._table_combo.currentText()
+        if rowid is None and row_item is not None:
+            # A row with no rowid a CellLocator could resolve is either a
+            # normal table with nothing selected, or a row that carries its
+            # own exact byte range directly instead: a WAL-history row
+            # injected by _inject_wal_rows() (Show WAL history toggle), or a
+            # Freeblocks/Unallocated Space row (see _populate_freeblocks_table()/
+            # _populate_unallocated_table()). Try that before giving up.
+            stashed_file_kind = row_item.data(_STRUCTURE_FILE_KIND_ROLE)
+            stashed_byte_range = row_item.data(_STRUCTURE_BYTE_RANGE_ROLE)
+            if stashed_file_kind and _valid_structure_range(stashed_byte_range):
+                self._ensure_hex_pane_loaded()
+                stashed_row_ranges = row_item.data(_WAL_ROW_RANGES_ROLE)
+                if isinstance(stashed_row_ranges, list) and stashed_row_ranges:
+                    # A WAL-history row has its own precise (row, column)
+                    # ranges available, same shape as a real row's
+                    # CellLocation -- prefer those over the coarse whole-frame
+                    # range so selecting one column highlights just its bytes.
+                    ranges = list(stashed_row_ranges)
+                    stashed_col_ranges = row_item.data(_WAL_COLUMN_RANGES_ROLE)
+                    if (
+                        isinstance(stashed_col_ranges, list) and col_idx is not None
+                        and 0 <= col_idx < len(stashed_col_ranges)
+                        and stashed_col_ranges[col_idx]
+                    ):
+                        ranges.extend(stashed_col_ranges[col_idx])
+                    self._highlight_stashed_byte_ranges(stashed_file_kind, ranges)
+                else:
+                    self._highlight_stashed_byte_ranges(stashed_file_kind, [stashed_byte_range])
+                return
+
         if (
             rowid is None or col_idx is None or col_idx < 0
             or self._is_pseudo_table(table_name)
@@ -3138,6 +3288,55 @@ class TableViewer(QWidget):
         ranges = list(location.row_ranges)
         if location.column_ranges:
             ranges.extend(location.column_ranges)
+        self._hex_viewer.highlight_byte_ranges(ranges)
+
+    def _sync_wal_hex_pane(self, current: QModelIndex | None) -> None:
+        """WAL Frames tab -> Hex: highlight the selected frame's own
+        header+page bytes directly in the -wal file. A WAL frame has no
+        rowid/table-name identity a CellLocator could resolve (several
+        frames on the same page share a rowid), so this uses the
+        (file_kind, byte_range) _load_wal_frames() already stashed on the
+        row instead -- same _STRUCTURE_*_ROLE roles the File Structure tab
+        uses, since the need (know which bytes a row means, in which file)
+        is identical."""
+        item = None
+        if current is not None and current.isValid():
+            source_index = self._proxy_model.mapToSource(current)
+            item = self._source_model.item(source_index.row(), 0)
+        file_kind = item.data(_STRUCTURE_FILE_KIND_ROLE) if item is not None else None
+        byte_range = item.data(_STRUCTURE_BYTE_RANGE_ROLE) if item is not None else None
+        if not file_kind or not _valid_structure_range(byte_range):
+            self._hex_viewer.clear_byte_range_highlight()
+            return
+
+        self._ensure_hex_pane_loaded()
+        self._highlight_stashed_byte_ranges(file_kind, [byte_range])
+
+    def _highlight_stashed_byte_ranges(self, file_kind: str, ranges: list[tuple[int, int]]) -> None:
+        """Switch the embedded Hex pane to *file_kind* ("base"/"wal") if it
+        isn't already showing it, then highlight *ranges* -- shared by the
+        WAL Frames tab (_sync_wal_hex_pane, always one whole-frame range) and
+        any row with no rowid a CellLocator could resolve, which carries its
+        own byte range(s) directly instead (_sync_hex_pane's fallback: a
+        WAL-history row's precise row/column ranges when available, else its
+        one whole-frame range; Freeblocks/Unallocated Space's one range)."""
+        if file_kind != self._hex_file_kind:
+            target_path = (
+                Path(str(self._db_path) + "-wal")
+                if file_kind == "wal" and self._db_path is not None else self._db_path
+            )
+            if target_path is None:
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            try:
+                data = target_path.read_bytes()
+            except OSError:
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            self._hex_viewer.set_data(data)
+            self._hex_file_kind = str(file_kind)
+            suffix = "-wal file" if file_kind == "wal" else "db file"
+            self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
         self._hex_viewer.highlight_byte_ranges(ranges)
 
     def _structure_item_from_index(self, index: QModelIndex) -> QStandardItem | None:
@@ -3202,11 +3401,22 @@ class TableViewer(QWidget):
         if table_name == self._file_structure_label:
             self._select_structure_item_for_offset(offset)
             return
-        if self._is_pseudo_table(table_name) or self._query_results_active:
+        if self._is_pseudo_table(table_name):
+            # WAL Frames, Freeblocks, Unallocated Space: rows here have no
+            # rowid a CellLocator could resolve, only their own stashed byte
+            # range (see _select_row_for_byte_offset()).
+            self._select_row_for_byte_offset(offset)
+            return
+        if self._query_results_active:
             return
 
         result = self._cell_locator.locate_offset(table_name, self._hex_file_kind, offset)
         if result is None:
+            # Not attributable to any real row -- could still be a
+            # WAL-history row _inject_wal_rows() injected into this same
+            # table view, which carries its own frame byte range rather
+            # than a rowid a CellLocator could resolve.
+            self._select_row_for_byte_offset(offset)
             return
         rowid, col_idx = result
 
@@ -3216,6 +3426,32 @@ class TableViewer(QWidget):
                 continue
             target_col = (col_idx + 1) if col_idx is not None else 0
             source_index = self._source_model.index(row, target_col)
+            proxy_index = self._proxy_model.mapFromSource(source_index)
+            if proxy_index.isValid():
+                self._syncing_hex_selection = True
+                self._table_view.setCurrentIndex(proxy_index)
+                self._table_view.scrollTo(proxy_index)
+                self._syncing_hex_selection = False
+            break
+
+    def _select_row_for_byte_offset(self, offset: int) -> None:
+        """Hex → Table: select the row whose own stashed (file_kind,
+        byte_range) -- WAL Frames, a WAL-history row injected into a normal
+        table, or a Freeblocks/Unallocated Space row -- covers *offset* in
+        whichever file the Hex pane is currently showing. None of these have
+        a rowid a CellLocator could resolve, only their own exact bytes."""
+        for row in range(self._source_model.rowCount()):
+            row_item = self._source_model.item(row, 0)
+            if row_item is None:
+                continue
+            file_kind = row_item.data(_STRUCTURE_FILE_KIND_ROLE)
+            byte_range = row_item.data(_STRUCTURE_BYTE_RANGE_ROLE)
+            if file_kind != self._hex_file_kind or not _valid_structure_range(byte_range):
+                continue
+            start, end = byte_range
+            if not (start <= offset < end):
+                continue
+            source_index = self._source_model.index(row, 0)
             proxy_index = self._proxy_model.mapFromSource(source_index)
             if proxy_index.isValid():
                 self._syncing_hex_selection = True
