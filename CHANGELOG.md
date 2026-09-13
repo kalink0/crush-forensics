@@ -2,7 +2,7 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.19.0 - 2026-09-13
 
 ### New Features
 
