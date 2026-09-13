@@ -69,6 +69,18 @@ your support makes this project possible.</p>
     <td><a href="https://github.com/abrignoni/mmkv-parser">Alexis Brignoni</a></td>
   </tr>
   <tr>
+    <td><b>qnxprobe</b></td>
+    <td>Raw disk image / partition reader (NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX IFS)</td>
+    <td class="lic">MIT</td>
+    <td><a href="https://github.com/abrignoni/qnxprobe">Alexis Brignoni</a></td>
+  </tr>
+  <tr class="alt">
+    <td><b>ewfprobe</b></td>
+    <td>EWF (Expert Witness Format, .E01) acquisition reader</td>
+    <td class="lic">MIT</td>
+    <td><a href="https://github.com/abrignoni/ewfprobe">Alexis Brignoni</a></td>
+  </tr>
+  <tr>
     <td><b>{ul_label}</b></td>
     <td>Apple Unified Log (.tracev3 / .logarchive) converter — bundled in portable builds; when running from source, place the binary under <code>crush/bin/unifiedlog_iterator/</code></td>
     <td class="lic">Apache 2.0</td>

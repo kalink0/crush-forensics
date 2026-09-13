@@ -27,6 +27,43 @@ Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also
 
 ---
 
+## Raw Disk Images & EWF Acquisitions
+
+**Open file…** also accepts raw disk images (`.img`, `.dd`, `.raw`, or a numbered `.001` segment of a split set) and EWF (Expert Witness Format, `.E01` + segments) acquisitions — opened in place, without mounting and without administrator rights. Only the bytes an examiner actually opens ever leave the image.
+
+Supported filesystems: NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, and QNX IFS boot images. A split `.001..NNN` dd set is joined automatically from whichever segment is opened; an `.E01` acquisition joins its own numbered segments the same way. Built on [abrignoni/qnxprobe](https://github.com/abrignoni/qnxprobe) and [abrignoni/ewfprobe](https://github.com/abrignoni/ewfprobe).
+
+### Volume tree
+
+Each partition or bare filesystem qnxprobe finds becomes one top-level node, named after its LBA offset (e.g. `p3_lba239616_basic_data_partition`, or `lba0` for an unpartitioned image) so two volumes can never collide. This mirrors the naming a report from the underlying reader itself would use, so it's recognizable if cross-referenced against another tool's output (e.g. `mmls`).
+
+**Nothing is hidden**, in keeping with this project's general rule that a forensic tool must never make part of the source look less accessible than it actually is:
+
+- **Unallocated space** — the bytes before, between, and after partition table entries (alignment padding, trailing slack) are not something the underlying reader reports on its own; Crush computes these gaps itself and lists them as their own readable leaf nodes.
+- **A partition with an unsupported filesystem** — one qnxprobe's partition-table parsing finds but has no reader for (or doesn't recognize the filesystem inside at all) — is still listed, as a plain file rather than a folder, and is fully readable as the raw bytes of that region (opens in Hex View via the normal "no parser matched" fallback).
+- In both cases, selecting the node shows an explicit **Filesystem** / **Status** entry in the Properties panel explaining what it is and why it isn't parsed, instead of just an unremarkable file size.
+
+### Deleted files
+
+For **NTFS, FAT32, and exFAT** volumes only (the only filesystems the underlying reader has this for), a `$Recovered` folder appears alongside the live files, containing every directory/MFT record still on disk whose entry is marked free but hasn't yet been overwritten — this is filesystem-level deletion, not the Recycle Bin. A file sitting in `$Recycle.Bin` (NTFS) is a completely ordinary, live file from the filesystem's point of view and already appears in the normal tree; `$Recovered` is a level below that: records for files already removed from (or bypassing) the Recycle Bin, recoverable only because the filesystem hasn't reused that specific record/directory slot for something else yet.
+
+- Every entry is listed, including ones judged **not recoverable** (data clusters already reused, attributes overflowed the record, or it's a deleted directory — recursing into a deleted directory's own contents isn't attempted). The Properties panel states the reason; attempting to open one of these shows a clear error rather than wrong or partial bytes.
+- Recovered files are placed **flat** under `$Recovered`, not reassembled into the folder structure they were originally deleted from.
+- **FAT32 specifically** cannot recover a deleted file's first character — the delete operation overwrites exactly that byte on disk. Such a name is shown with a leading `_` in place of the lost character (the same convention long used by DOS/Windows undelete tools), e.g. a deleted `one.jpg` reappears as `_ne.jpg`. The file's **content** is unaffected by this and is recovered exactly. exFAT does not have this limitation.
+
+### Verifying an EWF acquisition
+
+Right-click the root of an EWF-backed source and choose **Verify EWF Hash…** to recompute the acquisition's MD5/SHA1 over its full contents and compare against the hash the acquisition tool stored when it was created — the same check `ewfacquire`/`ewfverify`-style tooling performs, done entirely with Crush's own bundled reader (no external tool, no network). Not run automatically on opening: an acquisition can be very large, and re-reading all of it on every open would defeat the point of reading it on demand in the first place. An acquisition that recorded no hash at all says so explicitly rather than reporting a silent, meaningless "match".
+
+### Known limitations
+
+- **No other container formats yet** — AFF4, VMDK, VDI, and QCOW disk images are not supported; only raw/dd images and EWF (.E01).
+- **No other filesystems yet** — notably Btrfs, XFS, and LittleFS (common on smartwatches and other small embedded/IoT devices) are not covered by the underlying reader.
+- **No snapshot support** — NTFS Volume Shadow Copies and APFS snapshots are not read; only the filesystem's current, live state (plus the deleted-file recovery above) is available.
+- **Deleted-file recovery is NTFS/FAT32/exFAT only** — ext2/3/4, F2FS, HFS+, APFS, and the QNX filesystems have no equivalent in the underlying reader.
+
+---
+
 ## The Interface
 
 ```

@@ -4,6 +4,13 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+### New Features
+
+- Raw disk image (`.img`/`.dd`/split `.001`) and EWF (`.E01`) support, with the following filesystems: NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX IFS. Built on [abrignoni/qnxprobe](https://github.com/abrignoni/qnxprobe) and [abrignoni/ewfprobe](https://github.com/abrignoni/ewfprobe) (both MIT). Addresses [#4](https://github.com/kalink0/crush-forensics/issues/4).
+- Unallocated space outside partition boundaries is shown as a file, openable in Hex View.
+- NTFS, FAT32, and exFAT have deleted-file support (recovered from the MFT/FAT).
+- EWF hash verification against the acquisition's own stored hash.
+
 ### Bug Fixes
 
 - Fixed the SQLite parser losing an entire table's rows whenever a single `TEXT`-affinity value wasn't valid UTF-8 (SQLite is dynamically typed, so this can happen with data a native, non-Python writer produced) — every other row in that table, including unrelated ones with no problem at all, disappeared behind a single `(error)` placeholder. A lenient `text_factory` now falls back to the exact original bytes for just that one value (shown via the table viewer's existing BLOB handling) instead of failing the whole table.

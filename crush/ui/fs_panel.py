@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 
 from crush.core.session import Session
-from crush.core.vfs import VFS, VFSNode
+from crush.core.vfs import VFS, RawImageVFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
 from crush.ui.log_scope import window_log_scope
@@ -133,8 +133,14 @@ class FilesystemPanel(QWidget):
         self._build_timer = QTimer(self)
         self._build_timer.setInterval(0)
         self._build_timer.timeout.connect(self._process_build_queue)
-        self._build_queue: deque[tuple[QStandardItem, VFSNode, VFS]] = deque()
-        self._build_batch = 200
+        # (parent_item, node, vfs, start_index) — start_index lets one folder's
+        # children be split across multiple ticks; a folder isn't limited to
+        # one queue entry, so a single directory with many thousands of
+        # entries (a real device's photo/cache folder, easily possible on a
+        # raw image or E01) can't block the UI thread by itself.
+        self._build_queue: deque[tuple[QStandardItem, VFSNode, VFS, int]] = deque()
+        self._build_batch = 200  # max queue entries drained per tick when each is small
+        self._build_rows_per_tick = 2000  # row budget per tick, shared across entries
         self._type_queue: deque[tuple[QStandardItem, VFSNode, VFS]] = deque()
         self._type_timer = QTimer(self)
         self._type_timer.setInterval(0)
@@ -535,9 +541,12 @@ class FilesystemPanel(QWidget):
         format_info_action = menu.addAction("Show Format Info")
         menu.addSeparator()
         export_action = menu.addAction("Export…")
+        verify_ewf_action = None
         close_source_action = None
         if node is vfs.root():
             menu.addSeparator()
+            if isinstance(vfs, RawImageVFS) and vfs.is_ewf():
+                verify_ewf_action = menu.addAction("Verify EWF Hash…")
             close_source_action = menu.addAction("Close Source")
         action = menu.exec(global_pos)
         if action is None:
@@ -594,6 +603,8 @@ class FilesystemPanel(QWidget):
             self.export_requested.emit(node, vfs)
         elif action == export_logarchive_action:
             self.export_logarchive_requested.emit(node, vfs)
+        elif action == verify_ewf_action:
+            self.open_requested.emit(node, vfs, "verify_ewf")
         elif action == close_source_action:
             self.close_source_requested.emit(vfs)
 
@@ -861,13 +872,24 @@ class FilesystemPanel(QWidget):
             return
 
         processed = 0
-        while self._build_queue and processed < self._build_batch:
-            parent_item, node, vfs = self._build_queue.popleft()
-            for child in node.children:
+        budget = self._build_rows_per_tick
+        while self._build_queue and processed < self._build_batch and budget > 0:
+            parent_item, node, vfs, start = self._build_queue.popleft()
+            children = node.children
+            end = min(len(children), start + budget)
+            for child in children[start:end]:
                 row = self._node_to_row_shallow(child, vfs)
                 parent_item.appendRow(row)
                 if child.is_dir and child.children:
                     self._add_placeholder(row[0])
+            budget -= end - start
+            if end < len(children):
+                # Row budget ran out partway through this folder — resume it
+                # first next tick rather than moving on to other queued
+                # folders, and stop this tick (further entries would just be
+                # deferred again with an empty budget).
+                self._build_queue.appendleft((parent_item, node, vfs, end))
+                break
             processed += 1
 
         if not self._build_queue:
@@ -1017,7 +1039,7 @@ class FilesystemPanel(QWidget):
             if first is not None and first.data(_ROLE_PLACEHOLDER):
                 parent_item.removeRows(0, parent_item.rowCount())
         if node.children:
-            self._build_queue.append((parent_item, node, vfs))
+            self._build_queue.append((parent_item, node, vfs, 0))
             if not self._build_timer.isActive():
                 self._activity_start("Loading folders")
                 self._build_timer.start()

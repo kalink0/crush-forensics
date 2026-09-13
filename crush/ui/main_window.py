@@ -1287,6 +1287,9 @@ class MainWindow(QMainWindow):
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
             return
+        if mode == "verify_ewf":
+            self._verify_ewf(node, vfs)
+            return
         if mode == "multi_log":
             self._hash_node_if_integrity(node, vfs)
             self._open_multi_log_window(node, vfs)
@@ -1421,6 +1424,62 @@ class MainWindow(QMainWindow):
             self._open_encrypted_pdf(node, vfs)
             return
         self._open_node(node, vfs)
+
+    def _verify_ewf(self, node: VFSNode, vfs: VFS) -> None:
+        """Recompute an EWF acquisition's MD5/SHA1 and compare them to the
+        acquisition's own stored hashes. Not run automatically on load: an
+        acquisition can be tens to hundreds of GB, and re-reading all of it
+        on every open would defeat the point of reading it on demand in the
+        first place — this is an explicit, examiner-triggered action.
+        """
+        from crush.core.vfs import RawImageVFS
+        from crush.ui.busy_dialog import run_with_busy_dialog
+
+        if not isinstance(vfs, RawImageVFS):
+            return
+
+        def _work() -> object:
+            return vfs.verify_ewf()
+
+        def _on_done(result: object) -> None:
+            stored: dict[str, str] = result.get("stored") or {}  # type: ignore[attr-defined]
+            computed: dict[str, str] = result.get("computed") or {}  # type: ignore[attr-defined]
+            match = result.get("match")
+            if not stored:
+                # This project's standing rule: never let an unverifiable
+                # result look like a silent success — say plainly that
+                # there was nothing to compare against.
+                QMessageBox.information(
+                    self, "Verify EWF Hash",
+                    "This acquisition recorded no hash to verify against.",
+                )
+                self._status.showMessage(f"{node.path}  [EWF verify: no stored hash]")
+                return
+            lines = [f"{name}: {digest}" for name, digest in sorted(stored.items())]
+            if match:
+                QMessageBox.information(
+                    self, "Verify EWF Hash",
+                    "MATCH — the acquisition's own recorded hash matches its data:\n\n"
+                    + "\n".join(lines),
+                )
+                self._status.showMessage(f"{node.path}  [EWF verify: MATCH]")
+            else:
+                mismatches = [
+                    f"{name}: stored {stored.get(name)} != computed {computed.get(name)}"
+                    for name in stored
+                    if stored.get(name) != computed.get(name)
+                ]
+                QMessageBox.warning(
+                    self, "Verify EWF Hash",
+                    "MISMATCH — the acquisition's data does not match its own recorded "
+                    "hash:\n\n" + "\n".join(mismatches),
+                )
+                self._status.showMessage(f"{node.path}  [EWF verify: MISMATCH]")
+
+        def _on_error(message: str) -> None:
+            QMessageBox.warning(self, "Verify EWF Hash", f"Could not verify: {message}")
+
+        run_with_busy_dialog(self, "Verifying EWF hash…", _work, _on_done, _on_error)
 
     def _open_encrypted_sqlite(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
         from crush.core.passwords import WrongPasswordError
@@ -2377,18 +2436,35 @@ class MainWindow(QMainWindow):
         """Prepend format knowledge-base metadata to a ParseResult without overriding parser data."""
         try:
             from crush.core.format_db import FormatDatabase
+            from crush.core.vfs import RawImageVFS
             from crush.parsers.base import ParseResult
+
+            fmt_meta: dict = {}
+
+            # A raw disk image/EWF region that isn't a walked file (an
+            # unallocated gap, or a partition whose filesystem is
+            # recognised but has no reader) would otherwise look like an
+            # ordinary, unremarkable file here -- this project's rule is
+            # that unsupported content must always carry an explicit
+            # status instead.
+            if isinstance(vfs, RawImageVFS):
+                vol_info = vfs.volume_info(node)
+                if vol_info is not None:
+                    fmt_meta["Filesystem"] = vol_info["kind"] or "unknown"
+                    fmt_meta["Status"] = vol_info["note"] or "no reader for this content — showing raw bytes"
+
             fmt = FormatDatabase.get().by_parser_class(type(parser).__name__) if parser else None
             if fmt is None:
                 peek = vfs.peek(node)
                 fmt = FormatDatabase.get().identify(peek, node.name)
-            if fmt is None:
+            if fmt is not None:
+                fmt_meta["Format"] = fmt.name
+                if fmt.platforms:
+                    fmt_meta["Platforms"] = fmt.platforms.replace(",", ", ")
+                if fmt.forensic_relevance:
+                    fmt_meta["Forensic relevance"] = fmt.forensic_relevance
+            if not fmt_meta:
                 return result
-            fmt_meta: dict = {"Format": fmt.name}
-            if fmt.platforms:
-                fmt_meta["Platforms"] = fmt.platforms.replace(",", ", ")
-            if fmt.forensic_relevance:
-                fmt_meta["Forensic relevance"] = fmt.forensic_relevance
             # Parser metadata takes precedence over format defaults
             merged = {**fmt_meta, **result.metadata}  # type: ignore[union-attr]
             return ParseResult(
