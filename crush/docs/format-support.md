@@ -1,6 +1,14 @@
 # Format Support — Parsers & Viewers
 
-This page lists what Crush can parse and how each viewer behaves, plus the current limitations. It is meant to be honest and actionable: if something is missing, you will see it here.
+This page lists what Crush can parse and how each viewer behaves, plus the current limitations. It is meant to be honest and actionable: if something is missing, you will see it here. Scope: this page covers file **formats** — what gets detected, parsed, and displayed for a given file — not general-purpose tools like the Value Inspector or Blob Inspector, and not how evidence sources (folders, ZIP/TAR/7z archives, device backups) are opened in the first place.
+
+## Contents
+
+**Parsers** — [SQLite Database](#sqlite-database) · [Property List (plist)](#property-list-plist) · [XML](#xml) · [JSON](#json) · [Protobuf](#protobuf-explicit-only) · [Android Binary XML (ABX)](#android-binary-xml-abx) · [SEGB (Biome)](#segb-biome) · [LevelDB](#leveldb) · [MMKV](#mmkv-explicit-only) · [Realm Database](#realm-database) · [Images](#images) · [Media (Audio/Video)](#media-audiovideo) · [PDF](#pdf) · [Log Files](#log-files-explicit-only) · [Hex Fallback](#hex-fallback)
+
+**Viewers** — [Table](#table-viewer) · [Tree](#tree-viewer) · [Text](#text-viewer) · [Hex](#hex-viewer) · [Image](#image-viewer) · [Media](#media-viewer) · [ABX](#abx-viewer) · [LevelDB](#leveldb-viewer) · [MMKV](#mmkv-viewer) · [Multi-Log Studio](#multi-log-studio) · [Realm](#realm-viewer) · [Protobuf](#protobuf-viewer)
+
+[Known Gaps](#known-gaps-planned)
 
 ## How Detection Works
 
@@ -17,12 +25,13 @@ This page lists what Crush can parse and how each viewer behaves, plus the curre
 - SQLCipher-encrypted databases are supported when the password or key is known — right-click the file → **Open as** → **SQLite DB (Encrypted)…**; a wrong password/key re-prompts instead of failing silently. This opens the real SQLCipher engine (the `sqlcipher3` package, not a custom decryption), so page and WAL-frame decryption/checkpointing are handled natively rather than reimplemented — including data that only ever made it into a `-wal` companion, never checkpointed into the main file (a device seized mid-session, before the app itself closed its DB connection). By default, opening tries the linked library's current default cipher settings first, then each legacy `cipher_compatibility` preset (SQLCipher 4 down to 1) in turn — each attempt is a real, cryptographically-verified pass/fail via the engine's own per-page HMAC check, not a guess. As with encrypted `.realm` files, a normal double-click open never auto-prompts, since ciphertext (including what would be the plaintext magic header) can't be told apart from corrupt/other binary data.
 - The credentials dialog has a **Raw key** option for a key that isn't a passphrase — SQLCipher's own recommended approach when the key is "managed externally" (e.g. an Android Keystore-derived key), rather than typed by a user. Raw key applies independently of whether Advanced parameters are also set, since page size and HMAC algorithm still matter even without a passphrase KDF.
 - An **Advanced** section exposes explicit cipher parameters (page size, KDF iterations, KDF/HMAC digest, plaintext header size) for apps whose settings don't match any standard `cipher_compatibility` preset — notably Signal and its forks (Session, Molly), which set `kdf_iter = 1` since their key already comes from the platform keystore at full entropy, making the passphrase-stretching KDF pointless overhead. When Advanced is used, those exact parameters are applied in a single attempt instead of the auto-try.
-- The main database file's own freelist and in-page freeblocks — not just the WAL — are carved for leftover/deleted data, across three tabs: **Freelist Recovery** walks the freelist trunk chain and carves any table-leaf cells still intact on freed pages (SQLite doesn't zero a page's content when it's freed, only when a new allocation reuses it), including values that spill onto overflow pages, reconstructed by following the overflow chain through pages still confirmed unmodified on the freelist; a "Candidate Tables" column matches by column count against the current schema — a heuristic hint, not a definitive attribution, since a freed page is no longer referenced by any B-tree. **Freeblocks** catches the far more common case of an ordinary single-row `DELETE` that never frees a whole page — SQLite splices the deleted cell into the page's in-page freeblock list instead, and since the page is still part of a live table's B-tree, attribution here is definite, not a guess. **Unallocated Space** shows the raw, unverified bytes sitting in the gap between a page's cell-pointer array and its content area for manual review — SQLite doesn't guarantee anything meaningful survives there (often stale pointer values or all-zero), unlike Freeblocks.
+- The main database file's own freelist and in-page freeblocks — not just the WAL — are carved for leftover/deleted data, across three tabs: **Freelist Recovery** walks the freelist trunk chain and carves any table-leaf cells still intact on freed pages (SQLite doesn't zero a page's content when it's freed, only when a new allocation reuses it), including values that spill onto overflow pages, reconstructed by following the overflow chain through pages still confirmed unmodified on the freelist; a "Candidate Tables" column matches by column count against the current schema — a heuristic hint, not a definitive attribution, since a freed page is no longer referenced by any B-tree. **Freeblocks** catches the far more common case of an ordinary single-row `DELETE` that never frees a whole page — SQLite splices the deleted cell into the page's in-page freeblock list instead, and since the page is still part of a live table's B-tree, attribution here is definite, not a guess. **Unallocated Space** shows the raw, unverified bytes sitting in the gap between a page's cell-pointer array and its content area for manual review — SQLite doesn't guarantee anything meaningful survives there (often stale pointer values or all-zero), unlike Freeblocks. All three also see not-yet-checkpointed WAL content: each scan first checks a page's latest committed `-wal` frame before falling back to the main file's own bytes for that page, so a deletion whose only trace is in the WAL is still carved.
+- A **File Structure** tab shows the database file's physical page/cell/header layout (allocation status, cell pointers, freeblocks, unallocated space) — the raw on-disk structure itself, independent of any table/schema interpretation. Selecting a structure item highlights its exact bytes using the same Show Hex byte-provenance as table cells, across the base file and WAL, and vice versa. Each page's row/column detail loads lazily on first expand rather than all at once, so opening a database with many pages stays responsive.
 
 Limitations
 - Table display is capped at 10,000 rows per table (WAL-sourced rows from the history toggle are not counted against this cap). Use SQL queries to load more of the committed table.
 - WAL row injection (the **Show WAL history** toggle) still decodes table-leaf pages only — overflow payloads there are not followed and show as `<OVERFLOW>`, unlike Freelist Recovery, which does follow them. Frame classification relies on the WAL header's salt and per-frame commit marker, so a WAL file that has itself been partially overwritten past those markers may misclassify trailing frames.
-- Freelist Recovery, Freeblocks, and Unallocated Space only scan the main database file, not the WAL — a deletion still sitting only in an unwritten WAL frame is covered by the existing WAL history mechanism above, not these three.
+- The File Structure tab has no text search of its own — searching it would mean either decoding every not-yet-expanded page up front (reintroducing the hang the lazy loading exists to avoid) or silently skipping unexpanded pages. Use SQL on the table itself, or the Hex pane's own search, instead.
 - Parse failures fall back to Hex Viewer.
 
 ### Property List (plist)
@@ -50,10 +59,11 @@ Limitations
 
 ### Protobuf (Explicit Only)
 - Open via context menu: **Open as** → **Protobuf**.
-- Performs a schema-less wire-format decode and displays it in the Protobuf Viewer.
+- Performs a schema-less wire-format decode and displays it in the Protobuf Viewer. Every varint/fixed32/fixed64 scalar is shown with every plausible interpretation (unsigned/signed/zigzag-signed integer, bool, float/double, Unix/Chrome-WebKit timestamp), not just the raw wire value. A length-delimited field is decoded as a nested message when its bytes happen to parse as one, as a UTF-8 string when the decoded text is mostly printable, or as a hex preview otherwise.
+- Deprecated group encoding (wire types 3/4) is skipped over rather than aborting the rest of the decode.
 
 Limitations
-- Schema-less decode shows field numbers and wire types only.
+- Decoding stops (with a warning) at 50,000 entries per message or 6 levels of nested-message depth — a message beyond either cap is truncated, not silently dropped.
 - Schema-based decoding requires a `.proto` file or descriptor set.
 
 ### Android Binary XML (ABX)
@@ -78,6 +88,7 @@ Limitations
 Limitations
 - Record parsing is best-effort; some records may show a warning.
 - Payloads that cannot be decoded as protobuf are stored as raw bytes accessible via the Blob Inspector.
+- The inline protobuf decode stops at the first field with an unsupported wire type (a deprecated group, or anything outside varint/fixed64/length-delimited/fixed32) and shows only the fields decoded up to that point — unlike a record-level parse failure, this truncation is not flagged with a warning.
 
 ### LevelDB
 - Parses LevelDB directories (`.ldb`/`.log`/`.sst` data files, `MANIFEST-*`, `CURRENT`, `LOG`) into a dedicated LevelDB Viewer.
@@ -92,9 +103,9 @@ Limitations
 
 ### MMKV (Explicit Only)
 - Open via context menu: **Open as** → **MMKV** (or **MMKV (Encrypted)…** for an AES-encrypted store). MMKV has no magic bytes, so — unlike every other supported format — it cannot be auto-detected from file content at all; it is reachable only through this explicit action, same as Protobuf.
-- Built on [abrignoni/mmkv-parser](https://github.com/abrignoni/mmkv-parser) (MIT), vendored unmodified under `crush/third_party/mmkv_parser/` — see the file's own header for the exact commit it was vendored from. Crush's own wrapper (`crush/parsers/mmkv_parser.py`) only adapts its path-based API to Crush's VFS via temp files; the on-disk format itself was independently re-verified against Tencent/MMKV's own pinned source (see CHANGELOG) rather than trusted from the reference reader's documentation alone.
+- Built on [abrignoni/mmkv-parser](https://github.com/abrignoni/mmkv-parser) (MIT), vendored unmodified under `crush/third_party/mmkv_parser/` — see the file's own header for the exact commit it was vendored from. Crush's own wrapper (`crush/parsers/mmkv_parser.py`) adapts the vendored reader's path-based API to Crush's VFS via temp files, and adds its own encryption-flag cross-check and value-container handling on top (see below); the on-disk format itself was independently re-verified against Tencent/MMKV's own pinned source (see CHANGELOG) rather than trusted from the reference reader's documentation alone.
 - Every entry is shown in file order (Records tab), each tagged **Live** (the last write for that key), **Superseded** (an earlier write of a key later overwritten — MMKV is append-only between rewrites, so these remain physically present and readable until the next full rewrite), or **Removed** (the key's last write recorded a zero-length value, which is how MMKV represents a removal rather than actually erasing the entry).
-- The companion `<name>.crc` meta file (found automatically next to the main file) is read for its version/sequence/CRC fields (Overview tab) and its AES vector, which is what determines whether a store is encrypted — unlike Realm, this is unambiguous and doesn't require guessing from a failed decode.
+- The companion `<name>.crc` meta file (found automatically next to the main file) is read for its version/sequence/CRC fields (Overview tab) and its AES vector. A non-zero vector normally means the store is encrypted, but that flag alone isn't trusted blindly: if no password is supplied, Crush first tries reading the store as plaintext, and if that walk completes cleanly it overrides the flag and reports the vector as a false positive instead of demanding a key — observed in the field on a real react-native-mmkv store whose meta `version` field was higher than anything this layout had been verified against.
 - A string-shaped value's on-disk container carries MMKV's own internal length-prefix varint ahead of the actual bytes (framing that tells a string apart from a bare scalar, since the format itself is otherwise untyped — see below). The hex pane and CSV export always show the complete, untouched container, prefix included — Crush never removes anything from what it calls raw. A separate, additional copy with that prefix stripped is used only for the right-click "Inspect Value…" action, so a value that's itself JSON/XML/etc. can actually be re-parsed as such instead of failing on a stray leading byte.
 - Encrypted stores (AES-CFB, the mode MMKV uses) are supported via **MMKV (Encrypted)…**, given the key as either literal text or a hex string (the dialog asks explicitly rather than guessing from the text's shape, since a real passphrase could coincidentally look like valid hex) — AES-128 (MMKV's default) or AES-256 is also an explicit checkbox. A wrong key is detected structurally (the reference reader requires the decrypted region to walk cleanly to its last byte) and re-prompts rather than showing decrypted-looking garbage.
 
@@ -133,15 +144,19 @@ Limitations
 Limitations
 - EXIF coverage is not complete; only a subset of tags is shown.
 - Decoding depends on Qt image codecs installed on the system.
-- IFD entries are capped at 512 per directory, and SHORT/LONG/RATIONAL tag arrays at 8 items; data beyond the cap is not read. HEIF/HEIC/AVIF: the TIFF block's start offset inside the container's `exif` payload is located by pattern/offset heuristics (pillow-heif doesn't expose it directly) — on an HEIF variant whose prefix doesn't match, EXIF silently comes back empty rather than partially wrong.
+- IFD entries are capped at 512 per directory, and SHORT/LONG/SLONG tag arrays at 8 items; RATIONAL/SRATIONAL arrays (e.g. GPS coordinates) are read in full, uncapped. Data beyond the entry/array cap is not read. HEIF/HEIC/AVIF: the TIFF block's start offset inside the container's `exif` payload is located by pattern/offset heuristics (pillow-heif doesn't expose it directly) — on an HEIF variant whose prefix doesn't match, EXIF silently comes back empty rather than partially wrong.
 - ATX: only plain (uncompressed) ASTC 4x4 payloads decode to an image; other pixel formats and `LZFS`-compressed payloads are parsed for metadata only, shown as text. The Morton-orientation choice is a heuristic (see above), not a documented Apple flag.
 - KTX: only ASTC 4x4 decodes to an image. The same extension is used for textures shipped inside system frameworks and apps, which carry other pixel formats (other ASTC block sizes, PVRTC, uncompressed) and are parsed for metadata only, shown as text. KTX 2.0 is not read. Only the first mipmap level, array layer and face is decoded; a file declaring more than one is decoded to its first image with a warning.
 
 ### Media (Audio/Video)
-- Routes supported media formats to the Media Viewer (playback).
+- Routes supported media formats to the Media Viewer for playback. Audio: MP3, WAV, M4A, AAC, FLAC, OGG, Opus, WMA, AMR. Video: MP4, M4V, MOV, MKV, AVI, WebM, 3GP, 3G2.
+- Detection is primarily by extension; OGG/Opus and AMR files renamed to another extension (e.g. a voice note saved as `.bin`) are still recognized by magic bytes (`OggS` / `#!AMR`).
+- For OGG/Opus/AMR files specifically, codec, sample rate, channel count, duration, and embedded Vorbis/Opus comment tags (encoder, title, artist, album, date, comment, creation time) are extracted via PyAV and shown in the Properties panel — the encoder tag can reveal the originating app.
 
 Limitations
-- Detection is extension-based.
+- Detection for every other container (MP4/MOV/MKV/AVI/etc.) is extension-only; a renamed file with a mismatched extension is not recognized.
+- Metadata extraction (codec/tags) only runs for OGG/Opus/AMR; other containers show no extracted metadata beyond file size.
+- Metadata extraction requires PyAV; without it, only file size is shown.
 - Playback depends on system multimedia codecs.
 
 ### PDF
@@ -157,11 +172,13 @@ Limitations
 - JavaScript detection only checks the two standard document-level locations, not every annotation/form-field's own `/AA` actions. Signature-field detection only checks top-level `/AcroForm` fields, not fields nested inside a `/Kids` hierarchy.
 - Revision detection was validated against classic cross-reference tables; PDF 1.5+ cross-reference *streams* use the same `/Prev` mechanism through `pypdf`'s public API and aren't expected to need special handling, but weren't separately tested against a real-world sample.
 - Visual Diff doesn't diff pages whose size differs between the two selected revisions (shows the newer one only, to avoid a misleading resize).
+- `/Info` and XMP metadata field values are truncated to 200 characters each.
+- The global/case-wide text search index only covers the first 4,000 characters of a PDF's extracted text; the Text tab itself always shows the complete extraction regardless of length.
 
 ### Log Files (Explicit Only)
 - Open via context menu: **Open in Multi-Log Studio**.
 - Auto-detects JSON Lines, Android logcat, Syslog (RFC 3164), and generic timestamped/plain-text logs.
-- **Apple Unified Log** (`.tracev3` / `.logarchive`): parsed via the bundled Mandiant `unifiedlog_iterator` binary. Extracts timestamp, level, process, PID, subsystem, category, event type (`logEvent`, `activityCreateEvent`, `signpostEvent`, `lossEvent`, etc.), euid, and message entries. `lossEvent` entries (buffer overflow gaps) are flagged as WARN. Private/Sensitive `message_entries` are annotated `[private]` / `[sensitive]` — data that is redacted in live logs but may be present in offline acquisitions.
+- **Apple Unified Log** (`.tracev3` / `.logarchive`): parsed via the bundled Mandiant `unifiedlog_iterator` binary, invoked in CSV mode. Extracts timestamp, level, process, PID, subsystem, category, event type, and euid. `lossEvent` entries (buffer overflow gaps) are flagged as WARN. A message the binary couldn't fully resolve (e.g. a redacted/private string in a live-system export) comes back as `[partial] <raw message text>` rather than a blank field.
 - **Send to Peach**: right-click a `.logarchive` bundle, an iOS full-FS acquisition's `diagnostics/` folder, or any other file → **Send to Peach** hands the source off to the sibling [peach-forensics](https://github.com/kalink0/peach-forensics) log viewer (tagging, Splunk-style search) via a one-shot CLI spawn — no IPC afterward, peach keeps running independently even after Crush closes. Offered for any file, not just recognized log formats — same as **Open in Multi-Log Studio**'s existing lack of pre-filtering, since peach's own TOML text-log configs live in its per-user data dir and aren't visible to Crush to check against; peach's manual sourcetype-confirm-before-Load step is the real gate. The peach binary is bundled the same way as `unifiedlog_iterator` (`scripts/download_peach_binaries.py` when running from source); **Tools → Peach → Binary Path…** overrides it with a different build, **Tools → Peach → Open Peach** launches an empty instance. Since peach has no IPC, correlating several sources in one session means sending them together — multi-select files in the tree (**Send N files to Peach**) or right-click a plain folder (**Send Logs to Peach…**, recursive discovery with a confirm checklist, same picker **Open Logs in Multi-Log Studio** uses).
 - Multiple files can be loaded simultaneously into a shared, merged timeline.
 - Custom formats can be defined via a named-group regex and a `strptime` timestamp format; profiles are saved to `~/.config/crush/log_profiles/`.
@@ -171,11 +188,12 @@ Limitations
 - Timestamp parsing is heuristic for unrecognised formats; logcat logs do not include the year.
 - Year is assumed to be the current year for Syslog (RFC 3164).
 - Apple Unified Log parsing requires the platform `unifiedlog_iterator` binary (included in portable builds; run `scripts/download_unifiedlog_binaries.py` when running from source).
+- Apple Unified Log support is effectively binary-`.tracev3`/`.logarchive`-only: the parser module also has code paths for `log show`'s own JSON/NDJSON/plain-text export styles, but nothing in the auto-detection or explicit-open flow calls them, so a `log show`-exported file is not recognized as Apple Unified Log at all — an NDJSON export in particular would likely get misdetected as generic JSON Lines instead, with unknown levels and garbled messages.
 - Apple Unified Log: when a `.tracev3` is parsed without a matching boot record, `unifiedlog_iterator` outputs Unix-epoch-relative timestamps (landing near 1970) instead of real wall-clock time. Any entry timestamp before 2000-01-01 is therefore left blank in the Timestamp column rather than shown as a misleading date — but the excluded value is never discarded, only moved: it's kept in the entry's `extra["excluded_timestamp"]` field, visible in the detail panel, since a genuinely tampered/reset device clock would also produce a pre-2000 timestamp and that's evidence, not noise.
 
 ### Hex Fallback
 - Any file without a matching parser opens in the Hex Viewer.
-- If the format database recognizes it, the Properties panel shows name and forensic context.
+- If the format database recognizes it, the Properties panel shows its name, category, platforms, forensic-relevance notes, a reference link, and whether Crush actually parses it yet ("Supported" / "Not yet supported") — even for a format Crush can identify but doesn't decode.
 
 Limitations
 - Raw bytes only; no structured decoding.
@@ -183,11 +201,11 @@ Limitations
 ## Viewers (What They Do)
 
 ### Table Viewer
-- Sortable grid, row filtering, SQL queries (SELECT only), CSV export.
+- Sortable grid, row filtering, SQL queries (`SELECT`, `WITH`, and `PRAGMA` only), CSV export.
 - BLOB inspection and "Open as new tab" for embedded artifacts.
 - For SQLite databases, the Summary view lists tables and computes row counts.
 - For SQLite databases with a `-wal` companion: a **WAL Frames** tab (full frame inventory, double-click for raw page bytes) and, per table, a **Show WAL history** toggle that injects Superseded/Uncommitted/WAL-slack rows into the grid — see SQLite Database above.
-- For SQLite databases: **Freelist Recovery**, **Freeblocks**, and **Unallocated Space** tabs carve leftover/deleted data straight from the main database file — see SQLite Database above.
+- For SQLite databases: **Freelist Recovery**, **Freeblocks**, **Unallocated Space**, and **File Structure** tabs expose the physical file layout and carve leftover/deleted data — see SQLite Database above.
 
 Limitations
 - Read-only; write queries are blocked.
@@ -241,6 +259,15 @@ Limitations
 Limitations
 - No pagination — very large record sets are all loaded at once (see LevelDB parser limitations above).
 
+### MMKV Viewer
+- Tabbed view: **Overview** (the `.crc` companion's version/sequence/CRC fields and AES vector, when present) and **Records** (every entry in file order, tagged Live/Superseded/Removed — see MMKV parser above).
+- Records table columns: Index, Key, State, Type, Size, Value; Superseded/Removed rows are colour-coded. A search box and a Live/Superseded/Removed state filter narrow the list.
+- Long values are truncated on screen (hex preview capped at 64 bytes, text preview capped at 256 characters) purely for render performance — the full value is always reachable via search, **Copy Value**, CSV export, and **Inspect Value…**, never actually discarded.
+- **Inspect Value…** opens the value's raw bytes in the Blob Inspector. CSV export is also available.
+
+Limitations
+- No pagination — same tradeoff as the LevelDB Viewer above: a very large store is loaded into the table all at once.
+
 ### Multi-Log Studio
 - Level toggles (ERROR / WARN / INFO / DEBUG / TRACE / UNKNOWN), free-text search (message, process, PID, subsystem, category), time-range filter with calendar pickers, and per-source visibility toggle.
 - Sources are colour-coded; each appears as a chip in the source bar that toggles the source on/off.
@@ -269,9 +296,13 @@ Limitations
 - The **Blob Inspector** (any BLOB field, not just files opened as Protobuf) offers the same schema-based decode: select **Protobuf (schema-less)** first, then a schema-loading toolbar appears above the content view.
 
 Limitations
-- Schema-based decoding depends on the protobuf Python library and valid schemas.
+- Schema-based decoding depends on the `protobuf` Python library and a valid schema. Loading a raw `.proto` file (rather than a pre-compiled `.pb`/`.desc`/`.fds` descriptor set) additionally requires `grpcio-tools` to compile it first.
 
 ## Known Gaps (Planned)
 
-- Extended EXIF/metadata viewer
-- Type/extension filters in the filesystem panel
+Format/viewer content gaps only — planned parsing or display work, not general app features (those get tracked as issues instead).
+
+- Extended EXIF/metadata viewer.
+- XMP and C2PA (AI-provenance) metadata are not extracted for images or media at all.
+- ESE database (`.edb`) has no parser or viewer yet.
+- SQLite Table Viewer's **WAL Frames** tab does not yet have the embedded, byte-synced Hex pane the other SQLite tabs (table cells, File Structure) have.
