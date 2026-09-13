@@ -12,6 +12,7 @@ These tests complement the functional parser tests.  Where functional tests ask
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import os
 import sqlite3
@@ -25,10 +26,12 @@ from crush.core.vfs import (
     AndroidBackupVFS,
     DirectoryVFS,
     ITunesBackupVFS,
+    RawImageVFS,
     SevenZipVFS,
     TarVFS,
     VFSNode,
     ZipVFS,
+    open_vfs,
 )
 from crush.parsers.media_parser import MediaParser
 from crush.parsers.plist_parser import PlistParser
@@ -1655,3 +1658,128 @@ def test_plist_parser_works_on_readonly_media(tmp_path: Path) -> None:
     finally:
         evidence_dir.chmod(0o755)
         plist.chmod(0o644)
+
+
+# ---------------------------------------------------------------------------
+# 6. RawImageVFS — raw disk images / EWF acquisitions get the same forensic
+#    guarantees as every other VFS backend above. A forensic disk image is,
+#    if anything, held to a stricter integrity standard than an ordinary
+#    file (courts and chain-of-custody procedures scrutinize whether an
+#    acquisition was altered after it was made), so this coverage matters
+#    at least as much here as anywhere else in this file.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def raw_image_fixture(tmp_path: Path) -> Path:
+    dst = tmp_path / "evidence.img"
+    dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_ntfs.img.gz").read_bytes()))
+    return dst
+
+
+def _live_file_nodes(volume: VFSNode) -> list[VFSNode]:
+    """Like _file_nodes(), but excludes the synthetic `$Recovered` folder --
+    its entries deliberately include not-recoverable ones (e.g. a deleted
+    directory record), which is exactly what its own dedicated tests in
+    test_raw_image_vfs.py cover; these generic forensic-guarantee tests
+    only need a sample of ordinary, always-readable live files.
+    """
+    return _file_nodes(
+        VFSNode(
+            name=volume.name, path=volume.path, is_dir=True,
+            children=[c for c in volume.children if c.name != "$Recovered"],
+        )
+    )
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="RawImageVFS read/peek must leave the image file's bytes unchanged",
+)
+def test_raw_image_vfs_does_not_modify_source(raw_image_fixture: Path) -> None:
+    digest_before = _sha256_file(raw_image_fixture)
+
+    vfs = open_vfs(raw_image_fixture)
+    assert isinstance(vfs, RawImageVFS)
+    try:
+        volume = vfs.root().children[0]
+        for node in _live_file_nodes(volume)[:20]:
+            _ = vfs.read(node)
+            _ = vfs.peek(node)
+    finally:
+        vfs.close()
+
+    assert _sha256_file(raw_image_fixture) == digest_before, "RawImageVFS modified the source image"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="RawImageVFS read/peek must not change mtime or ctime of the image file",
+)
+def test_raw_image_vfs_does_not_change_timestamps(raw_image_fixture: Path) -> None:
+    ts_before = _timestamps(raw_image_fixture)
+
+    vfs = open_vfs(raw_image_fixture)
+    assert isinstance(vfs, RawImageVFS)
+    try:
+        volume = vfs.root().children[0]
+        for node in _live_file_nodes(volume)[:20]:
+            _ = vfs.read(node)
+    finally:
+        vfs.close()
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(raw_image_fixture), "RawImageVFS")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="RawImageVFS must not create any sibling files next to the image",
+)
+def test_raw_image_vfs_creates_no_sibling_files(raw_image_fixture: Path) -> None:
+    files_before = set(raw_image_fixture.parent.iterdir())
+
+    vfs = open_vfs(raw_image_fixture)
+    assert isinstance(vfs, RawImageVFS)
+    try:
+        volume = vfs.root().children[0]
+        for node in _live_file_nodes(volume)[:20]:
+            _ = vfs.read(node)
+    finally:
+        vfs.close()
+
+    new_files = set(raw_image_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"RawImageVFS left unexpected files next to the image: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="RawImageVFS must read all files when the image file is chmod 0o444",
+)
+def test_raw_image_vfs_works_on_readonly_media(raw_image_fixture: Path) -> None:
+    raw_image_fixture.chmod(0o444)
+    try:
+        vfs = open_vfs(raw_image_fixture)
+        assert isinstance(vfs, RawImageVFS)
+        try:
+            volume = vfs.root().children[0]
+            for node in _live_file_nodes(volume)[:20]:
+                _ = vfs.read(node)
+        finally:
+            vfs.close()
+    finally:
+        raw_image_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Reading the same file from a raw image twice must return byte-identical data",
+)
+def test_raw_image_vfs_read_is_reproducible(raw_image_fixture: Path) -> None:
+    vfs = open_vfs(raw_image_fixture)
+    assert isinstance(vfs, RawImageVFS)
+    try:
+        volume = vfs.root().children[0]
+        node = _live_file_nodes(volume)[0]
+        assert vfs.read(node) == vfs.read(node)
+    finally:
+        vfs.close()

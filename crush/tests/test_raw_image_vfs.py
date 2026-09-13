@@ -21,7 +21,7 @@ from crush.tests.conftest import FIXTURES_DIR
 
 def _expected_hashes() -> dict[str, str]:
     expected: dict[str, str] = {}
-    for line in (FIXTURES_DIR / "raw_ntfs.sha256").read_text().splitlines():
+    for line in (FIXTURES_DIR / "raw_ntfs.sha256").read_text(encoding="utf-8").splitlines():
         if not line:
             continue
         digest, _, relpath = line.partition("  ")
@@ -142,6 +142,10 @@ class TestRawImage:
         finally:
             vfs.close()
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        desc="raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes",
+    )
     def test_single_volume_content_matches(self, raw_ntfs_image: Path) -> None:
         vfs = open_vfs(raw_ntfs_image)
         try:
@@ -251,6 +255,10 @@ class TestEwf:
         finally:
             vfs.close()
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        desc="raw_ntfs.E01's files must read back identically through the EWF path as through raw .img",
+    )
     def test_content_matches(self, raw_ntfs_e01: Path) -> None:
         vfs = open_vfs(raw_ntfs_e01)
         try:
@@ -260,6 +268,10 @@ class TestEwf:
         finally:
             vfs.close()
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        desc="verify_ewf() must report MATCH against a real ewfacquire-created acquisition's own stored hash",
+    )
     def test_verify_matches_stored_hash(self, raw_ntfs_e01: Path) -> None:
         vfs = open_vfs(raw_ntfs_e01)
         try:
@@ -486,7 +498,7 @@ class TestVolumeInfoPropertiesEnrichment:
 
 def _expected_from(sha_filename: str) -> dict[str, str]:
     expected: dict[str, str] = {}
-    for line in (FIXTURES_DIR / sha_filename).read_text().splitlines():
+    for line in (FIXTURES_DIR / sha_filename).read_text(encoding="utf-8").splitlines():
         if not line:
             continue
         digest, _, relpath = line.partition("  ")
@@ -503,6 +515,10 @@ class TestDeletedFileRecovery:
     under a subfolder (e.g. `photos/one.jpg`) are matched here by basename.
     """
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        desc="Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes",
+    )
     def test_ntfs_recovers_known_deleted_files(self, raw_ntfs_image: Path) -> None:
         """raw_ntfs.img.gz carries two deliberately deleted test files
         alongside a large amount of incidental deleted residue from the
@@ -530,6 +546,10 @@ class TestDeletedFileRecovery:
         finally:
             vfs.close()
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        desc="Three deliberately deleted exFAT test files must recover, names and content, to their reference hashes",
+    )
     def test_exfat_recovers_all_three_with_intact_names(self, tmp_path: Path) -> None:
         """exFAT's delete mechanism (unlike FAT32's) does not destroy the
         first character of the name -- all three names come back exact."""
@@ -550,6 +570,10 @@ class TestDeletedFileRecovery:
         finally:
             vfs.close()
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        desc="Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes",
+    )
     def test_fat32_recovers_content_with_first_character_lost(self, tmp_path: Path) -> None:
         """FAT32's delete mechanism overwrites the short-name entry's first
         byte, permanently destroying the name's first character -- qnxprobe
