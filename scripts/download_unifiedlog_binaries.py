@@ -26,7 +26,7 @@ from pathlib import Path
 # Configuration — bump VERSION and update SHA256 when upgrading
 # ---------------------------------------------------------------------------
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 # (release_asset_name, target_filename_in_bin_dir, sha256_or_None)
 # sha256 is optional: set to None to skip verification, or fill in after

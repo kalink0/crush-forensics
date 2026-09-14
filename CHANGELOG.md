@@ -19,6 +19,10 @@ All notable changes to Crush will be documented in this file.
 
 - README's raw disk image feature entry now states clearly what it isn't: no file carving, no journal analysis, no VSC/APFS snapshots, no RAID/LVM assembly, and no deleted-file recovery outside NTFS/FAT32/exFAT.
 
+### Changed
+
+- Bumped bundled unifiedlog_iterator from v0.6.0 to v0.7.0: adds lzbitmap decompression support and initial GoldenGate/iOS 27 support, fills in previously-missing `euid`/`library_uuid`/`process` details on Statedump and Simpledump entries, and fixes a bug where a Statedump entry with a plaintext (non-binary) plist was fed to the binary-plist parser regardless.
+
 ## v0.19.0 - 2026-09-13
 
 **Focus: Embedded, bidirectional Hex pane — a general byte-provenance feature, now covering Protobuf, Plist/XML Tree, SQLite Table (including WAL Frames, WAL history, Freeblocks, Unallocated Space) and File Structure, and Realm DB viewers, with more viewers planned; Khronos KTX 1.1 texture support; Biome/SEGB improvements; bundled peach updated to v0.7.0.**
