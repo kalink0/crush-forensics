@@ -14,6 +14,7 @@ import hashlib
 import html as _html
 import json
 import os
+import struct
 import sys
 from pathlib import Path
 from typing import Any
@@ -270,6 +271,243 @@ def zip_fixture(tmp_path: Path) -> Path:
     src = FIXTURES_DIR / "minimal.zip"
     dst = tmp_path / src.name
     dst.write_bytes(src.read_bytes())
+    return dst
+
+
+@pytest.fixture
+def gzip_fixture(tmp_path: Path) -> Path:
+    """Writable copy of minimal.sqlite.gz placed in tmp_path.
+
+    A standalone gzip-compressed minimal.sqlite, with the original filename
+    stored in the gzip header's FNAME field (RFC 1952), so GzipVFS should
+    recover "minimal.sqlite" as the decompressed member's name.
+    """
+    src = FIXTURES_DIR / "minimal.sqlite.gz"
+    dst = tmp_path / src.name
+    dst.write_bytes(src.read_bytes())
+    return dst
+
+
+def _mmkv_varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _mmkv_string_value(text: str) -> bytes:
+    encoded = text.encode("utf-8")
+    return _mmkv_varint(len(encoded)) + encoded
+
+
+def _mmkv_entry(key: str, container: bytes) -> bytes:
+    encoded_key = key.encode("utf-8")
+    return _mmkv_varint(len(encoded_key)) + encoded_key + _mmkv_varint(len(container)) + container
+
+
+@pytest.fixture
+def mmkv_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic MMKV key-value store, built by hand to the
+    on-disk layout rather than taken from a real store, per this project's
+    synthetic-fixtures-only rule for MMKV (see test_mmkv_parser.py). Contains
+    one live entry: "channel" -> "googleplay" (string).
+    """
+    entry = _mmkv_entry("channel", _mmkv_string_value("googleplay"))
+    region = _mmkv_varint(len(entry)) + entry
+    payload = struct.pack("<I", len(region)) + region + b"\x00" * 64
+    dst = tmp_path / "mmkv.default"
+    dst.write_bytes(payload)
+    return dst
+
+
+def _abx_u16(value: int) -> bytes:
+    return struct.pack(">H", value)
+
+
+def _abx_utf(s: str) -> bytes:
+    encoded = s.encode("utf-8")
+    return _abx_u16(len(encoded)) + encoded
+
+
+def _abx_interned(s: str) -> bytes:
+    return _abx_u16(0xFFFF) + _abx_utf(s)
+
+
+@pytest.fixture
+def abx_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic Android Binary XML (ABX) file: <root attr="value"/>."""
+    magic = b"ABX\x00"
+    start_doc = bytes([0x00])
+    start_tag = bytes([0x22]) + _abx_utf("root")  # TYPE_STRING + START_TAG
+    attr = bytes([0x2F]) + _abx_interned("attr") + _abx_utf("value")  # ATTRIBUTE token
+    end_tag = bytes([0x23]) + _abx_utf("root")  # TYPE_STRING + END_TAG
+    end_doc = bytes([0x01])
+    data = magic + start_doc + start_tag + attr + end_tag + end_doc
+    dst = tmp_path / "binary.xml"
+    dst.write_bytes(data)
+    return dst
+
+
+def _make_atx_head_chunk(width: int = 32, height: int = 16) -> bytes:
+    head = bytearray(0x54)
+    struct.pack_into("<I", head, 0x18, width)
+    struct.pack_into("<I", head, 0x1C, height)
+    struct.pack_into("<I", head, 0x20, 1)
+    struct.pack_into("<I", head, 0x28, 1)
+    struct.pack_into("<I", head, 0x2C, 1)
+    head[0x3C:0x4C] = bytes(range(16))
+    struct.pack_into("<I", head, 0x4C, 3)
+    struct.pack_into("<I", head, 0x50, 5)
+    return struct.pack("<I4s", len(head), b"HEAD") + bytes(head)
+
+
+@pytest.fixture
+def atx_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic Apple ATX texture archive: metadata-only (no
+    compressed image payload), matching the same layout used in
+    test_parsers.py's ATX tests.
+    """
+    data = b"AAPL\r\n\x1a\n" + _make_atx_head_chunk(width=32, height=16)
+    dst = tmp_path / "poster.atx"
+    dst.write_bytes(data)
+    return dst
+
+
+_KTX_VOID_EXTENT_BLOCK = bytes.fromhex("fcfdffffffffffff") + struct.pack(
+    "<4H", 0xFFFF, 0x8000, 0x0000, 0xFFFF
+)
+
+
+def _make_ktx_bytes(
+    width: int = 4,
+    height: int = 4,
+    gl_internal_format: int = 0x93B0,
+    little_endian: bool = True,
+) -> bytes:
+    """Build a KTX 1.1 file the way iOS writes them (Khronos KTX 1.1 spec)."""
+    blocks = -(-width // 4) * (-(-height // 4))
+    astc = _KTX_VOID_EXTENT_BLOCK * blocks
+    order = "<" if little_endian else ">"
+    header = (
+        b"\xabKTX 11\xbb\r\n\x1a\n"
+        + (b"\x01\x02\x03\x04" if little_endian else b"\x04\x03\x02\x01")
+        + struct.pack(
+            order + "12I",
+            0,                    # glType (0 for compressed textures)
+            1,                    # glTypeSize
+            0,                    # glFormat
+            gl_internal_format,
+            0x1908,               # glBaseInternalFormat (GL_RGBA)
+            width,
+            height,
+            0,                    # pixelDepth
+            0,                    # numberOfArrayElements
+            1,                    # numberOfFaces
+            1,                    # numberOfMipmapLevels
+            0,                    # bytesOfKeyValueData
+        )
+    )
+    body = struct.pack(order + "I", len(astc)) + astc
+    return header + body
+
+
+@pytest.fixture
+def ktx_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic KTX 1.1 texture with an unsupported (non-ASTC)
+    glInternalFormat, so parsing stays metadata-only and needs no optional
+    ASTC-decompression dependency to produce a deterministic known output.
+    """
+    data = _make_ktx_bytes(width=8, height=8, gl_internal_format=0x881A)
+    dst = tmp_path / "texture.ktx"
+    dst.write_bytes(data)
+    return dst
+
+
+@pytest.fixture
+def xml_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic XML document: <root attr="value"><child>text</child></root>."""
+    data = b'<?xml version="1.0"?>\n<root attr="value"><child>text</child></root>'
+    dst = tmp_path / "evidence.xml"
+    dst.write_bytes(data)
+    return dst
+
+
+@pytest.fixture
+def json_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic JSON document: {"application": "crush-forensics", "count": 3}."""
+    dst = tmp_path / "evidence.json"
+    dst.write_text('{"application": "crush-forensics", "count": 3}', encoding="utf-8")
+    return dst
+
+
+@pytest.fixture
+def pdf_fixture(tmp_path: Path) -> Path:
+    """A minimal, single blank-page PDF with known /Info metadata, built with
+    pypdf's own writer (a real, valid PDF, not a hand-crafted approximation).
+    """
+    pypdf = pytest.importorskip("pypdf")
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.add_metadata({"/Title": "crush-forensics evidence", "/Author": "crush-forensics"})
+    dst = tmp_path / "evidence.pdf"
+    with open(dst, "wb") as f:
+        writer.write(f)
+    return dst
+
+
+@pytest.fixture
+def image_exif_fixture(tmp_path: Path) -> Path:
+    """A minimal 4x4 JPEG with known EXIF tags (Make/Model/DateTime), built
+    with Pillow's own EXIF writer (a real, valid JPEG, not a hand-crafted
+    approximation).
+    """
+    PIL_Image = pytest.importorskip("PIL.Image")
+    im = PIL_Image.new("RGB", (4, 4), color="red")
+    exif = im.getexif()
+    exif[0x010F] = "CrushCam"          # Make
+    exif[0x0110] = "CrushModel"        # Model
+    exif[0x0132] = "2024:01:15 10:23:45"  # DateTime
+    dst = tmp_path / "evidence.jpg"
+    im.save(dst, "JPEG", exif=exif)
+    return dst
+
+
+@pytest.fixture
+def protobuf_schema_fixture(tmp_path: Path) -> dict[str, Any]:
+    """Writable copies of the real (previously orphaned) schema-based protobuf
+    fixtures: protobuf_test_messages.proto + protobuf_basic_wire_types.pb,
+    plus the parsed .expected.json ground truth (generated by
+    generate_protobuf_fixtures.py from real protobuf wire primitives).
+    """
+    proto_src = FIXTURES_DIR / "protobuf_test_messages.proto"
+    pb_src = FIXTURES_DIR / "protobuf_basic_wire_types.pb"
+    expected_src = FIXTURES_DIR / "protobuf_basic_wire_types.expected.json"
+
+    proto_dst = tmp_path / proto_src.name
+    pb_dst = tmp_path / pb_src.name
+    proto_dst.write_bytes(proto_src.read_bytes())
+    pb_dst.write_bytes(pb_src.read_bytes())
+
+    return {
+        "proto_path": proto_dst,
+        "pb_path": pb_dst,
+        "expected": json.loads(expected_src.read_text()),
+    }
+
+
+@pytest.fixture
+def protobuf_fixture(tmp_path: Path) -> Path:
+    """A minimal, synthetic schema-less protobuf message: field 1 (varint) =
+    42, field 2 (length-delimited) = "evidence".
+    """
+    data = b"\x08\x2a" + b"\x12\x08" + b"evidence"
+    dst = tmp_path / "message.pb"
+    dst.write_bytes(data)
     return dst
 
 

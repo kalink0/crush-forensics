@@ -25,6 +25,7 @@ import pytest
 from crush.core.vfs import (
     AndroidBackupVFS,
     DirectoryVFS,
+    GzipVFS,
     ITunesBackupVFS,
     RawImageVFS,
     SevenZipVFS,
@@ -33,11 +34,23 @@ from crush.core.vfs import (
     ZipVFS,
     open_vfs,
 )
+from crush.parsers.abx_parser import AbxParser
+from crush.parsers.image_parser import ImageParser
+from crush.parsers.json_parser import JsonParser
 from crush.parsers.media_parser import MediaParser
+from crush.parsers.mmkv_parser import MMKVParser
+from crush.parsers.pdf_parser import PDFParser
 from crush.parsers.plist_parser import PlistParser
+from crush.parsers.protobuf_parser import ProtobufParser
+from crush.parsers.protobuf_schema import (
+    decode_message_with_schema,
+    load_descriptor_set,
+    schema_byte_ranges,
+)
 from crush.parsers.realm_parser import RealmParser
 from crush.parsers.segb_parser import SegbParser
 from crush.parsers.sqlite_parser import SQLiteParser
+from crush.parsers.xml_parser import XmlParser
 from crush.tests.conftest import FIXTURES_DIR
 
 _MP3_STUB  = b"\xff\xfb" + b"\x00" * 128   # MPEG-1 Layer 3 sync word
@@ -1783,3 +1796,1093 @@ def test_raw_image_vfs_read_is_reproducible(raw_image_fixture: Path) -> None:
         assert vfs.read(node) == vfs.read(node)
     finally:
         vfs.close()
+
+
+# ---------------------------------------------------------------------------
+# 7. GzipVFS — standalone .gz files (e.g. a rotated log like syslog.gz)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="GzipVFS read must leave the .gz file's bytes unchanged",
+)
+def test_gzip_vfs_does_not_modify_source(gzip_fixture: Path) -> None:
+    digest_before = _sha256_file(gzip_fixture)
+
+    vfs = GzipVFS(gzip_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    assert _sha256_file(gzip_fixture) == digest_before, "GzipVFS modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="GzipVFS must not change mtime or ctime of the .gz file",
+)
+def test_gzip_vfs_does_not_change_timestamps(gzip_fixture: Path) -> None:
+    ts_before = _timestamps(gzip_fixture)
+
+    vfs = GzipVFS(gzip_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(gzip_fixture), "GzipVFS")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="GzipVFS must not create any sibling files next to the .gz file",
+)
+def test_gzip_vfs_creates_no_sibling_files(gzip_fixture: Path) -> None:
+    files_before = set(gzip_fixture.parent.iterdir())
+
+    vfs = GzipVFS(gzip_fixture)
+    for node in _file_nodes(vfs.root()):
+        _ = vfs.read(node)
+    vfs.close()
+
+    new_files = set(gzip_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"GzipVFS left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="GzipVFS must decompress and read the member when the .gz file is chmod 0o444",
+)
+def test_gzip_vfs_works_on_readonly_media(gzip_fixture: Path) -> None:
+    gzip_fixture.chmod(0o444)
+    try:
+        vfs = GzipVFS(gzip_fixture)
+        for node in _file_nodes(vfs.root()):
+            _ = vfs.read(node)
+        vfs.close()
+    finally:
+        gzip_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="minimal.sqlite.gz must decompress to exactly minimal.sqlite's bytes, member name 'minimal.sqlite'",
+)
+def test_gzip_fixture_known_output(gzip_fixture: Path) -> None:
+    vfs = GzipVFS(gzip_fixture)
+    nodes = _file_nodes(vfs.root())
+    assert len(nodes) == 1
+    node = nodes[0]
+
+    assert node.name == "minimal.sqlite"
+    assert vfs.read(node) == (FIXTURES_DIR / "minimal.sqlite").read_bytes()
+    vfs.close()
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Reading the same gzip member twice must return byte-identical data",
+)
+def test_gzip_vfs_read_is_reproducible(gzip_fixture: Path) -> None:
+    vfs = GzipVFS(gzip_fixture)
+    node = _file_nodes(vfs.root())[0]
+    assert vfs.read(node) == vfs.read(node)
+    vfs.close()
+
+
+# ---------------------------------------------------------------------------
+# 8. MMKV parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _mmkv_node(mmkv_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(mmkv_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == mmkv_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="MMKVParser.parse must leave the store file's bytes unchanged",
+)
+def test_mmkv_parser_does_not_modify_source(mmkv_fixture: Path) -> None:
+    digest_before = _sha256_file(mmkv_fixture)
+    node, vfs = _mmkv_node(mmkv_fixture)
+
+    MMKVParser().parse(node, vfs)
+
+    assert _sha256_file(mmkv_fixture) == digest_before, "MMKVParser modified the source store"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="MMKVParser.parse must not change mtime or ctime of the store file",
+)
+def test_mmkv_parser_does_not_change_timestamps(mmkv_fixture: Path) -> None:
+    ts_before = _timestamps(mmkv_fixture)
+    node, vfs = _mmkv_node(mmkv_fixture)
+
+    MMKVParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(mmkv_fixture), "MMKVParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="MMKVParser.parse must not create any sibling files next to the store (its scratch copy for "
+    "the third-party mmkv reader lives in a separate temp directory)",
+)
+def test_mmkv_parse_creates_no_sibling_files(mmkv_fixture: Path) -> None:
+    files_before = set(mmkv_fixture.parent.iterdir())
+    node, vfs = _mmkv_node(mmkv_fixture)
+
+    MMKVParser().parse(node, vfs)
+
+    new_files = set(mmkv_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"MMKVParser left unexpected files next to the store: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="MMKVParser.parse must work when the store file is chmod 0o444",
+)
+def test_mmkv_parser_works_on_readonly_media(mmkv_fixture: Path) -> None:
+    mmkv_fixture.chmod(0o444)
+    try:
+        node, vfs = _mmkv_node(mmkv_fixture)
+        result = MMKVParser().parse(node, vfs)
+        assert "error" not in result.data
+    finally:
+        mmkv_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="Synthetic MMKV store must parse to exactly one live string entry: channel='googleplay'",
+)
+def test_mmkv_fixture_known_output(mmkv_fixture: Path) -> None:
+    node, vfs = _mmkv_node(mmkv_fixture)
+
+    result = MMKVParser().parse(node, vfs)
+
+    assert result.viewer_type == "mmkv"
+    records = {r["key"]: r for r in result.data["records"]}
+    assert records["channel"]["decoded"] == "googleplay"
+    assert records["channel"]["type"] == "string"
+    assert records["channel"]["state"] == "Live"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same MMKV store twice must produce identical records",
+)
+def test_mmkv_parse_is_reproducible(mmkv_fixture: Path) -> None:
+    node, vfs = _mmkv_node(mmkv_fixture)
+    parser = MMKVParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 9. ABX (Android Binary XML) parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _abx_node(abx_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(abx_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == abx_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="AbxParser.parse must leave the source file's bytes unchanged",
+)
+def test_abx_parser_does_not_modify_source(abx_fixture: Path) -> None:
+    digest_before = _sha256_file(abx_fixture)
+    node, vfs = _abx_node(abx_fixture)
+
+    AbxParser().parse(node, vfs)
+
+    assert _sha256_file(abx_fixture) == digest_before, "AbxParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="AbxParser.parse must not change mtime or ctime of the source file",
+)
+def test_abx_parser_does_not_change_timestamps(abx_fixture: Path) -> None:
+    ts_before = _timestamps(abx_fixture)
+    node, vfs = _abx_node(abx_fixture)
+
+    AbxParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(abx_fixture), "AbxParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="AbxParser.parse must not create any sibling files next to the source",
+)
+def test_abx_parse_creates_no_sibling_files(abx_fixture: Path) -> None:
+    files_before = set(abx_fixture.parent.iterdir())
+    node, vfs = _abx_node(abx_fixture)
+
+    AbxParser().parse(node, vfs)
+
+    new_files = set(abx_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"AbxParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="AbxParser.parse must work when the source file is chmod 0o444",
+)
+def test_abx_parser_works_on_readonly_media(abx_fixture: Path) -> None:
+    abx_fixture.chmod(0o444)
+    try:
+        node, vfs = _abx_node(abx_fixture)
+        result = AbxParser().parse(node, vfs)
+        assert result.viewer_type == "abx"
+    finally:
+        abx_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc='Synthetic ABX <root attr="value"/> must decode to tag "root" with attribute attr="value"',
+)
+def test_abx_fixture_known_output(abx_fixture: Path) -> None:
+    node, vfs = _abx_node(abx_fixture)
+
+    result = AbxParser().parse(node, vfs)
+
+    assert result.viewer_type == "abx"
+    assert "<root" in result.data["xml_str"]
+    tree = result.data["tree"]
+    assert tree["@tag"] == "root"
+    assert tree["@attribs"]["attr"] == "value"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same ABX file twice must produce identical results",
+)
+def test_abx_parse_is_reproducible(abx_fixture: Path) -> None:
+    node, vfs = _abx_node(abx_fixture)
+    parser = AbxParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 10. Apple ATX / KTX texture parser forensic tests (both routed through
+#     ImageParser)
+# ---------------------------------------------------------------------------
+
+def _image_node(fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ImageParser.parse on an ATX file must leave the source file's bytes unchanged",
+)
+def test_atx_parser_does_not_modify_source(atx_fixture: Path) -> None:
+    digest_before = _sha256_file(atx_fixture)
+    node, vfs = _image_node(atx_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    assert _sha256_file(atx_fixture) == digest_before, "ImageParser modified the ATX source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ImageParser.parse on an ATX file must not change mtime or ctime of the source file",
+)
+def test_atx_parser_does_not_change_timestamps(atx_fixture: Path) -> None:
+    ts_before = _timestamps(atx_fixture)
+    node, vfs = _image_node(atx_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(atx_fixture), "ImageParser (ATX)")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="ImageParser.parse on an ATX file must not create any sibling files next to the source",
+)
+def test_atx_parse_creates_no_sibling_files(atx_fixture: Path) -> None:
+    files_before = set(atx_fixture.parent.iterdir())
+    node, vfs = _image_node(atx_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    new_files = set(atx_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"ImageParser left unexpected files next to the ATX source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="ImageParser.parse on an ATX file must work when the source file is chmod 0o444",
+)
+def test_atx_parser_works_on_readonly_media(atx_fixture: Path) -> None:
+    atx_fixture.chmod(0o444)
+    try:
+        node, vfs = _image_node(atx_fixture)
+        result = ImageParser().parse(node, vfs)
+        assert result.metadata["Format"] == "ATX"
+    finally:
+        atx_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="Synthetic 32x16 ATX HEAD chunk must report Width=32, Height=16, ASTC 4x4, metadata-only",
+)
+def test_atx_fixture_known_output(atx_fixture: Path) -> None:
+    node, vfs = _image_node(atx_fixture)
+
+    result = ImageParser().parse(node, vfs)
+
+    assert result.viewer_type == "text"
+    assert result.metadata["Format"] == "ATX"
+    assert result.metadata["Width"] == 32
+    assert result.metadata["Height"] == 16
+    assert result.metadata["Pixel format"] == "ASTC 4x4"
+    assert result.metadata["Decode status"] == "ATX metadata parsed; image decode unavailable"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same ATX file twice must produce identical results",
+)
+def test_atx_parse_is_reproducible(atx_fixture: Path) -> None:
+    node, vfs = _image_node(atx_fixture)
+    parser = ImageParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ImageParser.parse on a KTX file must leave the source file's bytes unchanged",
+)
+def test_ktx_parser_does_not_modify_source(ktx_fixture: Path) -> None:
+    digest_before = _sha256_file(ktx_fixture)
+    node, vfs = _image_node(ktx_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    assert _sha256_file(ktx_fixture) == digest_before, "ImageParser modified the KTX source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ImageParser.parse on a KTX file must not change mtime or ctime of the source file",
+)
+def test_ktx_parser_does_not_change_timestamps(ktx_fixture: Path) -> None:
+    ts_before = _timestamps(ktx_fixture)
+    node, vfs = _image_node(ktx_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(ktx_fixture), "ImageParser (KTX)")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="ImageParser.parse on a KTX file must not create any sibling files next to the source",
+)
+def test_ktx_parse_creates_no_sibling_files(ktx_fixture: Path) -> None:
+    files_before = set(ktx_fixture.parent.iterdir())
+    node, vfs = _image_node(ktx_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    new_files = set(ktx_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"ImageParser left unexpected files next to the KTX source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="ImageParser.parse on a KTX file must work when the source file is chmod 0o444",
+)
+def test_ktx_parser_works_on_readonly_media(ktx_fixture: Path) -> None:
+    ktx_fixture.chmod(0o444)
+    try:
+        node, vfs = _image_node(ktx_fixture)
+        result = ImageParser().parse(node, vfs)
+        assert result.metadata["Format"] == "KTX"
+    finally:
+        ktx_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="Synthetic 8x8 KTX with an unsupported glInternalFormat must be reported metadata-only",
+)
+def test_ktx_fixture_known_output(ktx_fixture: Path) -> None:
+    node, vfs = _image_node(ktx_fixture)
+
+    result = ImageParser().parse(node, vfs)
+
+    assert result.viewer_type == "text"
+    assert result.metadata["Format"] == "KTX"
+    assert result.metadata["Pixel format"] == "Unsupported (glInternalFormat 0x881A)"
+    assert result.metadata["Decode status"] == "KTX metadata parsed; image decode unavailable"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same KTX file twice must produce identical results",
+)
+def test_ktx_parse_is_reproducible(ktx_fixture: Path) -> None:
+    node, vfs = _image_node(ktx_fixture)
+    parser = ImageParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 11. Protobuf (schema-less) parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _protobuf_node(protobuf_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(protobuf_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == protobuf_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ProtobufParser.parse must leave the source file's bytes unchanged",
+)
+def test_protobuf_parser_does_not_modify_source(protobuf_fixture: Path) -> None:
+    digest_before = _sha256_file(protobuf_fixture)
+    node, vfs = _protobuf_node(protobuf_fixture)
+
+    ProtobufParser().parse(node, vfs)
+
+    assert _sha256_file(protobuf_fixture) == digest_before, "ProtobufParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ProtobufParser.parse must not change mtime or ctime of the source file",
+)
+def test_protobuf_parser_does_not_change_timestamps(protobuf_fixture: Path) -> None:
+    ts_before = _timestamps(protobuf_fixture)
+    node, vfs = _protobuf_node(protobuf_fixture)
+
+    ProtobufParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(protobuf_fixture), "ProtobufParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="ProtobufParser.parse must not create any sibling files next to the source",
+)
+def test_protobuf_parse_creates_no_sibling_files(protobuf_fixture: Path) -> None:
+    files_before = set(protobuf_fixture.parent.iterdir())
+    node, vfs = _protobuf_node(protobuf_fixture)
+
+    ProtobufParser().parse(node, vfs)
+
+    new_files = set(protobuf_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"ProtobufParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="ProtobufParser.parse must work when the source file is chmod 0o444",
+)
+def test_protobuf_parser_works_on_readonly_media(protobuf_fixture: Path) -> None:
+    protobuf_fixture.chmod(0o444)
+    try:
+        node, vfs = _protobuf_node(protobuf_fixture)
+        result = ProtobufParser().parse(node, vfs)
+        assert result.viewer_type == "protobuf"
+    finally:
+        protobuf_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="Synthetic message (field 1 varint=42, field 2 string='evidence') must decode exactly",
+)
+def test_protobuf_fixture_known_output(protobuf_fixture: Path) -> None:
+    node, vfs = _protobuf_node(protobuf_fixture)
+
+    result = ProtobufParser().parse(node, vfs)
+
+    assert result.viewer_type == "protobuf"
+    entries = result.data["decoded"]["entries"]
+    assert len(entries) == 2
+    assert entries[0]["field"] == 1
+    assert entries[0]["wire_type"] == "varint"
+    assert entries[0]["value"] == 42
+    assert entries[1]["field"] == 2
+    assert entries[1]["wire_type"] == "length-delimited"
+    assert entries[1]["value"] == {"type": "string", "text": "evidence"}
+    assert entries[1]["raw"] == b"evidence"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same protobuf message twice must produce identical results",
+)
+def test_protobuf_parse_is_reproducible(protobuf_fixture: Path) -> None:
+    node, vfs = _protobuf_node(protobuf_fixture)
+    parser = ProtobufParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 12. XML parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _xml_node(xml_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(xml_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == xml_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="XmlParser.parse must leave the source file's bytes unchanged",
+)
+def test_xml_parser_does_not_modify_source(xml_fixture: Path) -> None:
+    digest_before = _sha256_file(xml_fixture)
+    node, vfs = _xml_node(xml_fixture)
+
+    XmlParser().parse(node, vfs)
+
+    assert _sha256_file(xml_fixture) == digest_before, "XmlParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="XmlParser.parse must not change mtime or ctime of the source file",
+)
+def test_xml_parser_does_not_change_timestamps(xml_fixture: Path) -> None:
+    ts_before = _timestamps(xml_fixture)
+    node, vfs = _xml_node(xml_fixture)
+
+    XmlParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(xml_fixture), "XmlParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="XmlParser.parse must not create any sibling files next to the source",
+)
+def test_xml_parse_creates_no_sibling_files(xml_fixture: Path) -> None:
+    files_before = set(xml_fixture.parent.iterdir())
+    node, vfs = _xml_node(xml_fixture)
+
+    XmlParser().parse(node, vfs)
+
+    new_files = set(xml_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"XmlParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="XmlParser.parse must work when the source file is chmod 0o444",
+)
+def test_xml_parser_works_on_readonly_media(xml_fixture: Path) -> None:
+    xml_fixture.chmod(0o444)
+    try:
+        node, vfs = _xml_node(xml_fixture)
+        result = XmlParser().parse(node, vfs)
+        assert result.viewer_type == "tree_text"
+    finally:
+        xml_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc='Synthetic <root attr="value"><child>text</child></root> must decode to that exact tree',
+)
+def test_xml_fixture_known_output(xml_fixture: Path) -> None:
+    node, vfs = _xml_node(xml_fixture)
+
+    result = XmlParser().parse(node, vfs)
+
+    assert result.viewer_type == "tree_text"
+    assert result.data["@tag"] == "root"
+    assert result.data["@attribs"]["attr"] == "value"
+    assert result.data["@children"][0]["@tag"] == "child"
+    assert result.data["@children"][0]["@text"] == "text"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same XML file twice must produce identical results",
+)
+def test_xml_parse_is_reproducible(xml_fixture: Path) -> None:
+    node, vfs = _xml_node(xml_fixture)
+    parser = XmlParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 13. JSON parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _json_node(json_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(json_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == json_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="JsonParser.parse must leave the source file's bytes unchanged",
+)
+def test_json_parser_does_not_modify_source(json_fixture: Path) -> None:
+    digest_before = _sha256_file(json_fixture)
+    node, vfs = _json_node(json_fixture)
+
+    JsonParser().parse(node, vfs)
+
+    assert _sha256_file(json_fixture) == digest_before, "JsonParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="JsonParser.parse must not change mtime or ctime of the source file",
+)
+def test_json_parser_does_not_change_timestamps(json_fixture: Path) -> None:
+    ts_before = _timestamps(json_fixture)
+    node, vfs = _json_node(json_fixture)
+
+    JsonParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(json_fixture), "JsonParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="JsonParser.parse must not create any sibling files next to the source",
+)
+def test_json_parse_creates_no_sibling_files(json_fixture: Path) -> None:
+    files_before = set(json_fixture.parent.iterdir())
+    node, vfs = _json_node(json_fixture)
+
+    JsonParser().parse(node, vfs)
+
+    new_files = set(json_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"JsonParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="JsonParser.parse must work when the source file is chmod 0o444",
+)
+def test_json_parser_works_on_readonly_media(json_fixture: Path) -> None:
+    json_fixture.chmod(0o444)
+    try:
+        node, vfs = _json_node(json_fixture)
+        result = JsonParser().parse(node, vfs)
+        assert result.viewer_type == "tree_text"
+    finally:
+        json_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc='Synthetic {"application": "crush-forensics", "count": 3} must decode to exactly that dict',
+)
+def test_json_fixture_known_output(json_fixture: Path) -> None:
+    node, vfs = _json_node(json_fixture)
+
+    result = JsonParser().parse(node, vfs)
+
+    assert result.viewer_type == "tree_text"
+    assert result.data == {"application": "crush-forensics", "count": 3}
+    assert result.metadata["Format"] == "JSON"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same JSON file twice must produce identical results",
+)
+def test_json_parse_is_reproducible(json_fixture: Path) -> None:
+    node, vfs = _json_node(json_fixture)
+    parser = JsonParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 14. PDF parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _pdf_node(pdf_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(pdf_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == pdf_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="PDFParser.parse must leave the source file's bytes unchanged",
+)
+def test_pdf_parser_does_not_modify_source(pdf_fixture: Path) -> None:
+    digest_before = _sha256_file(pdf_fixture)
+    node, vfs = _pdf_node(pdf_fixture)
+
+    PDFParser().parse(node, vfs)
+
+    assert _sha256_file(pdf_fixture) == digest_before, "PDFParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="PDFParser.parse must not change mtime or ctime of the source file",
+)
+def test_pdf_parser_does_not_change_timestamps(pdf_fixture: Path) -> None:
+    ts_before = _timestamps(pdf_fixture)
+    node, vfs = _pdf_node(pdf_fixture)
+
+    PDFParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(pdf_fixture), "PDFParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="PDFParser.parse must not create any sibling files next to the source",
+)
+def test_pdf_parse_creates_no_sibling_files(pdf_fixture: Path) -> None:
+    files_before = set(pdf_fixture.parent.iterdir())
+    node, vfs = _pdf_node(pdf_fixture)
+
+    PDFParser().parse(node, vfs)
+
+    new_files = set(pdf_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"PDFParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="PDFParser.parse must work when the source file is chmod 0o444",
+)
+def test_pdf_parser_works_on_readonly_media(pdf_fixture: Path) -> None:
+    pdf_fixture.chmod(0o444)
+    try:
+        node, vfs = _pdf_node(pdf_fixture)
+        result = PDFParser().parse(node, vfs)
+        assert result.viewer_type == "pdf"
+    finally:
+        pdf_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="Synthetic 1-page PDF with Title/Author metadata must report exactly those known fields",
+)
+def test_pdf_fixture_known_output(pdf_fixture: Path) -> None:
+    node, vfs = _pdf_node(pdf_fixture)
+
+    result = PDFParser().parse(node, vfs)
+
+    assert result.viewer_type == "pdf"
+    assert result.metadata["Format"] == "PDF"
+    assert result.metadata["Pages"] == "1"
+    assert result.metadata["Title"] == "crush-forensics evidence"
+    assert result.metadata["Author"] == "crush-forensics"
+    assert result.metadata["JavaScript"] == "Not present"
+    assert result.metadata["Signatures"] == "None"
+    assert result.metadata["Attachments"] == "0 file(s)"
+    assert result.metadata["Revisions"] == "1"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same PDF file twice must produce identical results",
+)
+def test_pdf_parse_is_reproducible(pdf_fixture: Path) -> None:
+    node, vfs = _pdf_node(pdf_fixture)
+    parser = PDFParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 15. Image / EXIF parser forensic tests
+# ---------------------------------------------------------------------------
+
+def _image_exif_node(image_exif_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(image_exif_fixture.parent)
+    root = vfs.root()
+    node = next(c for c in root.children if c.name == image_exif_fixture.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ImageParser.parse on a JPEG with EXIF must leave the source file's bytes unchanged",
+)
+def test_image_exif_parser_does_not_modify_source(image_exif_fixture: Path) -> None:
+    digest_before = _sha256_file(image_exif_fixture)
+    node, vfs = _image_exif_node(image_exif_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    assert _sha256_file(image_exif_fixture) == digest_before, "ImageParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="ImageParser.parse on a JPEG with EXIF must not change mtime or ctime of the source file",
+)
+def test_image_exif_parser_does_not_change_timestamps(image_exif_fixture: Path) -> None:
+    ts_before = _timestamps(image_exif_fixture)
+    node, vfs = _image_exif_node(image_exif_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(image_exif_fixture), "ImageParser (EXIF)")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="ImageParser.parse on a JPEG with EXIF must not create any sibling files next to the source",
+)
+def test_image_exif_parse_creates_no_sibling_files(image_exif_fixture: Path) -> None:
+    files_before = set(image_exif_fixture.parent.iterdir())
+    node, vfs = _image_exif_node(image_exif_fixture)
+
+    ImageParser().parse(node, vfs)
+
+    new_files = set(image_exif_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"ImageParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="ImageParser.parse on a JPEG with EXIF must work when the source file is chmod 0o444",
+)
+def test_image_exif_parser_works_on_readonly_media(image_exif_fixture: Path) -> None:
+    image_exif_fixture.chmod(0o444)
+    try:
+        node, vfs = _image_exif_node(image_exif_fixture)
+        result = ImageParser().parse(node, vfs)
+        assert result.metadata["Make"] == "CrushCam"
+    finally:
+        image_exif_fixture.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="Synthetic JPEG with Make/Model/DateTime EXIF tags must report exactly those known values",
+)
+def test_image_exif_fixture_known_output(image_exif_fixture: Path) -> None:
+    node, vfs = _image_exif_node(image_exif_fixture)
+
+    result = ImageParser().parse(node, vfs)
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Make"] == "CrushCam"
+    assert result.metadata["Model"] == "CrushModel"
+    assert result.metadata["DateTime"] == "2024:01:15 10:23:45"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Parsing the same JPEG with EXIF twice must produce identical results",
+)
+def test_image_exif_parse_is_reproducible(image_exif_fixture: Path) -> None:
+    node, vfs = _image_exif_node(image_exif_fixture)
+    parser = ImageParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+# ---------------------------------------------------------------------------
+# 16. Protobuf schema-based decoder (protobuf_schema.py) forensic tests —
+#     the real compile_proto -> load_descriptor_set -> decode_message_with_schema
+#     pipeline, using the real protoc-compiled schema + real protobuf-library-
+#     encoded message that generate_protobuf_fixtures.py built as ground
+#     truth. These fixtures existed but were never exercised by any test
+#     (see project memory) before this section.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    desc="compile_proto/decode_message_with_schema must leave the .proto and .pb source files unchanged",
+)
+def test_protobuf_schema_does_not_modify_source(protobuf_schema_fixture: dict) -> None:
+    proto_path = protobuf_schema_fixture["proto_path"]
+    pb_path = protobuf_schema_fixture["pb_path"]
+    proto_digest_before = _sha256_file(proto_path)
+    pb_digest_before = _sha256_file(pb_path)
+
+    loaded = load_descriptor_set(proto_path)
+    decode_message_with_schema(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_path.read_bytes())
+
+    assert _sha256_file(proto_path) == proto_digest_before, "compile_proto modified the .proto source"
+    assert _sha256_file(pb_path) == pb_digest_before, "decode_message_with_schema modified the .pb source"
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="compile_proto must not create any sibling files next to the .proto/.pb sources "
+    "(its FileDescriptorSet output goes to a separate temp directory)",
+)
+def test_protobuf_schema_creates_no_sibling_files(protobuf_schema_fixture: dict) -> None:
+    proto_path = protobuf_schema_fixture["proto_path"]
+    files_before = set(proto_path.parent.iterdir())
+
+    load_descriptor_set(proto_path)
+
+    new_files = set(proto_path.parent.iterdir()) - files_before
+    assert new_files == set(), f"compile_proto left unexpected files next to the sources: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    desc="The schema-based decode pipeline must work when the .proto and .pb source files are chmod 0o444",
+)
+def test_protobuf_schema_works_on_readonly_media(protobuf_schema_fixture: dict) -> None:
+    proto_path = protobuf_schema_fixture["proto_path"]
+    pb_path = protobuf_schema_fixture["pb_path"]
+    proto_path.chmod(0o444)
+    pb_path.chmod(0o444)
+    try:
+        loaded = load_descriptor_set(proto_path)
+        msg = decode_message_with_schema(
+            loaded["pool"], "crush.fixtures.BasicWireTypes", pb_path.read_bytes()
+        )
+        assert msg.small_count == 1
+    finally:
+        proto_path.chmod(0o644)
+        pb_path.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    desc="protobuf_basic_wire_types.pb decoded against its real protoc-compiled schema must match "
+    "the committed .expected.json ground truth field-for-field",
+)
+def test_protobuf_schema_fixture_known_output(protobuf_schema_fixture: dict) -> None:
+    proto_path = protobuf_schema_fixture["proto_path"]
+    pb_bytes = protobuf_schema_fixture["pb_path"].read_bytes()
+    expected = protobuf_schema_fixture["expected"]
+
+    loaded = load_descriptor_set(proto_path)
+    assert "crush.fixtures.BasicWireTypes" in loaded["message_names"]
+    msg = decode_message_with_schema(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
+
+    assert msg.small_count == 1
+    assert msg.large_count == 300
+    assert msg.enabled is True
+    assert msg.unix_timestamp == 1_700_000_000
+    assert msg.temperature_c == pytest.approx(36.5)
+    assert msg.magic_fixed32 == 305_419_896
+    assert msg.ratio == pytest.approx(6.25)
+    assert msg.magic_fixed64 == 0x0102030405060708
+    assert msg.note == "hello forensic protobuf"
+    assert msg.binary_blob == bytes.fromhex("00ff10807f42")
+    assert msg.empty_blob == b""
+    assert msg.long_text == "L" * 130
+
+    # Byte-provenance ("Locate in Hex") ranges must match the committed
+    # ground truth's key/value ranges for every scalar top-level field.
+    ranges = schema_byte_ranges(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
+    for field in expected["fields"]:
+        path = (field["name"],)
+        assert path in ranges, f"no byte range computed for field {field['name']!r}"
+        assert list(ranges[path]["byte_range"]) == field["byte_range"], field["name"]
+        highlights = ranges[path]["highlight_ranges"]
+        assert list(highlights[0]) == field["key_range"], field["name"]
+        assert list(highlights[-1]) == field["value_range"], field["name"]
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    desc="Decoding the same protobuf message against the same schema twice must produce identical results",
+)
+def test_protobuf_schema_decode_is_reproducible(protobuf_schema_fixture: dict) -> None:
+    proto_path = protobuf_schema_fixture["proto_path"]
+    pb_bytes = protobuf_schema_fixture["pb_path"].read_bytes()
+
+    loaded = load_descriptor_set(proto_path)
+    msg1 = decode_message_with_schema(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
+    msg2 = decode_message_with_schema(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
+
+    assert msg1 == msg2
+    ranges1 = schema_byte_ranges(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
+    ranges2 = schema_byte_ranges(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
+    assert ranges1 == ranges2
