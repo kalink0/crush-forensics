@@ -66,6 +66,7 @@ class _FakeField:
         self.number = number
         self.name = name
         self.label = self.LABEL_REPEATED if repeated else 1
+        self.is_repeated = repeated
         self.message_type = message_type
 
 

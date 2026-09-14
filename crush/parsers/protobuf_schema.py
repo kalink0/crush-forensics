@@ -204,7 +204,7 @@ def _schema_value_path(
 
 
 def _is_repeated(field: Any) -> bool:
-    return bool(field.label == field.LABEL_REPEATED)
+    return bool(field.is_repeated)
 
 
 def _is_map_field(field: Any) -> bool:
