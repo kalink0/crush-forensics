@@ -115,6 +115,62 @@ class PropertiesPanel(QScrollArea):
             lbl.setTextInteractionFlags(_SELECTABLE)
             self._layout.addRow(f"{key}:", lbl)
 
+    def show_analyzer_result(self, result: dict[str, Any]) -> None:
+        """Populates the panel with a crush-analyze contract v1 result's
+        own analyzer/run metadata instead of file metadata.
+
+        An analyzer result has no single owning VFSNode — its source was a
+        temp extraction, already deleted by the time the tab is shown — so
+        update_properties() doesn't apply here. Provenance (what ran, when,
+        against what input, with which tool version) is the forensically
+        relevant analogue: the same kind of question the timestamps/format
+        info above answer for an ordinary file, answered for an analysis
+        run instead.
+        """
+        self.clear()
+        self._current_node = None
+        self._current_vfs = None
+
+        analyzer = result.get("analyzer", {})
+        run = result.get("run", {})
+
+        header = QLabel(f"<b>{analyzer.get('name', analyzer.get('id', 'Analyzer result'))}</b>")
+        header.setTextInteractionFlags(_SELECTABLE)
+        self._layout.addRow(header)
+
+        def _row(label: str, value: object) -> None:
+            lbl = QLabel(str(value) if value not in (None, "") else "—")
+            lbl.setWordWrap(True)
+            lbl.setTextInteractionFlags(_SELECTABLE)
+            self._layout.addRow(f"{label}:", lbl)
+
+        _row("Module ID", analyzer.get("id"))
+        tool = f"{analyzer.get('tool', 'crush-analyze')} {analyzer.get('tool_version', '')}".strip()
+        _row("Tool", tool)
+        _row("Module version", analyzer.get("module_version"))
+        _row("Input path", run.get("input_path"))
+        _row("Started at", run.get("started_at"))
+        _row("Duration", f"{run.get('duration_ms', 0):,} ms")
+
+        status = result.get("status", "ok")
+        status_lbl = QLabel(status)
+        status_lbl.setTextInteractionFlags(_SELECTABLE)
+        if status == "error":
+            status_lbl.setStyleSheet("color: #b02a37; font-weight: bold;")
+        elif status == "partial":
+            status_lbl.setStyleSheet("color: #997404; font-weight: bold;")
+        self._layout.addRow("Status:", status_lbl)
+
+        warnings = result.get("warnings", [])
+        if warnings:
+            _row("Warnings", str(len(warnings)))
+
+        if run.get("dev_mode"):
+            dev_lbl = QLabel("Yes — unvetted external module")
+            dev_lbl.setStyleSheet("color: #997404; font-weight: bold;")
+            dev_lbl.setTextInteractionFlags(_SELECTABLE)
+            self._layout.addRow("Dev mode:", dev_lbl)
+
     def _add_timestamp(self, label: str, ts_value: float) -> None:
         if ts_value:
             ts = datetime.fromtimestamp(ts_value, tz=timezone.utc)

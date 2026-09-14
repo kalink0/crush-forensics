@@ -509,6 +509,7 @@ class FilesystemPanel(QWidget):
         send_to_peach_action = None
         send_to_peach_folder_action = None
         send_to_peach_biome_action = None
+        run_analyzer_action = None
         if _is_ios_diag:
             open_ios_diag_action = menu.addAction("Open as Unified Log Archive")
             add_ios_diag_action  = menu.addAction("Add to Multi-Log Studio as Unified Log Archive")
@@ -518,6 +519,7 @@ class FilesystemPanel(QWidget):
             open_logs_folder_action = menu.addAction("Open Logs in Multi-Log Studio")
             send_to_peach_folder_action = menu.addAction("Send Logs to Peach…")
             send_to_peach_biome_action = menu.addAction("Send Biome Streams to Peach…")
+            run_analyzer_action = menu.addAction("Run Analyzer…")
         else:
             open_multi_log_action = menu.addAction("Open in Multi-Log Studio")
             add_multi_log_action  = menu.addAction("Add to Multi-Log Studio")
@@ -575,6 +577,8 @@ class FilesystemPanel(QWidget):
             self.open_requested.emit(node, vfs, "multi_log_add")
         elif action == send_to_peach_action:
             self.open_requested.emit(node, vfs, "send_to_peach")
+        elif action == run_analyzer_action:
+            self.open_requested.emit(node, vfs, "run_analyzer")
         elif action == open_proto_action:
             self.open_requested.emit(node, vfs, "protobuf")
         elif action == open_mmkv_action:

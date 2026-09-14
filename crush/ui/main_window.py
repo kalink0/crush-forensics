@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import time
+import fnmatch
 import os
 import re
 import subprocess
@@ -1359,6 +1360,10 @@ class MainWindow(QMainWindow):
             self._hash_node_if_integrity(node, vfs)
             self._send_to_peach(node, vfs)
             return
+        if mode == "run_analyzer":
+            self._hash_node_if_integrity(node, vfs)
+            self._run_analyzer(node, vfs)
+            return
         if mode == "send_to_peach_biome":
             from crush.parsers.segb_parser import discover_segb_nodes
             from crush.viewers.multi_log_viewer import FolderDiscoveryDialog
@@ -1880,6 +1885,7 @@ class MainWindow(QMainWindow):
         to clean up); otherwise it's the temp directory the caller should ask
         the external tool to delete once it's done with source_path.
         """
+        tmp_dir: Path | None = None
         try:
             if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
                 return Path(node.path), None
@@ -1889,9 +1895,74 @@ class MainWindow(QMainWindow):
             self._export_vfs_tree(node, vfs, source_path)
             return source_path, tmp_dir
         except Exception as exc:
+            # A partially-written tmp_dir must not survive a failed
+            # extraction -- e.g. running out of disk/tmpfs space partway
+            # through a large source silently left tens of GB behind here
+            # before this cleanup existed, found via a real "No space left
+            # on device" failure during Run Analyzer against a full OS image.
+            if tmp_dir is not None:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
             if hasattr(self, "_logger"):
                 self._logger.error("Materialize directory for external failed: %s", exc)
             return None
+
+    def _materialize_matching_files_for_external(
+        self, node: VFSNode, vfs: VFS, filename_patterns: list[str]
+    ) -> tuple[Path, Path | None] | None:
+        """Like _materialize_directory_node_for_external, but extracts only
+        the files under *node* whose name matches one of *filename_patterns*
+        (fnmatch-style, e.g. "applicationState.db*"), instead of a full
+        recursive copy of node's entire subtree.
+
+        Built for crush-analyze: a module only ever reads a handful of
+        specific files (its own declared `paths`), so copying everything
+        under whatever directory the user happened to right-click can be
+        orders of magnitude more than needed -- extracting a full OS image
+        to find one small SQLite file is exactly the "No space left on
+        device" failure this replaces. filename_patterns is deliberately
+        just the last path segment of each module path (not the full
+        multi-segment glob) -- an over-approximation that only risks
+        pulling in an extra same-named file from an unexpected location,
+        never missing a real one, and it keeps this a simple per-node name
+        match instead of reimplementing LEAPP's own path-glob semantics
+        here too (see crush-analyze's find_files(), which has the same
+        simplification).
+
+        Returns (root_path, cleanup_dir) like the sibling method -- for an
+        already-real DirectoryVFS this returns the real path unchanged
+        (nothing to extract, exactly like the sibling); otherwise
+        root_path and cleanup_dir are the same fresh temp directory.
+        """
+        tmp_dir: Path | None = None
+        try:
+            if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
+                return Path(node.path), None
+
+            tmp_dir = Path(tempfile.mkdtemp(prefix="crush-analyze-"))
+            self._export_vfs_tree_matching(node, vfs, tmp_dir, filename_patterns)
+            return tmp_dir, tmp_dir
+        except Exception as exc:
+            if tmp_dir is not None:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            if hasattr(self, "_logger"):
+                self._logger.error("Materialize matching files for external failed: %s", exc)
+            return None
+
+    def _export_vfs_tree_matching(
+        self, node: VFSNode, vfs: VFS, dest: Path, filename_patterns: list[str]
+    ) -> None:
+        """Recursively copies only the files under *node* whose name matches
+        one of filename_patterns onto the real filesystem at dest, mirroring
+        their original relative directory structure (needed so a module's
+        own multi-segment path glob, matched again on the crush-analyze
+        side, still finds them at a plausible nested location)."""
+        if node.is_dir:
+            for child in node.children:
+                self._export_vfs_tree_matching(child, vfs, dest / child.name, filename_patterns)
+        elif any(fnmatch.fnmatch(node.name, pattern) for pattern in filename_patterns):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with vfs.open(node) as src, open(dest, "wb") as out:
+                out.write(src.read())
 
     def _resolve_peach_source(
         self, node: VFSNode, vfs: VFS
@@ -1982,6 +2053,111 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Sent to Peach: {node.path}")
         except (FileNotFoundError, RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Send to Peach", str(exc))
+
+    # Curated allowlist of crush-analyze module ids Crush's own UI exposes.
+    # crush-analyze's manifest can offer more than this (e.g. the two
+    # "Application Snapshot" modules from the same vendored
+    # applicationStateDB.py) -- not every module a LEAPP file happens to
+    # declare is judged forensically relevant/mature enough for Crush's own
+    # picker yet. See docs/design/analyzer-runner.md and the "ACTIVE TODO"
+    # note in that design's tracking memory for the decision behind this.
+    _ANALYZER_MODULE_ALLOWLIST = {"get_installed_apps"}
+
+    # Friendlier labels than crush-analyze's own manifest "name" field,
+    # which is LEAPP's own internal artifact name (e.g. "Application
+    # State"), not written with Crush's UI in mind. Falls back to the
+    # manifest name for any module id not listed here.
+    _ANALYZER_MODULE_DISPLAY_NAMES = {"get_installed_apps": "Installed Applications"}
+
+    def _run_analyzer(self, node: VFSNode, vfs: VFS) -> None:
+        """Runs one bundled crush-analyze module against *node* and shows
+        the result as a new tab. See docs/design/analyzer-runner.md.
+
+        Two blocking steps, each off the UI thread via run_with_busy_dialog:
+        fetching the module list (a subprocess spawn — cached on this window
+        after the first successful fetch, since most sessions never touch
+        this feature and it's not worth doing eagerly at startup) and, once
+        a module is picked, materializing *node* to a real filesystem path
+        (a full recursive extraction for an archive/backup/raw-image-backed
+        source, not just a fast return for an already-real directory) plus
+        the analyzer run itself.
+        """
+        modules = getattr(self, "_analyzer_modules_cache", None)
+        if modules is not None:
+            self._run_analyzer_pick_and_run(node, vfs, modules)
+            return
+
+        from crush.core.analyzer_launcher import list_analyzer_modules
+        from crush.ui.busy_dialog import run_with_busy_dialog
+
+        def _list_done(modules: list[dict]) -> None:
+            self._analyzer_modules_cache = modules
+            self._run_analyzer_pick_and_run(node, vfs, modules)
+
+        def _list_error(message: str) -> None:
+            QMessageBox.warning(self, "Run Analyzer", f"Could not list analyzer modules:\n{message}")
+
+        run_with_busy_dialog(
+            self, "Loading analyzer modules…", list_analyzer_modules, _list_done, _list_error
+        )
+
+    def _run_analyzer_pick_and_run(
+        self, node: VFSNode, vfs: VFS, modules: list[dict]
+    ) -> None:
+        from crush.ui.busy_dialog import run_with_busy_dialog
+
+        modules = [m for m in modules if m["id"] in self._ANALYZER_MODULE_ALLOWLIST]
+        if not modules:
+            QMessageBox.information(self, "Run Analyzer", "No analyzer modules are available.")
+            return
+
+        labels = [
+            f"{self._ANALYZER_MODULE_DISPLAY_NAMES.get(m['id'], m['name'])} ({m['id']})"
+            for m in modules
+        ]
+        label, ok = QInputDialog.getItem(
+            self, "Run Analyzer", "Module:", labels, 0, editable=False
+        )
+        if not ok:
+            return
+        selected = modules[labels.index(label)]
+        module_id = selected["id"]
+        # Only the last path segment of each declared glob -- see
+        # _materialize_matching_files_for_external's docstring for why a
+        # filename-only match is used instead of reproducing the full
+        # multi-segment pattern here too.
+        filename_patterns = [str(p).rsplit("/", 1)[-1] for p in selected.get("paths", ["*"])] or ["*"]
+
+        def _work() -> dict:
+            from crush.core.analyzer_launcher import run_analyzer
+            resolved = self._materialize_matching_files_for_external(node, vfs, filename_patterns)
+            if resolved is None:
+                raise RuntimeError("Unable to materialize source for the analyzer.")
+            source_path, cleanup_dir = resolved
+            try:
+                return run_analyzer(source_path, module_id=module_id)
+            finally:
+                if cleanup_dir is not None:
+                    shutil.rmtree(cleanup_dir, ignore_errors=True)
+
+        def _on_done(result: dict) -> None:
+            from crush.viewers.analyzer_result_viewer import AnalyzerResultViewer
+            viewer = AnalyzerResultViewer(result, self)
+            analyzer_id = result.get("analyzer", {}).get("id", module_id)
+            fallback_name = result.get("analyzer", {}).get("name", module_id)
+            title = self._ANALYZER_MODULE_DISPLAY_NAMES.get(analyzer_id, fallback_name)
+            viewer.setProperty("crush_analyzer_result", result)
+            idx = self._viewer_tabs.addTab(viewer, title)
+            self._viewer_tabs.setCurrentIndex(idx)
+            self._show_viewer_tabs()
+            self._props_panel.show_analyzer_result(result)
+            status = result.get("status", "ok")
+            self._status.showMessage(f"{node.path}  [Analyzer: {title} — {status}]")
+
+        def _on_error(message: str) -> None:
+            QMessageBox.warning(self, "Run Analyzer", f"Analyzer failed:\n{message}")
+
+        run_with_busy_dialog(self, f"Running {label}…", _work, _on_done, _on_error)
 
     def _send_to_peach_batch(self, items: list[tuple[VFSNode, VFS]]) -> None:
         """Hand off multiple log sources to peach in a single spawn (multiple
@@ -2928,6 +3104,11 @@ class MainWindow(QMainWindow):
         if app is None:
             return
         self._propagate_palette_recursive(widget, app.palette())
+
+        analyzer_result = widget.property("crush_analyzer_result")
+        if analyzer_result is not None:
+            self._props_panel.show_analyzer_result(analyzer_result)
+            return
 
         node = widget.property("crush_node")
         vfs = widget.property("crush_vfs")
