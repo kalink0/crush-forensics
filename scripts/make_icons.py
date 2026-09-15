@@ -31,9 +31,9 @@ def _render_png(size: int) -> bytes:
     renderer.render(p)
     p.end()
     buf = QBuffer()
-    buf.open(QIODevice.OpenMode.WriteOnly)
-    img.save(buf, "PNG")
-    return bytes(buf.data())
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, b"PNG")
+    return bytes(buf.data().data())
 
 
 def make_icns(out: str = "crush.icns") -> None:

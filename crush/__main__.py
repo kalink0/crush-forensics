@@ -3,6 +3,8 @@ import argparse
 import os
 import sys
 
+from crush.core.analyzer_launcher import INTERNAL_CLI_SENTINEL
+
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="crush", description="Crush — Digital Forensic Analysis Workbench")
@@ -48,7 +50,18 @@ def _icon_path() -> str:
 
 
 def main() -> None:
-    args = _parse_args(sys.argv[1:])
+    argv = sys.argv[1:]
+    # Re-exec'd by crush.core.analyzer_launcher to run crush-analyze in an
+    # isolated subprocess -- checked before any Qt import, since this
+    # path never touches the GUI at all. See analyzer_launcher's module
+    # docstring for why this is a self-re-exec rather than a second binary
+    # or `sys.executable -m crush_analyze` (the latter breaks in a frozen
+    # build, where sys.executable is crush.exe itself).
+    if argv and argv[0] == INTERNAL_CLI_SENTINEL:
+        from crush_analyze.cli import main as _analyzer_main
+        sys.exit(_analyzer_main(argv[1:]))
+
+    args = _parse_args(argv)
     open_paths = list(args.paths) + list(args.open_paths or [])
 
     import crush

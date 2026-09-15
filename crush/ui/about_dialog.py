@@ -92,6 +92,12 @@ your support makes this project possible.</p>
     <td class="lic">Apache 2.0</td>
     <td><a href="https://github.com/kalink0/peach-forensics">kalink0</a></td>
   </tr>
+  <tr class="alt">
+    <td><b>crush-analyze</b></td>
+    <td>Sibling analyzer-module runner for "Run Analyzer" — individual modules ported from <a href="https://github.com/abrignoni/iLEAPP">iLEAPP</a>/<a href="https://github.com/abrignoni/aLEAPP">aLEAPP</a> artifact scripts by Alexis Brignoni (MIT); a normal pip dependency, not a bundled binary</td>
+    <td class="lic">Apache 2.0</td>
+    <td><a href="https://github.com/kalink0/crush-analyze">kalink0</a></td>
+  </tr>
 </table>
 
 <h3>Python package dependencies</h3>

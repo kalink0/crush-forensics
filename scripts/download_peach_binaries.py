@@ -55,18 +55,18 @@ def _extract_single_file(archive: Path, target: Path) -> None:
     """Extract the one file peach's release archives contain (flat, no nesting)."""
     if archive.name.endswith(".zip"):
         with zipfile.ZipFile(archive) as zf:
-            members = [i for i in zf.infolist() if not i.is_dir()]
-            if len(members) != 1:
-                raise ValueError(f"Expected exactly one file in {archive.name}, found {len(members)}")
-            target.write_bytes(zf.read(members[0].filename))
+            zip_members = [i for i in zf.infolist() if not i.is_dir()]
+            if len(zip_members) != 1:
+                raise ValueError(f"Expected exactly one file in {archive.name}, found {len(zip_members)}")
+            target.write_bytes(zf.read(zip_members[0].filename))
     else:
         with tarfile.open(archive, "r:gz") as tf:
-            members = [m for m in tf.getmembers() if m.isfile()]
-            if len(members) != 1:
-                raise ValueError(f"Expected exactly one file in {archive.name}, found {len(members)}")
-            src = tf.extractfile(members[0])
+            tar_members = [m for m in tf.getmembers() if m.isfile()]
+            if len(tar_members) != 1:
+                raise ValueError(f"Expected exactly one file in {archive.name}, found {len(tar_members)}")
+            src = tf.extractfile(tar_members[0])
             if src is None:
-                raise ValueError(f"Could not read {members[0].name} from {archive.name}")
+                raise ValueError(f"Could not read {tar_members[0].name} from {archive.name}")
             target.write_bytes(src.read())
 
 
