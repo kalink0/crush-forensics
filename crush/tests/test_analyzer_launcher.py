@@ -25,18 +25,11 @@ def test_run_analyzer_stub_module_against_an_empty_directory(tmp_path: Path) -> 
 
     assert result["status"] == "ok"
     assert result["rows"] == []
-    assert result["run"]["dev_mode"] is False
-    assert result["run"]["module_source"] == "bundled"
 
 
 def test_run_analyzer_unknown_module_raises() -> None:
     with pytest.raises(AnalyzerRunError):
         run_analyzer(Path("."), module_id="does-not-exist")
-
-
-def test_run_analyzer_requires_module_id_or_module_path() -> None:
-    with pytest.raises(ValueError):
-        run_analyzer(Path("."))
 
 
 def test_run_analyzer_installed_apps_against_a_synthetic_fixture(tmp_path: Path) -> None:

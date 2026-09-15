@@ -52,8 +52,7 @@ def _icon_path() -> str:
 def main() -> None:
     argv = sys.argv[1:]
     # Re-exec'd by crush.core.analyzer_launcher to run crush-analyze in an
-    # isolated subprocess (important for dev mode, which runs arbitrary
-    # unreviewed module code) -- checked before any Qt import, since this
+    # isolated subprocess -- checked before any Qt import, since this
     # path never touches the GUI at all. See analyzer_launcher's module
     # docstring for why this is a self-re-exec rather than a second binary
     # or `sys.executable -m crush_analyze` (the latter breaks in a frozen

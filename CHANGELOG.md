@@ -10,6 +10,7 @@ All notable changes to Crush will be documented in this file.
 - Unallocated space outside partition boundaries is shown as a file, openable in Hex View.
 - NTFS, FAT32, and exFAT have deleted-file support (recovered from the MFT/FAT).
 - EWF hash verification against the acquisition's own stored hash.
+- **Run Analyzer**: right-click a directory to run a small, curated analyzer module (ported from [iLEAPP](https://github.com/abrignoni/iLEAPP)/[aLEAPP](https://github.com/abrignoni/aLEAPP) by Alexis Brignoni) against it, via the new sibling project [crush-analyze](https://github.com/kalink0/crush-analyze). Three modules so far: "Installed Applications" for iOS and two independent Android sources.
 
 ### Bug Fixes
 

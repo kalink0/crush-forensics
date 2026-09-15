@@ -2061,13 +2061,69 @@ class MainWindow(QMainWindow):
     # declare is judged forensically relevant/mature enough for Crush's own
     # picker yet. See docs/design/analyzer-runner.md and the "ACTIVE TODO"
     # note in that design's tracking memory for the decision behind this.
-    _ANALYZER_MODULE_ALLOWLIST = {"get_installed_apps"}
+    _ANALYZER_MODULE_ALLOWLIST = {
+        "get_installed_apps",
+        "get_installedappsVending",
+        "get_package_info",
+    }
 
     # Friendlier labels than crush-analyze's own manifest "name" field,
     # which is LEAPP's own internal artifact name (e.g. "Application
     # State"), not written with Crush's UI in mind. Falls back to the
     # manifest name for any module id not listed here.
-    _ANALYZER_MODULE_DISPLAY_NAMES = {"get_installed_apps": "Installed Applications"}
+    #
+    # get_installedappsVending and get_package_info both answer "what apps
+    # are/were installed" on Android, from two different sources (Play
+    # Store's own local cache vs. the OS's own /system/packages.xml) -- kept
+    # both, distinctly named, rather than picking one: they can disagree
+    # (e.g. an app installed outside Play Store, or Play Store data that's
+    # since been cleared) and a reader should be able to tell which one a
+    # given result came from.
+    _ANALYZER_MODULE_DISPLAY_NAMES = {
+        "get_installed_apps": "Installed Applications (iOS)",
+        "get_installedappsVending": "Installed Applications (Android, Play Store Cache)",
+        "get_package_info": "Installed Applications (Android, System)",
+    }
+
+    # Crush's own curated "what does this result actually tell you" text,
+    # shown in the Properties panel -- the analyzer-module analogue of
+    # formats.db's hand-written forensic_relevance field, not something
+    # pulled from crush-analyze's own manifest (LEAPP's own "description"
+    # field there is a mechanical "what it parses", not this).
+    #
+    # TODO once this grows past a handful of modules: move to a small
+    # dedicated catalog (mirroring crush/data/build_formats_db.py, but a
+    # plain dict/module rather than formats.db's SQLite machinery -- not
+    # worth that for 3 entries) and add a browsable "Analyzer Modules
+    # Reference" dialog (Help menu, alongside "Format Reference…"),
+    # reusing FormatInfoDialog's layout. That's also the natural place to
+    # attach source links per module (e.g. a pointer to the vendored
+    # LEAPP file/upstream commit) instead of only the Properties panel's
+    # existing analyzer.source link, which only appears after a run.
+    _ANALYZER_MODULE_FORENSIC_RELEVANCE = {
+        "get_installed_apps": (
+            "From applicationState.db's compatibilityInfo per app: bundle ID, bundle "
+            "container path, and sandbox (data) path. Shows which apps were installed and "
+            "where their data lived, which lets you correlate other found artifacts back "
+            "to the app that produced them -- and this state DB can retain an app's entry "
+            "even after the app itself was uninstalled, so it's also a source for apps no "
+            "longer present on the device."
+        ),
+        "get_installedappsVending": (
+            "The Play Store client's own local record of what it installed: package name, "
+            "title, first download/last update time, install reason, auto-update setting, "
+            "and the Google account that did the installing. Covers apps Play Store itself "
+            "tracked installing -- an app installed by sideloading, ADB, or a different app "
+            "store is not in this cache, and the cache can be cleared independently of the "
+            "app itself still being installed."
+        ),
+        "get_package_info": (
+            "The OS's own package manager record (/system/packages.xml): install/update "
+            "time, installer and install-originator package, on-disk code path, and "
+            "public/private flags. Present for every installed app regardless of install "
+            "source (Play Store, ADB, sideloading, another app store)."
+        ),
+    }
 
     def _run_analyzer(self, node: VFSNode, vfs: VFS) -> None:
         """Runs one bundled crush-analyze module against *node* and shows
@@ -2101,26 +2157,48 @@ class MainWindow(QMainWindow):
             self, "Loading analyzer modules…", list_analyzer_modules, _list_done, _list_error
         )
 
+    def _open_analyzer_result_tab(self, node: VFSNode, result: dict, module_id: str) -> None:
+        """Shared by both the curated and dev-mode Run Analyzer paths --
+        the whole point of contract v1 is one display path for every
+        module, curated or not."""
+        from crush.viewers.analyzer_result_viewer import AnalyzerResultViewer
+        viewer = AnalyzerResultViewer(result, self)
+        analyzer_id = result.get("analyzer", {}).get("id", module_id)
+        fallback_name = result.get("analyzer", {}).get("name", module_id)
+        title = self._ANALYZER_MODULE_DISPLAY_NAMES.get(analyzer_id, fallback_name)
+        relevance = self._ANALYZER_MODULE_FORENSIC_RELEVANCE.get(analyzer_id)
+        viewer.setProperty("crush_analyzer_result", result)
+        viewer.setProperty("crush_analyzer_title", title)
+        viewer.setProperty("crush_analyzer_relevance", relevance)
+        idx = self._viewer_tabs.addTab(viewer, title)
+        self._viewer_tabs.setCurrentIndex(idx)
+        self._show_viewer_tabs()
+        self._props_panel.show_analyzer_result(result, title, relevance)
+        status = result.get("status", "ok")
+        self._status.showMessage(f"{node.path}  [Analyzer: {title} — {status}]")
+
     def _run_analyzer_pick_and_run(
         self, node: VFSNode, vfs: VFS, modules: list[dict]
     ) -> None:
         from crush.ui.busy_dialog import run_with_busy_dialog
 
-        modules = [m for m in modules if m["id"] in self._ANALYZER_MODULE_ALLOWLIST]
-        if not modules:
+        curated = [m for m in modules if m["id"] in self._ANALYZER_MODULE_ALLOWLIST]
+        if not curated:
             QMessageBox.information(self, "Run Analyzer", "No analyzer modules are available.")
             return
 
         labels = [
             f"{self._ANALYZER_MODULE_DISPLAY_NAMES.get(m['id'], m['name'])} ({m['id']})"
-            for m in modules
+            for m in curated
         ]
+
         label, ok = QInputDialog.getItem(
             self, "Run Analyzer", "Module:", labels, 0, editable=False
         )
         if not ok:
             return
-        selected = modules[labels.index(label)]
+
+        selected = curated[labels.index(label)]
         module_id = selected["id"]
         # Only the last path segment of each declared glob -- see
         # _materialize_matching_files_for_external's docstring for why a
@@ -2141,18 +2219,7 @@ class MainWindow(QMainWindow):
                     shutil.rmtree(cleanup_dir, ignore_errors=True)
 
         def _on_done(result: dict) -> None:
-            from crush.viewers.analyzer_result_viewer import AnalyzerResultViewer
-            viewer = AnalyzerResultViewer(result, self)
-            analyzer_id = result.get("analyzer", {}).get("id", module_id)
-            fallback_name = result.get("analyzer", {}).get("name", module_id)
-            title = self._ANALYZER_MODULE_DISPLAY_NAMES.get(analyzer_id, fallback_name)
-            viewer.setProperty("crush_analyzer_result", result)
-            idx = self._viewer_tabs.addTab(viewer, title)
-            self._viewer_tabs.setCurrentIndex(idx)
-            self._show_viewer_tabs()
-            self._props_panel.show_analyzer_result(result)
-            status = result.get("status", "ok")
-            self._status.showMessage(f"{node.path}  [Analyzer: {title} — {status}]")
+            self._open_analyzer_result_tab(node, result, module_id)
 
         def _on_error(message: str) -> None:
             QMessageBox.warning(self, "Run Analyzer", f"Analyzer failed:\n{message}")
@@ -3107,7 +3174,11 @@ class MainWindow(QMainWindow):
 
         analyzer_result = widget.property("crush_analyzer_result")
         if analyzer_result is not None:
-            self._props_panel.show_analyzer_result(analyzer_result)
+            self._props_panel.show_analyzer_result(
+                analyzer_result,
+                widget.property("crush_analyzer_title"),
+                widget.property("crush_analyzer_relevance"),
+            )
             return
 
         node = widget.property("crush_node")

@@ -31,6 +31,8 @@ Open and navigate ZIP, TAR, 7z, Android `adb backup` (`.ab`), and iTunes/Finder 
 
 **Send to Peach** — hand a log source (Apple Unified Log, or any other file — same "no pre-filtering, confirm in the tool itself" approach as Multi-Log Studio) off to the bundled sibling log viewer [peach-forensics](https://github.com/kalink0/peach-forensics) for tagging and Splunk-style search, via right-click.
 
+**Run Analyzer** — right-click a directory to run a small, curated analyzer module (ported from [iLEAPP](https://github.com/abrignoni/iLEAPP)/[aLEAPP](https://github.com/abrignoni/aLEAPP) artifact scripts) against it and see the result as a typed, sortable, searchable table — currently three "Installed Applications" modules (iOS, and two independent Android sources).
+
 Supported viewers (more planned):
 
 - SQLite / Database Viewer
@@ -223,6 +225,8 @@ Apple Unified Log (`.tracev3` / `.logarchive`) parsing uses the [macos-UnifiedLo
 MMKV parsing is built on [mmkv-parser](https://github.com/abrignoni/mmkv-parser) by [Alexis Brignoni](https://github.com/abrignoni) (MIT License), vendored unmodified under `crush/third_party/mmkv_parser/`.
 
 **Send to Peach** hands log sources off to [peach-forensics](https://github.com/kalink0/peach-forensics), a sibling forensic log viewer (Apache License 2.0) — tagging, Splunk-style search, no IPC after launch. Sessions aren't persisted for sources Crush had to extract or decrypt first (`--ephemeral-session`), so a handoff never leaves a durable, unencrypted copy of evidence behind. The binary is bundled the same way as `unifiedlog_iterator`; run `scripts/download_peach_binaries.py` when running from source to populate `crush/bin/peach/`.
+
+**Run Analyzer** is built on [crush-analyze](https://github.com/kalink0/crush-analyze), a sibling project (Apache License 2.0) that runs small, curated analyzer modules ported from [iLEAPP](https://github.com/abrignoni/iLEAPP)/[aLEAPP](https://github.com/abrignoni/aLEAPP) artifact scripts by [Alexis Brignoni](https://github.com/abrignoni) (MIT License) against a directory, over a versioned JSON contract — a normal pip dependency of Crush, not a separately bundled binary.
 
 Special thanks to [@dugeonlady](https://github.com/dugeonlady) for suggesting the Rainbow theme — because digital forensics tools don't have to be grey. Or dark. Someone has to bring colour to the hex dump. Evidence: *View → Theme → Rainbow*. She was right.
 

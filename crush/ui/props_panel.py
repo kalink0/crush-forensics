@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
+from crush.ui import open_url
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 _SELECTABLE = (
@@ -115,7 +116,9 @@ class PropertiesPanel(QScrollArea):
             lbl.setTextInteractionFlags(_SELECTABLE)
             self._layout.addRow(f"{key}:", lbl)
 
-    def show_analyzer_result(self, result: dict[str, Any]) -> None:
+    def show_analyzer_result(
+        self, result: dict[str, Any], title: str | None = None, relevance: str | None = None
+    ) -> None:
         """Populates the panel with a crush-analyze contract v1 result's
         own analyzer/run metadata instead of file metadata.
 
@@ -125,7 +128,28 @@ class PropertiesPanel(QScrollArea):
         against what input, with which tool version) is the forensically
         relevant analogue: the same kind of question the timestamps/format
         info above answer for an ordinary file, answered for an analysis
-        run instead.
+        run instead -- including which underlying parser this result is
+        actually based on: a "Source" link pinned to the exact upstream
+        commit crush-analyze's vendored copy was fetched from (contract
+        v1's `analyzer.source`). And which evidence this result is based
+        on: every file that matched the module's own declared paths glob
+        (`run.source_files`).
+
+        *title* is the display name the caller already resolved for the tab
+        (curated modules go through MainWindow's own
+        _ANALYZER_MODULE_DISPLAY_NAMES override, e.g. "Installed
+        Applications" instead of the contract's raw LEAPP-internal
+        "Application State") -- passed in so the header matches the tab
+        instead of re-deriving a possibly different name from the contract
+        directly. Falls back to the contract's own name/id when the caller
+        has none (e.g. a bare result with no tab context).
+
+        *relevance* is Crush's own curated "what does this result actually
+        tell you" text (MainWindow's `_ANALYZER_MODULE_FORENSIC_RELEVANCE`)
+        -- the analyzer-module analogue of formats.db's hand-written
+        forensic_relevance field, not something read from crush-analyze's
+        own manifest. `None` for any module without a curated entry yet --
+        omitted rather than shown empty.
         """
         self.clear()
         self._current_node = None
@@ -134,9 +158,15 @@ class PropertiesPanel(QScrollArea):
         analyzer = result.get("analyzer", {})
         run = result.get("run", {})
 
-        header = QLabel(f"<b>{analyzer.get('name', analyzer.get('id', 'Analyzer result'))}</b>")
+        header = QLabel(f"<b>{title or analyzer.get('name', analyzer.get('id', 'Analyzer result'))}</b>")
         header.setTextInteractionFlags(_SELECTABLE)
         self._layout.addRow(header)
+
+        if relevance:
+            relevance_lbl = QLabel(relevance)
+            relevance_lbl.setWordWrap(True)
+            relevance_lbl.setTextInteractionFlags(_SELECTABLE)
+            self._layout.addRow(relevance_lbl)
 
         def _row(label: str, value: object) -> None:
             lbl = QLabel(str(value) if value not in (None, "") else "—")
@@ -148,7 +178,44 @@ class PropertiesPanel(QScrollArea):
         tool = f"{analyzer.get('tool', 'crush-analyze')} {analyzer.get('tool_version', '')}".strip()
         _row("Tool", tool)
         _row("Module version", analyzer.get("module_version"))
+
+        # Which underlying parser this result is based on -- a curated
+        # module's *own* version (module_version, above) is LEAPP's own
+        # declared last-update date, not the same thing as which upstream
+        # commit crush-analyze's vendored copy was fetched from. `source` is
+        # None for the stub module (no commit to pin to).
+        source = analyzer.get("source")
+        if source:
+            parser_file = source.get("path", "").rsplit("/", 1)[-1] or source.get("path")
+            _row("Parser file", parser_file)
+            repo_name = source.get("repo", "").rstrip("/").rsplit("/", 1)[-1]
+            commit = source.get("commit", "")
+            link_text = f"{repo_name} @ {commit[:8]}" if commit else repo_name
+            link = QLabel(f'<a href="{source.get("url", "")}">{link_text}</a>')
+            link.linkActivated.connect(open_url)
+            link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+            if commit:
+                link.setToolTip(commit)
+            self._layout.addRow("Source:", link)
+
         _row("Input path", run.get("input_path"))
+
+        # Every file (relative to input_path) that matched the module's own
+        # declared paths glob -- what the data in this result is actually
+        # based on, the data-side analogue of the Source link above (which
+        # answers the same question for the code). Missing on an older
+        # crush-analyze result (added after this field existed) -> no row,
+        # not a misleading empty one. Plain text, not rich text: these are
+        # real filenames out of the analyzed evidence, not something Crush
+        # itself controls -- must never be interpreted as HTML.
+        source_files = run.get("source_files") or []
+        if source_files:
+            files_lbl = QLabel("\n".join(str(f) for f in source_files))
+            files_lbl.setTextFormat(Qt.TextFormat.PlainText)
+            files_lbl.setWordWrap(True)
+            files_lbl.setTextInteractionFlags(_SELECTABLE)
+            self._layout.addRow(f"Source files ({len(source_files)}):", files_lbl)
+
         _row("Started at", run.get("started_at"))
         _row("Duration", f"{run.get('duration_ms', 0):,} ms")
 
@@ -164,12 +231,6 @@ class PropertiesPanel(QScrollArea):
         warnings = result.get("warnings", [])
         if warnings:
             _row("Warnings", str(len(warnings)))
-
-        if run.get("dev_mode"):
-            dev_lbl = QLabel("Yes — unvetted external module")
-            dev_lbl.setStyleSheet("color: #997404; font-weight: bold;")
-            dev_lbl.setTextInteractionFlags(_SELECTABLE)
-            self._layout.addRow("Dev mode:", dev_lbl)
 
     def _add_timestamp(self, label: str, ts_value: float) -> None:
         if ts_value:

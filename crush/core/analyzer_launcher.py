@@ -5,9 +5,8 @@ analyzer modules (see docs/design/analyzer-runner.md).
 Unlike Peach (a separate Rust binary, launched fire-and-forget via
 peach_launcher.py), crush-analyze is pure Python and ships as a regular pip
 dependency of Crush -- there is no second binary to locate or bundle.
-Invocation still goes through a real, isolated OS subprocess (important
-especially for dev mode, which runs arbitrary unreviewed module code), but
-the subprocess is Crush re-executing *itself* with a hidden internal-CLI
+Invocation still goes through a real, isolated OS subprocess, but the
+subprocess is Crush re-executing *itself* with a hidden internal-CLI
 sentinel as its first argument, rather than shelling out to
 `sys.executable -m crush_analyze`. The latter breaks in a PyInstaller
 frozen build, where sys.executable is crush.exe itself, not a general
@@ -56,40 +55,22 @@ def list_analyzer_modules() -> list[dict[str, Any]]:
     return json.loads(proc.stdout)  # type: ignore[no-any-return]
 
 
-def run_analyzer(
-    input_path: Path,
-    *,
-    module_id: str | None = None,
-    module_path: Path | None = None,
-) -> dict[str, Any]:
-    """Runs one analyzer module against *input_path* and returns the
-    parsed contract v1 result dict.
-
-    Pass *module_id* alone for a bundled, curated module. Pass
-    *module_path* (a module author's own file, dev mode) with *module_id*
-    only required in addition when that file declares more than one
-    artifact function -- see docs/design/analyzer-runner.md.
-    """
-    if not module_id and not module_path:
-        raise ValueError("run_analyzer requires module_id or module_path")
-
+def run_analyzer(input_path: Path, *, module_id: str) -> dict[str, Any]:
+    """Runs one bundled analyzer module against *input_path* and returns
+    the parsed contract v1 result dict."""
     with tempfile.TemporaryDirectory(prefix="crush-analyze-") as tmp:
         output_path = Path(tmp) / "result.json"
         cmd = [
             *_self_command(),
             INTERNAL_CLI_SENTINEL,
             "run",
+            "--module",
+            module_id,
             "--input",
             str(input_path),
             "--output",
             str(output_path),
         ]
-        if module_path:
-            cmd += ["--module-path", str(module_path), "--dev"]
-            if module_id:
-                cmd += ["--module", module_id]
-        else:
-            cmd += ["--module", str(module_id)]
 
         proc = subprocess.run(cmd, capture_output=True, text=True)
 

@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Generic result viewer for crush-analyze contract v1 output — one "view
-kind" (typed columns + rows) reused by every analyzer module, curated or
-dev-mode, instead of a bespoke viewer per module. See
-docs/design/analyzer-runner.md.
+kind" (typed columns + rows) reused by every analyzer module instead of a
+bespoke viewer per module. See docs/design/analyzer-runner.md.
 """
 from __future__ import annotations
 
@@ -41,7 +40,11 @@ class _AnalyzerResultModel(QAbstractTableModel):
         super().__init__(parent)
         self._keys = [c["key"] for c in columns]
         self._labels = [c["label"] for c in columns]
+        self._types = [c.get("type", "string") for c in columns]
         self._rows = rows
+
+    def column_type(self, column: int) -> str:
+        return self._types[column]
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._rows)
@@ -67,6 +70,11 @@ class _AnalyzerResultModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             value = row.get(key)
             return "" if value is None else str(value)
+        if role == Qt.ItemDataRole.UserRole:
+            # The raw, untyped value (not stringified) -- lets the sort
+            # proxy compare int/float columns numerically instead of
+            # lexicographically ("100" sorting before "42" otherwise).
+            return row.get(key)
         if role == Qt.ItemDataRole.BackgroundRole:
             return _ROW_STATUS_COLORS.get(row.get("_row_status", "ok"))
         if role == Qt.ItemDataRole.ToolTipRole:
@@ -74,15 +82,35 @@ class _AnalyzerResultModel(QAbstractTableModel):
         return None
 
 
+class _AnalyzerResultSortProxy(QSortFilterProxyModel):
+    """Sorts int/float columns numerically using the model's UserRole
+    (contract v1's `columns[].type`), not lexicographically on the
+    display string -- string columns/bool/datetime fall through to Qt's
+    default DisplayRole comparison, which is already correct for those
+    (ISO 8601 datetimes sort correctly as plain strings)."""
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:  # type: ignore[override]
+        source = self.sourceModel()
+        if source.column_type(left.column()) in ("int", "float"):
+            left_val = source.data(left, Qt.ItemDataRole.UserRole)
+            right_val = source.data(right, Qt.ItemDataRole.UserRole)
+            try:
+                return float(left_val) < float(right_val)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                pass
+        return super().lessThan(left, right)
+
+
 class AnalyzerResultViewer(QWidget):
     """Displays one crush-analyze contract v1 result. A banner appears
-    whenever the run wasn't a clean "ok" with no warnings, or was a
-    dev-mode run against an unvetted external module — a failed or
-    partial run, or one produced by unreviewed code, must never look like
-    an ordinary clean result table.
+    whenever the run wasn't a clean "ok" with no warnings — a failed or
+    partial run must never look like an ordinary clean result table.
 
-    Includes search/filter (all columns), a right-click copy menu, and
-    CSV export of whatever's currently visible (i.e. filtered by the
+    Includes search/filter (all columns), click-to-sort per column
+    (numeric for int/float columns via _AnalyzerResultSortProxy, plain
+    string comparison otherwise -- already correct for datetime, since
+    contract v1 mandates ISO 8601), a right-click copy menu, and CSV
+    export of whatever's currently visible (i.e. filtered by the
     search box, mirroring mmkv_viewer.py's own CSV export) — the same
     baseline interactions Crush's other table-shaped viewers already
     offer, absent from the first cut of this one.
@@ -120,12 +148,18 @@ class AnalyzerResultViewer(QWidget):
         self._source_model = _AnalyzerResultModel(
             result.get("columns", []), result.get("rows", [])
         )
-        self._proxy_model = QSortFilterProxyModel(self)
+        self._proxy_model = _AnalyzerResultSortProxy(self)
         self._proxy_model.setSourceModel(self._source_model)
         self._proxy_model.setFilterKeyColumn(-1)  # match if any column matches
 
         self._table = QTableView(self)
         self._table.setModel(self._proxy_model)
+        self._table.setSortingEnabled(True)
+        # setSortingEnabled(True) alone leaves the header showing a sort
+        # indicator on column 0 (descending) and the rows already sorted
+        # by it -- clear that back to the module's own original row order
+        # until the user actually clicks a header.
+        self._table.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setAlternatingRowColors(True)
@@ -212,8 +246,6 @@ def _banner(result: dict[str, Any]) -> tuple[str, bool]:
     lines = []
     status = result.get("status", "ok")
     is_error = status == "error"
-    if result.get("run", {}).get("dev_mode"):
-        lines.append("Dev mode — result of an unvetted external module, not a reviewed one.")
     if status != "ok":
         error = result.get("error") or {}
         message = error.get("message", "")

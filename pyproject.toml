@@ -38,7 +38,7 @@ dependencies = [
     "astc_decomp_faster>=1.1.0",
     "py7zr>=0.21",
     "cryptography>=42.0",
-    "crush-analyze @ git+https://github.com/kalink0/crush-analyze.git@6542c071ebf0885a5e5e36a3c66449a62d76b472",
+    "crush-analyze @ git+https://github.com/kalink0/crush-analyze.git@b69bb9d2e462128033613a09bc5bf2c709dfbd99",
     "pyzipper>=0.3.6",
     "sqlcipher3>=0.6.2",
 ]

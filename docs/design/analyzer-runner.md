@@ -80,10 +80,9 @@ not caution.
   needs zero awareness of crush-analyze's internal layout for this to
   work. Also ships a PEP 561 `py.typed` marker so crush-forensics' own
   `mypy --strict` sees it as typed rather than skipping it.
-- **Invocation is still a real, isolated OS subprocess** — important
-  especially for dev mode, which runs arbitrary unreviewed module code, so
-  running crush-analyze in-process inside Crush was never on the table
-  despite it being "just a pip dependency." But `sys.executable -m
+- **Invocation is still a real, isolated OS subprocess** — running
+  crush-analyze in-process inside Crush was never on the table despite it
+  being "just a pip dependency." But `sys.executable -m
   crush_analyze` — the obvious approach — breaks in a PyInstaller frozen
   build: `sys.executable` there is `crush.exe` itself, not a general
   `python.exe` with `crush_analyze` importable. Fixed with a **self-re-exec
@@ -97,7 +96,7 @@ not caution.
   package again" either way). One binary, no download script, still real
   process isolation.
 - `crush/core/analyzer_launcher.py` — `list_analyzer_modules()` and
-  `run_analyzer(input_path, module_id=..., module_path=...)`, both
+  `run_analyzer(input_path, module_id=...)`, both
   synchronous `subprocess.run()` calls with output capture (unlike Peach's
   fire-and-forget `Popen`, since crush-analyze must produce a JSON file
   Crush reads back before the caller can do anything useful — the same
@@ -122,10 +121,6 @@ crush-analyze list-modules
 
 crush-analyze run --module <id> --input <dir> --output <file>.json
     → runs a bundled, curated module. Exit 0/1/2.
-
-crush-analyze run --module-path <file.py> --input <dir> --output <file>.json --dev
-    → dev mode (see below): runs an arbitrary, non-vendored module file
-      through the same shim and the same result contract.
 ```
 
 Exit codes: `0` success, `1` module ran but reported `status: "error"` in
@@ -146,16 +141,15 @@ runtime by iLEAPP's own test harness via `len(sig.parameters)`:
 A **v3** format is reportedly already being sketched upstream but not
 public/stable yet.
 
-**Decision: target v2 (`Context`) only, both for curated bundled modules and
-for dev mode.** v1 is on its way out; not worth building and maintaining a
-second call shape for a declining format. Revisit if/when v3 lands and
-stabilizes.
+**Decision: target v2 (`Context`) only.** v1 is on its way out; not worth
+building and maintaining a second call shape for a declining format.
+Revisit if/when v3 lands and stabilizes.
 
 `Context` itself is **not** vendored from iLEAPP — see "Vendoring policy"
 below. `crush-analyze` implements its own minimal `Context` covering only
 the handful of calls a typical module actually makes: `get_files_found()`,
 `get_relative_path(path)`, and walking a folder by glob pattern. Extend it
-on demand as new ported/dev-mode modules turn out to need more.
+on demand as new ported modules turn out to need more.
 
 **Correction, discovered while actually porting the first module (step 3):**
 a real iLEAPP artifact file imports more than `Context` at its top —
@@ -171,23 +165,16 @@ handling for iLEAPP's own extraction scheme — none of it needed here).
 drives report generation around the wrapped function's return value, which
 crush-analyze never does — it builds contract v1 directly from the
 returned `(data_headers, data_list, source_path)` tuple instead. Registered
-into `sys.modules['scripts.ilapfuncs']` right before a vendored *or*
-dev-mode file is loaded (`leapp_compat.loader.install_scripts_shim()`), so
-neither path needs a real iLEAPP install on the machine running
-crush-analyze.
+into `sys.modules['scripts.ilapfuncs']` right before a vendored file is
+loaded (`leapp_compat.loader.install_scripts_shim()`), so it needs no real
+iLEAPP install on the machine running crush-analyze.
 
 **Also discovered:** a single LEAPP artifact file commonly declares more
 than one artifact function via `__artifacts_v2__` — `applicationStateDB.py`
 declares three (`get_installed_apps`, `get_snapshot_creationDate`,
-`get_snapshot_lastUsedDate`). Each becomes its own crush-analyze module id.
-For dev mode this means `--module-path` alone is ambiguous whenever the
-file declares more than one function; `--module <function-name>` selects
-which one to run (an error listing the available names is returned if it's
-omitted and the file isn't unambiguous). `runner.load_external_module()`
-tries crush-analyze's own native `MODULE = ModuleInfo(...)` convention
-first, then falls back to the `__artifacts_v2__` shape — so dev mode
-transparently accepts both a from-scratch crush-analyze module in progress
-and real, unmodified iLEAPP source.
+`get_snapshot_lastUsedDate`). Each becomes its own crush-analyze module id,
+automatically — `leapp_compat/loader.py::artifacts_from_module` iterates
+the dict and returns one `ModuleInfo` per entry.
 
 **One more:** plist-parsed values routinely come back as real Python
 `datetime` objects (or bytes), which aren't natively JSON-serializable.
@@ -199,8 +186,7 @@ value degrades gracefully rather than failing the whole run.
 
 ## Result contract v1
 
-Every run — curated or dev-mode — produces exactly this JSON shape, whether
-the CLI exits 0 or 1:
+Every run produces exactly this JSON shape, whether the CLI exits 0 or 1:
 
 ```json
 {
@@ -208,6 +194,13 @@ the CLI exits 0 or 1:
   "analyzer": {
     "id": "installed_apps",
     "name": "Installed Applications",
+    "platform": "ios",
+    "source": {
+      "repo": "https://github.com/abrignoni/iLEAPP",
+      "commit": "b055398e485daae838ba3c55fd611cc303f0a854",
+      "path": "scripts/artifacts/applicationStateDB.py",
+      "url": "https://github.com/abrignoni/iLEAPP/blob/b055398e485daae838ba3c55fd611cc303f0a854/scripts/artifacts/applicationStateDB.py"
+    },
     "tool": "crush-analyze",
     "tool_version": "0.1.0",
     "module_version": "1"
@@ -216,8 +209,7 @@ the CLI exits 0 or 1:
     "started_at": "2026-09-14T12:00:00Z",
     "duration_ms": 842,
     "input_path": "/path/to/extracted/data",
-    "dev_mode": false,
-    "module_source": "bundled"
+    "source_files": ["private/var/mobile/Library/FrontBoard/applicationState.db"]
   },
   "status": "ok",
   "warnings": [],
@@ -243,9 +235,23 @@ Field rules (all mandatory, not optional-with-defaults):
 - Every row carries its own `_row_status` (`"ok" | "partial" | "error"`) —
   one bad row must never silently drop, and must never fail the whole run.
   No arbitrary truncation of `rows[]` either — same standing rule.
-- `run.dev_mode` / `run.module_source` let Crush's UI badge dev-mode results
-  distinctly (e.g. "unvetted module" banner) without a second contract
-  shape.
+- `analyzer.platform`: `"ios" | "android" | "generic"`, added once Android
+  modules joined the iOS ones, so a consumer can tell which OS a result's
+  module targets without parsing its `analyzer.id`.
+- `analyzer.source`: `null` for the stub module (nothing to pin to);
+  otherwise `{repo, commit, path, url}` naming the exact upstream commit a
+  curated module's vendored copy was fetched from, read from that
+  platform's `vendored/leapp/<platform>/MANIFEST.toml`. `url` is a
+  commit-pinned blob link, not a link to the repo's default branch —
+  Crush's Properties panel uses it as-is so a reader always sees the exact
+  underlying version a result was produced against.
+- `run.source_files`: every file (relative to `input_path`) that matched
+  the module's own declared `paths` glob and was therefore available to it
+  via `Context.get_files_found()` — what the result's data is actually
+  based on, the data-side analogue of `analyzer.source` (which answers the
+  same question for the code). Not proof of exactly which bytes the module
+  read from each one, just what it had access to.
+  All three fields purely additive; no existing field changed.
 
 Crush-side: cache `list-modules` at startup, new dynamic "Run Analyzer"
 context-menu entry; reuse `_materialize_directory_node_for_external` and the
@@ -255,38 +261,35 @@ own sibling tool; one new generic result-table viewer tab (typed
 `columns[]` + `rows[]`, one "view kind" reused for every module); clean up
 temp output + extraction dir after read.
 
-## Dev mode (James Habben's request)
+## Dev mode — built (step 6), then removed, 2026-09-15
 
-Goal: let a module author have Crush open on real/synthetic data in one
-window and a LEAPP module's source open in an editor in another, run that
-*exact, unvendored* file against Crush's currently-open data, see the
+Originally: let a module author have Crush open on real/synthetic data in
+one window and a LEAPP module's source open in an editor in another, run
+that *exact, unvendored* file against Crush's currently-open data, see the
 result inside Crush, edit, re-run — without first curating/porting/vendoring
-the module into `crush-analyze`.
+the module into `crush-analyze`. Built in full (`--module-path`/`--dev` CLI
+flags, `runner.load_external_module()`, a Settings-level "Developer Mode"
+opt-in + module-file path in Crush, a "Load module from file… (dev mode)"
+picker entry, an "unvetted external module" banner) — see step 6 below for
+what actually shipped before removal.
 
-- Same CLI (`--module-path` instead of `--module`), same `Context` shim,
-  **same result contract v1** as curated runs — no second display path in
-  Crush, and the mandatory `status`/`warnings`/`_row_status` fields apply
-  here too, so a half-working module-in-progress still can't render as a
-  clean empty table.
-- `run.module_source` is set to `"external:<path>"` and `run.dev_mode:
-  true`, so Crush's result-table tab can show an "unvetted external module"
-  banner distinct from a curated result — a raw, arbitrary `.py` file is a
-  materially different trust level from a bundled/reviewed module, even
-  though the display path is shared.
-- Needs a Settings-level opt-in ("Developer mode", off by default) plus the
-  path to the module file — same shape as Peach's binary-path override, not
-  a new mechanism.
-- Prior art confirmed feasible: iLEAPP's own test harness
-  (`admin/test/scripts/test_module_output.py`) already does "run exactly
-  one module in isolation" via a `SingleModuleLoaderWrapper` that
-  monkey-patches iLEAPP's plugin loader to load only that module plus two
-  essentials, then drives the real `ileapp.main()`. `crush-analyze` doesn't
-  reuse that approach directly (it never depends on the full iLEAPP suite,
-  by design — see Vendoring policy), but it confirms the underlying idea —
-  running a single artifact module in isolation against a folder — is a
-  well-trodden path, not a novel risk.
-- Explicitly **not** in scope for dev mode: live file-watching or
-  auto-rerun-on-save. Manual re-run only, for the first version.
+**Removed because it didn't deliver on its own goal.** The compat shim's
+`ilapfuncs`/`Context` symbol coverage only grows when a *maintainer*
+decides to extend it (a new crush-analyze commit + re-pin) — a module
+author hitting a missing symbol mid-session, writing genuinely new logic,
+has no way to add it themselves. A random sample of 25 real iLEAPP
+artifact modules found the gap is real and large, not an edge case: of 19
+modules importing from `ilapfuncs`, `get_sqlite_db_records` alone was used
+by 8 (42%), a symbol the shim never covered. So dev mode only ever worked
+reliably for a module whose *complete* requirements were already known and
+already covered — exactly the case already served by writing a throwaway
+script against `leapp_compat.loader.load_leapp_module_file` +
+`runner.run()` directly (see `docs/porting-leapp-modules.md` step 2 in
+crush-analyze), without a second code path (CLI flags, Settings, a picker
+branch, a banner) to maintain for it. Kept as design history here rather
+than deleted outright, since the reasoning (why symbol coverage is the
+real constraint, not "real vs. new module") is worth not re-deriving if
+this comes up again.
 
 ## Vendoring policy
 
@@ -402,9 +405,8 @@ runner mechanism above:
    (real SQLite tables, a real binary-plist `compatibilityInfo` blob) —
    correct contract v1 output, correct exit code. All three of the file's
    artifact functions (`get_installed_apps`, `get_snapshot_creationDate`,
-   `get_snapshot_lastUsedDate`) registered and reachable, in both the
-   bundled and dev-mode (`--module-path` + `--module`) paths. See the
-   corrections folded into "Module function signature" above — the actual
+   `get_snapshot_lastUsedDate`) registered and reachable as their own
+   module ids. See the corrections folded into "Module function signature" above — the actual
    shim surface, the multi-function-per-file case, and JSON-safety for
    `datetime`/`bytes` values all only became visible once a real module was
    ported, not from reading `__artifacts_v2__`'s shape alone.
@@ -416,9 +418,8 @@ runner mechanism above:
      since pip-dependency packaging needed no separate build pipeline).
    - `crush/viewers/analyzer_result_viewer.py` — the generic result-table
      "view kind": `QAbstractTableModel` over `columns[]`/`rows[]`, a status/
-     warnings/dev-mode banner (row background tint keyed to `_row_status`),
-     added as an ordinary `_viewer_tabs` tab exactly like every other
-     viewer.
+     warnings banner (row background tint keyed to `_row_status`), added
+     as an ordinary `_viewer_tabs` tab exactly like every other viewer.
    - `fs_panel.py`: "Run Analyzer…" context-menu entry for directory
      nodes (alongside "Send Logs to Peach…"), emits `open_requested(node,
      vfs, "run_analyzer")`.
@@ -430,21 +431,16 @@ runner mechanism above:
    - Tests: `test_analyzer_launcher.py` (real subprocess round-trips,
      including the same synthetic `applicationState.db` fixture as
      crush-analyze's own tests), `test_analyzer_result_viewer.py`
-     (ok/error/dev-mode/warnings banner states). Full suite green: 934
-     tests (was 925), ruff, mypy (142 files) — verified against the real
-     pinned git dependency, not a local editable override.
-   - The dev-mode banner in the viewer is already implemented (reads
-     `run.dev_mode`/`run.module_source` unconditionally) — step 6 below is
-     now only the Settings opt-in + a `--module-path` file picker in the
-     UI, not the banner itself.
+     (ok/error/warnings banner states).
 5. ~~Packaging~~ — folded into step 4; no separate binary/build pipeline
    needed once crush-analyze was recognized as a pip dependency rather
    than a Peach-style compiled sibling. See "Packaging" above.
-6. Dev mode Crush-side UI: Settings opt-in ("Developer mode"), a
-   `--module-path` file picker wired to `_run_analyzer`'s existing
-   `module_path` parameter (`run_analyzer()` and the result viewer's
-   banner already support this end-to-end as of step 4 — only the
-   Settings gate and file-picker UI are missing). **Next.**
+6. ✅ then ❌ **removed** Dev mode Crush-side UI — built in full (Tools →
+   Analyzer → "Developer Mode" + "Module File…", a picker entry, an
+   "unvetted external module" banner), then removed the same day it was
+   finished, once real usage exposed that it didn't deliver on its own
+   goal. See "Dev mode" above for the reasoning; nothing from this step
+   remains in the codebase.
 7. Update mechanism: `crush-analyze-modules` repo, `publish_module_pack.py`,
-   "Check for module updates" action.
+   "Check for module updates" action. **Next.**
 8. Ship. Decide on module 2 from real use, not speculatively.

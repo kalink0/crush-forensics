@@ -8,7 +8,7 @@ _OK_RESULT = {
     "status": "ok",
     "warnings": [],
     "error": None,
-    "run": {"dev_mode": False},
+    "run": {},
     "columns": [
         {"key": "bundle_id", "label": "Bundle ID", "type": "string"},
     ],
@@ -47,18 +47,6 @@ def test_error_result_shows_a_banner_with_the_message(qapp) -> None:
     assert banner is not None
     assert "error" in banner.text().lower()
     assert "boom" in banner.text()
-
-
-def test_dev_mode_result_shows_an_unvetted_module_banner(qapp) -> None:
-    from PySide6.QtWidgets import QLabel
-
-    result = {**_OK_RESULT, "run": {"dev_mode": True}}
-
-    viewer = AnalyzerResultViewer(result)
-
-    banner = viewer.findChild(QLabel, "analyzer_banner")
-    assert banner is not None
-    assert "dev mode" in banner.text().lower()
 
 
 def test_warnings_are_shown_even_when_status_is_ok(qapp) -> None:
@@ -131,6 +119,51 @@ def test_value_bar_shows_the_currently_selected_cell(qapp) -> None:
 
     assert viewer._value_field.text() == "/A/B/App.app"
     assert viewer._value_field.isReadOnly()
+
+
+def test_table_is_sortable_alphabetically_on_a_string_column(qapp) -> None:
+    from PySide6.QtCore import Qt
+
+    result = {
+        **_OK_RESULT,
+        "rows": [
+            {"_row_status": "ok", "bundle_id": "com.zzz.app"},
+            {"_row_status": "ok", "bundle_id": "com.aaa.app"},
+        ],
+    }
+
+    viewer = AnalyzerResultViewer(result)
+    assert viewer._table.isSortingEnabled()
+
+    viewer._table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+
+    assert viewer._proxy_model.index(0, 0).data() == "com.aaa.app"
+    assert viewer._proxy_model.index(1, 0).data() == "com.zzz.app"
+
+
+def test_int_column_sorts_numerically_not_lexicographically(qapp) -> None:
+    """A plain string/DisplayRole sort would put "100" before "42" --
+    int/float columns must compare as numbers instead."""
+    from PySide6.QtCore import Qt
+
+    result = {
+        **_OK_RESULT,
+        "columns": [
+            {"key": "bundle_id", "label": "Bundle ID", "type": "string"},
+            {"key": "count", "label": "Count", "type": "int"},
+        ],
+        "rows": [
+            {"_row_status": "ok", "bundle_id": "a", "count": 100},
+            {"_row_status": "ok", "bundle_id": "b", "count": 9},
+            {"_row_status": "ok", "bundle_id": "c", "count": 42},
+        ],
+    }
+
+    viewer = AnalyzerResultViewer(result)
+    viewer._table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
+
+    values = [viewer._proxy_model.index(row, 1).data() for row in range(3)]
+    assert values == ["9", "42", "100"]
 
 
 def test_export_csv_writes_filtered_rows_only(qapp, tmp_path, monkeypatch) -> None:
