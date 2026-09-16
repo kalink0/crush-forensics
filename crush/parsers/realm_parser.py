@@ -3758,6 +3758,114 @@ def _scan_strings(data: bytes, min_len: int = 20) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Public structural-introspection API for crush/core/realm_structure.py's
+# File Structure tab. Thin, additive wrappers around this module's private
+# array/ref-graph primitives -- never used for row/value decoding, only for
+# walking the raw on-disk array graph -- so that module has a small,
+# explicit surface instead of reaching into underscored internals, matching
+# sqlite_structure.py's own public imports from sqlite_wal.py.
+# ---------------------------------------------------------------------------
+
+REALM_HEADER_SIZE = _HEADER_SIZE
+REALM_MIN_CLUSTER_FORMAT_VERSION = _MIN_CLUSTER_FORMAT_VERSION
+
+
+def parse_realm_header(data: bytes) -> dict[str, Any] | None:
+    return _parse_realm_header(data)
+
+
+def resolve_streaming_form(data: bytes, top_ref0: int, active_idx: int) -> dict[str, Any] | None:
+    return _resolve_streaming_form(data, top_ref0, active_idx)
+
+
+def parse_array_header(data: bytes, offset: int = 0) -> dict[str, Any] | None:
+    return _parse_array_header(data, offset)
+
+
+def array_elem_bytes(arr_hdr: dict[str, Any]) -> int:
+    return _elem_bytes(arr_hdr)
+
+
+def read_array_ref(data: bytes, payload_start: int, index: int, elem_bytes: int) -> int:
+    return _read_ref(data, payload_start, index, elem_bytes)
+
+
+def extract_free_list(data: bytes, root_offset: int, file_size: int) -> list[dict[str, Any]]:
+    return _extract_free_list(data, root_offset, file_size)
+
+
+def extract_root_children(data: bytes, root_offset: int, file_size: int) -> list[dict[str, Any]]:
+    return _extract_root_children(data, root_offset, file_size)
+
+
+def extract_schema(data: bytes, root_offset: int, file_size: int) -> list[str]:
+    return _extract_schema(data, root_offset, file_size)
+
+
+def extract_column_names(data: bytes, table_ref: int, table_eb: int, file_size: int) -> list[str]:
+    return _extract_column_names(data, table_ref, table_eb, file_size)
+
+
+def extract_column_info(
+    data: bytes, table_ref: int, table_eb: int, file_size: int
+) -> list[dict[str, Any]] | None:
+    return _extract_column_info(data, table_ref, table_eb, file_size)
+
+
+def walk_cluster_leaves(data: bytes, root_ref: int, file_size: int) -> list[tuple[int, int]]:
+    return _walk_cluster_leaves(data, root_ref, file_size)
+
+
+def walk_bplustree_leaves(data: bytes, root_ref: int, file_size: int) -> list[tuple[int, int]]:
+    return _walk_bplustree_leaves(data, root_ref, file_size)
+
+
+def extract_pre_cluster_spec(
+    data: bytes, spec_ref: int, file_size: int
+) -> list[dict[str, Any]] | None:
+    return _extract_pre_cluster_spec(data, spec_ref, file_size)
+
+
+def resolve_pre_cluster_column_refs(
+    data: bytes, columns_ref: int, spec_columns: list[dict[str, Any]], file_size: int
+) -> dict[int, int]:
+    return _resolve_pre_cluster_column_refs(data, columns_ref, spec_columns, file_size)
+
+
+def describe_pre_cluster_column_type(col: dict[str, Any]) -> str:
+    """Human-readable type string for one extract_pre_cluster_spec() entry."""
+    name = _PRE_CLUSTER_COL_TYPES.get(col["type_code"], f"type_{col['type_code']}")
+    flags = [
+        flag for cond, flag in (
+            (col.get("nullable"), "nullable"),
+            (col.get("indexed"), "indexed"),
+        ) if cond
+    ]
+    return f"{name} ({', '.join(flags)})" if flags else name
+
+
+def read_cluster_key_info(
+    data: bytes, cluster_ref: int, cluster_eb: int, file_size: int
+) -> tuple[int | None, list[int] | None]:
+    return _read_cluster_key_info(data, cluster_ref, cluster_eb, file_size)
+
+
+def describe_column_type(info: dict[str, Any]) -> str:
+    """Human-readable type string for one extract_column_info() entry, e.g.
+    "string (nullable)" or "int (list)" -- same vocabulary as the Schema tab."""
+    name = _REALM_COL_TYPES.get(info["type_code"], f"type_{info['type_code']}")
+    flags = [
+        flag for cond, flag in (
+            (info.get("nullable"), "nullable"),
+            (info.get("is_list"), "list"),
+            (info.get("is_dictionary"), "dictionary"),
+            (info.get("is_set"), "set"),
+        ) if cond
+    ]
+    return f"{name} ({', '.join(flags)})" if flags else name
+
+
+# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 

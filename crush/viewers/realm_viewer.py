@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 - now Marco Neumann (kalink0)
-"""Realm viewer — header, schema, top-ref comparison, hex preview."""
+"""Realm viewer — header, schema, top-ref comparison, file structure, hex preview."""
 from __future__ import annotations
 
 import json
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.realm_offsets import RealmCellLocator
+from crush.core.realm_structure import build_realm_structure
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.tree_viewer import TreeViewer
 from crush.viewers.hex_viewer import HexViewer
@@ -503,7 +504,8 @@ def _build_resolved_view(
 
 
 class RealmViewer(QWidget):
-    """Realm viewer with tabs: Header | Schema | Top Refs | Tables | Views | Hex Preview."""
+    """Realm viewer with tabs: Header | Schema | Top Refs | File Structure |
+    Tables | Views | Hex Preview."""
 
     # Emitted by the Views tab's "Open View" button: (title, single-table
     # {"columns", "rows", "__obj_keys"} dict) — MainWindow opens it as a
@@ -593,6 +595,24 @@ class RealmViewer(QWidget):
         top_refs = self._data.get("top_refs", {})
         if top_refs:
             tabs.addTab(self._build_top_refs_tab(top_refs, tabs), "Top Refs")
+
+        # --- File Structure ---
+        # Physical array/ref-graph layout (Group top array, free list,
+        # per-table Spec + ClusterTree), distinct from the Top Refs tab's
+        # active-vs-inactive diff and from Tables' already-decoded rows --
+        # see crush/core/realm_structure.py. Reuses the real .realm file's
+        # own bytes (same source as the per-cell "Locate in Hex" provenance
+        # above), never the synthetic SQLite copy.
+        file_bytes = self._data.get("__realm_file_bytes")
+        if isinstance(file_bytes, (bytes, bytearray)):
+            structure_tree, structure_ranges = build_realm_structure(bytes(file_bytes))
+            tabs.addTab(
+                TreeViewer(
+                    structure_tree, tabs, raw=bytes(file_bytes),
+                    byte_ranges_by_path=structure_ranges,
+                ),
+                "File Structure",
+            )
 
         # --- Tables ---
         if tables or inactive_tables:
