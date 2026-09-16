@@ -13,6 +13,7 @@ All notable changes to Crush will be documented in this file.
 - **Run Analyzer**: right-click a directory to run a small, curated analyzer module (ported from [iLEAPP](https://github.com/abrignoni/iLEAPP)/[aLEAPP](https://github.com/abrignoni/aLEAPP) by Alexis Brignoni) against it, via the new sibling project [crush-analyze](https://github.com/kalink0/crush-analyze). Three modules so far: "Installed Applications" for iOS and two independent Android sources.
 - SEGB/Biome Viewer's table now has the embedded Show Hex byte-provenance pane, for both v1 and v2 files.
 - Realm DB Viewer has a new File Structure tab, showing the file's physical array/reference-graph layout (Group top array, free list, per-table Spec/row storage) with the same Show Hex byte-provenance as the Tables tab — covers both the modern Cluster format and legacy pre-Cluster files (format < 10).
+- MMKV Viewer's embedded hex pane now shows the actual store file with the selected entry's real on-disk bytes highlighted, instead of just that entry's own bytes in isolation — including for AES-encrypted stores, where the highlighted bytes are the genuine ciphertext.
 
 ### Bug Fixes
 

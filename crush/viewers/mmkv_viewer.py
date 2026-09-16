@@ -31,6 +31,8 @@ from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 _RAW_ROLE = Qt.ItemDataRole.UserRole + 1
 _FULLTEXT_ROLE = Qt.ItemDataRole.UserRole + 2
 _VALUE_BYTES_ROLE = Qt.ItemDataRole.UserRole + 3
+_ENTRY_RANGE_ROLE = Qt.ItemDataRole.UserRole + 4
+_VALUE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 5
 
 _STATE_COLORS: dict[str, QColor] = {
     "Removed": QColor("#cc3333"),
@@ -114,11 +116,26 @@ class _StateFilterProxy(QSortFilterProxyModel):
 
 
 class MMKVRecordsWidget(QWidget):
-    """Records table (top) + HexViewer of the selected row's raw value container (bottom)."""
+    """Records table (top) + HexViewer of the selected row's bytes in context (bottom).
 
-    def __init__(self, records: list[dict[str, Any]], parent: QWidget | None = None) -> None:
+    When *file_bytes* (the real, complete .mmkv file) and a row's own real
+    on-disk span are both available, the pane shows the whole file with that
+    span highlighted -- true byte provenance, not just the value's own bytes
+    in isolation. Falls back to the old isolated-value-bytes behavior when
+    offsets couldn't be computed (e.g. an encrypted store opened before
+    Crush added offset tracking, or a walk that lost alignment) -- never a
+    guess, never blank.
+    """
+
+    def __init__(
+        self,
+        records: list[dict[str, Any]],
+        parent: QWidget | None = None,
+        file_bytes: bytes | None = None,
+    ) -> None:
         super().__init__(parent)
         self._records = records
+        self._file_bytes = file_bytes
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -182,7 +199,7 @@ class MMKVRecordsWidget(QWidget):
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         splitter.addWidget(self._table)
 
-        self._hex_val = HexViewer(b"")
+        self._hex_val = HexViewer(self._file_bytes or b"")
         splitter.addWidget(self._hex_val)
         splitter.setSizes([400, 150])
 
@@ -218,6 +235,10 @@ class MMKVRecordsWidget(QWidget):
                     item.setForeground(color)
             items[0].setData(rec["raw"], _RAW_ROLE)
             items[0].setData(rec["value_bytes"], _VALUE_BYTES_ROLE)
+            if "entry_range" in rec:
+                items[0].setData(rec["entry_range"], _ENTRY_RANGE_ROLE)
+            if "value_range" in rec:
+                items[0].setData(rec["value_range"], _VALUE_RANGE_ROLE)
             items[_VALUE_COL].setData(_full_value_text(rec["decoded"], rec["raw"]), _FULLTEXT_ROLE)
             self._model.appendRow(items)
 
@@ -233,7 +254,18 @@ class MMKVRecordsWidget(QWidget):
         row = self._source_row(current)
         if 0 <= row < self._model.rowCount():
             item = self._model.item(row, 0)
-            self._hex_val.set_data(item.data(_RAW_ROLE) or b"")
+            entry_range = item.data(_ENTRY_RANGE_ROLE)
+            value_range = item.data(_VALUE_RANGE_ROLE)
+            if self._file_bytes is not None and entry_range is not None:
+                ranges = [entry_range]
+                if value_range is not None and value_range[1] > value_range[0]:
+                    ranges.append(value_range)
+                self._hex_val.highlight_byte_ranges(ranges)
+            else:
+                # No real on-disk span available (offset walk lost alignment,
+                # or this data predates offset tracking) -- fall back to the
+                # value's own bytes in isolation rather than showing nothing.
+                self._hex_val.set_data(item.data(_RAW_ROLE) or b"")
             value_item = self._model.item(row, _VALUE_COL)
             # QLineEdit.setText() silently truncates at its 32,767-char maxLength —
             # use the already-bounded display text (with its own explicit "(N chars
@@ -334,7 +366,11 @@ class MMKVViewer(QWidget):
         tabs.addTab(TreeViewer(overview, tabs), "Overview")
 
         if records:
-            tabs.addTab(MMKVRecordsWidget(records, tabs), f"Records ({len(records):,})")
+            file_bytes = self._data.get("__mmkv_file_bytes")
+            tabs.addTab(
+                MMKVRecordsWidget(records, tabs, file_bytes=file_bytes),
+                f"Records ({len(records):,})",
+            )
         else:
             lbl = QLabel("No entries found.")
             lbl.setWordWrap(True)

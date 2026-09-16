@@ -276,6 +276,107 @@ def test_encrypted_store_with_wrong_key_raises_wrong_password(tmp_path: Path) ->
 
 
 # ---------------------------------------------------------------------------
+# Byte-provenance: entry_range/value_range must point at the store's real
+# on-disk bytes (crush/core mmkv_offsets -- see _compute_entry_offsets),
+# for the embedded Show Hex pane.
+# ---------------------------------------------------------------------------
+
+def test_entry_and_value_ranges_point_at_the_real_bytes(tmp_path: Path) -> None:
+    e1 = _entry("a", _string_value("hello"))
+    e2 = _entry("bb", _varint(42))
+    payload = _store(e1, e2)
+    node, vfs = _write_store(tmp_path, payload)
+
+    result = MMKVParser().parse(node, vfs)
+    raw = result.data["__mmkv_file_bytes"]
+    assert raw == payload
+
+    # Independent oracle: locate each hand-built entry's own bytes in the
+    # file directly, rather than re-deriving the same offset math the code
+    # under test uses.
+    e1_start = payload.index(e1)
+    e2_start = payload.index(e2)
+
+    records = result.data["records"]
+    assert records[0]["entry_range"] == (e1_start, e1_start + len(e1))
+    assert records[1]["entry_range"] == (e2_start, e2_start + len(e2))
+
+    v0_start, v0_end = records[0]["value_range"]
+    assert raw[v0_start:v0_end] == _string_value("hello")
+    v1_start, v1_end = records[1]["value_range"]
+    assert raw[v1_start:v1_end] == _varint(42)
+
+
+def test_removed_entry_gets_zero_width_value_range_but_valid_entry_range(tmp_path: Path) -> None:
+    e1 = _entry("gone", b"")
+    payload = _store(e1)
+    node, vfs = _write_store(tmp_path, payload)
+
+    result = MMKVParser().parse(node, vfs)
+    rec = result.data["records"][0]
+    assert rec["state"] == "Removed"
+    start, end = rec["value_range"]
+    assert start == end  # zero-length value container -- nothing to highlight
+    entry_start, entry_end = rec["entry_range"]
+    assert entry_end > entry_start  # the key bytes are still real, non-empty
+
+
+def test_encrypted_store_offsets_point_at_real_ciphertext_not_decrypted_copy(
+    tmp_path: Path,
+) -> None:
+    """AES-CFB is a position-preserving stream cipher, so the *file* offset
+    math holds regardless of encryption -- but the bytes actually sitting at
+    that offset are genuine ciphertext, not a decrypted stand-in. Verifies
+    both: the offset is correct (decrypting exactly that slice reproduces
+    the known plaintext value) and the raw file bytes at that offset are NOT
+    already the plaintext (proving no synthetic/decrypted copy was
+    substituted -- same footgun class already fixed for Realm/SEGB)."""
+    key = b"correct horse battery staple 12"[:16]
+    iv = bytes(range(16))
+    e1 = _entry("secretkey", _string_value("secret"))
+    plaintext = _store(e1)
+    header, region = plaintext[:4], plaintext[4:]
+    ciphertext_region = _aes_cfb128_encrypt(region, key, iv)
+    ciphertext = header + ciphertext_region
+
+    crc = _meta_bytes(version=1, sequence=0, vector=iv)
+    node, vfs = _write_store(tmp_path, ciphertext, crc=crc)
+
+    result = MMKVParser().parse(node, vfs, password=key)
+    rec = result.data["records"][0]
+    assert rec["decoded"] == "secret"
+
+    raw = result.data["__mmkv_file_bytes"]
+    assert raw == ciphertext
+
+    v_start, v_end = rec["value_range"]
+    assert raw[v_start:v_end] != _string_value("secret")  # real bytes are ciphertext
+
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+    try:
+        from cryptography.hazmat.decrepit.ciphers.modes import CFB
+    except ImportError:
+        from cryptography.hazmat.primitives.ciphers.modes import CFB
+    decryptor = Cipher(algorithms.AES(key), CFB(iv)).decryptor()
+    decrypted_region = decryptor.update(ciphertext_region) + decryptor.finalize()
+    assert decrypted_region[v_start - 4:v_end - 4] == _string_value("secret")
+
+
+def test_offsets_available_without_a_crc_companion_file(tmp_path: Path) -> None:
+    """No .crc file means no meta_info at all (encryption status unverified,
+    per the existing "Meta file not found" behavior) -- byte-provenance must
+    still work for the plaintext walk in that case, not silently disappear."""
+    payload = _store(_entry("a", _string_value("b")))
+    node, vfs = _write_store(tmp_path, payload)  # no crc=... given
+
+    result = MMKVParser().parse(node, vfs)
+    assert result.data["meta_info"] is None
+    rec = result.data["records"][0]
+    start, end = rec["value_range"]
+    assert result.data["__mmkv_file_bytes"][start:end] == _string_value("b")
+
+
+# ---------------------------------------------------------------------------
 # raw value bytes must exclude MMKV's own internal length-prefix
 # ---------------------------------------------------------------------------
 

@@ -25,6 +25,8 @@ from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.mmkv_parser import MMKVError, decode_value, read_entries
 from crush.third_party.mmkv_parser.mmkv_parser import (
     _HEADER_LENGTH,
+    _decrypt,
+    _key_material,
     _read_varint,
     _region_size,
     _walk,
@@ -59,6 +61,7 @@ def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
         "sequence": sequence,
         "encrypted": any(vector),
         "actual_size": actual_size if version >= _META_VERSION_ACTUAL_SIZE else None,
+        "vector": vector,
     }
 
 
@@ -86,6 +89,78 @@ def _try_plain_walk(raw: bytes) -> list[tuple[str, bytes]] | None:
     if not entries or unread:
         return None
     return cast(list[tuple[str, bytes]], entries)
+
+
+def _compute_entry_offsets(
+    raw: bytes,
+    meta_info: dict[str, Any] | None,
+    password: str | bytes | None,
+    aes256: bool,
+) -> list[tuple[int, int, int, int]] | None:
+    """Re-derive each entry's real on-disk byte spans as (entry_start, key_end,
+    value_start, value_end) absolute file offsets, or None if the region can't
+    be reconstructed the same way read_entries() did.
+
+    read_entries()/_walk() compute exactly these positions internally while
+    walking but never return them -- this mirrors that same walk (region
+    derivation + entry loop), reusing the vendored module's own _read_varint/
+    _decrypt/_key_material helpers directly (same reuse-not-duplicate pattern
+    already used elsewhere in this file) so only the ~15-line walk/bookkeeping
+    loop is independently re-derived, not the format's bit-level decode math.
+
+    AES-CFB is a byte-position-preserving stream cipher (ciphertext and
+    plaintext are the same length, position-for-position), so the *file*
+    offset math is identical whether or not the store is encrypted -- only
+    finding each entry's length (which requires the *decrypted* bytes to
+    parse the varints correctly) differs. Highlighting an encrypted store's
+    real on-disk bytes shows genuine ciphertext, not a decoded-looking value --
+    an honest answer, same spirit as Freeblocks showing raw undecoded cell
+    content elsewhere in this codebase.
+    """
+    region_size = _region_size(raw, meta_info)  # type: ignore[no-untyped-call]
+    if region_size == 0 or _HEADER_LENGTH + region_size > len(raw):
+        return None
+    region = raw[_HEADER_LENGTH:_HEADER_LENGTH + region_size]
+
+    vector = meta_info["vector"] if meta_info else b""
+    if vector:
+        if password is None:
+            return None  # encrypted, no key available (e.g. false-positive-flag plaintext path never reaches here)
+        try:
+            region = _decrypt(  # type: ignore[no-untyped-call]
+                region, _key_material(password, aes256), vector  # type: ignore[no-untyped-call]
+            )
+        except Exception:
+            return None
+
+    spans: list[tuple[int, int, int, int]] = []
+    try:
+        _items_size, offset = _read_varint(region, 0)  # type: ignore[no-untyped-call]
+    except MMKVError:
+        return spans
+    end = len(region)
+    while offset < end:
+        entry_start = offset
+        try:
+            key_length, offset = _read_varint(region, offset)  # type: ignore[no-untyped-call]
+            if key_length == 0 or offset + key_length > end:
+                break
+            region[offset:offset + key_length].decode("utf-8")
+            offset += key_length
+            key_end = offset
+            value_length, offset = _read_varint(region, offset)  # type: ignore[no-untyped-call]
+            if offset + value_length > end:
+                break
+            value_start = offset
+            offset += value_length
+            value_end = offset
+        except (MMKVError, UnicodeDecodeError):
+            break
+        spans.append((
+            entry_start + _HEADER_LENGTH, key_end + _HEADER_LENGTH,
+            value_start + _HEADER_LENGTH, value_end + _HEADER_LENGTH,
+        ))
+    return spans
 
 
 _TYPE_LABELS: dict[type, str] = {str: "string", int: "int", bytes: "bytes"}
@@ -246,6 +321,18 @@ class MMKVParser(AbstractParser):
                     pass
 
         records = _classify_entries(entries)
+
+        # Byte-provenance for the embedded Hex pane: re-derive each entry's
+        # real on-disk span. The false-positive-flag path already proved this
+        # store is plaintext despite meta_info's vector, so treat it as
+        # unencrypted here too rather than re-triggering the "need a key" guard.
+        offsets_meta_info = None if false_positive_encrypted_flag else meta_info
+        offsets = _compute_entry_offsets(raw, offsets_meta_info, password, aes256)
+        if offsets is not None and len(offsets) == len(records):
+            for record, (entry_start, _key_end, value_start, value_end) in zip(records, offsets):
+                record["entry_range"] = (entry_start, value_end)
+                record["value_range"] = (value_start, value_end)
+
         live = sum(1 for r in records if r["state"] == "Live")
         superseded = sum(1 for r in records if r["state"] == "Superseded")
         removed = sum(1 for r in records if r["state"] == "Removed")
@@ -284,7 +371,7 @@ class MMKVParser(AbstractParser):
 
         return ParseResult(
             viewer_type="mmkv",
-            data={"records": records, "meta_info": meta_info},
+            data={"records": records, "meta_info": meta_info, "__mmkv_file_bytes": raw},
             metadata=meta,
             text_index=" ".join(text_parts[:2000]),
         )
