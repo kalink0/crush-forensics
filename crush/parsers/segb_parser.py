@@ -13,6 +13,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from crush.core.segb_offsets import SegbCellLocator
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.parsers.proto_interp import interpret_fixed64
@@ -124,10 +125,13 @@ class SegbParser(AbstractParser):
                 meta["Stream"] = stream
             if parse_error:
                 meta["Parse warning"] = parse_error
-            data: dict[str, Any] = {"SEGB": {"columns": columns, "rows": rows}}
+            data: dict[str, Any] = {
+                "SEGB": {"columns": columns, "rows": rows, "rowids": list(range(len(rows)))}
+            }
             tmp = _create_segb_sqlite(columns, rows)
             if tmp:
                 data["__db_path"] = str(tmp)
+            data["__cell_locator"] = SegbCellLocator(file_bytes=raw, version=version, rows=rows)
             return ParseResult(
                 viewer_type="table",
                 data=data,

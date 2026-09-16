@@ -170,7 +170,7 @@ Each opened file gets its own tab. Tab text is capped in width and elided in the
 
 ### SQLite / Database Viewer
 
-The table dropdown at the top switches between database tables, views, and seven generated analysis pages. All generated entries are labelled `(generated)` to make clear they are computed by Crush rather than read directly from the database.
+The table dropdown at the top switches between database tables, views, and seven always-shown generated analysis pages (plus WAL Frames, an eighth, when a `-wal` companion file is present). All generated entries are labelled `(generated)` to make clear they are computed by Crush rather than read directly from the database.
 
 #### Generated views
 
@@ -227,6 +227,24 @@ Always shown. Catches the far more common case Freelist Recovery can't: an ordin
 #### Unallocated Space
 
 Always shown. Displays the raw bytes sitting in the gap between a page's cell-pointer array and its cell-content area, for manual review. Unlike Freeblocks, SQLite makes no guarantee anything meaningful survives here — it's often all-zero, or stale 2-byte pointer values left over from a shrunk pointer array, rather than recoverable row text. All-zero gaps aren't shown at all; only non-empty ones are, so you can judge each entry yourself.
+
+Freeblocks and Unallocated Space rows can also be double-clicked to open that row's whole containing page as an isolated tab in the Hex Viewer, same as Freelist Recovery above.
+
+#### File Structure (generated)
+
+Always shown. A physical, page-by-page view of the database file itself — header fields, B-tree page headers, cell-pointer arrays, individual cells, freeblocks, and unallocated space — independent of the logical table/row view the other generated pages give you. Each page's own row/column detail is decoded lazily, only the first time you expand it, so opening a database with many rows stays responsive instead of decoding everything up front. Selecting a structure item and the embedded Show Hex pane (see below) stay in sync in both directions.
+
+There is no text/content search across the whole structure tree — full search would mean decoding every page up front, reintroducing the exact hang lazy loading exists to avoid, and searching only already-expanded pages would be a silently incomplete search, unacceptable for a forensic tool. To find specific content: run a SQL query against the table itself (works for any value, including numeric ones an on-disk byte search never can), use a cell's **Open in Hex** action, or search directly in the Hex pane below — hex search hits sync back into the structure tree the same way tree selections sync into hex.
+
+#### Show Hex pane
+
+The table view, WAL Frames, and File Structure pages all have a **Show Hex** toggle button that opens an embedded hex pane alongside the current view, bidirectionally synced with it: selecting a row/cell/structure item highlights its exact on-disk bytes, and clicking a highlighted byte in the hex pane selects the matching row/cell/item back.
+
+- **Table view:** selecting a cell highlights its whole row (pale) and that column's own bytes (stronger, drawn on top). A row whose current version is only in a not-yet-checkpointed `-wal` frame switches the pane to that file instead of the base file's stale bytes. A **Show WAL history** row (see above) gets the same column-precise treatment, keyed by its own frame bytes rather than a rowid.
+- **WAL Frames:** selecting a frame highlights its exact header+page bytes in the `-wal` file.
+- **File Structure:** selecting any structure item — a header field, a page, a cell, a freeblock, an unallocated-space gap — highlights its exact bytes, across whichever of the base file or `-wal` file it actually lives in.
+
+Freelist Recovery does not have the embedded Show Hex pane (its rows use double-click to open the whole containing page in an isolated tab instead, see above).
 
 #### SQL bar
 
@@ -550,6 +568,8 @@ The Properties panel shows a **Stream** field — the Biome stream name (e.g. `D
 
 Protobuf payloads are decoded automatically: double fields in the plausible Cocoa-timestamp range get a `[possible Cocoa timestamp: ...]` hint next to the raw number (the value itself is never replaced — there is no schema to confirm the field really is a date), nested messages are expanded inline with a `[raw: N B: hex…]` hint alongside them (wire type 2 doesn't declare that the bytes really are a submessage), and repeated fields are collected into arrays. Double-clicking a Payload cell opens the raw protobuf bytes in the Blob Inspector.
 
+The table has an embedded **Show Hex** pane: selecting a row highlights its exact on-disk bytes (for v2, the trailer entry too, even though it physically lives at the end of the file), and selecting a specific column narrows the highlight to that field's own bytes where one exists (State, Timestamp/Creation, CRC Stored, Payload, and v2's Trailer Offset/Entry End Offset).
+
 A backing SQLite database is created on open so you can query records using the built-in SQL editor (with autocomplete). Two payload columns are available:
 
 | Column | Content |
@@ -584,7 +604,8 @@ Opens `.realm` files in a tabbed view. Column decoding is spec-driven — dispat
 | **Header** | File metadata decoded from the Realm file header |
 | **Schema** | All classes/tables with their columns and declared types (expand a table to see each field). A Link/LinkList column also shows which table it points to, e.g. `attachments: linklist → class_AttachmentLocalDto` |
 | **Top Refs** | Comparison of top-ref pointers across header slots (useful for detecting corruption or versioning) |
-| **Tables** | Decoded column data for each table; SQL queries run against a temporary SQLite representation of the data. Cells holding a List/Set/LinkList value are colour-flagged (grey when empty) with a tooltip, since they otherwise look like plain bracketed text |
+| **File Structure** | The file's own physical array/reference-graph layout — file header, streaming-form footer where applicable, the Group top array and its children (table names/refs, free list), and per-table Spec/row storage — independent of the decoded Tables view below. Has the same embedded **Show Hex** byte-provenance pane, selecting a structure item highlights its exact bytes and vice versa. Covers both the modern Cluster format and legacy pre-Cluster files (row storage shown as "Column B+-Trees" instead of "ClusterTree", since pre-Cluster has no single shared row tree) |
+| **Tables** | Decoded column data for each table; SQL queries run against a temporary SQLite representation of the data. Cells holding a List/Set/LinkList value are colour-flagged (grey when empty) with a tooltip, since they otherwise look like plain bracketed text. Has an embedded **Show Hex** pane too — selecting a cell highlights its real bytes in the actual `.realm` file, not the temporary SQLite copy |
 | **Views** | Pick a table, choose per Link/LinkList column which columns of the linked table to pull in, and open the fully resolved result as a new tab — see below |
 | **Freed Data** | Blocks from the file's internal free-space list (both the active and inactive top-ref), colour-coded by which ref they were freed in; right-click → **Inspect Block…** opens the raw bytes in the BLOB Inspector |
 | **Strings** | String values extracted from the file |

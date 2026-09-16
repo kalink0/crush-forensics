@@ -32,7 +32,7 @@ def _render_png(size: int) -> bytes:
     p.end()
     buf = QBuffer()
     buf.open(QIODevice.OpenModeFlag.WriteOnly)
-    img.save(buf, b"PNG")
+    img.save(buf, "PNG")
     return bytes(buf.data().data())
 
 
