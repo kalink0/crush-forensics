@@ -174,3 +174,67 @@ def test_inspect_value_uses_stripped_value_bytes_not_the_raw_container(qapp) -> 
     assert panel._format_list.currentItem().data(Qt.ItemDataRole.UserRole) == "Decoded (from table)"
     assert panel._viewer.toPlainText() == decoded
     assert not panel._viewer.toPlainText().startswith("&")
+
+
+# ---------------------------------------------------------------------------
+# Embedded Show Hex pane: real on-disk bytes in context, not just the
+# value's own bytes in isolation (see crush/parsers/mmkv_parser.py's
+# _compute_entry_offsets and its own tests in test_mmkv_parser.py).
+# ---------------------------------------------------------------------------
+
+def test_selecting_a_row_highlights_its_real_file_bytes(qapp) -> None:
+    file_bytes = b"\x00" * 20 + b"HELLOWORLD" + b"\x00" * 20
+    rec = _rec(0, "k", "irrelevant", b"raw-container-bytes-not-shown-when-ranges-exist")
+    rec["entry_range"] = (20, 30)
+    rec["value_range"] = (25, 30)
+    widget = MMKVRecordsWidget([rec], file_bytes=file_bytes)
+    widget.show()
+
+    index = widget._proxy.mapFromSource(widget._model.index(0, 0))
+    widget._table.setCurrentIndex(index)
+
+    assert widget._hex_val._data == file_bytes
+    assert widget._hex_val._focus_ranges == [(20, 30), (25, 30)]
+
+
+def test_removed_entry_zero_width_value_range_is_not_highlighted(qapp) -> None:
+    """A zero-width value_range (Removed entry, empty container) must not be
+    passed to highlight_byte_ranges() as a degenerate empty highlight."""
+    file_bytes = b"\x00" * 20 + b"KEY" + b"\x00" * 20
+    rec = _rec(0, "gone", "", b"")
+    rec["entry_range"] = (20, 23)
+    rec["value_range"] = (23, 23)  # zero-width
+    widget = MMKVRecordsWidget([rec], file_bytes=file_bytes)
+    widget.show()
+
+    index = widget._proxy.mapFromSource(widget._model.index(0, 0))
+    widget._table.setCurrentIndex(index)
+
+    assert widget._hex_val._focus_ranges == [(20, 23)]  # entry only, no zero-width value
+
+
+def test_falls_back_to_isolated_value_bytes_without_offsets(qapp) -> None:
+    """No entry_range/value_range on the record (offset walk unavailable) --
+    must fall back to the value's own isolated bytes, never blank."""
+    raw = b"isolated-value-bytes"
+    rec = _rec(0, "k", "v", raw)  # no entry_range/value_range set
+    widget = MMKVRecordsWidget([rec], file_bytes=b"unrelated file content here")
+    widget.show()
+
+    index = widget._proxy.mapFromSource(widget._model.index(0, 0))
+    widget._table.setCurrentIndex(index)
+
+    assert widget._hex_val._data == raw
+    assert widget._hex_val._focus_ranges == []
+
+
+def test_mmkv_viewer_passes_file_bytes_through_to_records_widget(qapp) -> None:
+    from crush.viewers.mmkv_viewer import MMKVViewer
+
+    file_bytes = b"the real mmkv file bytes"
+    rec = _rec(0, "k", "v", b"raw")
+    rec["entry_range"] = (0, 5)
+    viewer = MMKVViewer({"records": [rec], "meta_info": None, "__mmkv_file_bytes": file_bytes})
+    records_widget = viewer.findChild(MMKVRecordsWidget)
+    assert records_widget is not None
+    assert records_widget._file_bytes == file_bytes

@@ -441,7 +441,7 @@ Toolbar controls:
 | **Search** | Case-insensitive filter across all columns, matching a large value's complete text even where the Value cell shows it truncated |
 | **Export CSV…** | Save currently visible rows, including the value's complete text and complete raw container as hex |
 
-Selecting a row shows the value's complete raw container (untouched, including MMKV's own internal length-prefix byte(s) for a string value) in the hex pane below the table, and the complete decoded value text in the **Value:** field beneath that.
+Selecting a row shows the store's real file in the hex pane below the table, with that entry's own on-disk bytes highlighted (key and value container together, the value container itself highlighted on top) — real byte provenance, not just the value's own bytes copied out in isolation. Works the same way for AES-encrypted stores: the highlighted bytes are the genuine ciphertext at that file position, since AES-CFB doesn't shift byte positions between plaintext and ciphertext. Falls back to showing just the value's own raw container bytes (untouched, including MMKV's own internal length-prefix byte(s) for a string value) when its on-disk span couldn't be determined. The complete decoded value text is shown in the **Value:** field beneath the hex pane.
 
 Right-click a row for:
 - **Inspect Value…** — opens the [BLOB Inspector](#blob-inspector) on the value's own bytes, with MMKV's internal length-prefix already removed (unlike the hex pane above, which always shows the complete untouched container) — so a value that's itself JSON/XML/etc. can actually be re-parsed as such, defaulting to the already-decoded text view
