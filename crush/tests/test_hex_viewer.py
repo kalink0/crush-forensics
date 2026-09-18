@@ -82,3 +82,88 @@ def test_selection_start_column_matches_actual_cursor_offset(qapp) -> None:
     hv._text.setTextCursor(cursor)
 
     assert hv._selection_start_column() == 17
+
+
+def test_offset_mode_defaults_to_hex(qapp) -> None:
+    hv = _make_viewer(rows=2)
+    first_line = hv._text.toPlainText().splitlines()[0]
+    assert first_line.startswith("00000000")
+
+
+def test_toggle_offset_mode_switches_to_decimal_and_relayouts(qapp) -> None:
+    data = bytes(range(256)) * 20  # 5120 bytes -> decimal width 4
+    hv = HexViewer(data)
+
+    hv._toggle_offset_mode()
+
+    assert hv._offset_mode == "dec"
+    assert hv._offset_width == len(str(len(data)))
+    first_line = hv._text.toPlainText().splitlines()[0]
+    assert first_line.startswith("0000")
+    # column layout must have shifted along with the new offset width
+    assert hv._hex_start == hv._offset_width + 2
+
+
+def test_toggle_offset_mode_round_trip_preserves_hex_layout(qapp) -> None:
+    hv = _make_viewer(rows=4)
+    orig_hex_start = hv._hex_start
+    hv._toggle_offset_mode()
+    hv._toggle_offset_mode()
+    assert hv._offset_mode == "hex"
+    assert hv._hex_start == orig_hex_start
+
+
+def test_byte_offset_at_cursor_matches_after_switching_to_decimal(qapp) -> None:
+    data = bytes(range(256)) * 20
+    hv = HexViewer(data)
+    hv._toggle_offset_mode()
+    doc = hv._text.document()
+    block = doc.findBlockByNumber(1)  # bytes 16-31
+
+    cursor = hv._text.textCursor()
+    cursor.setPosition(block.position() + hv._ascii_start + 2)
+    hv._text.setTextCursor(cursor)
+
+    assert hv._byte_offset_at_cursor() == 18
+
+
+def test_goto_offset_scrolls_without_length(qapp) -> None:
+    data = bytes(range(256)) * 20
+    hv = HexViewer(data)
+    hv._goto_offset_input.setText("200")
+    hv._do_goto()
+    assert hv._focus_range is None
+    assert hv._goto_status.text() == ""
+
+
+def test_goto_offset_with_length_highlights_range(qapp) -> None:
+    data = bytes(range(256)) * 20
+    hv = HexViewer(data)
+    hv._goto_offset_input.setText("C8")  # hex mode (default): 0xC8 == 200
+    hv._goto_length_input.setText("10")  # 0x10 == 16
+    hv._do_goto()
+    assert hv._focus_range == (200, 216)
+
+
+def test_goto_offset_parses_decimal_when_in_decimal_mode(qapp) -> None:
+    data = bytes(range(256)) * 20
+    hv = HexViewer(data)
+    hv._toggle_offset_mode()
+    hv._goto_offset_input.setText("512")
+    hv._goto_length_input.setText("16")
+    hv._do_goto()
+    assert hv._focus_range == (512, 528)
+
+
+def test_goto_invalid_offset_reports_status_without_crashing(qapp) -> None:
+    hv = _make_viewer(rows=2)
+    hv._goto_offset_input.setText("zz")
+    hv._do_goto()
+    assert hv._goto_status.text() == "Invalid offset"
+
+
+def test_goto_offset_out_of_range_reports_status(qapp) -> None:
+    hv = _make_viewer(rows=2)
+    hv._goto_offset_input.setText("FFFFFF")
+    hv._do_goto()
+    assert hv._goto_status.text() == "Invalid offset"
