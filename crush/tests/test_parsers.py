@@ -2047,6 +2047,60 @@ def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Pa
     assert result.metadata["Decode status"] == "KTX metadata parsed; image decode unavailable"
 
 
+def _tiny_jpeg() -> bytes:
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def _jumbf_box(tbox: bytes, content: bytes) -> bytes:
+    return struct.pack(">I", 8 + len(content)) + tbox + content
+
+
+def _jumbf_superbox(uuid: bytes, label: str, children: bytes = b"") -> bytes:
+    jumd = _jumbf_box(b"jumd", uuid + bytes([0x03]) + label.encode("utf-8") + b"\x00")
+    return _jumbf_box(b"jumb", jumd + children)
+
+
+def _jpeg_with_c2pa_manifest() -> bytes:
+    # Minimal manifest: just enough for c2pa_reader to report "Manifest found"
+    # (see crush/tests/test_c2pa_reader.py for the full box/CBOR layout).
+    manifest_store_uuid = bytes.fromhex("63327061001100108000" "00AA00389B71")
+    manifest_uuid = bytes.fromhex("63326D61001100108000" "00AA00389B71")
+    manifest = _jumbf_superbox(manifest_uuid, "test:manifest")
+    manifest_store = _jumbf_superbox(manifest_store_uuid, "c2pa", manifest)
+
+    payload = b"JP" + b"\x02\x11" + struct.pack(">I", 1) + manifest_store
+    app11 = b"\xFF\xEB" + struct.pack(">H", len(payload) + 2) + payload
+    jpeg = _tiny_jpeg()
+    return jpeg[:2] + app11 + jpeg[2:]
+
+
+def test_image_parser_reports_c2pa_manifest_in_metadata(tmp_path: Path) -> None:
+    jpeg_path = tmp_path / "signed.jpg"
+    jpeg_path.write_bytes(_jpeg_with_c2pa_manifest())
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "signed.jpg")
+    result = ImageParser().parse(node, vfs)
+
+    assert result.metadata["C2PA"] == "Manifest found"
+    assert result.metadata["C2PA Manifest ID"] == "test:manifest"
+
+
+def test_image_parser_reports_c2pa_not_present_for_plain_jpeg(tmp_path: Path) -> None:
+    jpeg_path = tmp_path / "plain.jpg"
+    jpeg_path.write_bytes(_tiny_jpeg())
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "plain.jpg")
+    result = ImageParser().parse(node, vfs)
+
+    assert result.metadata["C2PA"] == "Not present"
+
+
 def test_ktx_big_endian_decodes_to_the_same_pixels() -> None:
     # No file in any tested extraction is big-endian, so this branch is exercised
     # with a constructed file rather than a real one.

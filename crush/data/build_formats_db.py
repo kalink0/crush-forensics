@@ -459,7 +459,12 @@ FORMATS: list[dict[str, Any]] = [
             "save or re-encode the file. "
             "JPEG is a common steganographic carrier — data can be hidden in DCT coefficients "
             "or appended after the EOI marker. "
-            "XMP metadata may additionally record editing history and software chain."
+            "XMP metadata may additionally record editing history and software chain. "
+            "An embedded C2PA (Content Credentials) manifest, carried in APP11 marker "
+            "segments, can record the generating/editing software, an IPTC Digital Source "
+            "Type (a direct AI-generation/-editing signal), and a signed claim identity — "
+            "not present in most images, but increasingly common from AI generation tools "
+            "and some camera/editing apps."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "ImageParser",
@@ -492,6 +497,10 @@ FORMATS: list[dict[str, Any]] = [
                 "ExifTool — read/write metadata",
                 "https://exiftool.org/",
             ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
+            ),
         ],
         "status": "reviewed",
     },
@@ -509,7 +518,11 @@ FORMATS: list[dict[str, Any]] = [
             "is forensically significant and may indicate steganography or embedded payloads. "
             "LSB steganography in IDAT pixel data is common and detectable with tools like zsteg. "
             "Screenshots typically lack camera EXIF metadata, which can help distinguish them "
-            "from camera photos. The iDOT chunk is Apple-specific and undocumented."
+            "from camera photos. The iDOT chunk is Apple-specific and undocumented. "
+            "An embedded C2PA (Content Credentials) manifest, carried in the ancillary "
+            "'caBX' chunk, can record generating/editing software, an IPTC Digital Source "
+            "Type (a direct AI-generation/-editing signal), and a signed claim identity — "
+            "PNG is a common output format for AI image generators."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -538,6 +551,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Steganography detection in PNG (IEND, LSB, chunks)",
                 "https://klaroskope.com/learn/steganography-detection-techniques",
             ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
+            ),
         ],
         "status": "reviewed",
     },
@@ -555,7 +572,11 @@ FORMATS: list[dict[str, Any]] = [
             "the trailer is forensically significant. "
             "Steganography is possible via LSB encoding in the global color palette, "
             "palette reordering, or data hidden in comment/application extension blocks. "
-            "Animated GIFs can hide different content in individual frames."
+            "Animated GIFs can hide different content in individual frames. "
+            "A C2PA (Content Credentials) manifest, when present, is carried in a "
+            "dedicated Application Extension block (identifier 'C2PA_GIF') and can record "
+            "generating/editing software and an IPTC Digital Source Type — a direct "
+            "AI-generation/-editing signal."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -584,6 +605,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "GIF steganography from first principles",
                 "https://dtm.uk/gif-steganography/",
+            ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
             ),
         ],
         "status": "reviewed",
@@ -645,7 +670,10 @@ FORMATS: list[dict[str, Any]] = [
             "TIFF is the base container for many RAW camera formats (CR2, NEF, DNG) and "
             "for EXIF metadata embedded in JPEG files. "
             "Digital libraries and forensic archives commonly use TIFF as the preservation format. "
-            "SubIFDs can contain embedded thumbnails or alternate image representations."
+            "SubIFDs can contain embedded thumbnails or alternate image representations. "
+            "A C2PA (Content Credentials) manifest, when present, is carried in tag 0xCD41 "
+            "(52545) of the last IFD in the main-IFD chain — relevant for TIFF-based RAW "
+            "formats (DNG, TIFF/EP) as well as plain TIFF."
         ),
         "platforms": ["iOS", "macOS", "Windows"],
         "parser_class": None,
@@ -679,6 +707,10 @@ FORMATS: list[dict[str, Any]] = [
                 "ExifTool — TIFF/EXIF metadata read/write",
                 "https://exiftool.org/",
             ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
+            ),
         ],
         "status": "reviewed",
     },
@@ -695,7 +727,10 @@ FORMATS: list[dict[str, Any]] = [
             "WhatsApp, Telegram, and Signal use WebP for stickers and image storage. "
             "Android has used WebP for screenshots since Android 11. "
             "The lossless variant preserves pixel data exactly — useful for detecting re-encoding. "
-            "Unknown chunks in the RIFF structure may contain application-specific or hidden data."
+            "Unknown chunks in the RIFF structure may contain application-specific or hidden data. "
+            "A C2PA (Content Credentials) manifest, when present, is carried in a dedicated "
+            "'C2PA' RIFF chunk and can record generating/editing software and an IPTC "
+            "Digital Source Type — a direct AI-generation/-editing signal."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -720,6 +755,10 @@ FORMATS: list[dict[str, Any]] = [
                 "WebP metadata handling (exiv2)",
                 "https://dev.exiv2.org/projects/exiv2/wiki/The_Metadata_in_WEBP_files",
             ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
+            ),
         ],
         "status": "reviewed",
     },
@@ -740,7 +779,12 @@ FORMATS: list[dict[str, Any]] = [
             "When iOS transfers HEIC to Windows/Mac via cable or email, it may silently "
             "convert to JPEG — stripping metadata in the process. "
             "Traditional JPEG-based image authentication algorithms do not apply to HEIC. "
-            "iCloud Photo Library syncs HEIC — relevant for cloud artifact correlation."
+            "iCloud Photo Library syncs HEIC — relevant for cloud artifact correlation. "
+            "A C2PA (Content Credentials) manifest, when present, is carried in a top-level "
+            "ISOBMFF 'uuid' box (a fixed extended-type UUID identifies it as C2PA, since "
+            "some decoders reject unknown top-level box types outright) and can record "
+            "generating/editing software and an IPTC Digital Source Type — a direct "
+            "AI-generation/-editing signal."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -783,6 +827,10 @@ FORMATS: list[dict[str, Any]] = [
                 "HEIF forensics — authentication implications (Amped Software)",
                 "https://blog.ampedsoftware.com/2017/09/29/heif-image-files-forensics-authentication-apocalypse",
             ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
+            ),
         ],
         "status": "reviewed",
     },
@@ -804,7 +852,11 @@ FORMATS: list[dict[str, Any]] = [
             "iOS ProRAW JPEG XL files may embed full DNG data in a JXL container. "
             "Forensically relevant: timestamp and GPS metadata in EXIF boxes, "
             "lossless re-encoding makes tampering detection harder than with JPEG, "
-            "and the format's novelty means older tools may fail to parse it."
+            "and the format's novelty means older tools may fail to parse it. "
+            "A C2PA (Content Credentials) manifest, when present in the box-form container, "
+            "is a top-level JUMBF superbox — the bare codestream variant cannot carry one at "
+            "all. Can record generating/editing software and an IPTC Digital Source Type — "
+            "a direct AI-generation/-editing signal."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -838,6 +890,10 @@ FORMATS: list[dict[str, Any]] = [
                 "JPEG XL file format overview (Library of Congress)",
                 "https://www.loc.gov/preservation/digital/formats/fdd/fdd000538.shtml",
             ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
+            ),
         ],
         "status": "reviewed",
     },
@@ -861,7 +917,10 @@ FORMATS: list[dict[str, Any]] = [
             "The AV1 bitstream inside is distinct from H.265 (HEVC used in HEIC), so "
             "HEIC-specific codec detection tools will not recognise AVIF content. "
             "Animation / multi-frame AVIF ('avis' brand) is increasingly used as a GIF "
-            "replacement — relevant when investigating multimedia evidence."
+            "replacement — relevant when investigating multimedia evidence. "
+            "Like HEIC, a C2PA (Content Credentials) manifest, when present, is carried in "
+            "a top-level ISOBMFF 'uuid' box and can record generating/editing software and "
+            "an IPTC Digital Source Type — a direct AI-generation/-editing signal."
         ),
         "platforms": ["Android", "iOS", "macOS", "Windows"],
         "parser_class": "ImageParser",
@@ -894,6 +953,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ISOBMFF — ISO/IEC 14496-12 base media file format",
                 "https://www.iso.org/standard/83102.html",
+            ),
+            (
+                "C2PA Technical Specification (Content Credentials)",
+                "https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html",
             ),
         ],
         "status": "reviewed",

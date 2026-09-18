@@ -95,6 +95,16 @@ class ImageParser(AbstractParser):
                 meta.update(format_for_metadata(exif_raw))
         except Exception:
             pass
+        try:
+            from crush.parsers.c2pa_reader import summarize_c2pa
+            meta.update(summarize_c2pa(raw))
+        except Exception:
+            meta["C2PA"] = "Detection failed"
+        try:
+            from crush.parsers.xmp_provenance import extract_xmp_provenance
+            meta.update(extract_xmp_provenance(raw))
+        except Exception:
+            pass
         return ParseResult(viewer_type="image", data=raw, metadata=meta)
 
 
