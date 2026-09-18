@@ -307,6 +307,8 @@ Displays raw bytes as offset + hex + ASCII. 256 KB is shown per page.
 | **Show all** | Toggle a result panel below showing every match with its offset, hex bytes, and ASCII preview. Click a row to jump to it. |
 | **Copy Hex** | Copy current page as space-separated hex bytes |
 | **Copy ASCII** | Copy current page as ASCII (non-printable → `.`) |
+| **Offset: Hex / Dec** | Toggle the left-hand offset gutter between hex and decimal. The status line and the "Show all" result panel's offset column switch with it. |
+| **Go to offset: / Length: / Go** | Jump to a specific byte offset (parsed in whatever base the toggle above is set to). Fill in Length too to highlight that byte range instead of just scrolling to it. |
 
 **Right-click on a selection:**
 - **Search Selected as ASCII** — uses the bytes covered by the selection as a text search pattern

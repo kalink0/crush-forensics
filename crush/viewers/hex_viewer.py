@@ -37,15 +37,14 @@ from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 _BYTES_PER_ROW = 16
 _PAGE_BYTES = 1024 * 256  # 256 KB per page
 
-# Hex dump line layout (see _load_page):
-# cols  0-7   offset (8 hex digits)
-# cols  8-9   two spaces
-# cols 10-57  hex section (hex_left<23> + "  " + hex_right<23> = 48 chars)
-# cols 58-59  two spaces
-# cols 60+    ASCII (up to 16 printable chars)
-_HEX_START = 10
-_HEX_END = 58
-_ASCII_START = 60
+# Hex dump line layout (see _compute_layout / _load_page):
+# the offset field width is dynamic (8 hex digits, or enough decimal digits
+# to cover the file length) -- everything after it is anchored to that width:
+#   hex_start   = offset_width + 2   (two-space gutter)
+#   hex_end     = hex_start + 48     (hex_left<23> + "  " + hex_right<23>)
+#   ascii_start = hex_end + 2        (two-space gutter)
+_HEX_FIELD_LEN = 48
+_GUTTER_GAP = 2
 
 _COLOR_HIT = QColor(255, 230, 80)     # yellow — all matches
 _COLOR_CURRENT = QColor(255, 140, 0)  # orange — current match
@@ -97,6 +96,8 @@ class HexViewer(QWidget):
         self._focus_range: tuple[int, int] | None = None
         self._focus_ranges: list[tuple[int, int]] = []
         self._suppress_focus_signal = False
+        self._offset_mode = "hex"  # "hex" or "dec"
+        self._compute_layout()
         self._build_ui()
         self._load_page()
 
@@ -195,6 +196,39 @@ class HexViewer(QWidget):
         nav_row.addStretch(1)
         toolbar.addLayout(nav_row)
 
+        goto_row = QHBoxLayout()
+        goto_row.setSpacing(8)
+
+        self._offset_mode_btn = QToolButton()
+        self._offset_mode_btn.setText("Offset: Hex")
+        self._offset_mode_btn.setToolTip("Switch the offset gutter between hex and decimal")
+        self._offset_mode_btn.clicked.connect(self._toggle_offset_mode)
+        goto_row.addWidget(self._offset_mode_btn)
+
+        goto_row.addSpacing(8)
+        goto_row.addWidget(QLabel("Go to offset:"))
+        self._goto_offset_input = QLineEdit()
+        self._goto_offset_input.setPlaceholderText("offset (hex)")
+        self._goto_offset_input.setMaximumWidth(120)
+        self._goto_offset_input.returnPressed.connect(self._do_goto)
+        goto_row.addWidget(self._goto_offset_input)
+
+        goto_row.addWidget(QLabel("Length:"))
+        self._goto_length_input = QLineEdit()
+        self._goto_length_input.setPlaceholderText("optional")
+        self._goto_length_input.setMaximumWidth(80)
+        self._goto_length_input.returnPressed.connect(self._do_goto)
+        goto_row.addWidget(self._goto_length_input)
+
+        self._goto_btn = QPushButton("Go")
+        self._goto_btn.clicked.connect(self._do_goto)
+        goto_row.addWidget(self._goto_btn)
+
+        self._goto_status = QLabel("")
+        goto_row.addWidget(self._goto_status)
+        goto_row.addStretch(1)
+        toolbar.addLayout(goto_row)
+
         layout.addLayout(toolbar)
 
         self._splitter = QSplitter(Qt.Orientation.Vertical)
@@ -257,7 +291,7 @@ class HexViewer(QWidget):
 
         for i in range(0, len(page_data), _BYTES_PER_ROW):
             chunk = page_data[i : i + _BYTES_PER_ROW]
-            off_str = f"{base_offset + i:08X}"
+            off_str = self._format_offset(base_offset + i, prefixed=False)
             hex_parts = [f"{b:02X}" for b in chunk]
             hex_left  = " ".join(hex_parts[:8])
             hex_right = " ".join(hex_parts[8:])
@@ -274,7 +308,10 @@ class HexViewer(QWidget):
         self._next_btn.setEnabled(self._page < pages - 1)
         start = base_offset
         end = base_offset + len(page_data)
-        self._status.setText(f"0x{start:X}–0x{end:X}  ({len(self._data):,} B total)")
+        self._status.setText(
+            f"{self._format_offset(start)}–{self._format_offset(end)}  "
+            f"({len(self._data):,} B total)"
+        )
 
     def set_data(self, data: bytes) -> None:
         """Replace the displayed bytes and reset to page 0."""
@@ -286,6 +323,7 @@ class HexViewer(QWidget):
         self._focus_range = None
         self._focus_ranges = []
         self._count_label.setText("")
+        self._compute_layout()
         self._load_page()
 
     def highlight_byte_range(self, start: int, end: int, *, scroll: bool = True) -> None:
@@ -363,6 +401,71 @@ class HexViewer(QWidget):
         visible_end = page_start + (last_line + 1) * _BYTES_PER_ROW
         target = self._focus_range[0]
         return visible_start <= target < visible_end
+
+    # ------------------------------------------------------------------
+    # Offset mode (hex/decimal) & go to offset
+    # ------------------------------------------------------------------
+
+    def _compute_layout(self) -> None:
+        """(Re)derive the offset field width and the column positions that
+        depend on it, from the current offset mode and data length."""
+        if self._offset_mode == "hex":
+            self._offset_width = 8
+        else:
+            self._offset_width = max(1, len(str(len(self._data))))
+        self._hex_start = self._offset_width + _GUTTER_GAP
+        self._hex_end = self._hex_start + _HEX_FIELD_LEN
+        self._ascii_start = self._hex_end + _GUTTER_GAP
+
+    def _format_offset(self, value: int, *, prefixed: bool = True) -> str:
+        if self._offset_mode == "hex":
+            text = f"{value:0{self._offset_width}X}"
+            return f"0x{text}" if prefixed else text
+        return f"{value:0{self._offset_width}d}"
+
+    def _toggle_offset_mode(self) -> None:
+        self._set_offset_mode("dec" if self._offset_mode == "hex" else "hex")
+
+    def _set_offset_mode(self, mode: str) -> None:
+        if mode == self._offset_mode:
+            return
+        self._offset_mode = mode
+        self._offset_mode_btn.setText("Offset: Hex" if mode == "hex" else "Offset: Dec")
+        self._goto_offset_input.setPlaceholderText(
+            "offset (hex)" if mode == "hex" else "offset (dec)"
+        )
+        self._compute_layout()
+        self._load_page()
+
+    def _parse_offset_value(self, text: str) -> int | None:
+        text = text.strip()
+        if not text:
+            return None
+        try:
+            return int(text, 16 if self._offset_mode == "hex" else 10)
+        except ValueError:
+            return None
+
+    def _do_goto(self) -> None:
+        offset = self._parse_offset_value(self._goto_offset_input.text())
+        if offset is None or not (0 <= offset < max(1, len(self._data))):
+            self._goto_status.setText("Invalid offset")
+            return
+        length_text = self._goto_length_input.text().strip()
+        length = self._parse_offset_value(length_text) if length_text else None
+        if length_text and (length is None or length <= 0):
+            self._goto_status.setText("Invalid length")
+            return
+        self._goto_status.setText("")
+        if length:
+            self.highlight_byte_range(offset, offset + length)
+        else:
+            self.clear_byte_range_highlight()
+            target_page = offset // _PAGE_BYTES
+            if target_page != self._page:
+                self._page = target_page
+                self._load_page()
+            self._scroll_to_offset(offset - self._page * _PAGE_BYTES)
 
     # ------------------------------------------------------------------
     # Search — collect / navigate
@@ -531,13 +634,17 @@ class HexViewer(QWidget):
             sel = QTextEdit.ExtraSelection()
             sel.format = fmt
             c = QTextCursor(doc)
-            c.setPosition(line_pos + _ASCII_START + seg_start)
-            c.setPosition(line_pos + _ASCII_START + seg_end, QTextCursor.MoveMode.KeepAnchor)
+            c.setPosition(line_pos + self._ascii_start + seg_start)
+            c.setPosition(line_pos + self._ascii_start + seg_end, QTextCursor.MoveMode.KeepAnchor)
             sel.cursor = c
             selections.append(sel)
             # Hex column — each byte individually (gap between groups at cols 33–34)
             for b in range(seg_start, seg_end):
-                hpos = (line_pos + _HEX_START + b * 3) if b < 8 else (line_pos + 35 + (b - 8) * 3)
+                hpos = (
+                    line_pos + self._hex_start + b * 3
+                    if b < 8
+                    else line_pos + self._hex_start + 25 + (b - 8) * 3
+                )
                 sel_h = QTextEdit.ExtraSelection()
                 sel_h.format = fmt
                 ch = QTextCursor(doc)
@@ -553,12 +660,25 @@ class HexViewer(QWidget):
         if offset is not None:
             self.byteOffsetFocused.emit(offset)
 
+    def _column_to_byte(self, col: int) -> int | None:
+        if col < self._hex_start:
+            return None
+        if col <= self._hex_start + 22:
+            return min((col - self._hex_start) // 3, 7)
+        if col <= self._hex_start + 24:
+            return 7
+        if col < self._hex_end:
+            return min(8 + (col - (self._hex_start + 25)) // 3, 15)
+        if col < self._ascii_start:
+            return 15
+        return min(col - self._ascii_start, 15)
+
     def _byte_offset_at_cursor(self) -> int | None:
         cursor = self._text.textCursor()
         block = self._text.document().findBlock(cursor.position())
         if not block.isValid():
             return None
-        byte_in_line = _column_to_byte(cursor.position() - block.position())
+        byte_in_line = self._column_to_byte(cursor.position() - block.position())
         if byte_in_line is None:
             return None
         offset = self._page * _PAGE_BYTES + block.blockNumber() * _BYTES_PER_ROW + byte_in_line
@@ -582,7 +702,7 @@ class HexViewer(QWidget):
         for i, offset in enumerate(self._search_hits):
             row = self._result_table.rowCount()
             self._result_table.insertRow(row)
-            off_item = QTableWidgetItem(f"0x{offset:08X}")
+            off_item = QTableWidgetItem(self._format_offset(offset))
             off_item.setData(Qt.ItemDataRole.UserRole, i)
             self._result_table.setItem(row, 0, off_item)
             chunk = self._data[offset : offset + self._match_len]
@@ -640,17 +760,17 @@ class HexViewer(QWidget):
         doc = self._text.document()
 
         def col_to_byte(col: int) -> int:
-            if col <= _HEX_START:
+            if col <= self._hex_start:
                 return 0
-            if col <= 32:                       # hex left (bytes 0–7)
-                return min((col - _HEX_START) // 3, 7)
-            if col <= 34:                       # gap between hex groups
+            if col <= self._hex_start + 22:                 # hex left (bytes 0–7)
+                return min((col - self._hex_start) // 3, 7)
+            if col <= self._hex_start + 24:                 # gap between hex groups
                 return 7
-            if col < _HEX_END:                  # hex right (bytes 8–15)
-                return min(8 + (col - 35) // 3, 15)
-            if col < _ASCII_START:              # gap before ASCII
+            if col < self._hex_end:                         # hex right (bytes 8–15)
+                return min(8 + (col - (self._hex_start + 25)) // 3, 15)
+            if col < self._ascii_start:                     # gap before ASCII
                 return 15
-            return min(col - _ASCII_START, 15)  # ASCII column
+            return min(col - self._ascii_start, 15)         # ASCII column
 
         page_start = self._page * _PAGE_BYTES
         s_block = doc.findBlock(cursor.selectionStart())
@@ -693,7 +813,7 @@ class HexViewer(QWidget):
         exactly the left edge) -- Qt's selectedText() still hands back that
         row's text starting from wherever the selection actually begins, not
         from column 0. Slicing that fragment at the usual fixed column
-        offsets (_HEX_START, _ASCII_START, ...) would then cut from the
+        offsets (self._hex_start, self._ascii_start, ...) would then cut from the
         wrong place, or make it look like there was nothing to take from
         that row at all. Every row after the first is unaffected (a
         multi-row selection always starts each subsequent row at its true
@@ -713,7 +833,7 @@ class HexViewer(QWidget):
         tokens: list[str] = []
         for i, line in enumerate(text.split(" ")):
             col_offset = first_col if i == 0 else 0
-            hex_section = line[max(_HEX_START - col_offset, 0):max(_HEX_END - col_offset, 0)]
+            hex_section = line[max(self._hex_start - col_offset, 0):max(self._hex_end - col_offset, 0)]
             for part in hex_section.split():
                 if len(part) == 2 and all(c in "0123456789ABCDEFabcdef" for c in part):
                     tokens.append(part.upper())
@@ -727,7 +847,7 @@ class HexViewer(QWidget):
         parts: list[str] = []
         for i, line in enumerate(text.split(" ")):
             col_offset = first_col if i == 0 else 0
-            parts.append(line[max(_ASCII_START - col_offset, 0):])
+            parts.append(line[max(self._ascii_start - col_offset, 0):])
         QApplication.clipboard().setText("".join(parts))
 
 
@@ -735,20 +855,6 @@ def _selected_text(widget: QPlainTextEdit) -> str:
     """Return the selected text, using Qt's paragraph separator \\u2029."""
     cursor = widget.textCursor()
     return cursor.selectedText() if cursor.hasSelection() else ""
-
-
-def _column_to_byte(col: int) -> int | None:
-    if col < _HEX_START:
-        return None
-    if col <= 32:
-        return min((col - _HEX_START) // 3, 7)
-    if col <= 34:
-        return 7
-    if col < _HEX_END:
-        return min(8 + (col - 35) // 3, 15)
-    if col < _ASCII_START:
-        return 15
-    return min(col - _ASCII_START, 15)
 
 
 def _focus_range_colors(palette: QPalette) -> list[QColor]:
