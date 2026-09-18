@@ -33,6 +33,8 @@ Open and navigate ZIP, TAR, 7z, Android `adb backup` (`.ab`), and iTunes/Finder 
 
 **Run Analyzer** — right-click a directory to run a small, curated analyzer module (ported from [iLEAPP](https://github.com/abrignoni/iLEAPP)/[aLEAPP](https://github.com/abrignoni/aLEAPP) artifact scripts) against it and see the result as a typed, sortable, searchable table — currently three "Installed Applications" modules (iOS, and two independent Android sources).
 
+**C2PA / AI-provenance detection** — Image Viewer reads embedded C2PA (Content Credentials) manifests across JPEG, PNG, GIF, WebP, TIFF, HEIC/HEIF/AVIF, and JPEG XL, showing the generator, edit actions, IPTC Digital Source Type, ingredients, and the claimed signer's identity — structure only, not a cryptographic trust verification. A second, independent check reads the same Digital Source Type straight from XMP for images with no C2PA manifest at all.
+
 Supported viewers (more planned):
 
 - SQLite / Database Viewer
