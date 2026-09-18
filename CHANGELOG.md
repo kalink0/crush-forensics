@@ -2,7 +2,9 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.20.0 - 2026-09-18
+
+**Focus: Raw disk image and EWF acquisition support; Run Analyzer (crush-analyze integration for curated forensic analyzer modules); continued embedded Hex pane rollout (SEGB/Biome, Realm File Structure, MMKV); Hex Viewer hex/decimal offset toggle and go-to-offset; C2PA and XMP AI-provenance detection for images; bundled peach updated to v0.8.0.**
 
 ### New Features
 
@@ -28,6 +30,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Bumped bundled unifiedlog_iterator from v0.6.0 to v0.7.0: adds lzbitmap decompression support and initial GoldenGate/iOS 27 support, fills in previously-missing `euid`/`library_uuid`/`process` details on Statedump and Simpledump entries, and fixes a bug where a Statedump entry with a plaintext (non-binary) plist was fed to the binary-plist parser regardless.
+- Bumped bundled peach from v0.7.0 to v0.8.0: adds a Tag row "excl." toggle (writes a `NOT tag=<value>` term with one click instead of typing it by hand) and updates AUL to `macos-unifiedlogs` 0.7.0 (lzbitmap decompression, initial iOS 27/macOS "GoldenGate" tracev3 support, an upstream Statedump plist-parsing fix). See peach's own [release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.8.0) for the full list.
 
 ## v0.19.0 - 2026-09-13
 
