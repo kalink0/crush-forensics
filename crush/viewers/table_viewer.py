@@ -84,7 +84,7 @@ from crush.core.sqlite_wal import (
     row_ranges_from_layout,
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
-from crush.core.ts_decode import decode_ts as _decode_ts
+from crush.core.ts_decode import decode_cell as _decode_cell
 from crush.core.work_priority import (
     acquire_foreground_io,
     foreground_io,
@@ -130,6 +130,40 @@ _STRUCTURE_LAZY_PAGE_ROLE = Qt.ItemDataRole.UserRole + 23
 # matches the row's own home file).
 _WAL_ROW_RANGES_ROLE = Qt.ItemDataRole.UserRole + 24
 _WAL_COLUMN_RANGES_ROLE = Qt.ItemDataRole.UserRole + 25
+# "Decode column as timestamp" on the QStandardItemModel path rewrites a cell's
+# displayed text (and, for a cell that can't be decoded, its colour), so the
+# as-stored text and the original foreground are kept here to restore exactly on
+# "Clear timestamp format" -- the raw value itself is never touched.
+_TS_ORIGINAL_TEXT_ROLE = Qt.ItemDataRole.UserRole + 26
+_TS_ORIGINAL_FG_ROLE = Qt.ItemDataRole.UserRole + 27  # False = no foreground was set
+_TS_UNDECODED_COLOR = QColor("#cc8800")
+
+
+def _ts_suffix(fmt: str) -> str:
+    return next(s for key, _, s in _TS_FORMATS if key == fmt)
+
+
+def _ts_header_text(base: str, fmt: str, decoded: int, failed: int) -> str:
+    """Header label for a column decoded as *fmt*. When nothing in the column
+    decoded, say so in the header itself rather than showing a suffix that
+    looks like a working decode."""
+    suffix = _ts_suffix(fmt)
+    if decoded == 0 and failed > 0:
+        return f"{base} [{suffix}: none decodable]"
+    return f"{base} [{suffix}]"
+
+
+def _ts_header_tooltip(fmt: str, decoded: int, failed: int) -> str | None:
+    if not failed:
+        return None
+    return (
+        f"{failed:,} of {decoded + failed:,} values could not be decoded as "
+        f"{_ts_suffix(fmt)} and are shown as stored (orange) -- hover a cell for the reason."
+    )
+
+
+def _ts_cell_tooltip(fmt: str, problem: str) -> str:
+    return f"Not decoded as {_ts_suffix(fmt)}: {problem}. Shown as stored."
 
 
 def _valid_structure_range(value: object) -> bool:
@@ -174,6 +208,8 @@ class _QueryResultModel(QAbstractTableModel):
         self._headers = ["Row"] + columns
         self._rows = rows
         self._ts_formats: dict[int, str] = {}
+        # col -> (cells decoded, cells left as stored because they couldn't be)
+        self._ts_stats: dict[int, tuple[int, int]] = {}
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._rows)
@@ -187,14 +223,18 @@ class _QueryResultModel(QAbstractTableModel):
         orientation: Qt.Orientation,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
-        if orientation != Qt.Orientation.Horizontal or role != Qt.ItemDataRole.DisplayRole:
+        if orientation != Qt.Orientation.Horizontal:
+            return None
+        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             return None
         header = self._headers[section]
         fmt = self._ts_formats.get(section)
         if fmt is None:
-            return header
-        suffix = next(s for key, _, s in _TS_FORMATS if key == fmt)
-        return f"{header} [{suffix}]"
+            return header if role == Qt.ItemDataRole.DisplayRole else None
+        decoded, failed = self._ts_stats.get(section, (0, 0))
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return _ts_header_tooltip(fmt, decoded, failed)
+        return _ts_header_text(header, fmt, decoded, failed)
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
@@ -208,8 +248,8 @@ class _QueryResultModel(QAbstractTableModel):
             if isinstance(value, (bytes, bytearray, memoryview)):
                 return f"<BLOB {len(value):,} B>"
             fmt = self._ts_formats.get(col)
-            if fmt is not None and isinstance(value, (int, float)):
-                decoded = _decode_ts(value, fmt)
+            if fmt is not None:
+                decoded, _problem = _decode_cell(value, fmt)
                 if decoded is not None:
                     return decoded
             return str(value)
@@ -224,19 +264,41 @@ class _QueryResultModel(QAbstractTableModel):
                 return Qt.GlobalColor.gray
             if isinstance(value, (bytes, bytearray, memoryview)):
                 return Qt.GlobalColor.blue
+            fmt = self._ts_formats.get(col)
+            if fmt is not None and _decode_cell(value, fmt)[1] is not None:
+                return _TS_UNDECODED_COLOR
+        if role == Qt.ItemDataRole.ToolTipRole:
+            fmt = self._ts_formats.get(col)
+            if fmt is not None:
+                problem = _decode_cell(value, fmt)[1]
+                if problem is not None:
+                    return _ts_cell_tooltip(fmt, problem)
         return None
 
     def set_timestamp_format(self, col: int, fmt: str | None) -> None:
         if fmt is None:
             self._ts_formats.pop(col, None)
+            self._ts_stats.pop(col, None)
         else:
             self._ts_formats[col] = fmt
+            decoded = failed = 0
+            for row in self._rows:
+                text, problem = _decode_cell(row[col - 1], fmt)
+                if text is not None:
+                    decoded += 1
+                elif problem is not None:
+                    failed += 1
+            self._ts_stats[col] = (decoded, failed)
         self.headerDataChanged.emit(Qt.Orientation.Horizontal, col, col)
         if self._rows:
             self.dataChanged.emit(
                 self.index(0, col),
                 self.index(len(self._rows) - 1, col),
-                [Qt.ItemDataRole.DisplayRole],
+                [
+                    Qt.ItemDataRole.DisplayRole,
+                    Qt.ItemDataRole.ForegroundRole,
+                    Qt.ItemDataRole.ToolTipRole,
+                ],
             )
 
 
@@ -3004,22 +3066,52 @@ class TableViewer(QWidget):
         if self._query_results_active and self._query_model is not None:
             self._query_model.set_timestamp_format(col, fmt)
             return
+        decoded_count = failed_count = 0
         for row in range(self._source_model.rowCount()):
             item = self._source_model.item(row, col)
             if item is None:
                 continue
+            self._reset_ts_cell(item)  # a re-apply starts from the as-stored cell
             raw = item.data(Qt.ItemDataRole.UserRole)
-            if not isinstance(raw, (int, float)):
-                continue
-            decoded = _decode_ts(raw, fmt)
+            if isinstance(raw, (int, float)):
+                value: object = raw
+            elif raw is None:
+                # A plain text (or NULL) cell: no UserRole, the displayed text is the value.
+                value = item.text()
+            else:
+                continue  # BLOB / list / dict cell -- not something a timestamp applies to
+            decoded, problem = _decode_cell(value, fmt)
             if decoded is not None:
+                item.setData(item.text(), _TS_ORIGINAL_TEXT_ROLE)
                 item.setText(decoded)
+                decoded_count += 1
+            elif problem is not None:
+                original_fg = item.data(Qt.ItemDataRole.ForegroundRole)
+                item.setData(original_fg if original_fg is not None else False, _TS_ORIGINAL_FG_ROLE)
+                item.setForeground(_TS_UNDECODED_COLOR)
+                item.setToolTip(_ts_cell_tooltip(fmt, problem))
+                failed_count += 1
         h_item = self._source_model.horizontalHeaderItem(col)
         if h_item is not None:
             base = h_item.data(Qt.ItemDataRole.UserRole) or h_item.text()
             h_item.setData(base, Qt.ItemDataRole.UserRole)
-            suffix = next(s for k, _, s in _TS_FORMATS if k == fmt)
-            h_item.setText(f"{base} [{suffix}]")
+            h_item.setText(_ts_header_text(str(base), fmt, decoded_count, failed_count))
+            h_item.setData(_ts_header_tooltip(fmt, decoded_count, failed_count), Qt.ItemDataRole.ToolTipRole)
+
+    @staticmethod
+    def _reset_ts_cell(item: QStandardItem) -> None:
+        """Undo a timestamp decode / undecodable-cell marking on one cell,
+        restoring exactly what was there before. A cell never touched has
+        neither role set, so this is a no-op for it."""
+        original_text = item.data(_TS_ORIGINAL_TEXT_ROLE)
+        if original_text is not None:
+            item.setText(original_text)
+            item.setData(None, _TS_ORIGINAL_TEXT_ROLE)
+        original_fg = item.data(_TS_ORIGINAL_FG_ROLE)
+        if original_fg is not None:
+            item.setData(None if original_fg is False else original_fg, Qt.ItemDataRole.ForegroundRole)
+            item.setData(None, _TS_ORIGINAL_FG_ROLE)
+            item.setData(None, Qt.ItemDataRole.ToolTipRole)
 
     def _revert_col_ts_format(self, col: int) -> None:
         if self._query_results_active and self._query_model is not None:
@@ -3027,16 +3119,14 @@ class TableViewer(QWidget):
             return
         for row in range(self._source_model.rowCount()):
             item = self._source_model.item(row, col)
-            if item is None:
-                continue
-            raw = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(raw, (int, float)):
-                item.setText(str(raw))
+            if item is not None:
+                self._reset_ts_cell(item)
         h_item = self._source_model.horizontalHeaderItem(col)
         if h_item is not None:
             base = h_item.data(Qt.ItemDataRole.UserRole)
             if base:
                 h_item.setText(str(base))
+            h_item.setData(None, Qt.ItemDataRole.ToolTipRole)
 
     def _copy_rows(self, rows: list[int]) -> None:
         lines: list[str] = []

@@ -13,6 +13,7 @@ from crush.core.sqlite_freeblocks import scan_database_freeblocks
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.viewers.table_viewer import (
     TableViewer,
+    _TS_UNDECODED_COLOR,
     _format_wal_frame_content,
     _STRUCTURE_BYTE_RANGE_ROLE,
     _STRUCTURE_FILE_KIND_ROLE,
@@ -802,3 +803,145 @@ def test_open_bytes_with_format_requested_carries_metadata_dict(qapp) -> None:
     )
     tv.open_bytes_with_format_requested.emit(b"hi", "/virtual/db/t1/data/1", None, {"Source table": "t1"})
     assert received == [(b"hi", "/virtual/db/t1/data/1", None, {"Source table": "t1"})]
+
+
+# ---------------------------------------------------------------------------
+# "Decode column as timestamp" -- TEXT cells holding a number, and cells that
+# can't be decoded (issue #104)
+#
+# These read the model through model.data()/headerData() rather than holding
+# QStandardItem wrappers from model.item(): keeping those wrappers alive until
+# the final garbage collection intermittently aborts the whole pytest process
+# on exit (PySide teardown, reproducible on the untouched code too).
+# ---------------------------------------------------------------------------
+
+_TS = 1713884690406
+_TS_DECODED = "2024-04-23 15:04:50 UTC"
+
+
+def _ts_viewer():
+    data = {"t": {"columns": ["n", "txt", "mixed"], "rows": [
+        [_TS, str(_TS), "n/a"],
+        [_TS, f" {_TS} ", ""],
+        [_TS, str(_TS), None],
+    ]}}
+    tv = TableViewer(data, source_name="ts.sqlite")
+    tv._table_combo.setCurrentText("t")
+    return tv
+
+
+def _apply(tv, col: int, fmt: str) -> None:
+    tv._col_ts_formats[col] = fmt
+    tv._apply_col_ts_format(col)
+
+
+def _revert(tv, col: int) -> None:
+    tv._col_ts_formats.pop(col)
+    tv._revert_col_ts_format(col)
+
+
+def _cell(tv, r: int, c: int, role=Qt.ItemDataRole.DisplayRole):
+    m = tv._source_model
+    return m.data(m.index(r, c), role)
+
+
+def _fg_name(tv, r: int, c: int):
+    brush = _cell(tv, r, c, Qt.ItemDataRole.ForegroundRole)
+    return None if brush is None else brush.color().name()
+
+
+def _texts(tv, col: int) -> list[str]:
+    return [_cell(tv, r, col) for r in range(tv._source_model.rowCount())]
+
+
+def _htext(tv, col: int) -> str:
+    return tv._source_model.headerData(col, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+
+
+def _htip(tv, col: int):
+    return tv._source_model.headerData(col, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+
+
+def test_ts_decode_converts_text_cells_like_integer_cells(qapp) -> None:
+    tv = _ts_viewer()
+    _apply(tv, 1, "unix_ms")  # INTEGER
+    _apply(tv, 2, "unix_ms")  # TEXT, one with surrounding whitespace
+    assert _texts(tv, 1) == [_TS_DECODED] * 3
+    assert _texts(tv, 2) == [_TS_DECODED] * 3
+    assert _htext(tv, 2) == "txt [unix ms]"
+    assert not _htip(tv, 2)  # nothing failed, nothing to explain
+
+
+def test_ts_decode_marks_undecodable_cells_and_leaves_them_as_stored(qapp) -> None:
+    tv = _ts_viewer()
+    _apply(tv, 3, "unix_ms")
+
+    assert _cell(tv, 0, 3) == "n/a"  # shown exactly as stored
+    assert _fg_name(tv, 0, 3) == _TS_UNDECODED_COLOR.name()
+    assert "not a number" in _cell(tv, 0, 3, Qt.ItemDataRole.ToolTipRole)
+
+    # An empty string and a NULL are nothing to decode -- not flagged.
+    assert not _cell(tv, 1, 3, Qt.ItemDataRole.ToolTipRole)
+    assert not _cell(tv, 2, 3, Qt.ItemDataRole.ToolTipRole)
+
+    # Nothing in this column decoded, and the header must not look like it did.
+    assert _htext(tv, 3) == "mixed [unix ms: none decodable]"
+    assert "1 of 1" in _htip(tv, 3)
+
+
+def test_ts_decode_out_of_range_format_is_reported_not_silent(qapp) -> None:
+    """A ms epoch read as seconds is beyond year 9999: the old code left every cell
+    unchanged but still put the format suffix in the header."""
+    tv = _ts_viewer()
+    _apply(tv, 1, "unix_s")
+    assert _texts(tv, 1) == [str(_TS)] * 3
+    assert all("out of range" in _cell(tv, r, 1, Qt.ItemDataRole.ToolTipRole) for r in range(3))
+    assert _htext(tv, 1) == "n [unix s: none decodable]"
+
+
+def test_ts_decode_partially_decodable_column_says_how_many_failed(qapp) -> None:
+    data = {"t": {"columns": ["ts"], "rows": [[_TS], [str(_TS)], ["oops"], [None]]}}
+    tv = TableViewer(data, source_name="p.sqlite")
+    tv._table_combo.setCurrentText("t")
+    _apply(tv, 1, "unix_ms")
+    assert _texts(tv, 1) == [_TS_DECODED, _TS_DECODED, "oops", ""]
+    assert _htext(tv, 1) == "ts [unix ms]"  # something did decode
+    assert "1 of 3" in _htip(tv, 1)
+
+
+def test_ts_reapplying_another_format_starts_from_the_stored_text(qapp) -> None:
+    tv = _ts_viewer()
+    _apply(tv, 2, "unix_s")   # out of range -> cells flagged
+    _apply(tv, 2, "unix_ms")  # now valid: flags must be gone, values decoded
+    assert _texts(tv, 2) == [_TS_DECODED] * 3
+    assert not any(_cell(tv, r, 2, Qt.ItemDataRole.ToolTipRole) for r in range(3))
+    assert _htext(tv, 2) == "txt [unix ms]"
+
+
+def test_ts_decode_in_sql_result_view(qapp) -> None:
+    tv = _ts_viewer()
+    tv._load_table_from_query({"columns": ["n", "txt", "mixed"], "rows": [
+        [_TS, str(_TS), "n/a"], [_TS, "x", None],
+    ]})
+    assert tv._query_results_active
+    model = tv._proxy_model
+
+    def cell(r: int, c: int, role=Qt.ItemDataRole.DisplayRole):
+        return model.data(model.index(r, c), role)
+
+    _apply(tv, 2, "unix_ms")  # TEXT column: one numeric string, one not
+    assert cell(0, 2) == _TS_DECODED
+    assert cell(1, 2) == "x"
+    assert cell(1, 2, Qt.ItemDataRole.ForegroundRole) == _TS_UNDECODED_COLOR
+    assert "not a number" in cell(1, 2, Qt.ItemDataRole.ToolTipRole)
+    assert cell(0, 2, Qt.ItemDataRole.ToolTipRole) is None
+    assert cell(0, 2, Qt.ItemDataRole.UserRole) == str(_TS)  # raw value untouched
+    assert model.headerData(2, Qt.Orientation.Horizontal) == "txt [unix ms]"
+    assert "1 of 2" in model.headerData(2, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+
+    _apply(tv, 3, "unix_ms")  # only a non-numeric string and a NULL
+    assert model.headerData(3, Qt.Orientation.Horizontal) == "mixed [unix ms: none decodable]"
+
+    _revert(tv, 2)
+    assert cell(0, 2) == str(_TS)
+    assert model.headerData(2, Qt.Orientation.Horizontal) == "txt"

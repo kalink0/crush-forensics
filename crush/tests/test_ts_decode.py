@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from crush.core.ts_decode import TS_FORMATS, decode_ts
+from crush.core.ts_decode import TS_FORMATS, decode_cell, decode_ts, numeric_value
 
 
 # ---------------------------------------------------------------------------
@@ -99,3 +99,62 @@ class TestTsFormats:
     def test_expected_keys_present(self, key: str) -> None:
         keys = [k for k, _, _ in TS_FORMATS]
         assert key in keys
+
+
+# ---------------------------------------------------------------------------
+# numeric_value / decode_cell -- TEXT-affinity cells that hold a number
+# ---------------------------------------------------------------------------
+
+class TestNumericValue:
+    @pytest.mark.parametrize("value, expected", [
+        (5, 5),
+        (1.5, 1.5),
+        ("1713884690406", 1713884690406),
+        ("  42  ", 42),
+        ("-5", -5),
+        ("+5", 5),
+        ("1713884690.406", 1713884690.406),
+        (".5", 0.5),
+        ("1.", 1.0),
+        ("1.7138846904064E12", 1.7138846904064e12),
+    ])
+    def test_numbers_and_number_literals(self, value: object, expected: float) -> None:
+        assert numeric_value(value) == expected
+
+    def test_integer_text_stays_an_int(self) -> None:
+        # Sub-second digits of a big epoch must not be lost to float rounding.
+        result = numeric_value("1713884690406")
+        assert isinstance(result, int)
+
+    @pytest.mark.parametrize("value", [
+        "", "   ", "abc", "12abc", "0x10", "1,000", "1_000", "nan", "inf", "-inf",
+        "2024-04-23", "1 2", "1e", "--5", "\u0661\u0662\u0663",  # Arabic-Indic digits
+        None, True, False, b"12", [1], {"a": 1},
+    ])
+    def test_everything_else_is_not_a_number(self, value: object) -> None:
+        assert numeric_value(value) is None
+
+
+class TestDecodeCell:
+    _EXPECTED = "2024-04-23 15:04:50 UTC"
+
+    def test_integer_and_text_decode_identically(self) -> None:
+        assert decode_cell(1713884690406, "unix_ms") == (self._EXPECTED, None)
+        assert decode_cell("1713884690406", "unix_ms") == (self._EXPECTED, None)
+        assert decode_cell(" 1713884690406 ", "unix_ms") == (self._EXPECTED, None)
+
+    def test_fractional_text(self) -> None:
+        assert decode_cell("1713884690.406", "unix_s") == (self._EXPECTED, None)
+
+    @pytest.mark.parametrize("value", [None, "", "   ", b"\x00\x01", bytearray(b"ab")])
+    def test_nothing_to_decode_is_not_a_problem(self, value: object) -> None:
+        assert decode_cell(value, "unix_ms") == (None, None)
+
+    @pytest.mark.parametrize("value", ["abc", "12abc", "2024-04-23", "nan"])
+    def test_non_numeric_text_is_reported(self, value: str) -> None:
+        assert decode_cell(value, "unix_ms") == (None, "not a number")
+
+    @pytest.mark.parametrize("value", [1713884690406, "1713884690406", "1e999"])
+    def test_out_of_range_is_reported(self, value: object) -> None:
+        # ms value read as seconds lands beyond year 9999; 1e999 overflows to inf.
+        assert decode_cell(value, "unix_s") == (None, "out of range for this format")

@@ -3,9 +3,15 @@
 """Timestamp column decoding helpers — no Qt dependency."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+# A plain decimal literal and nothing else: ASCII digits, optional sign, fraction
+# and exponent. No thousands separators, hex, "nan"/"inf" or non-ASCII digits --
+# str.isdigit()/float() would accept several of those.
+_NUMBER_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 # (internal_key, menu_label, header_suffix)
 TS_FORMATS: list[tuple[str, str, str]] = [
@@ -50,3 +56,48 @@ def decode_ts(value: int | float, fmt: str) -> str | None:
         return dt.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
     except (OverflowError, ValueError, TypeError):
         return None
+
+
+def numeric_value(value: object) -> int | float | None:
+    """The number *value* holds, or ``None`` if it holds none.
+
+    ints and floats pass through (a bool is not a number here). A string counts
+    only if all of it, surrounding whitespace aside, is a plain decimal literal:
+    SQLite is dynamically typed, and a TEXT-affinity column often stores an epoch
+    as text (``'1713884690406'``). Anything else -- a date string, hex, ``12abc``,
+    NULL, bytes -- is ``None``; nothing is guessed.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not _NUMBER_TEXT.fullmatch(text):
+            return None
+        try:
+            return float(text) if any(c in text for c in ".eE") else int(text)
+        except (ValueError, OverflowError):
+            return None
+    return None
+
+
+def decode_cell(value: object, fmt: str) -> tuple[str | None, str | None]:
+    """Decode one table cell as *fmt*, returning ``(decoded_text, problem)``.
+
+    *problem* is ``None`` when the cell decoded, and also when there was nothing to
+    decode (NULL, empty text, a BLOB -- the viewers already show those distinctly).
+    Otherwise it is a short reason the cell has to be shown as stored, so a caller
+    can mark it instead of leaving it looking decoded.
+    """
+    if value is None or isinstance(value, (bytes, bytearray, memoryview)):
+        return None, None
+    if isinstance(value, str) and not value.strip():
+        return None, None
+    number = numeric_value(value)
+    if number is None:
+        return None, "not a number"
+    decoded = decode_ts(number, fmt)
+    if decoded is None:
+        return None, "out of range for this format"
+    return decoded, None

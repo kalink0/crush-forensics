@@ -12,6 +12,8 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed the MMKV Hex pane showing only the isolated value instead of the whole file with the entry highlighted whenever an unencrypted store had a `.crc` next to it (an all-zero AES vector was mistaken for an encrypted one). Also fixed the Overview tab saying "Encrypted: yes" for a store proven to be plaintext, and "MMKV (Encrypted)…" claiming "decrypted" when the key was ignored.
 
+- Fixed the Table Viewer's "Decode column as timestamp" silently doing nothing for numbers stored as text (e.g. `'1713884690406'` in a `TEXT` column) while still showing the format in the column header. Such values are now decoded too, and cells that can't be decoded are marked with the reason instead of looking decoded. Addresses [#104](https://github.com/kalink0/crush-forensics/issues/104).
+
 ### Changed
 
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window for archives and images, export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
