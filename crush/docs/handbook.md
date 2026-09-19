@@ -286,7 +286,7 @@ Status feedback appears below the input field: red on error (with the error mess
 
 **Row limit notice:** if a table has more rows than the display limit, a notice appears in the row count. Use a SQL query with `LIMIT` / `WHERE` to load a specific subset.
 
-**Timestamp column decoding:** right-click any column header to decode integer/real values as timestamps. Choose a format from the **Decode column as timestamp** submenu:
+**Timestamp column decoding:** right-click any column header to decode integer/real values as timestamps — including numbers stored as text (`'1713884690406'`; only plain decimal numbers, nothing else is guessed). Choose a format from the **Decode column as timestamp** submenu:
 
 | Format | Epoch | Unit |
 |---|---|---|
@@ -297,7 +297,7 @@ Status feedback appears below the input field: red on error (with the error mess
 | Windows FILETIME | 1601-01-01 | 100 ns |
 | Chrome / WebKit | 1601-01-01 | µs |
 
-Values are displayed as `YYYY-MM-DD HH:MM:SS UTC`. The column header shows the active format as a suffix (e.g. `created_at [unix ms]`). Sorting remains chronologically correct. Select **Clear timestamp format** to revert to the raw values.
+Values are displayed as `YYYY-MM-DD HH:MM:SS UTC`. The column header shows the active format as a suffix (e.g. `created_at [unix ms]`). Sorting remains chronologically correct. A cell that can't be decoded (non-numeric text, or a value out of range for the chosen format) is shown as stored, in orange, with the reason in its tooltip; the header tooltip says how many values were affected, and the header reads `[… : none decodable]` if nothing in the column decoded. Empty and `NULL` cells are left alone. Select **Clear timestamp format** to revert to the raw values.
 
 **Cell inspection:** right-click any cell for options including:
 - **Inspect Cell…** — preview the raw value, attempt base64/plist/XML decode
