@@ -376,6 +376,86 @@ def test_offsets_available_without_a_crc_companion_file(tmp_path: Path) -> None:
     assert result.data["__mmkv_file_bytes"][start:end] == _string_value("b")
 
 
+def _plain_store_with_crc(tmp_path: Path, *, version: int, vector: bytes = b"\x00" * 16):
+    """A plaintext two-entry store plus a .crc whose actual_size matches the header
+    (meta version >= 3 makes the reader trust the .crc's size over the header's)."""
+    e1 = _entry("a", _string_value("hello"))
+    e2 = _entry("bb", _string_value("world"))
+    payload = _store(e1, e2)
+    region_size = struct.unpack_from("<I", payload, 0)[0]
+    crc = _meta_bytes(version=version, sequence=1, vector=vector, actual_size=region_size)
+    node, vfs = _write_store(tmp_path, payload, crc=crc)
+    return node, vfs, payload, (e1, e2)
+
+
+@pytest.mark.parametrize("version", [0, 1, 3, 61])
+def test_offsets_available_for_plaintext_store_with_zero_vector_crc(
+    tmp_path: Path, version: int
+) -> None:
+    """Regression: a .crc's all-zero AES vector is 16 *truthy* bytes in Python, so
+    every plaintext store with a .crc next to it looked encrypted to the offset
+    code and lost byte-provenance (the Hex pane fell back to the isolated value)."""
+    node, vfs, payload, (e1, e2) = _plain_store_with_crc(tmp_path, version=version)
+
+    result = MMKVParser().parse(node, vfs)
+
+    assert result.data["meta_info"]["encrypted"] is False
+    assert result.data["meta_info"]["vector"] == b""
+    records = result.data["records"]
+    e1_start, e2_start = payload.index(e1), payload.index(e2)
+    assert records[0]["entry_range"] == (e1_start, e1_start + len(e1))
+    assert records[1]["entry_range"] == (e2_start, e2_start + len(e2))
+    v_start, v_end = records[1]["value_range"]
+    assert result.data["__mmkv_file_bytes"][v_start:v_end] == _string_value("world")
+
+
+def test_false_positive_store_reports_plaintext_to_the_viewer_too(tmp_path: Path) -> None:
+    """The false-positive override must reach the viewer's meta_info, not just the
+    parse metadata -- otherwise the Overview tab says "Encrypted: yes" for a store
+    just proven to be plaintext."""
+    node, vfs, payload, (e1, _e2) = _plain_store_with_crc(
+        tmp_path, version=61, vector=bytes(range(1, 17))
+    )
+
+    result = MMKVParser().parse(node, vfs)  # no password
+
+    meta_info = result.data["meta_info"]
+    assert meta_info["encrypted"] is False
+    assert "false positive" in meta_info["encrypted_note"]
+    assert result.metadata["Encrypted"].startswith("no")
+    e1_start = payload.index(e1)
+    assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
+
+
+def test_key_supplied_for_plaintext_store_is_not_reported_as_decrypted(tmp_path: Path) -> None:
+    """"Open as -> MMKV (Encrypted)..." on a store whose .crc vector is zero: the
+    reader ignores the key, so nothing was decrypted and the metadata must not
+    claim it was. Byte-provenance must still work (no 'decrypting' plaintext)."""
+    node, vfs, payload, (e1, _e2) = _plain_store_with_crc(tmp_path, version=3)
+
+    result = MMKVParser().parse(node, vfs, password=b"any key at all")
+
+    assert result.data["records"][0]["decoded"] == "hello"
+    assert result.metadata["Encrypted"] != "yes (decrypted)"
+    assert result.metadata["Encrypted"].startswith("no")
+    assert "ignored" in result.metadata["Encrypted"]
+    e1_start = payload.index(e1)
+    assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
+
+
+def test_key_supplied_without_crc_is_reported_as_ignored_not_decrypted(tmp_path: Path) -> None:
+    """Without a .crc there is no AES vector, so a supplied key cannot be used --
+    the store is walked as plaintext, and the metadata has to say so."""
+    payload = _store(_entry("a", _string_value("hello")))
+    node, vfs = _write_store(tmp_path, payload)
+
+    result = MMKVParser().parse(node, vfs, password=b"any key at all")
+
+    assert result.metadata["Encrypted"].startswith("unverified")
+    assert "ignored" in result.metadata["Encrypted"]
+    assert result.metadata["Encrypted"] != "yes (decrypted)"
+
+
 # ---------------------------------------------------------------------------
 # raw value bytes must exclude MMKV's own internal length-prefix
 # ---------------------------------------------------------------------------

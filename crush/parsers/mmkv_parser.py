@@ -39,6 +39,14 @@ _META_FULL_LEN = 32  # + actualSize
 _META_VECTOR = slice(12, 28)
 _META_VERSION_ACTUAL_SIZE = 3  # from this meta version, actualSize is meaningful
 
+# Why a non-zero .crc vector was overridden -- one wording, shown both in the
+# parse metadata and in the viewer's Overview tab.
+_FALSE_POSITIVE_NOTE = (
+    ".crc meta file's vector field is non-zero, which normally flags AES "
+    "encryption, but the store read cleanly as plaintext anyway, so that flag "
+    "is treated as a false positive here"
+)
+
 
 def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
     """Decode the fixed-offset MMKVMetaInfo fields directly.
@@ -52,6 +60,12 @@ def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
         return None
     crc, version, sequence = struct.unpack_from("<III", crc_bytes, 0)
     vector = crc_bytes[_META_VECTOR]
+    # An all-zero vector means "not encrypted". Normalize it to b"" (as the
+    # vendored reader's own _read_meta does) so "vector" and "encrypted" can
+    # never disagree: 16 zero bytes are truthy in Python, which once made
+    # every plaintext store with a .crc look encrypted to the offset code.
+    if not any(vector):
+        vector = b""
     actual_size = (
         struct.unpack_from("<I", crc_bytes, 28)[0] if len(crc_bytes) >= _META_FULL_LEN else None
     )
@@ -59,7 +73,7 @@ def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
         "crc": crc,
         "version": version,
         "sequence": sequence,
-        "encrypted": any(vector),
+        "encrypted": bool(vector),
         "actual_size": actual_size if version >= _META_VERSION_ACTUAL_SIZE else None,
         "vector": vector,
     }
@@ -122,13 +136,14 @@ def _compute_entry_offsets(
         return None
     region = raw[_HEADER_LENGTH:_HEADER_LENGTH + region_size]
 
-    vector = meta_info["vector"] if meta_info else b""
-    if vector:
+    if meta_info is not None and meta_info["encrypted"]:
         if password is None:
             return None  # encrypted, no key available (e.g. false-positive-flag plaintext path never reaches here)
         try:
             region = _decrypt(  # type: ignore[no-untyped-call]
-                region, _key_material(password, aes256), vector  # type: ignore[no-untyped-call]
+                region,
+                _key_material(password, aes256),  # type: ignore[no-untyped-call]
+                meta_info["vector"],
             )
         except Exception:
             return None
@@ -353,13 +368,30 @@ class MMKVParser(AbstractParser):
             # size (vs. the header's own copy) could not be cross-checked.
             meta["Meta file"] = "not found (.crc companion missing) — encryption status unverified"
         if password is not None:
-            meta["Encrypted"] = "yes (decrypted)"
+            if meta_info is not None and meta_info["encrypted"]:
+                meta["Encrypted"] = "yes (decrypted)"
+            elif meta_info is None:
+                # The reader can only decrypt with the .crc's AES vector; without
+                # the file the key is ignored and the bytes are walked as-is.
+                meta["Encrypted"] = (
+                    "unverified — a key was supplied but ignored: no .crc meta file "
+                    "was found, so there is no AES vector to decrypt with and the "
+                    "store was read as plaintext"
+                )
+            else:
+                meta["Encrypted"] = (
+                    "no — a key was supplied but ignored: the .crc meta file's AES "
+                    "vector is zero, so the store is not encrypted"
+                )
         elif false_positive_encrypted_flag:
-            meta["Encrypted"] = (
-                "no — .crc meta file's vector field is non-zero, which normally "
-                "flags AES encryption, but the store read cleanly as plaintext "
-                "anyway, so that flag is treated as a false positive here"
-            )
+            meta["Encrypted"] = f"no — {_FALSE_POSITIVE_NOTE}"
+
+        # The Overview tab reads meta_info["encrypted"]; hand it the verdict, not
+        # the raw flag the false-positive check just overrode, plus the reasoning
+        # as a separate field (parser owns fact and reasoning, viewer just shows).
+        viewer_meta_info = meta_info
+        if false_positive_encrypted_flag and meta_info is not None:
+            viewer_meta_info = {**meta_info, "encrypted": False, "encrypted_note": _FALSE_POSITIVE_NOTE}
 
         text_parts: list[str] = []
         for r in records:
@@ -371,7 +403,7 @@ class MMKVParser(AbstractParser):
 
         return ParseResult(
             viewer_type="mmkv",
-            data={"records": records, "meta_info": meta_info, "__mmkv_file_bytes": raw},
+            data={"records": records, "meta_info": viewer_meta_info, "__mmkv_file_bytes": raw},
             metadata=meta,
             text_index=" ".join(text_parts[:2000]),
         )

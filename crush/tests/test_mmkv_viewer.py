@@ -228,6 +228,41 @@ def test_falls_back_to_isolated_value_bytes_without_offsets(qapp) -> None:
     assert widget._hex_val._focus_ranges == []
 
 
+def _overview_value(viewer, label: str) -> str:
+    from crush.viewers.tree_viewer import TreeViewer
+
+    model = viewer.findChild(TreeViewer)._model
+    for row in range(model.rowCount()):
+        if model.item(row, 0).text() == label:
+            return model.item(row, 1).text()
+    raise AssertionError(f"{label!r} not in Overview")
+
+
+def test_overview_shows_encrypted_verdict_with_reason_for_false_positive_flag(qapp) -> None:
+    """The .crc vector said "encrypted" but the parser proved the store is plaintext:
+    the Overview must show the verdict and the reason, not the raw flag."""
+    from crush.viewers.mmkv_viewer import MMKVViewer
+
+    meta_info = {
+        "crc": 0, "version": 61, "sequence": 0, "actual_size": None,
+        "encrypted": False, "encrypted_note": "flag treated as a false positive",
+    }
+    viewer = MMKVViewer({"records": [], "meta_info": meta_info})
+    assert _overview_value(viewer, "Encrypted") == "no — flag treated as a false positive"
+
+
+def test_overview_encrypted_plain_yes_no_without_note(qapp) -> None:
+    from crush.viewers.mmkv_viewer import MMKVViewer
+
+    base = {"crc": 0, "version": 1, "sequence": 0, "actual_size": None}
+    assert _overview_value(
+        MMKVViewer({"records": [], "meta_info": {**base, "encrypted": True}}), "Encrypted"
+    ) == "yes"
+    assert _overview_value(
+        MMKVViewer({"records": [], "meta_info": {**base, "encrypted": False}}), "Encrypted"
+    ) == "no"
+
+
 def test_mmkv_viewer_passes_file_bytes_through_to_records_widget(qapp) -> None:
     from crush.viewers.mmkv_viewer import MMKVViewer
 
