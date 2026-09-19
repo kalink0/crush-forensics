@@ -857,7 +857,7 @@ class HexViewer(QWidget):
             return
         first_col = self._selection_start_column()
         tokens: list[str] = []
-        for i, line in enumerate(text.split("")):
+        for i, line in enumerate(text.split("\u2029")):
             col_offset = first_col if i == 0 else 0
             hex_section = line[max(self._hex_start - col_offset, 0):max(self._hex_end - col_offset, 0)]
             for part in hex_section.split():
@@ -871,7 +871,7 @@ class HexViewer(QWidget):
             return
         first_col = self._selection_start_column()
         parts: list[str] = []
-        for i, line in enumerate(text.split("")):
+        for i, line in enumerate(text.split("\u2029")):
             col_offset = first_col if i == 0 else 0
             parts.append(line[max(self._ascii_start - col_offset, 0):])
         QApplication.clipboard().setText("".join(parts))

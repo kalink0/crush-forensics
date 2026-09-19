@@ -54,13 +54,14 @@ def test_unusable_root_raises_instead_of_falling_back(tmp_path: Path) -> None:
         tempdir.mkdtemp()
 
 
-def test_filesystem_type_uses_longest_matching_mount(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tempdir, "sys", SimpleNamespace(platform="linux"))
-    monkeypatch.setattr(tempdir, "_read_mountinfo", lambda: _MOUNTINFO)
-    assert tempdir.filesystem_type(Path("/tmp/crush-x")) == "tmpfs"
-    assert tempdir.filesystem_type(Path("/var/tmp/x")) == "ext4"
-    assert tempdir.filesystem_type(Path("/home/kalinko/cache")) == "btrfs"
-    assert tempdir.filesystem_type(Path("/home/x/RAM disk/sub")) == "tmpfs"
+def test_mount_lookup_uses_longest_matching_mount() -> None:
+    """Pure string logic, so it holds on every OS the tests run on."""
+    assert tempdir._fs_type_for("/tmp/crush-x", _MOUNTINFO) == "tmpfs"
+    assert tempdir._fs_type_for("/var/tmp/x", _MOUNTINFO) == "ext4"
+    assert tempdir._fs_type_for("/home/kalinko/cache", _MOUNTINFO) == "btrfs"
+    assert tempdir._fs_type_for("/home/x/RAM disk/sub", _MOUNTINFO) == "tmpfs"
+    assert tempdir._fs_type_for("/tmpfoo/x", _MOUNTINFO) == "ext4"  # "/tmp" must not match "/tmpfoo"
+    assert tempdir._fs_type_for("/tmp", "") is None
 
 
 def test_filesystem_type_is_none_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -112,20 +112,12 @@ def _unescape_mount_field(value: str) -> str:
     return "".join(out)
 
 
-def filesystem_type(path: Path) -> str | None:
-    """Filesystem type of the mount that holds *path* (Linux only, else None)."""
-    if not sys.platform.startswith("linux"):
-        return None
-    text = _read_mountinfo()
-    if not text:
-        return None
-    try:
-        target = str(path.resolve())
-    except OSError:
-        target = str(path)
+def _fs_type_for(target: str, mountinfo: str) -> str | None:
+    """Filesystem type of the mount holding the absolute POSIX path *target*,
+    from /proc/self/mountinfo text; the longest matching mount point wins."""
     best_len = -1
     best_type: str | None = None
-    for line in text.splitlines():
+    for line in mountinfo.splitlines():
         left, sep, right = line.partition(" - ")
         if not sep:
             continue
@@ -139,6 +131,20 @@ def filesystem_type(path: Path) -> str | None:
                 best_len = len(mount_point)
                 best_type = right_fields[0]
     return best_type
+
+
+def filesystem_type(path: Path) -> str | None:
+    """Filesystem type of the mount that holds *path* (Linux only, else None)."""
+    if not sys.platform.startswith("linux"):
+        return None
+    text = _read_mountinfo()
+    if not text:
+        return None
+    try:
+        target = str(path.resolve())
+    except OSError:
+        target = str(path)
+    return _fs_type_for(target, text)
 
 
 @dataclass(frozen=True)
