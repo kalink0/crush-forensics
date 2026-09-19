@@ -254,6 +254,16 @@ a "populate" function that builds the actual model/items (must stay on the
 UI thread; called back via `on_done`). Cheap/cached calls don't need this —
 only wrap the case that can actually be slow.
 
+When the surrounding code is straight-line and restructuring it around a
+callback isn't worth it, `busy_call(owner, text, fn)` in the same module runs
+*fn* on a background thread behind the same dialog and returns its result
+(it spins a nested event loop, and raises `RuntimeError` if *fn* failed).
+Use it only for work that is safe off the UI thread — plain byte reading,
+hashing, scanning — never for anything that creates Qt objects or returns
+thread-bound handles such as sqlite connections. Copying a VFS member to
+disk has its own dialog with progress and Cancel:
+`crush.ui.extract_dialog.copy_node_with_progress()`.
+
 ---
 
 ## VFS API
@@ -265,6 +275,27 @@ Parsers must never touch the real filesystem directly — always go through `vfs
 | `vfs.read(node)` | `bytes` | file fits comfortably in memory |
 | `vfs.open(node)` | `IO[bytes]` (context manager) | large file or streaming needed |
 | `vfs.peek(node, n)` | `bytes` | sniff only the first `n` bytes |
+
+`vfs.peek()` must be cheap: the file tree calls it for every visible row (on the UI thread, for type detection). A backend where reaching a member is expensive — a compressed tar, where it means decompressing everything before it — has to answer `peek()` from data gathered while building the tree (see `TarVFS._HEAD_CACHE_BYTES`), never by seeking into the archive.
+
+`vfs.open()` is streaming: members above `crush.core.vfs_stream.STREAM_THRESHOLD`
+(64 MiB) come back as a real stream, smaller ones as `BytesIO`. Never build
+`open()` as `BytesIO(self.read(node))` in a new VFS backend — that
+decompresses the whole member into RAM, which is what used to take Crush
+down on a multi-GB `.tar` inside a `.zip`. `read()` is the "I need it all"
+call and can't avoid loading everything; prefer `open()`/`peek()` wherever
+only part of a file is needed. `vfs_stream.py` has the building blocks
+(`LockedStream`, `IterStream`, `copy_stream`).
+
+### Temporary files
+
+Never call `tempfile.mkdtemp()`/`mkstemp()`/`NamedTemporaryFile()` directly —
+use `crush.core.tempdir` (`mkdtemp`, `mkstemp`, `named_temporary_file`,
+`temporary_directory`, `spool_file`). It honours the user's
+*Tools → Temp Directory…* setting, which matters because the OS default is
+often a RAM-backed tmpfs. For anything large, call
+`tempdir.check_space(needed)` first (the UI wrapper is
+`extract_dialog.confirm_temp_space()`).
 
 `VFSNode` fields of interest:
 

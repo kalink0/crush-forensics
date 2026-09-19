@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -20,20 +19,21 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QSplitter,
-    QTabWidget,
     QTableView,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from crush.core import tempdir
 from crush.core.realm_offsets import RealmCellLocator
 from crush.core.realm_structure import build_realm_structure
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
-from crush.viewers.tree_viewer import TreeViewer
 from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector, TableViewer, _cap_columns
+from crush.viewers.tree_viewer import TreeViewer
 
 
 class FreeDataViewer(QWidget):
@@ -276,7 +276,7 @@ def _create_realm_sqlite(
                 pass  # view is a convenience; the base table remains queryable either way
 
     try:
-        fd, path_str = tempfile.mkstemp(suffix=".db", prefix="crush_realm_")
+        fd, path_str = tempdir.mkstemp(suffix=".db", prefix="crush_realm_")
         os.close(fd)
         conn = sqlite3.connect(path_str)
         _insert_tables(conn, table_data, "")

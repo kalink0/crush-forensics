@@ -21,6 +21,7 @@ is out of scope.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Iterator
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -113,3 +114,24 @@ def unwrap_master_key(
 
 def decrypt_payload(master_key: bytes, master_iv: bytes, ciphertext: bytes) -> bytes:
     return _unpad_pkcs7(_aes_cbc_decrypt(master_key, master_iv, ciphertext))
+
+
+def decrypt_payload_stream(
+    master_key: bytes, master_iv: bytes, chunks: Iterable[bytes]
+) -> Iterator[bytes]:
+    """Chunked decrypt_payload(): same result, bounded memory.
+
+    The last 16 plaintext bytes are always held back until the input ends,
+    because only the final block carries the PKCS#7 padding to strip.
+    """
+    decryptor = Cipher(algorithms.AES(master_key), modes.CBC(master_iv)).decryptor()
+    held = b""
+    for chunk in chunks:
+        plain = held + decryptor.update(chunk)
+        if len(plain) > 16:
+            yield plain[:-16]
+            held = plain[-16:]
+        else:
+            held = plain
+    held += decryptor.finalize()
+    yield _unpad_pkcs7(held)

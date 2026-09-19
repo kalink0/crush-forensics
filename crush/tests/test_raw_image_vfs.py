@@ -631,3 +631,42 @@ class TestDeletedFileRecovery:
                 vfs.read(unrecoverable)
         finally:
             vfs.close()
+
+
+def _all_files(node: VFSNode) -> list[VFSNode]:
+    out: list[VFSNode] = []
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if cur.is_dir:
+            stack.extend(cur.children)
+        else:
+            out.append(cur)
+    return out
+
+
+@pytest.mark.parametrize("fixture_name", ["raw_ntfs_image", "raw_ntfs_e01"])
+def test_streamed_open_matches_read_for_every_file(
+    request: pytest.FixtureRequest, fixture_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the stream threshold at 0 every non-empty file goes through the
+    chunked reader (IterStream over the filesystem walker); its bytes must be
+    identical to the one-shot read() -- for a raw image and for an E01 alike,
+    so a ZIP living inside an EWF acquisition can be copied out the same way."""
+    monkeypatch.setattr("crush.core.vfs.STREAM_THRESHOLD", 0)
+    vfs = RawImageVFS(request.getfixturevalue(fixture_name))
+    files = [n for n in _all_files(vfs.root()) if n.size > 0]
+    assert files
+    checked = 0
+    for node in files:
+        try:
+            expected = vfs.read(node)
+        except OSError:
+            continue  # unreadable/unrecoverable entries are covered by their own tests
+        with vfs.open(node) as f:
+            assert f.read() == expected, node.path
+            f.seek(0)
+            assert f.read(16) == expected[:16], node.path
+        checked += 1
+    assert checked > 0
+    vfs.close()

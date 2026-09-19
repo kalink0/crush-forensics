@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QEventLoop, QObject, QThread, Signal
 from PySide6.QtWidgets import QWidget
 
 from crush.ui.loading_dialog import LoadingDialog
@@ -142,3 +142,61 @@ def run_with_busy_dialog(
 
     thread.start()
     dialog.show()
+
+
+class _BlockingController(QObject):
+    """UI-thread receiver for busy_call(); see _BusyController for why."""
+
+    def __init__(self, owner: QWidget, loop: QEventLoop) -> None:
+        super().__init__(owner)
+        self._loop = loop
+        self.result: object = None
+        self.error: str | None = None
+
+    def on_finished(self, result: object) -> None:
+        self.result = result
+        self._loop.quit()
+
+    def on_failed(self, message: str) -> None:
+        self.error = message
+        self._loop.quit()
+
+
+def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
+    """Run *work_fn* on a background thread behind a "please wait" dialog and
+    return its result, keeping the UI responsive meanwhile.
+
+    Unlike run_with_busy_dialog() this looks synchronous to the caller: it
+    spins a nested event loop until the worker is done, so existing
+    straight-line code can call it without being restructured around a
+    callback. Raises RuntimeError(message) if *work_fn* raised.
+
+    Only for work that is safe off the UI thread (plain byte reading,
+    hashing, scanning) -- never anything that creates Qt objects or hands
+    thread-bound handles (e.g. sqlite connections) back to the caller.
+    """
+    dialog = LoadingDialog(text, owner)
+    thread = QThread(owner)
+    window_id = getattr(owner.window(), "_window_id", None)
+    worker = _BusyWorker(work_fn, window_id=window_id)
+    worker.moveToThread(thread)
+    loop = QEventLoop(owner)
+    controller = _BlockingController(owner, loop)
+
+    thread.started.connect(worker.run)
+    worker.finished.connect(controller.on_finished)
+    worker.failed.connect(controller.on_failed)
+
+    thread.start()
+    dialog.show()
+    loop.exec()
+    thread.quit()
+    thread.wait()
+    dialog.close()
+    worker.deleteLater()
+    thread.deleteLater()
+    controller.deleteLater()
+    dialog.deleteLater()
+    if controller.error is not None:
+        raise RuntimeError(controller.error)
+    return controller.result

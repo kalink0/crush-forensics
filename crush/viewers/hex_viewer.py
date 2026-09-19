@@ -3,6 +3,8 @@
 """Hex viewer — displays raw bytes as hex + ASCII, 16 bytes per row."""
 from __future__ import annotations
 
+from bisect import bisect_left
+
 from PySide6.QtCore import QPoint, QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
     QColor,
@@ -31,11 +33,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.ui.busy_dialog import busy_call
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 
 _BYTES_PER_ROW = 16
 _PAGE_BYTES = 1024 * 256  # 256 KB per page
+
+# Searching more data than this runs behind a wait dialog on a worker thread
+# so the window keeps repainting; a UX cut-off only, nothing is skipped.
+_BUSY_SCAN_BYTES = 8 * 1024 * 1024
+_SCAN_SLICE = 16 * 1024 * 1024
 
 # Hex dump line layout (see _compute_layout / _load_page):
 # the offset field width is dynamic (8 hex digits, or enough decimal digits
@@ -484,6 +492,24 @@ class HexViewer(QWidget):
             self._search_input.setPlaceholderText("Search text…")
             self._search_input.setValidator(None)
 
+    @staticmethod
+    def _scan_hits(data: bytes, pattern: bytes) -> list[int]:
+        # Scanned in slices so the interpreter can hand the GIL back to the UI
+        # thread between them (one find() over gigabytes would hold it for
+        # the whole scan). Each window reaches len(pattern)-1 bytes into the
+        # next slice, so matches straddling a boundary are found exactly once.
+        hits: list[int] = []
+        n, plen = len(data), len(pattern)
+        pos = 0
+        while pos <= n - plen:
+            end = min(n, pos + _SCAN_SLICE + plen - 1)
+            offset = pos
+            while (idx := data.find(pattern, offset, end)) >= 0:
+                hits.append(idx)
+                offset = idx + 1
+            pos += _SCAN_SLICE
+        return hits
+
     def _collect_hits(self) -> bool:
         """Find all matches for the current query. Returns True if any found."""
         self._search_hits = []
@@ -493,30 +519,27 @@ class HexViewer(QWidget):
             self._count_label.setText("")
             return False
 
-        mode = self._search_mode.currentText()
-        if mode == "Hex":
+        if self._search_mode.currentText() == "Hex":
             pattern = _parse_hex_query(query)
             if pattern is None:
                 self._count_label.setText("Invalid hex")
                 return False
-            self._match_len = len(pattern)
-            offset = 0
-            while True:
-                idx = self._data.find(pattern, offset)
-                if idx < 0:
-                    break
-                self._search_hits.append(idx)
-                offset = idx + 1
         else:
-            text = self._data.decode("latin-1")
-            self._match_len = len(query)
-            offset = 0
-            while True:
-                idx = text.find(query, offset)
-                if idx < 0:
-                    break
-                self._search_hits.append(idx)
-                offset = idx + 1
+            # Text search is byte-for-byte latin-1: a character above U+00FF
+            # cannot occur in the data, so such a query has no matches.
+            try:
+                pattern = query.encode("latin-1")
+            except UnicodeEncodeError:
+                return False
+        self._match_len = len(pattern)
+
+        data = self._data
+        if len(data) > _BUSY_SCAN_BYTES:
+            self._search_hits = busy_call(
+                self, "Searching…", lambda: self._scan_hits(data, pattern)
+            )
+        else:
+            self._search_hits = self._scan_hits(data, pattern)
 
         return len(self._search_hits) > 0
 
@@ -601,10 +624,13 @@ class HexViewer(QWidget):
                 clip_end = min(focus_end, page_end) - page_start
                 self._append_match_selections(selections, fmt_range, clip_start, clip_end)
 
-        for i, hit_offset in enumerate(self._search_hits):
+        # _search_hits is ascending, so only the hits overlapping this page
+        # are visited -- not all of them, which is millions for a common pattern.
+        first = bisect_left(self._search_hits, page_start - self._match_len + 1)
+        last = bisect_left(self._search_hits, page_end)
+        for i in range(first, last):
+            hit_offset = self._search_hits[i]
             hit_end = hit_offset + self._match_len
-            if hit_end <= page_start or hit_offset >= page_end:
-                continue
             fmt = fmt_current if i == self._current_hit else fmt_hit
             clip_start = max(hit_offset, page_start) - page_start
             clip_end = min(hit_end, page_end) - page_start
@@ -831,7 +857,7 @@ class HexViewer(QWidget):
             return
         first_col = self._selection_start_column()
         tokens: list[str] = []
-        for i, line in enumerate(text.split(" ")):
+        for i, line in enumerate(text.split("")):
             col_offset = first_col if i == 0 else 0
             hex_section = line[max(self._hex_start - col_offset, 0):max(self._hex_end - col_offset, 0)]
             for part in hex_section.split():
@@ -845,7 +871,7 @@ class HexViewer(QWidget):
             return
         first_col = self._selection_start_column()
         parts: list[str] = []
-        for i, line in enumerate(text.split(" ")):
+        for i, line in enumerate(text.split("")):
             col_offset = first_col if i == 0 else 0
             parts.append(line[max(self._ascii_start - col_offset, 0):])
         QApplication.clipboard().setText("".join(parts))

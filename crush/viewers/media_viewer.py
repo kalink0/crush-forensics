@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import io
 import os
-import tempfile
 
 from PySide6.QtCore import QBuffer, QIODeviceBase, Qt, QTimer, QUrl
 from PySide6.QtGui import QCloseEvent
@@ -26,6 +25,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from crush.core import tempdir
 
 _OGG_MAGIC = b"OggS"
 _AMR_MAGIC = b"#!AMR"
@@ -134,7 +135,7 @@ class MediaViewer(QWidget):
                 self._start_pcm(pcm, rate, channels)
                 return
         # Qt multimedia path (video, MP3, M4A, …)
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".media")
+        tmp = tempdir.named_temporary_file(prefix="crush-media-", suffix=".media")
         tmp.write(data)
         tmp.close()
         self._tmp_path = tmp.name

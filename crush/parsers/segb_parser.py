@@ -8,11 +8,11 @@ import logging
 import os
 import sqlite3
 import struct
-import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from crush.core import tempdir
 from crush.core.segb_offsets import SegbCellLocator
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
@@ -236,7 +236,7 @@ def _create_segb_sqlite(columns: list[str], rows: list[list[Any]]) -> Path | Non
         return out
 
     try:
-        fd, path_str = tempfile.mkstemp(suffix=".db", prefix="crush_segb_")
+        fd, path_str = tempdir.mkstemp(suffix=".db", prefix="crush_segb_")
         os.close(fd)
         conn = sqlite3.connect(path_str)
         col_defs = ", ".join(f'"{c}"' for c in ext_cols)

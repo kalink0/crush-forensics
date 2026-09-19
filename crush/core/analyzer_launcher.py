@@ -20,9 +20,10 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
+
+from crush.core import tempdir
 
 INTERNAL_CLI_SENTINEL = "--internal-analyzer-cli"
 
@@ -58,7 +59,7 @@ def list_analyzer_modules() -> list[dict[str, Any]]:
 def run_analyzer(input_path: Path, *, module_id: str) -> dict[str, Any]:
     """Runs one bundled analyzer module against *input_path* and returns
     the parsed contract v1 result dict."""
-    with tempfile.TemporaryDirectory(prefix="crush-analyze-") as tmp:
+    with tempdir.temporary_directory(prefix="crush-analyze-") as tmp:
         output_path = Path(tmp) / "result.json"
         cmd = [
             *_self_command(),

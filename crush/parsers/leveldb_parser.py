@@ -3,16 +3,16 @@
 """LevelDB parser (vendored ccl_leveldb, MIT)."""
 from __future__ import annotations
 
-import re
-import tempfile
-import shutil
 import logging
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
+from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.third_party.ccl_leveldb import RawLevelDb, KeyState
+from crush.third_party.ccl_leveldb import KeyState, RawLevelDb
 from crush.third_party.ccl_leveldb.ccl_leveldb import ManifestFile
 
 _DATA_FILE_RE = re.compile(r"^[0-9]{6}\.(ldb|log|sst)$", re.IGNORECASE)
@@ -59,7 +59,7 @@ class LeveldbParser(AbstractParser):
         if not self.can_parse_dir(node):
             raise ValueError("Not a LevelDB directory")
 
-        tmp_dir = Path(tempfile.mkdtemp(prefix="crush-leveldb-"))
+        tmp_dir = tempdir.mkdtemp(prefix="crush-leveldb-")
         try:
             _export_dir(node, vfs, tmp_dir)
             return self._parse_tmp(node, vfs, tmp_dir)

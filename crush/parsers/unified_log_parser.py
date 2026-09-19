@@ -55,6 +55,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator
 
+from crush.core import tempdir
+
 if TYPE_CHECKING:
     from crush.core.vfs import VFS, VFSNode
 
@@ -845,6 +847,12 @@ class UnifiedLogConverter:
         self._cancelled = False
         self._temp_dir = temp_dir or None
 
+    def _mkdtemp(self, prefix: str) -> Path:
+        if self._temp_dir:
+            Path(self._temp_dir).mkdir(parents=True, exist_ok=True)
+            return Path(tempfile.mkdtemp(prefix=prefix, dir=self._temp_dir))
+        return tempdir.mkdtemp(prefix=prefix)
+
     def cancel(self) -> None:
         """Signal cancellation and kill all running subprocesses."""
         self._cancelled = True
@@ -1097,7 +1105,7 @@ class UnifiedLogConverter:
         if sys.platform != "win32":
             os.chmod(bin_path, 0o755)
 
-        tmp_in = Path(tempfile.mkdtemp(prefix="crush-ul-in-", dir=self._temp_dir))
+        tmp_in = self._mkdtemp("crush-ul-in-")
         try:
             is_archive = node.is_dir or node.name.lower().endswith(".logarchive")
 
@@ -1160,7 +1168,7 @@ class UnifiedLogConverter:
         if sys.platform != "win32":
             os.chmod(bin_path, 0o755)
 
-        tmp_root = Path(tempfile.mkdtemp(prefix="crush-ul-ios-", dir=self._temp_dir))
+        tmp_root = self._mkdtemp("crush-ul-ios-")
         try:
             logarchive_path = build_logarchive_from_acquisition(diag_node, vfs, tmp_root)
             yield from self._stream_logarchive_from_path(bin_path, logarchive_path, tmp_root, n_workers)

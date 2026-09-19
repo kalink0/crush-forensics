@@ -28,10 +28,10 @@ import array
 import json
 import os
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
+from crush.core import tempdir
 
 # ---------------------------------------------------------------------------
 # FilterSpec — immutable snapshot of active filter state
@@ -192,7 +192,7 @@ class LogDatabase:
     """
 
     def __init__(self) -> None:
-        fd, self._path = tempfile.mkstemp(prefix="crush-log-", suffix=".db")
+        fd, self._path = tempdir.mkstemp(prefix="crush-log-", suffix=".db")
         os.close(fd)
         self._con = sqlite3.connect(self._path, check_same_thread=False)
         self._con.executescript(_SCHEMA)
