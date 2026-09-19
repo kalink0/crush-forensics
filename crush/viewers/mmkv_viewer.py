@@ -354,7 +354,9 @@ class MMKVViewer(QWidget):
             overview["Meta version"] = meta_info["version"]
             overview["Sequence (full write-backs)"] = meta_info["sequence"]
             overview["CRC-32 (data region, as recorded)"] = f"0x{meta_info['crc']:08x}"
-            overview["Encrypted"] = "yes" if meta_info["encrypted"] else "no"
+            encrypted = "yes" if meta_info["encrypted"] else "no"
+            note = meta_info.get("encrypted_note")
+            overview["Encrypted"] = f"{encrypted} — {note}" if note else encrypted
             if meta_info["actual_size"] is not None:
                 overview["Recorded data region size"] = f"{meta_info['actual_size']:,} B"
         else:

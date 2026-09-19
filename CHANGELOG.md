@@ -10,6 +10,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed the window freezing for minutes (and the type indexing taking as long) when browsing a large `.tar.gz`/`.tar.xz`/`.tar.bz2`: the tree's type detection peeked into each file, and reaching a member of a compressed tar means decompressing everything before it. The first bytes of every file are now kept during the one pass that builds the tree, so peeking never touches the archive again.
 - Fixed Crush running out of memory (and taking the whole system down) when opening a member of an archive or disk image that is itself large, e.g. a multi-GB `.tar` inside a `.zip`: ZIP, TAR, 7z, gzip, Android/iTunes backup and raw-image/EWF members are now streamed in bounded memory instead of being decompressed whole into RAM, for the Hex tab, hashing, export and Open in New Window.
 
+- Fixed the MMKV Hex pane showing only the isolated value instead of the whole file with the entry highlighted whenever an unencrypted store had a `.crc` next to it (an all-zero AES vector was mistaken for an encrypted one). Also fixed the Overview tab saying "Encrypted: yes" for a store proven to be plaintext, and "MMKV (Encrypted)…" claiming "decrypted" when the key was ignored.
+
 ### Changed
 
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window for archives and images, export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
