@@ -77,6 +77,9 @@ def test_materialize_directory_node_cleans_up_tmp_dir_on_failure(
         """Deliberately unrelated to DirectoryVFS, so the isinstance()
         fast-path is skipped without needing to fake a real archive VFS."""
 
+        def total_size(self, node) -> int:
+            return 0
+
     created: dict[str, Path] = {}
     original_mkdtemp = main_window_module.tempfile.mkdtemp
 

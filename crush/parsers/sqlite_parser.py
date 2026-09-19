@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -189,7 +189,7 @@ class SQLiteParser(AbstractParser):
     ) -> ParseResult:
         raw = vfs.read(node)
 
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        with tempdir.named_temporary_file(prefix="crush-sqlite-", suffix=".db") as tmp:
             tmp.write(raw)
             tmp_path = tmp.name
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+from collections.abc import Iterable, Iterator
 from io import BytesIO
 from typing import Any, cast
 
@@ -122,6 +123,26 @@ def aes_cbc_decrypt_and_unpad(key: bytes, ciphertext: bytes) -> bytes:
     if pad_len < 1 or pad_len > 16 or padded[-pad_len:] != bytes([pad_len]) * pad_len:
         raise WrongPasswordError("Padding invalid after decryption (wrong password?)")
     return padded[:-pad_len]
+
+
+def aes_cbc_decrypt_stream(key: bytes, chunks: Iterable[bytes]) -> Iterator[bytes]:
+    """Chunked aes_cbc_decrypt_and_unpad(): identical result, bounded memory.
+    The last 16 plaintext bytes are held back until the input ends because
+    only the final block carries the padding to strip."""
+    decryptor = Cipher(algorithms.AES(key), modes.CBC(b"\x00" * 16)).decryptor()
+    held = b""
+    for chunk in chunks:
+        plain = held + decryptor.update(chunk)
+        if len(plain) > 16:
+            yield plain[:-16]
+            held = plain[-16:]
+        else:
+            held = plain
+    held += decryptor.finalize()
+    pad_len = held[-1] if held else 0
+    if pad_len < 1 or pad_len > 16 or held[-pad_len:] != bytes([pad_len]) * pad_len:
+        raise WrongPasswordError("Padding invalid after decryption (wrong password?)")
+    yield held[:-pad_len]
 
 
 def _nsdata_converter(obj: object) -> object:

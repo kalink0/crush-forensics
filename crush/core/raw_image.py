@@ -16,7 +16,7 @@ holds everything specific to the two vendored readers.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -372,6 +372,73 @@ def read_deleted_file(walker: Any, entry: Any, size: int) -> bytes:
             f"are in the image (the image ends before the file does)"
         )
     return b"".join(chunks)
+
+
+def stream_walker_file(walker: Any, node: Any, size: int) -> Iterator[bytes]:
+    """Yield one file's bytes chunk by chunk, with read_walker_file()'s
+    failure semantics but without materializing the whole file.
+
+    The short-image check runs when the generator is exhausted, so a file cut
+    off by the end of the image raises RawImageTruncatedReadError from the
+    read that would have returned its last bytes, instead of ending silently.
+    """
+    shortfall_before = qnxprobe.EOF_SHORTFALL["bytes"]
+    got = 0
+    try:
+        for chunk in walker.read_file(node, size):
+            got += len(chunk)
+            yield chunk
+    except Exception as exc:
+        raise RawImageFileUnreadableError(f"could not read file: {exc}") from exc
+    cut_by = qnxprobe.EOF_SHORTFALL["bytes"] - shortfall_before
+    if cut_by:
+        present = max(min(got, size - cut_by), 0)
+        raise RawImageTruncatedReadError(
+            f"only {present:,} of {size:,} bytes are in the image "
+            f"(the image ends before the file does)"
+        )
+
+
+def stream_deleted_file(walker: Any, entry: Any, size: int) -> Iterator[bytes]:
+    """Chunked counterpart of read_deleted_file(); same errors, raised lazily."""
+    if not entry.recoverable:
+        raise RawImageFileUnreadableError(
+            f"deleted file {entry.name!r} is not recoverable: {entry.reason}"
+        )
+    shortfall_before = qnxprobe.EOF_SHORTFALL["bytes"]
+    got = 0
+    try:
+        for chunk in walker.read_deleted(entry, size):
+            got += len(chunk)
+            yield chunk
+    except Exception as exc:
+        raise RawImageFileUnreadableError(
+            f"deleted file {entry.name!r}: could not read it: {exc}"
+        ) from exc
+    cut_by = qnxprobe.EOF_SHORTFALL["bytes"] - shortfall_before
+    if cut_by:
+        present = max(min(got, size - cut_by), 0)
+        raise RawImageTruncatedReadError(
+            f"only {present:,} of {size:,} bytes of deleted file {entry.name!r} "
+            f"are in the image (the image ends before the file does)"
+        )
+
+
+def stream_raw_region(
+    image: Any, base: int, size: int, chunk_size: int = 1024 * 1024
+) -> Iterator[bytes]:
+    """Chunked counterpart of read_raw_region()."""
+    done = 0
+    while done < size:
+        image.seek(base + done)
+        data: bytes = image.read(min(chunk_size, size - done))
+        if not data:
+            raise RawImageTruncatedReadError(
+                f"only {done:,} of {size:,} bytes are in the image "
+                f"(the image ends before this region does)"
+            )
+        done += len(data)
+        yield data
 
 
 def peek_walker_file(walker: Any, node: Any, size: int, n: int) -> bytes:

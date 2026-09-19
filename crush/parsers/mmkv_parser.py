@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import os
 import struct
-import tempfile
 from typing import Any, cast
 
+from crush.core import tempdir
 from crush.core.passwords import WrongPasswordError
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
@@ -284,7 +284,7 @@ class MMKVParser(AbstractParser):
             entries = plain_entries
             false_positive_encrypted_flag = True
         else:
-            tmp_dir = tempfile.mkdtemp(prefix="crush_mmkv_")
+            tmp_dir = str(tempdir.mkdtemp(prefix="crush_mmkv_"))
             tmp_path = os.path.join(tmp_dir, node.name)
             try:
                 with open(tmp_path, "wb") as f:

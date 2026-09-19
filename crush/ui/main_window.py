@@ -12,6 +12,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from typing import cast
 import logging
 import shutil
 import tempfile
@@ -53,7 +54,11 @@ from PySide6.QtWidgets import (
 )
 
 import crush
+from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS
+from crush.parsers.hex_fallback import HexFallbackParser
+from crush.ui import extract_dialog
+from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
 from crush.core.session import Session
 from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFilter
@@ -370,7 +375,7 @@ class _ExportLogarchiveWorker(QObject):
     def _run(self) -> None:
         try:
             from crush.parsers.unified_log_parser import build_logarchive_from_acquisition
-            with tempfile.TemporaryDirectory(prefix="crush_logarchive_") as tmp:
+            with tempdir.temporary_directory(prefix="crush_logarchive_") as tmp:
                 tmp_path = Path(tmp) / "build"
                 tmp_path.mkdir()
                 build_logarchive_from_acquisition(self._node, self._vfs, tmp_path)
@@ -545,6 +550,7 @@ class MainWindow(QMainWindow):
         self._pending_focus_path: str | None = None
         self._load_queue: list[tuple[str, bool, bool, str | None, str, str | None]] = []
         self._settings = QSettings("Crush DFIR", "Crush")
+        extract_dialog.apply_saved_temp_dir(self._settings)
         self._multi_log_windows: list[QWidget] = []
         self.setWindowTitle(f"Crush {crush.display_version()}")
         self.resize(1280, 800)
@@ -809,7 +815,7 @@ class MainWindow(QMainWindow):
         self._integrity_mode_action.toggled.connect(self._set_integrity_mode)
         tools_menu.addAction(self._integrity_mode_action)
         tools_menu.addAction("Indexing Threads…", self._set_prescan_workers)
-        tools_menu.addAction("Log Temp Directory…", self._set_log_temp_dir)
+        tools_menu.addAction("Temp Directory…", self._set_temp_dir)
         peach_menu = tools_menu.addMenu("Peach")
         peach_menu.addAction("Open Peach", self._open_peach_standalone)
         peach_menu.addAction("Binary Path…", self._set_peach_binary_path)
@@ -836,14 +842,19 @@ class MainWindow(QMainWindow):
         window.show()
 
     def _open_in_new_window(self, node: VFSNode, vfs: VFS) -> None:
-        self._hash_node_if_integrity(node, vfs)
-        path = self._materialize_node_for_external(node, vfs)
+        if isinstance(vfs, DirectoryVFS):
+            self._hash_node_if_integrity(node, vfs)
+        path = self._materialize_node_for_external(node, vfs, title="Open in New Window")
         if path is None:
-            QMessageBox.warning(
-                self, "Open in New Window", f"Unable to materialize {node.name!r} for a new window."
-            )
+            if not self._materialize_cancelled:
+                QMessageBox.warning(
+                    self,
+                    "Open in New Window",
+                    f"Unable to materialize {node.name!r} for a new window.",
+                )
             return
         window = MainWindow()
+        window._source_origin = f"{vfs.root().name}{node.path}"
         window.resize(self.size())
         window.show()
         if not isinstance(vfs, DirectoryVFS):
@@ -1221,9 +1232,30 @@ class MainWindow(QMainWindow):
         self._logger.error("Logarchive export failed: %s", message)
         QMessageBox.critical(self, "Export failed", message)
 
+    def _guard_large_open(self, node: VFSNode, vfs: VFS) -> bool:
+        """False when the file should not be loaded here: too big to load
+        safely, and the user chose another action or cancelled."""
+        if node.is_dir or node.size <= 0:
+            return True
+        from crush.ui import large_open
+
+        decision = large_open.confirm_large_open(
+            self, node.name, node.size, can_open_as_source=_is_openable_archive(node)
+        )
+        if decision is large_open.Decision.PROCEED:
+            return True
+        self._logger.info("Large file %s (%d B): user chose %s", node.path, node.size, decision.value)
+        if decision is large_open.Decision.NEW_WINDOW:
+            self._open_in_new_window(node, vfs)
+        elif decision is large_open.Decision.EXPORT:
+            self._export_node(node, vfs)
+        return False
+
     def _open_node(self, node: VFSNode, vfs: VFS) -> None:
         """Called when the user double-clicks a file in the FS panel."""
         with window_log_scope(self._window_id):
+            if not self._guard_large_open(node, vfs):
+                return
             self._open_node_impl(node, vfs)
 
     def _open_node_impl(self, node: VFSNode, vfs: VFS) -> None:
@@ -1237,7 +1269,13 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            result = parser.parse(node, vfs)
+            if isinstance(parser, HexFallbackParser) and node.size > _BUSY_BYTES:
+                # Plain byte read: safe off the UI thread. Other parsers hand
+                # back thread-bound state (sqlite handles, Qt objects) and
+                # stay on the UI thread.
+                result = busy_call(self, f"Loading {node.name}…", lambda: parser.parse(node, vfs))
+            else:
+                result = parser.parse(node, vfs)
             result = self._enrich_with_format_info(parser, node, vfs, result)
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
@@ -1251,15 +1289,25 @@ class MainWindow(QMainWindow):
                     f"{node.path}  [{parser.DISPLAY_NAME} — {possibly_encrypted}]"
                 )
             else:
-                self._status.showMessage(
-                    f"{node.path}  [{parser.DISPLAY_NAME}]"
-                )
+                message = f"{node.path}  [{parser.DISPLAY_NAME}]"
+                if _is_openable_archive(node):
+                    message += "  — archive: right-click → Open in New Window to browse its contents"
+                self._status.showMessage(message)
         except Exception as exc:
             self._status.showMessage(f"Parse error: {exc}")
             QMessageBox.warning(self, "Parse error", str(exc))
 
+    # Modes that load the whole file into memory. "default" is absent on
+    # purpose: it ends in _open_node(), which asks itself.
+    _RAM_LOADING_MODES = frozenset(
+        {"hex", "text", "protobuf", "mmkv", "mmkv_encrypted",
+         "realm_encrypted", "sqlcipher", "pdf_encrypted"}
+    )
+
     def _open_node_mode(self, node: VFSNode, vfs: VFS, mode: str) -> None:
         with window_log_scope(self._window_id):
+            if mode in self._RAM_LOADING_MODES and not self._guard_large_open(node, vfs):
+                return
             self._open_node_mode_impl(node, vfs, mode)
 
     def _open_node_mode_impl(self, node: VFSNode, vfs: VFS, mode: str) -> None:
@@ -1664,9 +1712,10 @@ class MainWindow(QMainWindow):
                     "Opening directories from archives is not supported yet.",
                 )
             return
-        path = self._materialize_node_for_external(node, vfs)
+        path = self._materialize_node_for_external(node, vfs, title="Open External")
         if path is None:
-            QMessageBox.warning(self, "Open External", "Unable to materialize file.")
+            if not self._materialize_cancelled:
+                QMessageBox.warning(self, "Open External", "Unable to materialize file.")
             return
         if mode == "choose":
             self._open_external_with_app(path)
@@ -1837,20 +1886,58 @@ class MainWindow(QMainWindow):
         self._show_result(node, result, vfs)
         self._status.showMessage(f"Opened view: {title}")
 
-    def _materialize_node_for_external(self, node: VFSNode, vfs: VFS) -> Path | None:
+    _materialize_cancelled = False
+
+    def _materialize_node_for_external(
+        self, node: VFSNode, vfs: VFS, *, title: str = "Extracting file"
+    ) -> Path | None:
+        """Copy *node* to a real file in the temp directory, with a space
+        check first and a cancellable progress dialog while it copies.
+
+        Returns None on failure or when the user cancels; in the cancelled
+        case self._materialize_cancelled is True so callers can skip their
+        error message.
+        """
+        self._materialize_cancelled = False
+        tmp_dir: Path | None = None
         try:
             if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
                 return Path(node.path)
             if not hasattr(self, "_external_temp_paths"):
                 self._external_temp_paths: list[Path] = []
-            tmp_dir = Path(tempfile.mkdtemp(prefix="crush-open-"))
+            if not extract_dialog.confirm_temp_space(
+                self, self._settings, node.size, f"'{node.name}'"
+            ):
+                self._materialize_cancelled = True
+                return None
+            tmp_dir = tempdir.mkdtemp(prefix="crush-open-")
             suffix = node.extension or ""
             tmp_path = tmp_dir / (node.name or f"file{suffix}")
-            with vfs.open(node) as src, open(tmp_path, "wb") as dst:
-                dst.write(src.read())
+            outcome = extract_dialog.copy_node_with_progress(
+                self,
+                vfs,
+                node,
+                tmp_path,
+                title=title,
+                want_hash=self.session.integrity_mode,
+                window_id=self._window_id,
+            )
+            if outcome.status == "cancelled":
+                self._materialize_cancelled = True
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return None
+            if outcome.status != "ok":
+                raise OSError(outcome.message or "copy failed")
+            if self.session.integrity_mode:
+                self._logger.info(
+                    "INTEGRITY sha256=%s  size=%d  path=%s",
+                    outcome.sha256, outcome.bytes_copied, node.path,
+                )
             self._external_temp_paths.append(tmp_path)
             return tmp_path
         except Exception as exc:
+            if tmp_dir is not None:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
             if hasattr(self, "_logger"):
                 self._logger.error("Open external failed: %s", exc)
             return None
@@ -1863,7 +1950,7 @@ class MainWindow(QMainWindow):
                 self._export_vfs_tree(child, vfs, dest / child.name)
         else:
             with vfs.open(node) as src, open(dest, "wb") as out:
-                out.write(src.read())
+                shutil.copyfileobj(src, out)
 
     def _materialize_directory_node_for_external(
         self, node: VFSNode, vfs: VFS
@@ -1890,7 +1977,11 @@ class MainWindow(QMainWindow):
             if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
                 return Path(node.path), None
 
-            tmp_dir = Path(tempfile.mkdtemp(prefix="crush-open-"))
+            if not extract_dialog.confirm_temp_space(
+                self, self._settings, vfs.total_size(node), f"'{node.name}'"
+            ):
+                return None
+            tmp_dir = tempdir.mkdtemp(prefix="crush-open-")
             source_path = tmp_dir / node.name
             self._export_vfs_tree(node, vfs, source_path)
             return source_path, tmp_dir
@@ -1938,7 +2029,7 @@ class MainWindow(QMainWindow):
             if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
                 return Path(node.path), None
 
-            tmp_dir = Path(tempfile.mkdtemp(prefix="crush-analyze-"))
+            tmp_dir = tempdir.mkdtemp(prefix="crush-analyze-")
             self._export_vfs_tree_matching(node, vfs, tmp_dir, filename_patterns)
             return tmp_dir, tmp_dir
         except Exception as exc:
@@ -1962,7 +2053,7 @@ class MainWindow(QMainWindow):
         elif any(fnmatch.fnmatch(node.name, pattern) for pattern in filename_patterns):
             dest.parent.mkdir(parents=True, exist_ok=True)
             with vfs.open(node) as src, open(dest, "wb") as out:
-                out.write(src.read())
+                shutil.copyfileobj(src, out)
 
     def _resolve_peach_source(
         self, node: VFSNode, vfs: VFS
@@ -1997,7 +2088,7 @@ class MainWindow(QMainWindow):
 
         if is_ios_diagnostics_node(node):
             try:
-                tmp_dir = Path(tempfile.mkdtemp(prefix="crush-open-"))
+                tmp_dir = tempdir.mkdtemp(prefix="crush-open-")
                 self._export_vfs_tree(node, vfs, tmp_dir / "diagnostics")
                 uuidtext_node = _find_uuidtext_sibling(node, vfs)
                 if uuidtext_node is not None:
@@ -2302,7 +2393,7 @@ class MainWindow(QMainWindow):
         so this wrapper is purely to satisfy that CLI heuristic -- it
         doesn't need to reflect where "streams" actually sat under *root*.
         """
-        tmp_root = Path(tempfile.mkdtemp(prefix="crush-biome-"))
+        tmp_root = tempdir.mkdtemp(prefix="crush-biome-")
         streams_dir = tmp_root / "biome" / "streams"
         root_prefix = root.path.replace("\\", "/").rstrip("/") + "/"
         try:
@@ -2316,7 +2407,7 @@ class MainWindow(QMainWindow):
                 target = streams_dir / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with vfs.open(src_node) as src, open(target, "wb") as out:
-                    out.write(src.read())
+                    shutil.copyfileobj(src, out)
         except Exception as exc:
             shutil.rmtree(tmp_root, ignore_errors=True)
             QMessageBox.warning(
@@ -2336,19 +2427,21 @@ class MainWindow(QMainWindow):
         except (FileNotFoundError, RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Send Biome Streams to Peach", str(exc))
 
-    def _set_log_temp_dir(self) -> None:
-        current = self._settings.value("log_temp_dir", "", type=str)
+    def _set_temp_dir(self) -> None:
+        current = self._settings.value(extract_dialog.TEMP_DIR_SETTING, "", type=str)
         text, ok = QInputDialog.getText(
             self,
-            "Log Temp Directory",
-            "Directory to use for intermediate files during log conversion "
-            "(e.g. Apple Unified Log .tracev3 / .logarchive processing) — "
-            "leave blank to use the OS default temp location:",
+            "Temp Directory",
+            "Directory for temporary files: extracted archive members, database "
+            "copies, log conversion, ... Point this at a disk with plenty of free "
+            "space — the OS default (often /tmp) may be RAM-backed.\n"
+            "Leave blank to use the OS default:",
             QLineEdit.EchoMode.Normal,
             current,
         )
         if ok:
-            self._settings.setValue("log_temp_dir", text.strip())
+            self._settings.setValue(extract_dialog.TEMP_DIR_SETTING, text.strip())
+            tempdir.configure(text.strip())
 
     def _set_peach_binary_path(self) -> None:
         current = self._settings.value("peach_binary_path", "", type=str)
@@ -2670,7 +2763,10 @@ class MainWindow(QMainWindow):
             return
 
         source_name = sources[-1].root().name
-        if len(sources) == 1:
+        origin = getattr(self, "_source_origin", "")
+        if origin and len(sources) == 1:
+            self.setWindowTitle(f"{source_name}  [from {origin}] — {app_title}")
+        elif len(sources) == 1:
             self.setWindowTitle(f"{source_name} — {app_title}")
         else:
             self.setWindowTitle(f"{source_name} (+{len(sources) - 1}) — {app_title}")
@@ -3290,20 +3386,34 @@ class MainWindow(QMainWindow):
         if not self.session.integrity_mode or node.is_dir:
             return
         import hashlib
+
+        def _hash() -> tuple[str, int]:
+            hasher = hashlib.sha256()
+            total = 0
+            with vfs.open(node) as src:
+                while chunk := src.read(1024 * 1024):
+                    hasher.update(chunk)
+                    total += len(chunk)
+            return hasher.hexdigest(), total
+
         try:
-            data = vfs.read(node)
-            digest = hashlib.sha256(data).hexdigest()
-            self._logger.info(
-                "INTEGRITY sha256=%s  size=%d  path=%s", digest, len(data), node.path
-            )
+            if node.size > _BUSY_BYTES:
+                digest, total = busy_call(self, f"Hashing {node.name}…", _hash)
+            else:
+                digest, total = _hash()
+            self._logger.info("INTEGRITY sha256=%s  size=%d  path=%s", digest, total, node.path)
         except Exception as exc:
             self._logger.warning("INTEGRITY hash failed for %s: %s", node.path, exc)
 
     def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> bytes | None:
-        max_bytes = 1024 * 256
-        try:
+        def _read() -> bytes:
             with vfs.open(node) as src:
-                return src.read(max_bytes)
+                return src.read()
+
+        try:
+            if node.size > _BUSY_BYTES:
+                return cast(bytes, busy_call(self, f"Loading {node.name}…", _read))
+            return _read()
         except Exception as exc:
             if hasattr(self, "_logger"):
                 self._logger.warning("Failed to read hex bytes for %s: %s", node.path, exc)
@@ -3811,6 +3921,22 @@ class MainWindow(QMainWindow):
             self._apply_palette(self._rainbow_palette(hue))
         self._settings.setValue("theme", "custom")
         self._logger.info("Theme set to custom")
+
+
+# Files above this are read/hashed behind a wait dialog on a worker thread so
+# the window keeps repainting; smaller ones are quicker than the dialog itself.
+# A UX cut-off only -- nothing is skipped or shortened on either side of it.
+_BUSY_BYTES = 8 * 1024 * 1024
+
+_ARCHIVE_SUFFIXES = (
+    ".zip", ".7z", ".tar", ".tgz", ".tbz2", ".txz", ".tar.gz", ".tar.bz2", ".tar.xz",
+    ".gz", ".ab", ".e01", ".img", ".dd", ".raw", ".001",
+)
+
+
+def _is_openable_archive(node: VFSNode) -> bool:
+    """True for a file Crush can open as a source of its own (archive, backup or disk image)."""
+    return not node.is_dir and node.name.lower().endswith(_ARCHIVE_SUFFIXES)
 
 
 def _format_size(size: int) -> str:

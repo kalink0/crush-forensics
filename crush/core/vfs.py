@@ -6,6 +6,7 @@ through a single interface so viewers never need to know the origin.
 from __future__ import annotations
 
 import gzip
+import io
 import os
 import plistlib
 import re
@@ -13,19 +14,25 @@ import shutil
 import sqlite3
 import sys
 import tarfile
-import tempfile
 import threading
 import zipfile
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import io
 from io import BytesIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Iterator, cast
 
+from crush.core import tempdir
 from crush.core.passwords import PasswordRequiredError, WrongPasswordError
+from crush.core.vfs_stream import (
+    COPY_CHUNK,
+    STREAM_THRESHOLD,
+    IterStream,
+    LockedStream,
+    buffered,
+)
 
 if TYPE_CHECKING:
     from crush.core import ios_keybag
@@ -427,7 +434,14 @@ class ZipVFS(VFS):
                 raise WrongPasswordError("Incorrect ZIP archive password") from exc
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        return BytesIO(self.read(node))
+        if node.size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+        with self._zf_lock:
+            try:
+                inner = self._open_entry(self._zip_name(node))
+            except RuntimeError as exc:
+                raise WrongPasswordError("Incorrect ZIP archive password") from exc
+        return buffered(LockedStream(inner, self._zf_lock))
 
     def _zip_name(self, node: VFSNode) -> str:
         return self._zip_names.get(node.path, node.path.lstrip("/"))
@@ -469,22 +483,52 @@ class TarVFS(VFS):
 
     Compressed tar files cannot seek randomly, so reads are serialized with a
     per-instance lock to allow safe concurrent peek() from multiple threads.
+
+    A compressed tar has no index, and reaching a member means decompressing
+    everything before it -- minutes for a member deep in a multi-GB archive.
+    Building the tree already has to read the whole stream once, so that one
+    pass also keeps the first _HEAD_CACHE_BYTES of every file; peek() is
+    answered from them without touching the archive. Without this, the
+    tree's per-row type detection (a peek per visible file, on the UI
+    thread) froze the window for minutes on every folder opened.
     """
+
+    _HEAD_CACHE_BYTES = 2048
 
     def __init__(self, path: str | Path) -> None:
         self._tar_path = Path(path)
+        self._head_cache: dict[str, bytes] = {}
         self._tf = tarfile.open(str(self._tar_path), "r:*")
         self._tf_lock = threading.Lock()
         self._members: dict[str, tarfile.TarInfo] = {}
-        self._tree = self._build_tree()
+        self._tree = self._build_tree(self._read_compressed_heads(self._tar_path, self._tf))
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
         self._compute_file_counts(self._tree)
         self._compute_total_sizes(self._tree)
 
-    def _build_tree(self) -> VFSNode:
+    @classmethod
+    def _read_compressed_heads(cls, path: Path, tf: tarfile.TarFile) -> dict[str, bytes] | None:
+        """For a gzip/bzip2/xz tar: walk every member once (the same pass
+        getmembers() makes, forward only) and keep the first bytes of each
+        regular file. None for a plain tar, where random access is cheap and
+        no cache is needed. Leaves *tf* with all members loaded."""
+        with open(path, "rb") as f:
+            magic = f.read(6)
+        if not (magic[:2] == b"\x1f\x8b" or magic[:3] == b"BZh" or magic[:6] == b"\xfd7zXZ\x00"):
+            return None
+        heads: dict[str, bytes] = {}
+        while (member := tf.next()) is not None:
+            if member.isfile():
+                fh = tf.extractfile(member)
+                if fh is not None:
+                    heads[member.name] = fh.read(cls._HEAD_CACHE_BYTES)
+        return heads
+
+    def _build_tree(self, heads: dict[str, bytes] | None = None) -> VFSNode:
         root = VFSNode(name=self._tar_path.name, path="/", is_dir=True)
         nodes: dict[str, VFSNode] = {"/": root}
+        self._head_cache = {}
 
         for member in self._tf.getmembers():
             raw_name = member.name.lstrip("./")
@@ -509,6 +553,8 @@ class TarVFS(VFS):
                 nodes[virtual_path] = node
             if member.isfile():
                 self._members[virtual_path] = member
+                if heads is not None and member.name in heads:
+                    self._head_cache[virtual_path] = heads[member.name]
 
         for node in nodes.values():
             node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -527,8 +573,31 @@ class TarVFS(VFS):
                 raise OSError(f"Cannot extract (symlink or special file): {node.path}")
             return f.read()
 
+    def peek(self, node: VFSNode, n: int = 32) -> bytes:
+        member = self._members.get(node.path)
+        if member is None:
+            raise FileNotFoundError(f"Not in TAR: {node.path}")
+        head = self._head_cache.get(node.path)
+        if head is not None and (n <= len(head) or len(head) >= member.size):
+            return head[:n]
+        with self._tf_lock:
+            f = self._tf.extractfile(member)
+            if f is None:
+                raise OSError(f"Cannot extract (symlink or special file): {node.path}")
+            with f:
+                return f.read(n)
+
     def open(self, node: VFSNode) -> IO[bytes]:
-        return BytesIO(self.read(node))
+        if node.size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+        member = self._members.get(node.path)
+        if member is None:
+            raise FileNotFoundError(f"Not in TAR: {node.path}")
+        with self._tf_lock:
+            f = self._tf.extractfile(member)
+        if f is None:
+            raise OSError(f"Cannot extract (symlink or special file): {node.path}")
+        return buffered(LockedStream(f, self._tf_lock))
 
     def close(self) -> None:
         self._tf.close()
@@ -578,8 +647,21 @@ class GzipVFS(VFS):
     def __init__(self, path: str | Path) -> None:
         self._gz_path = Path(path)
         member_name, mtime = self._read_header_metadata()
+        # One chunked pass computes the real decompressed size. The bytes are
+        # only kept in memory while they stay under STREAM_THRESHOLD; a larger
+        # member is re-decompressed from the file on demand instead.
+        self._data: bytes | None = None
+        kept: list[bytes] | None = []
+        self._size = 0
         with gzip.open(self._gz_path, "rb") as f:
-            self._data = f.read()
+            while chunk := f.read(COPY_CHUNK):
+                self._size += len(chunk)
+                if kept is not None:
+                    kept.append(chunk)
+                    if self._size > STREAM_THRESHOLD:
+                        kept = None
+        if kept is not None:
+            self._data = b"".join(kept)
         self._member_path = f"/{member_name}"
         self._root = VFSNode(name=self._gz_path.name, path="/", is_dir=True)
         self._root.children.append(
@@ -587,7 +669,7 @@ class GzipVFS(VFS):
                 name=member_name,
                 path=self._member_path,
                 is_dir=False,
-                size=len(self._data),
+                size=self._size,
                 modified=mtime,
             )
         )
@@ -633,16 +715,23 @@ class GzipVFS(VFS):
     def read(self, node: VFSNode) -> bytes:
         if node.path != self._member_path:
             raise FileNotFoundError(f"Not in gzip: {node.path}")
-        return self._data
+        if self._data is not None:
+            return self._data
+        with gzip.open(self._gz_path, "rb") as f:
+            return f.read()
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        return BytesIO(self.read(node))
+        if node.path != self._member_path:
+            raise FileNotFoundError(f"Not in gzip: {node.path}")
+        if self._data is not None:
+            return BytesIO(self._data)
+        return cast(IO[bytes], gzip.open(self._gz_path, "rb"))
 
     def file_count(self, node: VFSNode) -> int:
         return 1
 
     def total_size(self, node: VFSNode) -> int:
-        return len(self._data)
+        return self._size
 
 
 class AndroidBackupVFS(TarVFS):
@@ -653,16 +742,23 @@ class AndroidBackupVFS(TarVFS):
     deflate-compressed and/or AES-256 encrypted (see
     `crush.core.android_backup_crypto` for the password-based key unwrap).
 
-    The tar stream is decompressed fully upfront (backups are app-data
-    sized, not full-disk images) and then handled identically to a plain
-    TarVFS by reusing its tree-building and read logic.
+    The tar stream is decompressed/decrypted once, chunk by chunk, into an
+    unlinked temp file (in the configured temp directory) and then handled
+    identically to a plain TarVFS by reusing its tree-building and read
+    logic. Nothing of the payload is held in RAM, so a multi-GB backup opens
+    with bounded memory.
     """
 
     def __init__(self, path: str | Path, *, password: str = "") -> None:
         self._tar_path = Path(path)
-        self._tf = tarfile.open(
-            fileobj=BytesIO(self._extract_tar_bytes(self._tar_path, password)), mode="r:"
-        )
+        self._spool: IO[bytes] = tempdir.spool_file("crush-ab-")
+        try:
+            self._extract_tar_to(self._tar_path, password, self._spool)
+            self._spool.seek(0)
+            self._tf = tarfile.open(fileobj=self._spool, mode="r:")
+        except BaseException:
+            self._spool.close()
+            raise
         self._tf_lock = threading.Lock()
         self._members: dict[str, tarfile.TarInfo] = {}
         self._tree = self._build_tree()
@@ -671,39 +767,66 @@ class AndroidBackupVFS(TarVFS):
         self._compute_file_counts(self._tree)
         self._compute_total_sizes(self._tree)
 
+    def close(self) -> None:
+        super().close()
+        self._spool.close()
+
     @staticmethod
-    def _extract_tar_bytes(path: Path, password: str = "") -> bytes:
+    def _read_chunks(f: IO[bytes]) -> Iterator[bytes]:
+        while True:
+            chunk = f.read(COPY_CHUNK)
+            if not chunk:
+                return
+            yield chunk
+
+    @staticmethod
+    def _inflate(chunks: Iterator[bytes]) -> Iterator[bytes]:
+        inflater = zlib.decompressobj()
+        for chunk in chunks:
+            out = inflater.decompress(chunk)
+            if out:
+                yield out
+        tail = inflater.flush()
+        if tail:
+            yield tail
+
+    @staticmethod
+    def _extract_tar_to(path: Path, password: str, out: IO[bytes]) -> None:
         with open(path, "rb") as f:
             magic = f.readline().strip()
             if magic != b"ANDROID BACKUP":
                 raise ValueError(f"Not an Android backup: {path}")
             version = int(f.readline().strip())
-            compressed = f.readline().strip()
+            compressed = f.readline().strip() == b"1"
             encryption = f.readline().strip()
 
+            chunks: Iterator[bytes]
             if encryption == b"none":
-                payload = f.read()
-                return zlib.decompress(payload) if compressed == b"1" else payload
+                chunks = AndroidBackupVFS._read_chunks(f)
+            else:
+                if encryption != b"AES-256":
+                    raise ValueError(f"Unsupported Android backup encryption: {encryption!r}")
+                if not password:
+                    raise PasswordRequiredError(f"Android backup is password-protected: {path}")
 
-            if encryption != b"AES-256":
-                raise ValueError(f"Unsupported Android backup encryption: {encryption!r}")
-            if not password:
-                raise PasswordRequiredError(f"Android backup is password-protected: {path}")
+                user_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
+                checksum_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
+                rounds = int(f.readline().strip())
+                user_iv = bytes.fromhex(f.readline().strip().decode("ascii"))
+                master_key_blob = bytes.fromhex(f.readline().strip().decode("ascii"))
 
-            user_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
-            checksum_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
-            rounds = int(f.readline().strip())
-            user_iv = bytes.fromhex(f.readline().strip().decode("ascii"))
-            master_key_blob = bytes.fromhex(f.readline().strip().decode("ascii"))
-            ciphertext = f.read()
+                from crush.core import android_backup_crypto
 
-        from crush.core import android_backup_crypto
-
-        master_key, master_iv = android_backup_crypto.unwrap_master_key(
-            password, user_salt, checksum_salt, rounds, user_iv, master_key_blob, version
-        )
-        payload = android_backup_crypto.decrypt_payload(master_key, master_iv, ciphertext)
-        return zlib.decompress(payload) if compressed == b"1" else payload
+                master_key, master_iv = android_backup_crypto.unwrap_master_key(
+                    password, user_salt, checksum_salt, rounds, user_iv, master_key_blob, version
+                )
+                chunks = android_backup_crypto.decrypt_payload_stream(
+                    master_key, master_iv, AndroidBackupVFS._read_chunks(f)
+                )
+            if compressed:
+                chunks = AndroidBackupVFS._inflate(chunks)
+            for chunk in chunks:
+                out.write(chunk)
 
 
 def _clear_wal_header_flag(manifest_db: bytes) -> bytes:
@@ -867,12 +990,26 @@ class ITunesBackupVFS(VFS):
         return ios_keybag.aes_cbc_decrypt_and_unpad(file_key, raw)
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        if node.path in self._file_protection:
-            return BytesIO(self.read(node))
         located = self._file_locations.get(node.path)
         if located is None:
             raise FileNotFoundError(f"Not backed by a file in the backup: {node.path}")
-        return _open_noatime(located)
+        protection = self._file_protection.get(node.path)
+        if protection is None or self._keybag is None:
+            return _open_noatime(located)
+        if located.stat().st_size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+        protection_class, encryption_key_entry = protection
+        file_key = self._keybag.unwrap_file_key(protection_class, encryption_key_entry)
+
+        from crush.core import ios_keybag
+
+        def make_iter() -> Iterator[bytes]:
+            with _open_noatime(located) as f:
+                yield from ios_keybag.aes_cbc_decrypt_stream(
+                    file_key, iter(lambda: f.read(COPY_CHUNK), b"")
+                )
+
+        return buffered(IterStream(make_iter, node.size))
 
     def file_count(self, node: VFSNode) -> int:
         return self._file_counts.get(node.path, 0)
@@ -912,6 +1049,51 @@ _SEVENZIP_EXTRACT_LIMIT = 1 << 40  # 1 TiB
 # slower but bounded to whatever the caller actually reads, never skipped or
 # truncated, just a different (still fully correct) code path.
 _SEVENZIP_PREFETCH_SIZE_LIMIT = 1 << 30  # 1 GiB
+
+
+def _make_7z_spool_factory() -> Any:
+    """A py7zr WriterFactory that writes each extracted member into an
+    unlinked temp file instead of memory. Built lazily so importing this
+    module never requires py7zr."""
+    from py7zr.io import Py7zIO, WriterFactory
+
+    class _SpoolIO(Py7zIO):
+        def __init__(self) -> None:
+            self.fh = tempdir.spool_file("crush-7z-")
+
+        def write(self, s: bytes | bytearray) -> int:
+            return self.fh.write(s)
+
+        def read(self, size: int | None = None) -> bytes:
+            return self.fh.read(-1 if size is None else size)
+
+        def seek(self, offset: int, whence: int = 0) -> int:
+            return self.fh.seek(offset, whence)
+
+        def flush(self) -> None:
+            self.fh.flush()
+
+        def size(self) -> int:
+            pos = self.fh.tell()
+            end = self.fh.seek(0, 2)
+            self.fh.seek(pos)
+            return end
+
+    class _SpoolFactory(WriterFactory):
+        def __init__(self) -> None:
+            self._files: dict[str, _SpoolIO] = {}
+
+        def create(self, filename: str) -> Py7zIO:
+            spool = _SpoolIO()
+            self._files[filename] = spool
+            return spool
+
+        def take(self, filename: str) -> IO[bytes]:
+            spool = self._files[filename]
+            spool.fh.seek(0)
+            return spool.fh
+
+    return _SpoolFactory()
 
 
 class SevenZipVFS(VFS):
@@ -985,14 +1167,34 @@ class SevenZipVFS(VFS):
         """
         if not self._entry_names:
             return
-        from py7zr.io import BytesIOFactory
+        from py7zr.io import BytesIOFactory, NullIOFactory
 
-        name = next(iter(self._entry_names.values()))
+        # The smallest entry is enough to prove the key works (all content
+        # shares one), and is the cheapest to decompress. Its bytes are only
+        # kept when small -- a huge first entry must not be pinned in RAM.
+        sizes = {n.path: n.size for n in self._iter_files(self._tree)}
+        # An empty entry has no data stream, so it proves nothing about the key.
+        candidates = [vp for vp in self._entry_names if sizes.get(vp, 0) > 0] or list(self._entry_names)
+        vpath = min(candidates, key=lambda vp: sizes.get(vp, 0))
+        name = self._entry_names[vpath]
         with self._zf_lock:
-            factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
-            self._extract([name], factory)
-            buf = factory.get(name)  # type: ignore[no-untyped-call]
-            self._read_cache[name] = buf.read() if buf is not None else b""
+            if sizes.get(vpath, 0) <= STREAM_THRESHOLD:
+                factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
+                self._extract([name], factory)
+                buf = factory.get(name)  # type: ignore[no-untyped-call]
+                self._read_cache[name] = buf.read() if buf is not None else b""
+            else:
+                self._extract([name], NullIOFactory())  # type: ignore[no-untyped-call]
+
+    @staticmethod
+    def _iter_files(node: VFSNode) -> Iterator[VFSNode]:
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur.is_dir:
+                stack.extend(cur.children)
+            else:
+                yield cur
 
     def _build_tree(self) -> VFSNode:
         root = VFSNode(name=self._path.name, path="/", is_dir=True)
@@ -1056,11 +1258,20 @@ class SevenZipVFS(VFS):
             self._extract([name], factory)
             buf = factory.get(name)  # type: ignore[no-untyped-call]
             data = buf.read() if buf is not None else b""
-        self._read_cache[name] = data
+        if len(data) <= STREAM_THRESHOLD:
+            self._read_cache[name] = data
         return data
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        return BytesIO(self.read(node))
+        name = self._entry_names.get(node.path, node.path.lstrip("/"))
+        if name in self._read_cache or node.size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+        # py7zr can only decompress a member front to back, so a large one is
+        # staged once in an unlinked temp file (bounded RAM, seekable).
+        with self._zf_lock:
+            factory = _make_7z_spool_factory()
+            self._extract([name], factory)
+            return cast(IO[bytes], factory.take(name))
 
     def prefetch_all(self) -> bool:
         """Batch-extract every not-yet-cached entry in a single archive pass.
@@ -1177,7 +1388,24 @@ class RawImageVFS(VFS):
             return read_walker_file(entry.walker, entry.node, entry.size)
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        return BytesIO(self.read(node))
+        from crush.core.raw_image import (
+            stream_deleted_file,
+            stream_raw_region,
+            stream_walker_file,
+        )
+
+        entry = self._resolve_entry(node)
+        if entry.size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+
+        def make_iter() -> Iterator[bytes]:
+            if entry.deleted is not None:
+                return stream_deleted_file(entry.walker, entry.deleted, entry.size)
+            if entry.walker is None:
+                return stream_raw_region(self._handle.image, entry.base, entry.size)
+            return stream_walker_file(entry.walker, entry.node, entry.size)
+
+        return buffered(IterStream(make_iter, entry.size, lock=self._lock))
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
         from crush.core.raw_image import peek_deleted_file, peek_raw_region, peek_walker_file
@@ -1485,7 +1713,7 @@ def open_itunes_backup_from_zip(
     detect_itunes_backup_in_zip); the extracted copy is removed again when
     the returned VFS is closed.
     """
-    tmp_dir = Path(tempfile.mkdtemp(prefix="crush-itunes-backup-"))
+    tmp_dir = tempdir.mkdtemp(prefix="crush-itunes-backup-")
     try:
         with zipfile.ZipFile(path) as zf:
             zf.extractall(tmp_dir)

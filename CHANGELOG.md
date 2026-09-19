@@ -2,6 +2,20 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- Fixed "Open as Hex" (and the Hex tab) silently showing only the first 256 KB of every file while the status line reported that cut size as the file's total; the whole file is now loaded.
+- Fixed the window freezing for minutes (and the type indexing taking as long) when browsing a large `.tar.gz`/`.tar.xz`/`.tar.bz2`: the tree's type detection peeked into each file, and reaching a member of a compressed tar means decompressing everything before it. The first bytes of every file are now kept during the one pass that builds the tree, so peeking never touches the archive again.
+- Fixed Crush running out of memory (and taking the whole system down) when opening a member of an archive or disk image that is itself large, e.g. a multi-GB `.tar` inside a `.zip`: ZIP, TAR, 7z, gzip, Android/iTunes backup and raw-image/EWF members are now streamed in bounded memory instead of being decompressed whole into RAM, for the Hex tab, hashing, export and Open in New Window.
+
+### Changed
+
+- Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window for archives and images, export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
+- "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
+- The former "Log Temp Directory" setting is now Tools → Temp Directory… and applies to every temporary file Crush creates, not just log conversion (existing values carry over).
+
 ## v0.20.0 - 2026-09-18
 
 **Focus: Raw disk image and EWF acquisition support; Run Analyzer (crush-analyze integration for curated forensic analyzer modules); continued embedded Hex pane rollout (SEGB/Biome, Realm File Structure, MMKV); Hex Viewer hex/decimal offset toggle and go-to-offset; C2PA and XMP AI-provenance detection for images; bundled peach updated to v0.8.0.**

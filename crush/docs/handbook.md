@@ -25,6 +25,20 @@ A third way: pass paths on the command line — `crush /path/to/evidence.zip /pa
 
 Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also select and open one specific file inside it on startup — e.g. `crush /path/to/evidence.zip --focus Documents/chat.db` opens the archive and jumps straight to that file, instead of just showing the tree. `REL_PATH` is relative to the opened target's own root. A single file passed directly (not a folder/archive) already opens itself regardless of `--focus`.
 
+### Large files, memory and the temp directory
+
+Most viewers need a file's bytes in memory — often several times over (raw bytes, decoded structures, widgets). Crush therefore checks a file's size against the memory that is free right now before it loads one (double-click, or any **Open as** mode):
+
+- Up to about a quarter of free memory it just opens.
+- Above that it asks what to do: **Open anyway**, **Open in New Window** (archives, backups, disk images), **Export…**, or **Cancel**. **Open anyway** is not offered once the file is more than about 80 % of free memory — it could not realistically fit.
+- Nothing is ever cut short: a file is opened whole or not at all.
+
+**Compressed tar archives** (`.tar.gz`, `.tar.xz`, `.tar.bz2`) have no index. Crush reads the whole stream once to build the tree — the loading dialog stays up until that pass ends — and keeps the first bytes of every file during it, so browsing and type detection afterwards need no further reading. Opening one file's content still decompresses everything before it, behind a wait dialog. For big compressed tars, extract once to a fast disk or ask for ZIP/plain TAR.
+
+Archive members, disk-image files and backups are streamed rather than unpacked into memory, so hex-viewing, hashing, exporting and **Open in New Window** work on multi-gigabyte members without exhausting RAM. Reading, hashing and searching larger files runs behind a wait dialog so the window keeps responding.
+
+**Tools → Temp Directory…** sets where Crush puts every temporary file: extracted archive members, database copies, log conversion. Leave it blank to use the OS default — but on many Linux systems `/tmp` is a RAM-backed *tmpfs*, so extracting a large member there fills memory instead of disk. Point it at a disk with plenty of free space. Before a large extraction Crush checks the free space and warns if the location is too small or RAM-backed, and lets you pick another directory on the spot.
+
 ---
 
 ## Raw Disk Images & EWF Acquisitions
@@ -107,7 +121,7 @@ The left panel shows the loaded archive or folder as a tree.
 - **Single-click** selects a file and updates the Properties panel
 - **Right-click** a file or folder for options:
   - **Open** — best viewer for the format
-  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z archive — the file is transparently extracted to a temp location for the new window
+  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z/gzip archive, Android/iTunes backup, or raw disk image/EWF acquisition — the file is extracted to the [temp directory](#large-files-memory-and-the-temp-directory) for the new window, behind a progress dialog with **Cancel** (free space is checked first). The new window's title names where it came from, and its temp copy is deleted when that window closes
   - **Open as** — submenu to force a specific viewer regardless of auto-detection:
     - **Hex** — force raw hex view
     - **Text** — force text view
@@ -294,7 +308,7 @@ Values are displayed as `YYYY-MM-DD HH:MM:SS UTC`. The column header shows the a
 
 ### Hex Viewer
 
-Displays raw bytes as offset + hex + ASCII. 256 KB is shown per page.
+Displays raw bytes as offset + hex + ASCII. The whole file is loaded; 256 KB is shown per page. Searching a large file (over 8 MB) runs behind a wait dialog.
 
 | Control | Action |
 |---|---|
@@ -727,7 +741,7 @@ A high-performance log viewer for large files and multi-source correlation. Open
 
 **Parallel conversion** — when loading a `.logarchive` or iOS diagnostics directory, Crush splits the `Persist/*.tracev3` files across multiple `unifiedlog_iterator` processes (one per physical CPU core by default). Results appear in the viewer as each chunk finishes. The benchmark script `scripts/benchmark_unified_log.py` can be used to measure throughput and tune the worker count with `--workers N`.
 
-**Tools → Log Temp Directory…** sets the base directory for the intermediate files created during log conversion — currently used when converting `.tracev3`/`.logarchive` sources (extracted archive contents, per-worker mini-logarchives, and the converter's output CSVs) — useful when the OS default temp location is on a small or slow disk. Leave blank to use the OS default.
+Log conversion's intermediate files (extracted archive contents, per-worker mini-logarchives, and the converter's output CSVs for `.tracev3`/`.logarchive` sources) go to **Tools → Temp Directory…** — the same setting every other temporary file uses; see [Large files, memory and the temp directory](#large-files-memory-and-the-temp-directory). Useful when the OS default temp location is on a small or slow disk.
 
 **Context menu** (right-click any row):
 
@@ -888,6 +902,7 @@ Integrity mode adds hashing and traceability to file access:
 - When enabled, files opened or exported are hashed (SHA-256) and written to the log.
 - Opening a ZIP/TAR/7z/file triggers the calculation of the hash (SHA-256) of the file.
 - Opening a folder does not hash the full directory.
+- **Open in New Window** hashes the member while it is being extracted (one pass) and logs it.
 - Exports also create a `crush-export-hashes.txt` file next to the exported data.
 - The bottom-right status badge shows the current mode. Click the badge to toggle it, or right-click it for a quick menu and a short explanation.
 
@@ -905,7 +920,7 @@ Integrity mode adds hashing and traceability to file access:
 
 ## Tips for Forensic Workflows
 
-- **Large archives:** Crush loads ZIP, TAR, and 7z indexes immediately and reads file content on demand — you do not need to wait for a full extraction before browsing. 7z's solid compression blocks multiple files together, so reading any single file from a solid 7z can be slower than the equivalent ZIP/TAR read.
+- **Large archives:** Crush loads ZIP and plain (uncompressed) TAR indexes almost immediately and reads file content on demand — you do not need to wait for a full extraction before browsing. Compressed archives are slower, because the format has no index: a **`.tar.gz`/`.tar.xz`/`.tar.bz2`** has to be read through once before its tree appears (minutes for tens of GB, at the speed of the disk), and reading any single file from it, like from a solid 7z (multiple files compressed together in one block), means decompressing everything before it. For evidence you choose the format of, prefer ZIP or an uncompressed TAR.
 - **SQLite WAL files:** if a `-wal` or `-shm` companion file is present alongside a `.db`, Crush automatically includes it so you see the most recent state of the database. Use **WAL Frames (generated)** for a full frame inventory with forensic classification (Active / Superseded / Uncommitted / WAL slack), and enable **Show WAL history** in any table view to surface rows from historical frames — potentially recovering data from before the last UPDATE or DELETE.
 - **BLOB chaining:** SQLite cells containing embedded plists, images, or other binary data can be opened directly as a new viewer tab via right-click → **Open as new tab**, forcing a specific format (Hex/Text/Protobuf) if needed. The Properties panel keeps track of exactly which table/query, column, and row each opened cell came from.
 - **Unknown files:** even if Crush cannot parse a file, the Properties panel will show the identified format name and forensic relevance based on magic bytes — so you know what you are looking at before deciding to export and open it externally.

@@ -24,9 +24,9 @@ def compile_proto(path: Path) -> bytes:
     except Exception as exc:
         raise SchemaLoadError(".proto requires grpcio-tools or a .pb descriptor set") from exc
 
-    import tempfile
+    from crush.core import tempdir
 
-    out_path = Path(tempfile.mkdtemp()) / "descriptor.fds"
+    out_path = tempdir.mkdtemp(prefix="crush-proto-") / "descriptor.fds"
     args = [
         "protoc",
         f"-I{path.parent}",

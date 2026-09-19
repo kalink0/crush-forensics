@@ -42,11 +42,14 @@ from typing import TYPE_CHECKING, Any, Generator
 if TYPE_CHECKING:
     pass
 
+import array as _array
+import logging
+import time
+
 from PySide6.QtCore import (
     QAbstractTableModel,
     QDateTime,
     QModelIndex,
-    QSettings,
     Qt,
     QThread,
     QTimer,
@@ -80,12 +83,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import array as _array
-import logging
-import time
-
-from crush.core.log_db import FilterSpec, LogDatabase, _INSERT_SQL, _ts_to_unix, _unix_to_ts
-
+from crush.core import tempdir
+from crush.core.log_db import _INSERT_SQL, FilterSpec, LogDatabase, _ts_to_unix, _unix_to_ts
 from crush.core.vfs import VFS, VFSNode
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
@@ -1249,11 +1248,10 @@ class MultiLogViewer(QWidget):
 
     @staticmethod
     def _log_temp_dir() -> str | None:
-        """Configured base directory for log conversion's intermediate files
-        (Tools -> Log Temp Directory...), or None to use the OS default temp
-        location."""
-        value = QSettings("Crush DFIR", "Crush").value("log_temp_dir", "", type=str)
-        return value.strip() or None
+        """Configured Tools -> Temp Directory..., or None for the OS default
+        (the converter then resolves it through crush.core.tempdir itself)."""
+        configured = tempdir.configured_root()
+        return str(configured) if configured is not None else None
 
     def closeEvent(self, event: Any) -> None:
         for w in self._workers.values():
@@ -1973,7 +1971,7 @@ def _probe_is_log(node: VFSNode, vfs: VFS) -> bool:
     if ext in _BINARY_EXTENSIONS:
         return False
     try:
-        raw = vfs.read(node)[:_PROBE_PEEK_BYTES]
+        raw = vfs.peek(node, _PROBE_PEEK_BYTES)
         if b"\x00" in raw[:512]:        # binary sentinel
             return False
         try:
