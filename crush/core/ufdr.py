@@ -245,6 +245,22 @@ class UFDRHandle:
         return info
 
 
+def _close_dump(dump: Any) -> None:
+    """Close a pgdumplib.Dump's source file handle.
+
+    The public API (pgdumplib 4.0) has no close() -- Dump.load() opens
+    `self._handle = open(path, 'rb')` and never closes it itself. Reaching
+    into the private attribute is the only way to release it before the
+    temp copy holding it is deleted.
+    """
+    handle = getattr(dump, "_handle", None)
+    if handle is not None:
+        try:
+            handle.close()
+        except OSError:
+            pass
+
+
 def _device_schemas(dump: Any) -> list[str]:
     """Every `device_<uuid>` schema in the dump, discovered by scanning its
     entries rather than assumed to be exactly one -- a UFDR can bundle
@@ -442,30 +458,43 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
             import pgdumplib
 
             dump = pgdumplib.load(tmp_path)
-            schemas = _device_schemas(dump)
-            if not schemas:
-                raise UFDROpenError("UFDR database has no per-device schema -- unrecognised layout")
-            if (
-                manifest_device_id
-                and f"device_{manifest_device_id}" not in schemas
-            ):
-                _logger.warning(
-                    "UFDR: database.json's DeviceId %s has no matching device_* schema in the "
-                    "dump (found: %s) -- using the schemas found in the dump",
-                    manifest_device_id,
-                    schemas,
-                )
+            try:
+                schemas = _device_schemas(dump)
+                if not schemas:
+                    raise UFDROpenError(
+                        "UFDR database has no per-device schema -- unrecognised layout"
+                    )
+                if (
+                    manifest_device_id
+                    and f"device_{manifest_device_id}" not in schemas
+                ):
+                    _logger.warning(
+                        "UFDR: database.json's DeviceId %s has no matching device_* schema "
+                        "in the dump (found: %s) -- using the schemas found in the dump",
+                        manifest_device_id,
+                        schemas,
+                    )
 
-            root = VFSNode(name=p.name, path="/", is_dir=True)
-            node_meta: dict[str, _NodeMeta] = {}
-            if len(schemas) == 1:
-                _build_device_tree(dump, schemas[0], node_meta, root)
-            else:
-                for schema in schemas:
-                    device_root = VFSNode(name=_device_label(schema), path=f"/{_device_label(schema)}", is_dir=True)
-                    root.children.append(device_root)
-                    _build_device_tree(dump, schema, node_meta, device_root)
-                root.children.sort(key=lambda n: n.name.lower())
+                root = VFSNode(name=p.name, path="/", is_dir=True)
+                node_meta: dict[str, _NodeMeta] = {}
+                if len(schemas) == 1:
+                    _build_device_tree(dump, schemas[0], node_meta, root)
+                else:
+                    for schema in schemas:
+                        device_root = VFSNode(
+                            name=_device_label(schema), path=f"/{_device_label(schema)}", is_dir=True
+                        )
+                        root.children.append(device_root)
+                        _build_device_tree(dump, schema, node_meta, device_root)
+                    root.children.sort(key=lambda n: n.name.lower())
+            finally:
+                # pgdumplib.Dump.load() keeps its source file open (no public
+                # close()) -- release it before the outer finally tries to
+                # delete that same temp file. Windows refuses to unlink an
+                # open file (unlike POSIX, where the delete just succeeds and
+                # the handle keeps the bytes alive until closed) -- this was
+                # missed on the first pass and only surfaced on Windows CI.
+                _close_dump(dump)
         finally:
             tmp_path.unlink(missing_ok=True)
     except Exception:

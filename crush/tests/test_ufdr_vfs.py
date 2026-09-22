@@ -378,6 +378,39 @@ def test_parse_ts_is_independent_of_local_timezone(monkeypatch: pytest.MonkeyPat
     assert results == {1722117840.0}
 
 
+def test_close_dump_releases_the_source_file_handle(tmp_path: Path) -> None:
+    """pgdumplib.Dump.load() opens the temp database copy and keeps that
+    handle open (no public close()) -- open_ufdr() must release it via
+    _close_dump() before deleting the temp file, or the delete raises
+    PermissionError on Windows (unlike POSIX, which allows unlinking an
+    open file regardless of who still has it open). Regression test for
+    a real Windows CI failure: open_ufdr() worked on Linux/macOS but
+    crashed on every Windows run because that close was missing.
+
+    This can't be reproduced on POSIX by asserting the temp file was
+    deleted -- unlink() there succeeds whether or not the handle was
+    closed first, so a POSIX-only run of that assertion would pass either
+    way. Testing _close_dump()'s actual effect on the handle is portable.
+    """
+    import pgdumplib
+
+    from crush.core.ufdr import _close_dump
+
+    rows = [_row("n1", 1, "system", "/system")]
+    ufdr_path = _build_fake_ufdr(tmp_path, devices={DEVICE: rows}, files={})
+    with zipfile.ZipFile(ufdr_path) as zf:
+        db_path = tmp_path / "extracted.db"
+        db_path.write_bytes(zf.read("DbData/database.db"))
+
+    dump = pgdumplib.load(db_path)
+    assert not dump._handle.closed
+    _close_dump(dump)
+    assert dump._handle.closed
+    # A closed handle must not block deleting the file it pointed at --
+    # exactly what open_ufdr()'s own cleanup relies on.
+    db_path.unlink()
+
+
 def test_split_archive_raises_explicit_open_error(tmp_path: Path) -> None:
     # A single segment of a split/segmented export, or any other file that
     # isn't a valid standalone zip -- the natural failure mode when this
