@@ -41,6 +41,7 @@ dependencies = [
     "crush-analyze @ git+https://github.com/kalink0/crush-analyze.git@b69bb9d2e462128033613a09bc5bf2c709dfbd99",
     "pyzipper>=0.3.6",
     "sqlcipher3>=0.6.2",
+    "pgdumplib>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -94,6 +95,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["sqlcipher3", "sqlcipher3.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pgdumplib", "pgdumplib.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

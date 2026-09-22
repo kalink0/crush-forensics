@@ -1483,6 +1483,86 @@ class RawImageVFS(VFS):
         return total
 
 
+class UFDRVFS(VFS):
+    """VFS backed by a Cellebrite UFDR (Physical Analyzer report/delivery
+    container). Browses the original device's file/folder tree, decoded
+    from the container's embedded PostgreSQL dump -- see crush.core.ufdr
+    for the format details and every fact this was verified against.
+
+    Only the device filesystem is exposed here; Cellebrite's other ~185
+    forensic tables (Contacts, Calls, Chats, ...) are out of scope.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        from crush.core.ufdr import UFDRHandle, open_ufdr
+
+        self._path = Path(path)
+        self._handle: UFDRHandle = open_ufdr(self._path)
+        self._zf_lock = threading.Lock()
+        self._tree = self._handle.tree
+        self._file_counts: dict[str, int] = {}
+        self._total_sizes: dict[str, int] = {}
+        self._compute_file_counts(self._tree)
+        self._compute_total_sizes(self._tree)
+
+    def root(self) -> VFSNode:
+        return self._tree
+
+    def read(self, node: VFSNode) -> bytes:
+        info = self._handle.resolve(node)
+        with self._zf_lock:
+            return self._handle.zf.read(info)
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        info = self._handle.resolve(node)
+        if node.size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+        with self._zf_lock:
+            inner = self._handle.zf.open(info)
+        return buffered(LockedStream(inner, self._zf_lock))
+
+    def peek(self, node: VFSNode, n: int = 32) -> bytes:
+        info = self._handle.resolve(node)
+        with self._zf_lock:
+            with self._handle.zf.open(info) as f:
+                return f.read(n)
+
+    def node_info(self, node: VFSNode) -> dict[str, str] | None:
+        """Cellebrite's own recorded MD5/SHA-256/category for *node*, plus an
+        explicit "not located" status if its bytes couldn't be found in the
+        container -- None for directories. See _enrich_with_format_info."""
+        return self._handle.node_info(node)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def file_count(self, node: VFSNode) -> int:
+        return self._file_counts.get(node.path, 0)
+
+    def total_size(self, node: VFSNode) -> int:
+        return self._total_sizes.get(node.path, 0)
+
+    def _compute_file_counts(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._file_counts[node.path] = 1
+            return 1
+        total = 0
+        for child in node.children:
+            total += self._compute_file_counts(child)
+        self._file_counts[node.path] = total
+        return total
+
+    def _compute_total_sizes(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._total_sizes[node.path] = node.size
+            return node.size
+        total = 0
+        for child in node.children:
+            total += self._compute_total_sizes(child)
+        self._total_sizes[node.path] = total
+        return total
+
+
 class BytesVFS(VFS):
     """VFS backed by a single in-memory bytes object (for artifact chaining)."""
 
@@ -1602,6 +1682,13 @@ def open_vfs(path: str | Path, *, password: str = "") -> VFS:
             return RawImageVFS(p)
         except RawImageOpenError:
             pass  # extension matched, but it isn't a readable image
+    if p.suffix.lower() == ".ufdr":
+        from crush.core.ufdr import UFDROpenError
+
+        try:
+            return UFDRVFS(p)
+        except UFDROpenError:
+            pass  # extension matched, but it isn't a readable UFDR
     if p.is_file():
         return FileVFS(p)
     raise ValueError(f"Unsupported source type: {p}")

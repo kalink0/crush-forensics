@@ -353,8 +353,9 @@ class ParseResult:
 | `crush/parsers/base.py` | `AbstractParser`, `ParseResult`, `ViewerType` |
 | `crush/parsers/__init__.py` | parser registration (priority order) |
 | `crush/core/registry.py` | `ParserRegistry` — `register`, `best`, `candidates` |
-| `crush/core/vfs.py` | `VFSNode`, `VFS` ABC, `DirectoryVFS`, `ZipVFS`, `TarVFS`, `AndroidBackupVFS`, `ITunesBackupVFS`, `RawImageVFS`, `BytesVFS` |
+| `crush/core/vfs.py` | `VFSNode`, `VFS` ABC, `DirectoryVFS`, `ZipVFS`, `TarVFS`, `AndroidBackupVFS`, `ITunesBackupVFS`, `RawImageVFS`, `UFDRVFS`, `BytesVFS` |
 | `crush/core/raw_image.py` | Raw disk image / EWF adapter backing `RawImageVFS` — volume tree, unallocated-gap synthesis, deleted-file recovery, EWF verify; wraps `crush/third_party/{qnxprobe,ewfprobe}` |
+| `crush/core/ufdr.py` | Cellebrite UFDR (10.x) adapter backing `UFDRVFS` — extracts + parses the embedded `pg_dump` database via `pgdumplib`, builds the device filesystem tree from `Nodes`, resolves a node to its physical bytes in the outer ZIP |
 | `crush/core/ios_keybag.py` | Apple backup KeyBag parsing + `Manifest.db`/per-file decrypt (iOS 10.2+) |
 | `crush/core/android_backup_crypto.py` | Android `adb backup` master-key unwrap + payload decrypt (PBKDF2/AES-256) |
 | `crush/core/passwords.py` | `PasswordRequiredError`, `WrongPasswordError` — shared contract for any password-protected source/parser |
