@@ -6,7 +6,7 @@ All notable changes to Crush will be documented in this file.
 
 ### New Features
 
-- Cellebrite UFDR (Physical Analyzer report/delivery container, 10.x) support: browse the original device's file/folder tree, decoded from the container's embedded PostgreSQL dump rather than its own internal, type-bucketed storage layout, with Cellebrite's own recorded MD5/SHA-256 shown in the Properties panel. Filesystem browsing only — Cellebrite's other forensic tables (contacts, calls, chats, etc.) are not decoded.
+- Cellebrite UFDR (Physical Analyzer report/delivery container, 10.x) support: browse the original device's file/folder tree, decoded from the container's embedded PostgreSQL dump rather than its own internal, type-bucketed storage layout, with Cellebrite's own recorded MD5/SHA-256 shown in the Properties panel. Filesystem browsing only — Cellebrite's other forensic tables (contacts, calls, chats, etc.) are not decoded. Encrypted UFDR containers and split/segmented exports aren't supported yet.
 
 ### Bug Fixes
 

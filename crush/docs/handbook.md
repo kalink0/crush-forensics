@@ -89,6 +89,7 @@ Only UFDR 10.x is supported (the version that embeds the actual database — ear
 - **Filesystem browsing only** — Cellebrite's own decoded forensic tables (contacts, calls, chats, locations, and the rest of Physical Analyzer's ~185 other tables) are not read or shown; use Cellebrite Reader for those.
 - **No split/segmented UFDR exports** — a case exported as multiple `.ufdr` parts is not supported; open a single, complete `.ufdr`.
 - **UFDR 10.x only** — UFDR 7 containers (no embedded database) are not supported.
+- **No encrypted UFDR containers** — not yet supported.
 
 ---
 
