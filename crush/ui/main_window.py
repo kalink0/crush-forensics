@@ -2775,7 +2775,7 @@ class MainWindow(QMainWindow):
         """Prepend format knowledge-base metadata to a ParseResult without overriding parser data."""
         try:
             from crush.core.format_db import FormatDatabase
-            from crush.core.vfs import RawImageVFS
+            from crush.core.vfs import RawImageVFS, UFDRVFS
             from crush.parsers.base import ParseResult
 
             fmt_meta: dict = {}
@@ -2791,6 +2791,14 @@ class MainWindow(QMainWindow):
                 if vol_info is not None:
                     fmt_meta["Filesystem"] = vol_info["kind"] or "unknown"
                     fmt_meta["Status"] = vol_info["note"] or "no reader for this content — showing raw bytes"
+
+            # Cellebrite's own recorded MD5/SHA-256/category for this node,
+            # plus an explicit status if its bytes couldn't be located in
+            # the UFDR container -- same "never silent" rule as above.
+            if isinstance(vfs, UFDRVFS):
+                node_info = vfs.node_info(node)
+                if node_info:
+                    fmt_meta.update(node_info)
 
             fmt = FormatDatabase.get().by_parser_class(type(parser).__name__) if parser else None
             if fmt is None:
@@ -3930,7 +3938,7 @@ _BUSY_BYTES = 8 * 1024 * 1024
 
 _ARCHIVE_SUFFIXES = (
     ".zip", ".7z", ".tar", ".tgz", ".tbz2", ".txz", ".tar.gz", ".tar.bz2", ".tar.xz",
-    ".gz", ".ab", ".e01", ".img", ".dd", ".raw", ".001",
+    ".gz", ".ab", ".e01", ".img", ".dd", ".raw", ".001", ".ufdr",
 )
 
 
