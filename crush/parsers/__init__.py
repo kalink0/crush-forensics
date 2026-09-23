@@ -7,6 +7,8 @@ it matches everything and acts as a catch-all.
 """
 from crush.core.registry import ParserRegistry
 from crush.parsers.sqlite_parser import SQLiteParser
+from crush.parsers.sqlite_journal_parser import SQLiteJournalParser
+from crush.parsers.sqlite_wal_parser import SQLiteWALParser
 from crush.parsers.xml_parser import XmlParser
 from crush.parsers.plist_parser import PlistParser
 from crush.parsers.abx_parser import AbxParser
@@ -25,6 +27,8 @@ from crush.parsers.mmkv_parser import MMKVParser
 __all__ = ["ParserRegistry"]
 
 ParserRegistry.register(SQLiteParser())
+ParserRegistry.register(SQLiteJournalParser())
+ParserRegistry.register(SQLiteWALParser())
 ParserRegistry.register(XmlParser())
 ParserRegistry.register(PlistParser())
 ParserRegistry.register(AbxParser())
