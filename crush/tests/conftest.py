@@ -21,6 +21,18 @@ from typing import Any
 
 import pytest
 
+# Qt tests build real widgets (TableViewer, HexViewer, ...) against the
+# pytest-qt qapp/qtbot fixtures. Left unset, PySide6 connects to whatever
+# real display this machine has (X11/Wayland), so any test that calls
+# .show() or relies on real on-screen visibility (isVisible()) would pop an
+# actual window on the developer's live desktop. Forcing Qt's built-in
+# offscreen platform plugin -- before any QApplication is constructed --
+# keeps widget visibility state fully real and queryable without ever
+# touching a real display; must be set here (not in a fixture) since it has
+# to take effect before pytest-qt's own qapp fixture creates the
+# QApplication singleton.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # ---------------------------------------------------------------------------

@@ -1107,3 +1107,129 @@ def test_ts_decode_in_sql_result_view(qapp) -> None:
     _revert(tv, 2)
     assert cell(0, 2) == str(_TS)
     assert model.headerData(2, Qt.Orientation.Horizontal) == "txt"
+
+
+def _find_column(model, header: str) -> int:
+    for c in range(model.columnCount()):
+        if model.headerData(c, Qt.Orientation.Horizontal) == header:
+            return c
+    raise AssertionError(f"no {header!r} column in model")
+
+
+def _find_row_containing(model, col: int, needle: str) -> int:
+    for r in range(model.rowCount()):
+        if needle in str(model.data(model.index(r, col)) or ""):
+            return r
+    raise AssertionError(f"no row with {needle!r} in column {col}")
+
+
+def test_standalone_wal_show_hex_and_row_provenance_end_to_end(qapp, tmp_path: Path) -> None:
+    """End-to-end regression for the standalone -wal "Show Hex stays empty" /
+    "row click doesn't highlight anything" bugs -- builds the real
+    TableViewer the way viewer_factory.make_viewer() does from a real
+    SQLiteWALParser result, then drives the actual "Show Hex" button handler
+    and the actual row-selection signal (not the CellLocator in isolation)."""
+    from PySide6.QtCore import QItemSelectionModel
+
+    from crush.core.vfs import DirectoryVFS
+    from crush.parsers.sqlite_wal_parser import SQLiteWALParser
+
+    db_path = tmp_path / "live.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.commit()
+    conn.execute("INSERT INTO messages (body) VALUES ('hello-wal-content')")
+    conn.commit()
+    try:
+        vfs = DirectoryVFS(tmp_path)
+        wal_node = next(c for c in vfs.root().children if c.name == "live.db-wal")
+        wal_bytes = vfs.read(wal_node)
+        result = SQLiteWALParser().parse(wal_node, vfs)
+    finally:
+        conn.close()
+
+    tv = TableViewer(result.data, source_name=wal_node.name, **result.viewer_hints)
+    tv.show()  # _sync_hex_pane() (row-selection highlight below) is gated on real isVisible()
+
+    assert not tv._hex_pane_loaded
+    tv._toggle_hex_pane()
+    assert tv._hex_toggle_btn.text() == "Hide Hex"
+    assert tv._hex_pane_loaded
+    assert tv._hex_viewer._data == wal_bytes
+
+    model = tv._table_view.model()
+    value_col = _find_column(model, "Value")
+    target_row = _find_row_containing(model, value_col, "hello-wal-content")
+    idx = model.index(target_row, value_col)
+    tv._table_view.selectionModel().setCurrentIndex(
+        idx,
+        QItemSelectionModel.SelectionFlag.ClearAndSelect
+        | QItemSelectionModel.SelectionFlag.Rows,
+    )
+
+    assert tv._hex_viewer._focus_ranges, "selecting a row did not highlight anything in the hex pane"
+    start, end = tv._hex_viewer._focus_ranges[0]
+    assert b"hello-wal-content" in wal_bytes[start:end]
+    tv.close()  # shown widgets need an explicit close(), not just going out of scope
+
+
+def test_standalone_journal_show_hex_and_row_provenance_end_to_end(qapp, tmp_path: Path) -> None:
+    """Same end-to-end regression as
+    test_standalone_wal_show_hex_and_row_provenance_end_to_end, for a
+    standalone -journal file."""
+    from PySide6.QtCore import QItemSelectionModel
+
+    from crush.core.vfs import DirectoryVFS
+    from crush.parsers.sqlite_journal_parser import SQLiteJournalParser
+
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    db_path = evidence_dir / "crash.db"
+
+    conn = sqlite3.connect(str(db_path), isolation_level=None)
+    conn.execute("PRAGMA page_size=4096")
+    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO messages (body) VALUES ('before-crash')")
+    for i in range(400):
+        conn.execute("INSERT INTO messages (body) VALUES (?)", (f"pre-{i}" * 50,))
+    conn.commit()
+
+    conn.execute("PRAGMA cache_size=10")
+    conn.execute("BEGIN")
+    conn.execute("UPDATE messages SET body = 'during-crash-txn' WHERE id = 1")
+    conn.execute("UPDATE messages SET body = body || '-x' WHERE id > 1")
+    try:
+        vfs = DirectoryVFS(evidence_dir)
+        journal_node = next(c for c in vfs.root().children if c.name == "crash.db-journal")
+        journal_bytes = vfs.read(journal_node)
+        result = SQLiteJournalParser().parse(journal_node, vfs)
+    finally:
+        conn.rollback()
+        conn.close()
+
+    tv = TableViewer(result.data, source_name=journal_node.name, **result.viewer_hints)
+    tv.show()  # _sync_hex_pane() (row-selection highlight below) is gated on real isVisible()
+
+    assert not tv._hex_pane_loaded
+    tv._toggle_hex_pane()
+    assert tv._hex_toggle_btn.text() == "Hide Hex"
+    assert tv._hex_pane_loaded
+    assert tv._hex_viewer._data == journal_bytes
+
+    model = tv._table_view.model()
+    value_col = _find_column(model, "Value")
+    target_row = _find_row_containing(model, value_col, "before-crash")
+    idx = model.index(target_row, value_col)
+    tv._table_view.selectionModel().setCurrentIndex(
+        idx,
+        QItemSelectionModel.SelectionFlag.ClearAndSelect
+        | QItemSelectionModel.SelectionFlag.Rows,
+    )
+
+    assert tv._hex_viewer._focus_ranges, "selecting a row did not highlight anything in the hex pane"
+    start, end = tv._hex_viewer._focus_ranges[0]
+    assert b"before-crash" in journal_bytes[start:end]
+    tv.close()  # shown widgets need an explicit close(), not just going out of scope

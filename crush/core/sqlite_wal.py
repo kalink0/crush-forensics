@@ -373,6 +373,15 @@ def parse_table_leaf_page(
             rowid_start = pos
             rowid, n = _read_varint(page, pos)
             pos += n
+            # A rowid is SQLite's one signed varint: _read_varint returns
+            # the raw accumulated bit pattern (up to 64 unsigned bits, for
+            # the full 9-byte encoding), but the on-disk format defines the
+            # rowid itself as a signed 64-bit integer -- reinterpret the top
+            # half of that range as negative, the same (i64)(u64)x cast
+            # SQLite's own btreeParseCellPtr does, instead of surfacing a
+            # value larger than any real 64-bit integer.
+            if rowid >= 1 << 63:
+                rowid -= 1 << 64
 
             inline_size = _payload_inline_size(payload_size, usable_size)
             inline_size = min(inline_size, len(page) - pos)  # never read past the page

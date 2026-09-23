@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from crush.core.cell_locator import RawBytesCellLocator
 from crush.core.sqlite_journal import (
     JOURNAL_MAGIC,
     extract_journal_rows,
@@ -43,6 +44,10 @@ class SQLiteJournalParser(AbstractParser):
         ]
         rows: list[list[Any]] = []
         text_parts: list[str] = []
+        # Byte provenance for the embedded Hex pane's "Show Hex" -- keyed by
+        # row index (see RawBytesCellLocator/data["rowids"] below), same as
+        # table_viewer.py's own companion-mode Rollback Journal tab.
+        row_ranges: dict[int, tuple[int, int]] = {}
         for jr in extract_journal_rows(result):
             if jr.kind == "Live cell":
                 value = str(jr.values)
@@ -57,6 +62,7 @@ class SQLiteJournalParser(AbstractParser):
                     text_parts.append(value)
             else:
                 value = ""
+            row_ranges[len(rows)] = (jr.file_offset, jr.file_offset + jr.byte_length)
             rows.append([
                 jr.segment_index,
                 jr.record_index,
@@ -93,7 +99,15 @@ class SQLiteJournalParser(AbstractParser):
             "database's default table view (never applied to any file on disk)."
         )
 
-        data = {"Journal Records": {"columns": columns, "rows": rows, "truncated": False}}
+        data: dict[str, Any] = {
+            "Journal Records": {
+                "columns": columns, "rows": rows, "truncated": False,
+                "rowids": list(range(len(rows))),
+            },
+            "__cell_locator": RawBytesCellLocator(
+                file_bytes=raw, label="-journal file", row_ranges=row_ranges,
+            ),
+        }
         return ParseResult(
             viewer_type="table",
             data=data,

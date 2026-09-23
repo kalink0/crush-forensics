@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from crush.core.cell_locator import RawBytesCellLocator
 from crush.core.sqlite_wal import (
     PAGE_TYPE_TABLE_LEAF,
     classify_wal_frames,
@@ -45,9 +46,20 @@ class SQLiteWALParser(AbstractParser):
         columns = ["Frame", "Page", "Transaction", "Status", "RowID", "Value", "Offset (B)"]
         rows: list[list[Any]] = []
         text_parts: list[str] = []
+        # Byte provenance for the embedded Hex pane's "Show Hex" -- every row
+        # decoded from a given frame shares that frame's own (header + page)
+        # span, keyed by row index (see RawBytesCellLocator/data["rowids"]
+        # below), same whole-frame granularity table_viewer.py's own
+        # companion-mode WAL Frames tab highlights.
+        row_ranges: dict[int, tuple[int, int]] = {}
 
         if classified is not None:
             page_size, frames = classified
+
+            def _append_row(row: list[Any], frame_offset: int) -> None:
+                row_ranges[len(rows)] = (frame_offset, frame_offset + 24 + page_size)
+                rows.append(row)
+
             for f in frames:
                 page_start = f["offset"] + 24
                 page_bytes = raw[page_start: page_start + page_size]
@@ -63,21 +75,21 @@ class SQLiteWALParser(AbstractParser):
                     if is_leaf else None
                 )
                 if not parsed:
-                    rows.append([
+                    _append_row([
                         f["frame"], f["page"], f["tx"] or "—", f["status"],
                         "—", "(not a decodable table-leaf page)" if f["salt_ok"] else "(WAL slack)",
                         f["offset"],
-                    ])
+                    ], f["offset"])
                     continue
                 for rowid, values in parsed:
                     value_text = str(values)
                     for v in values:
                         if isinstance(v, str) and v.strip():
                             text_parts.append(v)
-                    rows.append([
+                    _append_row([
                         f["frame"], f["page"], f["tx"] or "—", f["status"],
                         rowid, value_text, f["offset"],
-                    ])
+                    ], f["offset"])
 
         meta: dict[str, Any] = {
             "Format": "SQLite Write-Ahead Log",
@@ -101,7 +113,15 @@ class SQLiteWALParser(AbstractParser):
             "table view, plus this same per-frame inventory in its own 'WAL Frames' tab."
         )
 
-        data = {"WAL Frames": {"columns": columns, "rows": rows, "truncated": False}}
+        data: dict[str, Any] = {
+            "WAL Frames": {
+                "columns": columns, "rows": rows, "truncated": False,
+                "rowids": list(range(len(rows))),
+            },
+            "__cell_locator": RawBytesCellLocator(
+                file_bytes=raw, label="-wal file", row_ranges=row_ranges,
+            ),
+        }
         return ParseResult(
             viewer_type="table",
             data=data,

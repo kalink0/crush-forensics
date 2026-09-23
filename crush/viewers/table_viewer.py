@@ -680,6 +680,12 @@ class TableViewer(QWidget):
         else:
             self._journal_path = None
         self._db_conn: sqlite3.Connection | None = None
+        # A connection to __db_path that's never redirected to
+        # __recovered_db_path -- see _ensure_raw_db(). The physical/raw tabs
+        # need this for build_page_table_map() (it resolves its own file via
+        # PRAGMA database_list on whatever connection it's given), so they
+        # don't inherit _ensure_db()'s post-rollback redirect.
+        self._raw_db_conn: sqlite3.Connection | None = None
         # Embedded Hex pane byte-provenance: a caller (e.g. RealmViewer) may
         # supply its own CellLocator against the real source file, via
         # "__cell_locator" -- takes priority over the default SqliteCellLocator
@@ -1699,7 +1705,7 @@ class TableViewer(QWidget):
         self._wal_frames_cache = raw
 
         # Build page→table map (best-effort; silently ignore errors)
-        conn = self._ensure_db()
+        conn = self._ensure_raw_db()
         if conn is not None:
             try:
                 self._page_table_map = build_page_table_map(conn, data, page_size)
@@ -1977,7 +1983,7 @@ class TableViewer(QWidget):
         if self._page_table_map:
             return self._page_table_map
         page_size = self._get_page_size()
-        conn = self._ensure_db()
+        conn = self._ensure_raw_db()
         if conn is None or page_size == 0:
             return self._page_table_map
         try:
@@ -2305,7 +2311,7 @@ class TableViewer(QWidget):
         itself rather than assume _page_table_map was already populated."""
         if self._page_table_map:
             return self._page_table_map
-        conn = self._ensure_db()
+        conn = self._ensure_raw_db()
         page_size = self._get_page_size()
         if conn is None or page_size == 0:
             return {}
@@ -3051,6 +3057,26 @@ class TableViewer(QWidget):
             )
             self._db_conn.row_factory = sqlite3.Row
         return self._db_conn
+
+    def _ensure_raw_db(self) -> sqlite3.Connection | None:
+        """Like _ensure_db(), but always against __db_path -- never redirected
+        to __recovered_db_path. Physical/raw tabs (File Structure, Freelist,
+        Freeblocks, Unallocated Space, WAL Frames, Rollback Journal) use this
+        for build_page_table_map(), since that function resolves its own file
+        to walk via PRAGMA database_list on whatever connection it's given --
+        handing it _ensure_db()'s connection would silently compute the
+        page→table map from the reconstructed image instead of the physical
+        file these tabs otherwise read directly."""
+        if not self._db_path or not self._db_path.exists():
+            return None
+        if self._raw_db_conn is None:
+            self._raw_db_conn = sqlite3.connect(
+                f"file:{self._db_path}?mode=ro",
+                uri=True,
+                check_same_thread=False,
+            )
+            self._raw_db_conn.row_factory = sqlite3.Row
+        return self._raw_db_conn
 
     def _refresh_sql_completions(self) -> None:
         """Populate the SQL editor autocomplete with the full DB schema."""
@@ -3952,6 +3978,9 @@ class TableViewer(QWidget):
         if self._db_conn is not None:
             self._db_conn.close()
             self._db_conn = None
+        if self._raw_db_conn is not None:
+            self._raw_db_conn.close()
+            self._raw_db_conn = None
         if self._db_path:
             for suffix in ("", "-wal", "-shm"):
                 companion = Path(str(self._db_path) + suffix)

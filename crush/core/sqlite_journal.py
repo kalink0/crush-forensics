@@ -303,6 +303,29 @@ def reconstruct_post_rollback_image(
     if not result.mergeable or page_size <= 0 or not result.segments:
         return None
 
+    # The journal's own declared page size (result.page_size, from its
+    # header) must agree with the base database's -- a mismatch means this
+    # -journal doesn't actually belong to *this* database (stale/foreign
+    # companion), and applying its page-sized records against the wrong
+    # stride would silently misalign every subsequent byte. Never guess.
+    if result.page_size != page_size:
+        return None
+
+    # A rollback journal only ever records the *pre-transaction* content of
+    # a page that already existed before the write -- a page the
+    # transaction newly allocated is rolled back by truncation alone (see
+    # below), never by journaling it. page_num isn't covered by the page
+    # checksum (only the page content is), so a record naming a page beyond
+    # the pre-transaction size is either corrupt or adversarial input, not
+    # a page a real SQLite engine would ever have written here -- reject the
+    # whole reconstruction rather than trust an attacker/corruption
+    # controlled page number into a multi-gigabyte bytearray.extend().
+    orig_pages = result.segments[0].header.db_orig_size or (len(base_data) // page_size)
+    for segment in result.segments:
+        for rec in segment.records:
+            if rec.page_num < 1 or rec.page_num > orig_pages:
+                return None
+
     image = bytearray(base_data)
 
     def _apply(pn: int, page_bytes: bytes) -> None:

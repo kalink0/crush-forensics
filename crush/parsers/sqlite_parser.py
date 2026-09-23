@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from crush.core import sqlite_journal, tempdir
-from crush.core.sqlite_wal import build_wal_page_overlay
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -282,6 +281,7 @@ class SQLiteParser(AbstractParser):
                     _logger.debug("Could not load filesystem companion %s: %s", fs_journal.name, exc)
 
         recovered_db_path: str | None = None
+        journal_skip_reason: str | None = None
         if journal_bytes:
             journal_copy_path = tmp_path + "-journal.raw"
             with open(journal_copy_path, "wb") as f:
@@ -297,22 +297,39 @@ class SQLiteParser(AbstractParser):
             # view. SQLCipher pages are ciphertext here, so a byte-level
             # journal overlay can't be applied without the key context;
             # encrypted DBs only get the raw, unmerged Rollback Journal tab.
+            #
+            # A database is, per its own header (bytes 18/19), in exactly one
+            # journaling mode at a time -- WAL (2,2) or rollback-journal
+            # (anything else) -- never both at once. A "hot" journal is only
+            # something SQLite's own engine would actually roll back if the
+            # header currently says rollback-journal mode; if the header
+            # says WAL instead, this -journal predates the switch to WAL and
+            # is a stale leftover, not "current". A -wal found alongside a
+            # mergeable journal is, symmetrically, the stale leftover of the
+            # reverse switch -- never a legitimately current layer to merge.
+            wal_flag_set = len(raw) >= 20 and raw[18] == 2 and raw[19] == 2
             if journal_result.mergeable and password is None:
-                page_size_hdr = sqlite_journal.read_db_header_page_size(raw)
-                wal_overlay: dict[int, bytes] | None = None
-                wal_copy = Path(tmp_path + "-wal")
-                if wal_copy.exists():
-                    try:
-                        wal_overlay = build_wal_page_overlay(wal_copy.read_bytes(), page_size_hdr)
-                    except Exception as exc:
-                        _logger.warning("Could not build -wal overlay for journal merge: %s", exc)
-                image = sqlite_journal.reconstruct_post_rollback_image(
-                    raw, page_size_hdr, journal_result, wal_overlay,
-                )
-                if image is not None:
-                    recovered_db_path = tmp_path + ".recovered.db"
-                    with open(recovered_db_path, "wb") as f:
-                        f.write(image)
+                if wal_flag_set:
+                    journal_skip_reason = (
+                        "the database's own header shows WAL mode is active, so this "
+                        "-journal predates the switch to WAL and is stale, not \"hot\""
+                    )
+                else:
+                    if Path(tmp_path + "-wal").exists():
+                        _logger.debug(
+                            "Ignoring -wal companion alongside a valid/hot -journal for "
+                            "%s -- not in WAL mode per its own header, so the -wal is "
+                            "the stale file here, not the journal",
+                            node.path,
+                        )
+                    page_size_hdr = sqlite_journal.read_db_header_page_size(raw)
+                    image = sqlite_journal.reconstruct_post_rollback_image(
+                        raw, page_size_hdr, journal_result,
+                    )
+                    if image is not None:
+                        recovered_db_path = tmp_path + ".recovered.db"
+                        with open(recovered_db_path, "wb") as f:
+                            f.write(image)
 
         if password is not None:
             # Explicit "Open as -> SQLite DB (Encrypted)…" path only -- the
@@ -430,7 +447,14 @@ class SQLiteParser(AbstractParser):
                 meta["Companion files"] = ", ".join(companions)
             if journal_result is not None:
                 n_records = sum(len(s.records) for s in journal_result.segments)
-                if journal_result.mergeable:
+                if journal_result.mergeable and journal_skip_reason:
+                    status = (
+                        f"valid/hot, {len(journal_result.segments)} segment(s), "
+                        f"{n_records} page record(s) -- NOT merged, {journal_skip_reason} "
+                        "(see the 'Rollback Journal' tab for the raw, unmerged record "
+                        "inventory)"
+                    )
+                elif journal_result.mergeable:
                     status = (
                         f"valid/hot, {len(journal_result.segments)} segment(s), "
                         f"{n_records} page record(s) -- merged into current view "

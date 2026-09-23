@@ -68,3 +68,49 @@ class CellLocator(Protocol):
         offset can't be attributed to a row of *table_name* -- never a
         guess at a nearby/likely row."""
         ...
+
+
+@dataclass
+class RawBytesCellLocator:
+    """Minimal CellLocator for a file opened standalone, with no schema/
+    companion database to resolve a row back to its exact bytes against --
+    e.g. a -wal or -journal file opened on its own (see
+    sqlite_wal_parser.py / sqlite_journal_parser.py). Backs the embedded Hex
+    pane with the file's own raw bytes so "Show Hex" has something to
+    display.
+
+    *row_ranges*, if given, maps a row index (the "rowids" list a caller
+    puts alongside its table data -- see TableViewer's generic row
+    population) to that row's own (start, end) byte range in *file_bytes*,
+    e.g. one WAL frame's or journal record's exact span -- several rows can
+    share the same range (several decoded cells from the same page/frame).
+    Left as None (the default) when no such mapping is available, so
+    locate_cell() honestly returns "can't resolve" rather than guessing.
+    """
+    file_bytes: bytes
+    label: str
+    row_ranges: dict[int, tuple[int, int]] | None = None
+
+    def default_file_kind(self) -> str:
+        return "base"
+
+    def read_file(self, file_kind: str) -> bytes | None:  # noqa: ARG002
+        return self.file_bytes
+
+    def label_for(self, file_kind: str) -> str:  # noqa: ARG002
+        return self.label
+
+    def locate_cell(
+        self, table_name: str, row_key: Any, col_idx: int | None  # noqa: ARG002
+    ) -> CellLocation | None:
+        if self.row_ranges is None or not isinstance(row_key, int):
+            return None
+        row_range = self.row_ranges.get(row_key)
+        if row_range is None:
+            return None
+        return CellLocation(file_kind="base", row_ranges=[row_range], column_ranges=None)
+
+    def locate_offset(
+        self, table_name: str, file_kind: str, offset: int  # noqa: ARG002
+    ) -> tuple[Any, int | None] | None:
+        return None

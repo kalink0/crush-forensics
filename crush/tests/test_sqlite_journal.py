@@ -13,6 +13,7 @@ understanding were wrong, fully_valid would come out False here.
 """
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from pathlib import Path
 
@@ -139,6 +140,43 @@ def test_reconstruct_post_rollback_image_restores_pre_transaction_row(tmp_path: 
     real_row = real_conn.execute("SELECT body FROM messages WHERE id = 1").fetchone()
     real_conn.close()
     assert real_row == ("before-crash",)
+
+
+def test_reconstruct_post_rollback_image_rejects_page_size_mismatch(tmp_path: Path) -> None:
+    """A -journal whose own declared page size disagrees with the base
+    database's header (stale/foreign companion) must never be merged --
+    applying journal-sized records against the wrong stride would silently
+    misalign the whole image instead of erroring.
+    """
+    _db_path, frozen_db_bytes, journal_bytes = _freeze_mid_transaction(tmp_path)
+    result = parse_rollback_journal(journal_bytes)
+    assert result.mergeable
+    assert result.page_size == _PAGE_SIZE
+
+    image = reconstruct_post_rollback_image(frozen_db_bytes, _PAGE_SIZE * 2, result)
+    assert image is None
+
+
+def test_reconstruct_post_rollback_image_rejects_page_num_beyond_orig_size(tmp_path: Path) -> None:
+    """page_num isn't covered by the per-record checksum (only the page
+    content is), so a corrupted/adversarial page_num naming a page beyond
+    the journal's own recorded pre-transaction size must be rejected rather
+    than trusted into bytearray.extend() -- a real SQLite-written journal
+    never journals a page it didn't already have before the transaction.
+    """
+    _db_path, frozen_db_bytes, journal_bytes = _freeze_mid_transaction(tmp_path)
+    result = parse_rollback_journal(journal_bytes)
+    assert result.mergeable
+
+    segment = result.segments[0]
+    orig_pages = segment.header.db_orig_size
+    assert orig_pages > 0
+    bad_record = dataclasses.replace(segment.records[0], page_num=orig_pages + 1000)
+    bad_segment = dataclasses.replace(segment, records=[bad_record, *segment.records[1:]])
+    bad_result = dataclasses.replace(result, segments=[bad_segment, *result.segments[1:]])
+
+    image = reconstruct_post_rollback_image(frozen_db_bytes, _PAGE_SIZE, bad_result)
+    assert image is None
 
 
 def test_persist_mode_journal_after_commit_is_not_mergeable(tmp_path: Path) -> None:
@@ -283,6 +321,41 @@ def test_sqlite_parser_merges_valid_journal_into_default_view(tmp_path: Path) ->
     assert "merged into current view" in result.metadata["Rollback journal"]
 
 
+def test_sqlite_parser_skips_merge_when_wal_flag_set_in_header(tmp_path: Path) -> None:
+    """A -journal that's valid/hot but sits next to a base file whose own
+    header says WAL mode is active must not be merged -- that combination
+    means the journal predates a later switch to WAL and is a stale
+    leftover, not something SQLite's own engine would actually roll back.
+    """
+    from crush.core.vfs import DirectoryVFS
+    from crush.parsers.sqlite_parser import SQLiteParser
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    _db_path, frozen_db_bytes, journal_bytes = _freeze_mid_transaction(src_dir)
+
+    # Simulate the base file having since been switched to WAL mode --
+    # patch just the header's WAL flag (bytes 18/19), leaving this
+    # otherwise-real crash-frozen journal untouched.
+    patched = bytearray(frozen_db_bytes)
+    patched[18] = 2
+    patched[19] = 2
+
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    (evidence_dir / "crash.db").write_bytes(bytes(patched))
+    (evidence_dir / "crash.db-journal").write_bytes(journal_bytes)
+
+    vfs = DirectoryVFS(evidence_dir)
+    node = next(c for c in vfs.root().children if c.name == "crash.db")
+    result = SQLiteParser().parse(node, vfs)
+
+    assert "__recovered_db_path" not in result.data
+    status = result.metadata["Rollback journal"]
+    assert "NOT merged" in status
+    assert "WAL mode is active" in status
+
+
 def test_sqlite_journal_parser_opens_journal_file_standalone(tmp_path: Path) -> None:
     """The user's originally reported case: opening a -journal file
     directly (no companion database in the same open) must show a
@@ -313,6 +386,7 @@ def test_sqlite_journal_parser_opens_journal_file_standalone(tmp_path: Path) -> 
         journal_node = next(
             c for c in vfs.root().children if c.name == "crash.db-journal"
         )
+        journal_node_bytes = vfs.read(journal_node)
         parser = SQLiteJournalParser()
         assert parser.can_parse(journal_node.path, vfs.peek(journal_node))
         result = parser.parse(journal_node, vfs)
@@ -329,3 +403,23 @@ def test_sqlite_journal_parser_opens_journal_file_standalone(tmp_path: Path) -> 
     assert any(
         r[kind_col] == "Live cell" and "before-crash" in r[value_col] for r in rows
     )
+
+    # Same "Show Hex" empty-panel bug as the standalone -wal case -- see
+    # test_sqlite_wal_parser_opens_wal_file_standalone.
+    locator = result.data["__cell_locator"]
+    assert locator.read_file(locator.default_file_kind()) == journal_node_bytes
+
+    # Per-row byte provenance must also work standalone -- recompute the
+    # expected span from the row's own "Offset (B)"/record length columns
+    # and check locate_cell() (fed the "rowids" list alongside the table
+    # data) resolves the right row to it.
+    offset_col = columns.index("Offset (B)")
+    live_idx = next(
+        i for i, r in enumerate(rows)
+        if r[kind_col] == "Live cell" and "before-crash" in r[value_col]
+    )
+    assert result.data["Journal Records"]["rowids"][live_idx] == live_idx
+    location = locator.locate_cell("Journal Records", live_idx, None)
+    assert location is not None
+    assert location.row_ranges[0][0] == rows[live_idx][offset_col]
+    assert b"before-crash" in journal_node_bytes[slice(*location.row_ranges[0])]

@@ -76,6 +76,7 @@ def test_sqlite_wal_parser_opens_wal_file_standalone(tmp_path: Path) -> None:
     try:
         vfs = DirectoryVFS(tmp_path)
         wal_node = next(c for c in vfs.root().children if c.name == "live.db-wal")
+        wal_bytes = vfs.read(wal_node)
         parser = SQLiteWALParser()
         assert parser.can_parse(wal_node.path, vfs.peek(wal_node))
         result = parser.parse(wal_node, vfs)
@@ -90,6 +91,33 @@ def test_sqlite_wal_parser_opens_wal_file_standalone(tmp_path: Path) -> None:
     assert any(
         r[status_col] == "Active" and "hello-wal-content" in r[value_col] for r in rows
     )
+
+    # The embedded "Show Hex" toggle needs a CellLocator to load anything --
+    # without a companion database, TableViewer has no __db_path to fall
+    # back to, so the standalone parser must supply one itself (see
+    # crush.core.cell_locator.RawBytesCellLocator) or the hex pane just
+    # silently stays empty.
+    locator = result.data["__cell_locator"]
+    assert locator.read_file(locator.default_file_kind()) == wal_bytes
+
+    # Per-row byte provenance ("locate this row's bytes in the Hex pane")
+    # must also work standalone -- recompute the expected frame span from
+    # the same lower-level classify_wal_frames() the parser itself uses,
+    # and check locate_cell() (fed the "rowids" list alongside the table
+    # data) resolves the right row to it.
+    from crush.core.sqlite_wal import classify_wal_frames
+
+    page_size, frames = classify_wal_frames(wal_bytes)
+    offset_col = columns.index("Offset (B)")
+    active_idx = next(
+        i for i, r in enumerate(rows)
+        if r[status_col] == "Active" and "hello-wal-content" in r[value_col]
+    )
+    frame_offset = rows[active_idx][offset_col]
+    assert result.data["WAL Frames"]["rowids"][active_idx] == active_idx
+    location = locator.locate_cell("WAL Frames", active_idx, None)
+    assert location is not None
+    assert location.row_ranges == [(frame_offset, frame_offset + 24 + page_size)]
 
 
 def test_sqlite_parser_survives_non_utf8_text_column(tmp_path: Path) -> None:
