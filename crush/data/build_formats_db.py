@@ -2630,14 +2630,16 @@ FORMATS: list[dict[str, Any]] = [
             "Write-Ahead Log companion file for SQLite databases in WAL journal mode. "
             "Contains uncommitted database pages and, after checkpoint, WAL slack — "
             "old page versions that persist until overwritten from the start of the file. "
-            "Must be analysed alongside the parent .db file using the same schema. "
+            "Must be analysed alongside the parent database file using the same schema. "
             "CRITICAL: opening the parent database with a standard SQLite driver "
             "triggers a checkpoint, committing and clearing the WAL — "
             "use read-only forensic tools only. "
+            "Opened standalone (no companion database), crush shows the same per-frame "
+            "inventory as raw decoded values, since column names require the schema. "
             "See SQLite Database entry for full forensic context."
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
-        "parser_class": None,
+        "parser_class": "SQLiteWALParser",
         "magic": [
             {
                 "offset": 0,
@@ -2654,6 +2656,53 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "Forensic analysis of SQLite WAL files (Sanderson Forensics)",
                 "https://sqliteforensictoolkit.com/forensic-examination-of-sqlite-write-ahead-log-wal-files/",
+            ),
+            (
+                "What Hides in the WAL — SQLite Forensics with crush (beBinary)",
+                "https://bebinary4n6.blogspot.com/2026/05/what-hides-in-wal-sqlite-forensics-with.html",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "SQLite Rollback Journal",
+        "short_name": "SQLite Journal",
+        "category": "database",
+        "forensic_relevance": (
+            "Legacy (pre-WAL) companion file for a SQLite database in DELETE/TRUNCATE/"
+            "PERSIST/MEMORY journal_mode. Holds the pre-transaction content of every page "
+            "a still-open or crash-interrupted transaction touched, so SQLite can roll "
+            "back an incomplete write on next open. Unlike -wal, this is the *old* page "
+            "content, not the current one — forensically it means the opposite: the base "
+            "database file's current on-disk pages for a hot journal's page numbers are "
+            "the interrupted, never-committed write, and the journal itself holds what a "
+            "proper rollback restores. "
+            "A journal file present but with a zeroed/invalid header (PERSIST mode keeps "
+            "the file after every commit but zeroes it) is stale, not hot, and must not "
+            "be treated as recoverable content. "
+            "Header (undocumented by SQLite as a stable format, reconstructed from its "
+            "pager.c): 8-byte magic (d9 d5 05 f9 20 a1 63 d7), page-record count, "
+            "checksum nonce, pre-transaction database size in pages, sector size, page "
+            "size, then zero or more (page number + page content + checksum) records, "
+            "possibly repeated across multiple header segments. "
+            "Deleted rows and unallocated slack within a journaled page are recoverable "
+            "the same way as in a live database page (freeblock chain, page-content-area "
+            "gap) — crush surfaces every live/deleted/slack entry, not just live pages."
+        ),
+        "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
+        "parser_class": "SQLiteJournalParser",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xd9\xd5\x05\xf9\x20\xa1\x63\xd7",
+                "description": "SQLite rollback-journal magic",
+            }
+        ],
+        "extensions": ["-journal", ".db-journal"],
+        "links": [
+            (
+                "SQLite file format specification (main database, for page-level context)",
+                "https://www.sqlite.org/fileformat.html",
             ),
             (
                 "What Hides in the WAL — SQLite Forensics with crush (beBinary)",

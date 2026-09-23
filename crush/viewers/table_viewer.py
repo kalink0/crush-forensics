@@ -67,6 +67,12 @@ from crush.core.sqlite_freelist import (
     value_matches_affinity,
     walk_freelist_pages,
 )
+from crush.core.sqlite_journal import (
+    JournalParseResult,
+    build_journal_page_overlay,
+    extract_journal_rows,
+    parse_rollback_journal,
+)
 from crush.core.sqlite_structure import (
     StructureNode,
     build_page_detail_nodes,
@@ -78,6 +84,7 @@ from crush.core.sqlite_wal import (
     build_page_table_map,
     build_wal_page_index,
     build_wal_page_overlay,
+    classify_wal_frames,
     column_ranges_from_layout,
     page_accessors,
     parse_table_leaf_page,
@@ -653,6 +660,25 @@ class TableViewer(QWidget):
             self._db_path = candidate if candidate.is_file() else None
         else:
             self._db_path = None
+        # Set only when SQLiteParser found a valid/hot rollback journal and
+        # reconstructed the post-rollback "current" state -- _ensure_db()
+        # opens this instead of __db_path so the main table grid, SQL bar,
+        # and DB Info PRAGMAs all consistently reflect it. Physical/raw tabs
+        # (File Structure, Freelist, Freeblocks, Unallocated Space, WAL
+        # Frames) keep reading __db_path directly regardless -- their whole
+        # purpose is showing actual on-disk layout, recovered or not.
+        recovered_db_value = data.get("__recovered_db_path") if isinstance(data, dict) else None
+        if isinstance(recovered_db_value, str) and recovered_db_value:
+            candidate = Path(recovered_db_value)
+            self._recovered_db_path = candidate if candidate.is_file() else None
+        else:
+            self._recovered_db_path = None
+        journal_path_value = data.get("__journal_path") if isinstance(data, dict) else None
+        if isinstance(journal_path_value, str) and journal_path_value:
+            candidate = Path(journal_path_value)
+            self._journal_path = candidate if candidate.is_file() else None
+        else:
+            self._journal_path = None
         self._db_conn: sqlite3.Connection | None = None
         # Embedded Hex pane byte-provenance: a caller (e.g. RealmViewer) may
         # supply its own CellLocator against the real source file, via
@@ -675,9 +701,12 @@ class TableViewer(QWidget):
         self._file_structure_label = "File Structure (generated)"
         self._db_info_label = "DB Info (generated)"
         self._wal_label = "WAL Frames (generated)"
+        self._journal_label = "Rollback Journal (generated)"
         self._freelist_label = "Freelist Recovery (generated)"
         self._freeblocks_label = "Freeblocks (generated)"
         self._unallocated_label = "Unallocated Space (generated)"
+        self._journal_result_cache: JournalParseResult | None = None
+        self._journal_result_loaded = False
         self._wal_frames_cache: list[dict] | None = None
         self._wal_page_size: int = 0
         self._db_page_size: int = 0
@@ -708,6 +737,8 @@ class TableViewer(QWidget):
                     self._table_combo.addItem(self._db_info_label)
                     if self._db_path and Path(str(self._db_path) + "-wal").exists():
                         self._table_combo.addItem(self._wal_label)
+                    if self._journal_path is not None:
+                        self._table_combo.addItem(self._journal_label)
                     self._table_combo.addItem(self._freelist_label)
                     self._table_combo.addItem(self._freeblocks_label)
                     self._table_combo.addItem(self._unallocated_label)
@@ -761,6 +792,11 @@ class TableViewer(QWidget):
         self._wal_toggle.setVisible(False)
         self._wal_toggle.stateChanged.connect(self._on_wal_toggle)
         toolbar_layout.addWidget(self._wal_toggle)
+
+        self._journal_toggle = QCheckBox("Show pre-rollback state")
+        self._journal_toggle.setVisible(False)
+        self._journal_toggle.stateChanged.connect(self._on_journal_toggle)
+        toolbar_layout.addWidget(self._journal_toggle)
 
         self._prev_ref_toggle = QCheckBox("Show diff to prev ref")
         self._prev_ref_toggle.setVisible(False)
@@ -1030,18 +1066,27 @@ class TableViewer(QWidget):
             return
         if table_name == self._wal_label:
             self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
             self._load_wal_frames()
+            return
+        if table_name == self._journal_label:
+            self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
+            self._load_journal_records()
             return
         if table_name == self._freelist_label:
             self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
             self._load_freelist_recovery()
             return
         if table_name == self._freeblocks_label:
             self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
             self._load_freeblocks()
             return
         if table_name == self._unallocated_label:
             self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
             self._load_unallocated_space()
             return
         table = self._data.get(table_name)
@@ -1064,8 +1109,16 @@ class TableViewer(QWidget):
                 self._sql_status.setText(str(exc))
                 return
 
-        # Ensure _page_table_map is populated before checking has_wal (cached after first call)
+        # Ensure _page_table_map is populated before checking has_wal/has_journal
+        # (each cached after its first call; _get_wal_frames() only builds the
+        # map as a side effect when a -wal file exists, so a non-WAL database
+        # with a rollback journal still needs the explicit build below -- only
+        # attempted when a journal actually exists, since _ensure_page_table_map()
+        # unconditionally calls _ensure_db(), which sets an error status as a
+        # side effect for callers with no real db file at all).
         self._get_wal_frames()
+        if self._journal_path is not None:
+            self._ensure_page_table_map()
 
         # Show WAL toggle only for real tables that have WAL data
         has_wal = bool(self._page_table_map) and any(
@@ -1080,6 +1133,14 @@ class TableViewer(QWidget):
         has_prev_ref = bool(_prev_ref_all and _prev_ref_all.get(table_name))
         self._prev_ref_toggle.setVisible(has_prev_ref)
 
+        # Show "pre-rollback state" toggle only for tables with at least one
+        # page a valid/hot journal overrode -- see _get_journal_overlay().
+        journal_overlay = self._get_journal_overlay()
+        has_journal = bool(journal_overlay) and any(
+            self._page_table_map.get(pn) == table_name for pn in journal_overlay
+        )
+        self._journal_toggle.setVisible(has_journal)
+
         self._col_ts_formats.clear()
         columns: list[str] = table["columns"]
         rows: list[list[Any]] = table["rows"]
@@ -1090,8 +1151,11 @@ class TableViewer(QWidget):
         self._reset_source_model()
         show_wal = has_wal and self._wal_toggle.isChecked()
         show_prev_ref = has_prev_ref and self._prev_ref_toggle.isChecked()
-        show_source_col = show_wal or show_prev_ref
-        source_col_name = "WAL Source" if show_wal else "Source"
+        show_journal = has_journal and self._journal_toggle.isChecked()
+        show_source_col = show_wal or show_prev_ref or show_journal
+        source_col_name = (
+            "WAL Source" if show_wal else "Journal Source" if show_journal else "Source"
+        )
         headers = ["Row"] + columns + ([source_col_name] if show_source_col else [])
         self._source_model.setHorizontalHeaderLabels(headers)
 
@@ -1100,6 +1164,7 @@ class TableViewer(QWidget):
                         wal_byte_range: tuple[int, int] | None = None,
                         wal_row_ranges: list[tuple[int, int]] | None = None,
                         wal_column_ranges: list[list[tuple[int, int]] | None] | None = None,
+                        injected_file_kind: str = "wal",
                         ) -> None:
             row_index = self._source_model.rowCount() + 1
             row_item = QStandardItem(str(row_index))
@@ -1108,16 +1173,18 @@ class TableViewer(QWidget):
             if rowid is not None:
                 row_item.setData(rowid, _ROWID_ROLE)
             if wal_byte_range is not None:
-                # A row injected from a WAL frame (see _inject_wal_rows()) has
-                # no rowid a CellLocator could resolve -- several frames on
-                # the same page can share one, and the whole point here is
-                # showing a *superseded* version. Stash the frame's own exact
-                # bytes instead, same roles the WAL Frames tab and File
-                # Structure tree use, so _sync_hex_pane()'s fallback can
-                # highlight it directly. wal_row_ranges/wal_column_ranges (when
+                # A row injected from a WAL frame (see _inject_wal_rows()) or
+                # a journal-overridden page (see _inject_journal_rows()) has
+                # no rowid a CellLocator could resolve -- several frames/
+                # versions of the same page can share one, and the whole
+                # point here is showing a *superseded*/*pre-rollback*
+                # version. Stash its own exact bytes instead, same roles the
+                # WAL Frames/Rollback Journal tabs and File Structure tree
+                # use, so _sync_hex_pane()'s fallback can highlight it
+                # directly. wal_row_ranges/wal_column_ranges (when
                 # resolvable) refine that fallback to the row's own cell, and
                 # one specific column's own bytes, instead of the whole frame.
-                row_item.setData("wal", _STRUCTURE_FILE_KIND_ROLE)
+                row_item.setData(injected_file_kind, _STRUCTURE_FILE_KIND_ROLE)
                 row_item.setData(wal_byte_range, _STRUCTURE_BYTE_RANGE_ROLE)
                 if wal_row_ranges:
                     row_item.setData(wal_row_ranges, _WAL_ROW_RANGES_ROLE)
@@ -1212,6 +1279,10 @@ class TableViewer(QWidget):
         if show_prev_ref:
             prev_ref_count = self._inject_prev_ref_rows(table_name, columns, _append_row)
 
+        journal_row_count = 0
+        if show_journal:
+            journal_row_count = self._inject_journal_rows(table_name, columns, _append_row)
+
         self._resize_and_cap()
         table_meta = self._data.get(table_name, {}) if isinstance(self._data, dict) else {}
         was_truncated = isinstance(table_meta, dict) and table_meta.get("truncated", False)
@@ -1223,6 +1294,8 @@ class TableViewer(QWidget):
             label += f"  +{wal_row_count} from WAL"
         if prev_ref_count:
             label += f"  +{prev_ref_count} from prev ref"
+        if journal_row_count:
+            label += f"  +{journal_row_count} from pre-rollback state"
         self._row_count_label.setText(label)
 
     def _inject_wal_rows(
@@ -1295,6 +1368,96 @@ class TableViewer(QWidget):
 
         return injected
 
+    def _get_journal_result(self) -> JournalParseResult | None:
+        """Parse (and cache) the -journal companion's copy the parser staged
+        next to the working copy, if any. Never re-parses on every call --
+        this can be invoked once per table switch (has_journal check)."""
+        if self._journal_result_loaded:
+            return self._journal_result_cache
+        self._journal_result_loaded = True
+        if self._journal_path is None:
+            return None
+        try:
+            data = self._journal_path.read_bytes()
+        except OSError:
+            return None
+        self._journal_result_cache = parse_rollback_journal(data)
+        return self._journal_result_cache
+
+    def _get_journal_overlay(self) -> dict[int, bytes]:
+        result = self._get_journal_result()
+        return build_journal_page_overlay(result) if result is not None else {}
+
+    def _inject_journal_rows(
+        self,
+        table_name: str,
+        columns: list[str],
+        append_row: object,
+    ) -> int:
+        """Decode the as-found, pre-rollback version of every page a valid
+        journal overrode for *table_name* -- straight from the *base* file's
+        own raw bytes, not the journal.
+
+        This is easy to get backwards: the journal holds each overridden
+        page's *old* (pre-transaction) content, and that is exactly what
+        becomes the default/recovered view once merged (see
+        reconstruct_post_rollback_image()) -- the default table view is
+        already showing it. What "Show pre-rollback state" (the
+        _inject_wal_rows()-style Superseded/Uncommitted analog) needs to
+        reveal instead is what the interrupted transaction actually wrote,
+        which never got rolled back on disk: the base file's current,
+        as-found bytes for that same page. Overflow values show as
+        "<OVERFLOW>" rather than being chased -- a page number a valid
+        journal overrode says nothing about whether ITS overflow chain was
+        also part of the interrupted write. Returns the number of rows
+        injected.
+        """
+        result = self._get_journal_result()
+        if result is None or not result.mergeable or self._db_path is None:
+            return 0
+
+        overlay_pages = build_journal_page_overlay(result)  # only page numbers are used here
+        if not overlay_pages:
+            return 0
+        page_size = result.page_size
+
+        injected = 0
+        n_cols = len(columns)
+        try:
+            with open(self._db_path, "rb") as fh:
+                for page_num in overlay_pages:
+                    if self._page_table_map.get(page_num) != table_name:
+                        continue
+                    fh.seek((page_num - 1) * page_size)
+                    page_bytes = fh.read(page_size)
+                    if len(page_bytes) != page_size:
+                        continue
+                    btree_offset = 100 if page_num == 1 else 0
+                    parsed = parse_table_leaf_page(
+                        page_bytes, page_size=page_size, btree_offset=btree_offset, want_ranges=True,
+                    )
+                    if not parsed:
+                        continue
+
+                    page_file_offset = (page_num - 1) * page_size
+                    byte_range = (page_file_offset, page_file_offset + page_size)
+                    for _rowid, values, layout in parsed:
+                        padded: list[Any] = (values + [None] * n_cols)[:n_cols]
+                        cell_start, cell_end = layout.page_local_range
+                        row_ranges = [(page_file_offset + cell_start, page_file_offset + cell_end)]
+                        append_row(  # type: ignore[operator]
+                            padded, "As found (pre-rollback)", QColor("#cc8800"),
+                            wal_byte_range=byte_range,
+                            wal_row_ranges=row_ranges,
+                            wal_column_ranges=None,
+                            injected_file_kind="base",
+                        )
+                        injected += 1
+        except OSError:
+            return 0
+
+        return injected
+
     def _on_wal_toggle(self, _state: int) -> None:
         """Re-load the current table when the WAL history toggle changes."""
         current = self._table_combo.currentText()
@@ -1304,6 +1467,23 @@ class TableViewer(QWidget):
             self._file_structure_label,
             self._db_info_label,
             self._wal_label,
+            self._journal_label,
+            self._freelist_label,
+            self._freeblocks_label,
+            self._unallocated_label,
+        ):
+            self._load_table(current)
+
+    def _on_journal_toggle(self, _state: int) -> None:
+        """Re-load the current table when the pre-rollback-state toggle changes."""
+        current = self._table_combo.currentText()
+        if current and current not in (
+            self._summary_label,
+            self._db_structure_label,
+            self._file_structure_label,
+            self._db_info_label,
+            self._wal_label,
+            self._journal_label,
             self._freelist_label,
             self._freeblocks_label,
             self._unallocated_label,
@@ -1319,6 +1499,7 @@ class TableViewer(QWidget):
             self._file_structure_label,
             self._db_info_label,
             self._wal_label,
+            self._journal_label,
             self._freelist_label,
             self._freeblocks_label,
             self._unallocated_label,
@@ -1509,71 +1690,12 @@ class TableViewer(QWidget):
             data = wal_path.read_bytes()
         except OSError:
             return None
-        if len(data) < 32:
-            return None
 
-        magic = struct.unpack_from(">I", data, 0)[0]
-        if magic not in _WAL_MAGIC:
+        classified = classify_wal_frames(data)
+        if classified is None:
             return None
-
-        page_size = struct.unpack_from(">I", data, 8)[0]
+        page_size, raw = classified
         self._wal_page_size = page_size
-        salt1     = struct.unpack_from(">I", data, 16)[0]
-        salt2     = struct.unpack_from(">I", data, 20)[0]
-
-        frame_size = 24 + page_size
-        offset = 32
-        raw: list[dict] = []
-
-        while offset + frame_size <= len(data):
-            page_num = struct.unpack_from(">I", data, offset)[0]
-            db_size  = struct.unpack_from(">I", data, offset + 4)[0]
-            f_salt1  = struct.unpack_from(">I", data, offset + 8)[0]
-            f_salt2  = struct.unpack_from(">I", data, offset + 12)[0]
-            raw.append({
-                "frame":     len(raw) + 1,
-                "page":      page_num,
-                "db_size":   db_size,
-                "is_commit": db_size > 0,
-                "salt_ok":   f_salt1 == salt1 and f_salt2 == salt2,
-                "offset":    offset,
-                "tx":        None,
-                "status":    "",
-            })
-            offset += frame_size
-
-        # Assign transaction numbers to salt-valid frames
-        tx = 0
-        for f in raw:
-            if not f["salt_ok"]:
-                continue
-            f["tx"] = tx + 1
-            if f["is_commit"]:
-                tx += 1
-
-        # Find last committed frame index (salt-valid + is_commit)
-        last_commit_idx = -1
-        for i, f in enumerate(raw):
-            if f["salt_ok"] and f["is_commit"]:
-                last_commit_idx = i
-
-        # For committed range: track last occurrence of each page → active
-        page_latest: dict[int, int] = {}
-        for i, f in enumerate(raw):
-            if f["salt_ok"] and i <= last_commit_idx:
-                page_latest[f["page"]] = i
-
-        # Classify
-        for i, f in enumerate(raw):
-            if not f["salt_ok"]:
-                f["status"] = "WAL slack"
-            elif i > last_commit_idx:
-                f["status"] = "Uncommitted"
-            elif page_latest.get(f["page"]) == i:
-                f["status"] = "Active"
-            else:
-                f["status"] = "Superseded"
-
         self._wal_frames_cache = raw
 
         # Build page→table map (best-effort; silently ignore errors)
@@ -1686,6 +1808,115 @@ class TableViewer(QWidget):
         self._sql_status.setText(
             "Double-click a row to open the raw page in the hex viewer — "
             "click a Content cell to see the full decoded value below"
+        )
+
+    def _load_journal_records(self) -> None:
+        """Full raw inventory of a -journal companion's page records: every
+        live cell, every deleted-but-still-recoverable freeblock, and every
+        non-zero unallocated-space gap on each journaled page -- reusing the
+        same decoders as the WAL Frames/Freeblocks/Unallocated Space tabs,
+        since a journal page record is byte-for-byte the same page format
+        (see crush.core.sqlite_journal.extract_journal_rows()). Shown
+        regardless of whether the journal validated as mergeable, so an
+        examiner can still inspect a corrupt/partial journal's raw content --
+        only the default table view's automatic merge (see _ensure_db())
+        requires full validation.
+        """
+        self._reset_source_model()
+        self._source_model.setHorizontalHeaderLabels(
+            ["Segment", "Record", "Page", "Table", "Kind", "RowID", "Value", "Checksum", "Offset (B)"]
+        )
+        result = self._get_journal_result()
+        if result is None or self._journal_path is None:
+            item = QStandardItem("No -journal companion found or it could not be read")
+            item.setEditable(False)
+            self._source_model.appendRow([item])
+            self._row_count_label.setText("")
+            return
+        if not result.segments:
+            item = QStandardItem(
+                f"Journal present but not a valid rollback journal -- {result.error}"
+            )
+            item.setEditable(False)
+            self._source_model.appendRow([item])
+            self._row_count_label.setText("")
+            return
+
+        self._ensure_page_table_map()  # cached after first call; works with or without a -wal file
+
+        _kind_color: dict[str, object] = {
+            "Live cell":              None,
+            "Freeblock (deleted)":    QColor("#cc4444"),
+            "Unallocated slack":      Qt.GlobalColor.darkGray,
+        }
+
+        rows = extract_journal_rows(result)
+        with self._dynamic_sort_suspended():
+            for row in rows:
+                color = _kind_color.get(row.kind)
+                table_name = self._page_table_map.get(row.page_num, "—")
+
+                if row.kind == "Live cell":
+                    value_text = str(row.values)
+                elif row.raw is not None and not any(row.raw):
+                    value_text = f"(all zero — {len(row.raw)} B)"
+                elif row.raw is not None:
+                    value_text = row.raw.decode("utf-8", errors="replace")
+                else:
+                    value_text = ""
+
+                seg_item = QStandardItem(str(row.segment_index))
+                seg_item.setData("journal", _STRUCTURE_FILE_KIND_ROLE)
+                seg_item.setData(
+                    (row.file_offset, row.file_offset + row.byte_length),
+                    _STRUCTURE_BYTE_RANGE_ROLE,
+                )
+
+                def _item(text: str, sort_val: object = None, _c: object = color) -> QStandardItem:
+                    it = QStandardItem(text)
+                    it.setEditable(False)
+                    if sort_val is not None:
+                        it.setData(sort_val, Qt.ItemDataRole.UserRole)
+                    if _c is not None:
+                        it.setForeground(_c)
+                    return it
+
+                if color is not None:
+                    seg_item.setForeground(color)
+                seg_item.setEditable(False)
+
+                self._source_model.appendRow([
+                    seg_item,
+                    _item(str(row.record_index),               row.record_index),
+                    _item(str(row.page_num),                   row.page_num),
+                    _item(table_name),
+                    _item(row.kind),
+                    _item(str(row.rowid) if row.rowid is not None else "—",
+                          row.rowid if row.rowid is not None else 0),
+                    _item(value_text),
+                    _item("valid" if row.checksum_valid else "MISMATCH"),
+                    _item(str(row.file_offset),                 row.file_offset),
+                ])
+
+        self._resize_and_cap()
+        kind_counts = Counter(r.kind for r in rows)
+        n_bad = sum(1 for r in rows if not r.checksum_valid)
+        parts = [f"{len(rows)} total"]
+        for kind in ("Live cell", "Freeblock (deleted)", "Unallocated slack"):
+            n = kind_counts.get(kind, 0)
+            if n:
+                parts.append(f"{n} {kind.lower()}")
+        if n_bad:
+            parts.append(f"{n_bad} checksum mismatch")
+        self._row_count_label.setText(f"({', '.join(parts)})")
+        merged_note = (
+            "already merged into the current view above"
+            if result.mergeable else
+            f"NOT merged into the current view -- {result.error or 'checksum validation failed'}"
+        )
+        self._sql_status.setText(
+            f"Every entry's own bytes are in this -journal file ({merged_note}). "
+            "Double-click a row to open its exact bytes in the hex viewer."
         )
 
     def _get_wal_data(self) -> bytes | None:
@@ -2679,6 +2910,56 @@ class TableViewer(QWidget):
             sep.setEditable(False)
             self._source_model.appendRow([sep, QStandardItem(""), QStandardItem("")])
 
+        # Rollback journal summary block (if a -journal companion was found)
+        journal_result = self._get_journal_result()
+        if journal_result is not None and self._journal_path is not None:
+
+            def _journal_row(label: str, value: str, desc: str, color: object = None) -> None:
+                s = QStandardItem(label)
+                s.setEditable(False)
+                v = QStandardItem(value)
+                v.setEditable(False)
+                d = QStandardItem(desc)
+                d.setForeground(Qt.GlobalColor.gray)
+                d.setEditable(False)
+                if color is not None:
+                    for item in (s, v):
+                        item.setForeground(color)
+                self._source_model.appendRow([s, v, d])
+
+            journal_size = self._journal_path.stat().st_size if self._journal_path.exists() else 0
+            n_records = sum(len(s.records) for s in journal_result.segments)
+            n_bad = sum(
+                1 for s in journal_result.segments for r in s.records if not r.checksum_valid
+            )
+            _journal_row("Journal file size (B)", f"{journal_size:,}",
+                         "Size of the -journal companion file on disk")
+            _journal_row("Journal segments", str(len(journal_result.segments)),
+                         "Header+records groups (SQLite starts a new one on each mid-transaction sync)")
+            _journal_row("Journal page records", str(n_records),
+                         "Pre-transaction page images captured in this journal")
+            _journal_row(
+                "Journal merged into current view",
+                "Yes" if journal_result.mergeable else "No",
+                (
+                    "Every segment's header and page checksum validated — the table grid, "
+                    "SQL bar, and PRAGMAs above already reflect the post-rollback state"
+                    if journal_result.mergeable else
+                    (journal_result.error or "One or more page checksums did not validate — "
+                     "see the 'Rollback Journal' tab for the raw, unmerged record inventory")
+                ),
+                QColor("#228833") if journal_result.mergeable else QColor("#cc4444"),
+            )
+            if n_bad:
+                _journal_row("Journal checksum mismatches", str(n_bad),
+                             "Page records that failed checksum validation — not merged",
+                             QColor("#cc4444"))
+
+            sep2 = QStandardItem("─" * 30)
+            sep2.setForeground(Qt.GlobalColor.gray)
+            sep2.setEditable(False)
+            self._source_model.appendRow([sep2, QStandardItem(""), QStandardItem("")])
+
         for pragma, label, ptype, enum_map, description in _PRAGMA_CATALOG:
             try:
                 row = cursor.execute(f"PRAGMA {pragma}").fetchone()
@@ -2749,12 +3030,22 @@ class TableViewer(QWidget):
             self._row_count_label.setText(f"({total:,} {word})")
 
     def _ensure_db(self) -> sqlite3.Connection | None:
-        if not self._db_path or not self._db_path.exists():
+        # A valid/hot rollback journal's reconstructed "current" image (see
+        # SQLiteParser / sqlite_journal.reconstruct_post_rollback_image) is
+        # used here instead of the raw base file so the table grid, SQL bar,
+        # and DB Info PRAGMAs all consistently reflect the post-rollback
+        # state -- the raw-layout tabs (File Structure, Freelist,
+        # Freeblocks, Unallocated Space, WAL Frames) read __db_path directly
+        # instead of going through this connection for their own page bytes,
+        # so they still show the database exactly as it physically sits on
+        # disk regardless of this redirect.
+        open_path = self._recovered_db_path or self._db_path
+        if not open_path or not open_path.exists():
             self._sql_status.setText("Database file missing")
             return None
         if self._db_conn is None:
             self._db_conn = sqlite3.connect(
-                f"file:{self._db_path}?mode=ro",
+                f"file:{open_path}?mode=ro",
                 uri=True,
                 check_same_thread=False,
             )
@@ -3307,7 +3598,7 @@ class TableViewer(QWidget):
             return
 
         table_name = self._table_combo.currentText()
-        if table_name == self._wal_label:
+        if table_name in (self._wal_label, self._journal_label):
             self._sync_wal_hex_pane(current)
             return
 
@@ -3381,14 +3672,15 @@ class TableViewer(QWidget):
         self._hex_viewer.highlight_byte_ranges(ranges)
 
     def _sync_wal_hex_pane(self, current: QModelIndex | None) -> None:
-        """WAL Frames tab -> Hex: highlight the selected frame's own
-        header+page bytes directly in the -wal file. A WAL frame has no
-        rowid/table-name identity a CellLocator could resolve (several
-        frames on the same page share a rowid), so this uses the
-        (file_kind, byte_range) _load_wal_frames() already stashed on the
-        row instead -- same _STRUCTURE_*_ROLE roles the File Structure tab
-        uses, since the need (know which bytes a row means, in which file)
-        is identical."""
+        """WAL Frames / Rollback Journal tab -> Hex: highlight the selected
+        row's own bytes directly in its file (-wal or the staged -journal
+        copy). Neither a WAL frame nor a journal record has a rowid/table-
+        name identity a CellLocator could resolve (several frames/records on
+        the same page can share one), so this uses the (file_kind,
+        byte_range) _load_wal_frames()/_load_journal_records() already
+        stashed on the row instead -- same _STRUCTURE_*_ROLE roles the File
+        Structure tab uses, since the need (know which bytes a row means, in
+        which file) is identical."""
         item = None
         if current is not None and current.isValid():
             source_index = self._proxy_model.mapToSource(current)
@@ -3402,19 +3694,29 @@ class TableViewer(QWidget):
         self._ensure_hex_pane_loaded()
         self._highlight_stashed_byte_ranges(file_kind, [byte_range])
 
+    def _resolve_hex_file_kind(self, file_kind: str) -> tuple[Path | None, str]:
+        """Return (path, human label) for a _STRUCTURE_FILE_KIND_ROLE value
+        ("base" / "wal" / "journal") -- shared by _highlight_stashed_byte_ranges()
+        and _sync_structure_hex_pane() so a new file kind only needs adding here.
+        """
+        if file_kind == "wal":
+            path = Path(str(self._db_path) + "-wal") if self._db_path is not None else None
+            return path, "-wal file"
+        if file_kind == "journal":
+            return self._journal_path, "-journal file"
+        return self._db_path, "db file"
+
     def _highlight_stashed_byte_ranges(self, file_kind: str, ranges: list[tuple[int, int]]) -> None:
-        """Switch the embedded Hex pane to *file_kind* ("base"/"wal") if it
-        isn't already showing it, then highlight *ranges* -- shared by the
-        WAL Frames tab (_sync_wal_hex_pane, always one whole-frame range) and
-        any row with no rowid a CellLocator could resolve, which carries its
-        own byte range(s) directly instead (_sync_hex_pane's fallback: a
-        WAL-history row's precise row/column ranges when available, else its
-        one whole-frame range; Freeblocks/Unallocated Space's one range)."""
+        """Switch the embedded Hex pane to *file_kind* if it isn't already
+        showing it, then highlight *ranges* -- shared by the WAL Frames /
+        Rollback Journal tabs (_sync_wal_hex_pane, always one whole-frame/
+        whole-record range) and any row with no rowid a CellLocator could
+        resolve, which carries its own byte range(s) directly instead
+        (_sync_hex_pane's fallback: a WAL-history or pre-rollback-state
+        row's precise row/column ranges when available, else its one
+        whole-page range; Freeblocks/Unallocated Space's one range)."""
         if file_kind != self._hex_file_kind:
-            target_path = (
-                Path(str(self._db_path) + "-wal")
-                if file_kind == "wal" and self._db_path is not None else self._db_path
-            )
+            target_path, suffix = self._resolve_hex_file_kind(file_kind)
             if target_path is None:
                 self._hex_viewer.clear_byte_range_highlight()
                 return
@@ -3425,7 +3727,6 @@ class TableViewer(QWidget):
                 return
             self._hex_viewer.set_data(data)
             self._hex_file_kind = str(file_kind)
-            suffix = "-wal file" if file_kind == "wal" else "db file"
             self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
         self._hex_viewer.highlight_byte_ranges(ranges)
 
@@ -3461,10 +3762,7 @@ class TableViewer(QWidget):
             self._hex_viewer.clear_byte_range_highlight()
             return
         if file_kind != self._hex_file_kind:
-            target_path = (
-                Path(str(self._db_path) + "-wal")
-                if file_kind == "wal" and self._db_path is not None else self._db_path
-            )
+            target_path, suffix = self._resolve_hex_file_kind(file_kind)
             if target_path is None:
                 self._hex_viewer.clear_byte_range_highlight()
                 return
@@ -3475,7 +3773,6 @@ class TableViewer(QWidget):
                 return
             self._hex_viewer.set_data(data)
             self._hex_file_kind = str(file_kind)
-            suffix = "-wal file" if file_kind == "wal" else "db file"
             self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
         self._hex_viewer.highlight_byte_ranges(ranges)
 

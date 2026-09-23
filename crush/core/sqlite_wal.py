@@ -432,10 +432,93 @@ def get_btree_page_type(page: bytes, page_num: int) -> int | None:
 # Page → table attribution
 # ---------------------------------------------------------------------------
 
-# Same magic pair the WAL frame classifier in table_viewer.py's _get_wal_frames
-# checks (_WAL_MAGIC there) -- kept local here since this module has no
-# dependency on the viewer.
 _WAL_MAGIC = (0x377F0682, 0x377F0683)
+
+
+def classify_wal_frames(data: bytes) -> tuple[int, list[dict[str, Any]]] | None:
+    """Parse a -wal file's raw bytes into a full, classified frame list.
+
+    Returns (page_size, frames), or None if *data* is too short or its
+    magic doesn't match. Each frame dict: frame (1-based index), page,
+    db_size, is_commit, salt_ok, offset (absolute, in *data*), tx
+    (transaction number among salt-valid frames, None if not salt_ok), and
+    status -- one of:
+      "Active"      salt-valid, within the committed range, newest for its page
+      "Superseded"  salt-valid, within the committed range, an older version
+                    of a page a later frame also covers
+      "Uncommitted" salt-valid but past the last commit marker -- captured
+                    mid-transaction
+      "WAL slack"   salt-mismatch -- reused space from a previous WAL cycle
+
+    Shared by table_viewer.py's WAL Frames tab (against a -wal opened
+    alongside its .db) and sqlite_wal_parser.py's standalone parser (a -wal
+    opened on its own, no companion database) -- identical classification
+    either way, since it only ever depends on the -wal file's own bytes.
+    """
+    if len(data) < 32:
+        return None
+    magic = struct.unpack_from(">I", data, 0)[0]
+    if magic not in _WAL_MAGIC:
+        return None
+
+    page_size = struct.unpack_from(">I", data, 8)[0]
+    salt1 = struct.unpack_from(">I", data, 16)[0]
+    salt2 = struct.unpack_from(">I", data, 20)[0]
+
+    frame_size = 24 + page_size
+    offset = 32
+    raw: list[dict[str, Any]] = []
+
+    while offset + frame_size <= len(data):
+        page_num = struct.unpack_from(">I", data, offset)[0]
+        db_size  = struct.unpack_from(">I", data, offset + 4)[0]
+        f_salt1  = struct.unpack_from(">I", data, offset + 8)[0]
+        f_salt2  = struct.unpack_from(">I", data, offset + 12)[0]
+        raw.append({
+            "frame":     len(raw) + 1,
+            "page":      page_num,
+            "db_size":   db_size,
+            "is_commit": db_size > 0,
+            "salt_ok":   f_salt1 == salt1 and f_salt2 == salt2,
+            "offset":    offset,
+            "tx":        None,
+            "status":    "",
+        })
+        offset += frame_size
+
+    # Assign transaction numbers to salt-valid frames
+    tx = 0
+    for f in raw:
+        if not f["salt_ok"]:
+            continue
+        f["tx"] = tx + 1
+        if f["is_commit"]:
+            tx += 1
+
+    # Find last committed frame index (salt-valid + is_commit)
+    last_commit_idx = -1
+    for i, f in enumerate(raw):
+        if f["salt_ok"] and f["is_commit"]:
+            last_commit_idx = i
+
+    # For committed range: track last occurrence of each page → active
+    page_latest: dict[int, int] = {}
+    for i, f in enumerate(raw):
+        if f["salt_ok"] and i <= last_commit_idx:
+            page_latest[f["page"]] = i
+
+    # Classify
+    for i, f in enumerate(raw):
+        if not f["salt_ok"]:
+            f["status"] = "WAL slack"
+        elif i > last_commit_idx:
+            f["status"] = "Uncommitted"
+        elif page_latest.get(f["page"]) == i:
+            f["status"] = "Active"
+        else:
+            f["status"] = "Superseded"
+
+    return page_size, raw
 
 
 def build_wal_page_index(wal_data: bytes | None, page_size: int) -> dict[int, tuple[int, bytes]]:

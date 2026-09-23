@@ -488,6 +488,33 @@ def test_sqlite_parser_does_not_change_timestamps(tmp_path: Path) -> None:
     _assert_timestamps_unchanged(ts_before, _timestamps(db_path), "SQLiteParser")
 
 
+@pytest.mark.forensic(
+    category="No Side Effects",
+    desc="SQLiteJournalParser (standalone -journal open) must not create any file next to the evidence",
+)
+def test_sqlite_journal_parse_creates_no_sibling_files(tmp_path: Path) -> None:
+    from crush.parsers.sqlite_journal_parser import SQLiteJournalParser
+
+    conn = sqlite3.connect(str(tmp_path / "crash.db"), isolation_level=None)
+    conn.execute("PRAGMA page_size=4096")
+    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO t (body) VALUES ('x')")
+    conn.execute("BEGIN")
+    conn.execute("UPDATE t SET body = 'y' WHERE id = 1")
+
+    files_before = set(tmp_path.iterdir())
+    try:
+        vfs = DirectoryVFS(tmp_path)
+        node = next(c for c in vfs.root().children if c.name == "crash.db-journal")
+        SQLiteJournalParser().parse(node, vfs)
+        new_files = set(tmp_path.iterdir()) - files_before
+        assert new_files == set(), f"Parser left unexpected files next to evidence: {new_files}"
+    finally:
+        conn.rollback()
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # 3. Read-only media — tool must work when evidence is chmod 0o444 / 0o555
 # ---------------------------------------------------------------------------

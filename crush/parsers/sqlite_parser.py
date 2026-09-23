@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from crush.core import tempdir
+from crush.core import sqlite_journal, tempdir
+from crush.core.sqlite_wal import build_wal_page_overlay
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -248,6 +249,71 @@ class SQLiteParser(AbstractParser):
                     except Exception as exc:
                         _logger.debug("Could not load filesystem companion %s: %s", fs_companion.name, exc)
 
+        # Copy a rollback-journal (-journal) companion if present, for
+        # provenance/analysis only (crush.core.sqlite_journal + table_viewer's
+        # "Rollback Journal" tab). Deliberately NOT written as
+        # "<tmp_path>-journal" -- the exact filename SQLite's own engine
+        # auto-detects and would try to roll back against on open -- and NOT
+        # added to the loop above: a rollback journal's pages are the *old*,
+        # pre-transaction content, the opposite of a -wal frame's
+        # legitimately-current one, so letting any real sqlite3 connection
+        # see it would silently auto-recover (mutate the working copy and
+        # delete the journal) with the examiner never seeing what changed.
+        # See MEMORY feedback_forensic_cleanliness and the "No Side Effects"
+        # case in crush/tests/test_forensic.py.
+        journal_result: sqlite_journal.JournalParseResult | None = None
+        journal_copy_path: str | None = None
+        journal_bytes: bytes | None = None
+        journal_name: str | None = None
+        journal_sibling = find_sibling(node, vfs, "-journal")
+        if journal_sibling is not None:
+            try:
+                journal_bytes = vfs.read(journal_sibling)
+                journal_name = journal_sibling.name
+            except Exception as exc:
+                _logger.warning("VFS found %s but read raised: %s", journal_sibling.name, exc)
+        else:
+            fs_journal = Path(node.path + "-journal")
+            if fs_journal.is_file():
+                try:
+                    journal_bytes = fs_journal.read_bytes()
+                    journal_name = fs_journal.name
+                except OSError as exc:
+                    _logger.debug("Could not load filesystem companion %s: %s", fs_journal.name, exc)
+
+        recovered_db_path: str | None = None
+        if journal_bytes:
+            journal_copy_path = tmp_path + "-journal.raw"
+            with open(journal_copy_path, "wb") as f:
+                f.write(journal_bytes)
+            if journal_name:
+                companions.append(journal_name)
+            journal_result = sqlite_journal.parse_rollback_journal(journal_bytes)
+
+            # Only a plaintext DB whose journal validates completely (every
+            # segment's header + every page checksum) is reconstructed into
+            # a "current" view -- see the AskUserQuestion-confirmed ground
+            # rule: never present a guessed/partial recovery as the default
+            # view. SQLCipher pages are ciphertext here, so a byte-level
+            # journal overlay can't be applied without the key context;
+            # encrypted DBs only get the raw, unmerged Rollback Journal tab.
+            if journal_result.mergeable and password is None:
+                page_size_hdr = sqlite_journal.read_db_header_page_size(raw)
+                wal_overlay: dict[int, bytes] | None = None
+                wal_copy = Path(tmp_path + "-wal")
+                if wal_copy.exists():
+                    try:
+                        wal_overlay = build_wal_page_overlay(wal_copy.read_bytes(), page_size_hdr)
+                    except Exception as exc:
+                        _logger.warning("Could not build -wal overlay for journal merge: %s", exc)
+                image = sqlite_journal.reconstruct_post_rollback_image(
+                    raw, page_size_hdr, journal_result, wal_overlay,
+                )
+                if image is not None:
+                    recovered_db_path = tmp_path + ".recovered.db"
+                    with open(recovered_db_path, "wb") as f:
+                        f.write(image)
+
         if password is not None:
             # Explicit "Open as -> SQLite DB (Encrypted)…" path only -- the
             # normal open flow never passes a password, since an encrypted
@@ -263,7 +329,8 @@ class SQLiteParser(AbstractParser):
 
         try:
             if conn is None:
-                conn = sqlite3.connect(f"file:{tmp_path}?mode=ro", uri=True)
+                open_path = recovered_db_path or tmp_path
+                conn = sqlite3.connect(f"file:{open_path}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
                 conn.text_factory = _lenient_text_factory
             else:
@@ -286,6 +353,17 @@ class SQLiteParser(AbstractParser):
                 "__db_path": tmp_path,
                 "__wal_diag": " | ".join(_wal_diag_lines) if _wal_diag_lines else "",
             }
+            if journal_copy_path:
+                data["__journal_path"] = journal_copy_path
+            if recovered_db_path:
+                # table_viewer._ensure_db() opens this instead of __db_path
+                # so the main table grid, SQL bar, and DB Info PRAGMAs all
+                # consistently reflect the post-rollback "current" state --
+                # the raw/physical tabs (File Structure, Freelist,
+                # Freeblocks, Unallocated Space, WAL Frames) keep reading
+                # __db_path directly, unaffected, since their whole purpose
+                # is examining actual on-disk physical layout.
+                data["__recovered_db_path"] = recovered_db_path
             text_parts: list[str] = []
             truncated_tables: list[str] = []
 
@@ -350,6 +428,22 @@ class SQLiteParser(AbstractParser):
             }
             if companions:
                 meta["Companion files"] = ", ".join(companions)
+            if journal_result is not None:
+                n_records = sum(len(s.records) for s in journal_result.segments)
+                if journal_result.mergeable:
+                    status = (
+                        f"valid/hot, {len(journal_result.segments)} segment(s), "
+                        f"{n_records} page record(s) -- merged into current view "
+                        "(see 'Show pre-rollback state' toggle and the "
+                        "'Rollback Journal' tab)"
+                    )
+                else:
+                    reason = journal_result.error or "one or more page checksums did not validate"
+                    status = (
+                        f"NOT merged -- {reason} (see the 'Rollback Journal' tab for "
+                        "the raw, unmerged record inventory)"
+                    )
+                meta["Rollback journal"] = f"present, {len(journal_bytes or b''):,} B, {status}"
             if truncated_tables:
                 meta["Row limit"] = f"First {_ROW_LIMIT:,} rows shown for: {', '.join(truncated_tables)}"
             if password is not None:

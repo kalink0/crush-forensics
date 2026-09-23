@@ -494,6 +494,168 @@ def test_wal_frames_hex_sync_highlights_selected_frame(qapp, tmp_path: Path) -> 
         writer.close()
 
 
+def _open_crash_frozen_result(evidence_dir: Path, conn: sqlite3.Connection):
+    """Parse *evidence_dir*'s crash.db through the real SQLiteParser while
+    *conn* still holds the crash-frozen, uncommitted transaction open, then
+    roll it back and close it -- shared setup tail for the two tests below.
+    """
+    from crush.core.vfs import DirectoryVFS
+    from crush.parsers.sqlite_parser import SQLiteParser
+
+    assert (evidence_dir / "crash.db-journal").exists()
+    try:
+        vfs = DirectoryVFS(evidence_dir)
+        node = next(c for c in vfs.root().children if c.name == "crash.db")
+        return SQLiteParser().parse(node, vfs)
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def test_rollback_journal_default_view_and_toggle(qapp, tmp_path: Path) -> None:
+    """End-to-end: a real crash-frozen DB (interrupted transaction, valid
+    hot -journal) opened through SQLiteParser must show the post-rollback
+    row by default in the normal table view (mirroring WAL's existing
+    transparent merge) and reveal the interrupted write's own value only
+    when "Show pre-rollback state" is checked.
+
+    Pre-populates many committed rows/pages, then updates rows spread
+    across most of them in the crash transaction -- with no cheap
+    brand-new (never-journaled) pages available to evict instead, a tiny
+    cache_size forces the actually-dirty, already-journaled target page to
+    spill to the base file too, so its as-found bytes differ from the
+    journal's pre-transaction image (same technique as
+    test_sqlite_journal.py's _freeze_mid_transaction()).
+    """
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    db_path = evidence_dir / "crash.db"
+
+    conn = sqlite3.connect(str(db_path), isolation_level=None)
+    conn.execute("PRAGMA page_size=4096")
+    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO messages (body) VALUES ('before-crash')")
+    for i in range(400):
+        conn.execute("INSERT INTO messages (body) VALUES (?)", (f"pre-{i}" * 50,))
+    conn.commit()
+
+    conn.execute("PRAGMA cache_size=10")
+    conn.execute("BEGIN")
+    conn.execute("UPDATE messages SET body = 'during-crash-txn' WHERE id = 1")
+    conn.execute("UPDATE messages SET body = body || '-x' WHERE id > 1")
+
+    result = _open_crash_frozen_result(evidence_dir, conn)
+    assert "merged into current view" in result.metadata["Rollback journal"]
+
+    tv = TableViewer(result.data, source_name="crash.db")
+    tv.show()  # .isVisible() below needs the widget actually shown, not just setVisible(True)
+    assert tv._table_combo.findText("Rollback Journal (generated)") >= 0
+
+    # Default view: already the recovered ("before-crash") state, no toggle needed.
+    tv._table_combo.setCurrentText("messages")
+    tv._load_table("messages")
+    model = tv._source_model
+    headers = [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
+    id_col, body_col = headers.index("id"), headers.index("body")
+    row1 = next(r for r in range(model.rowCount()) if model.item(r, id_col).text() == "1")
+    assert model.item(row1, body_col).text() == "before-crash"
+
+    # Toggle reveals the discarded, interrupted-transaction value too.
+    assert tv._journal_toggle.isVisible()
+    tv._journal_toggle.setChecked(True)  # triggers _on_journal_toggle -> reload
+    model = tv._source_model
+    headers = [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
+    body_col = headers.index("body")
+    # The injected rows source from the *base* file's as-found bytes (the
+    # interrupted write that was never rolled back on disk) -- not from the
+    # journal, which holds the *old* pre-transaction content that the
+    # default view above already shows once merged.
+    injected_rows = [
+        r for r in range(model.rowCount())
+        if model.item(r, 0).data(_STRUCTURE_FILE_KIND_ROLE) == "base"
+        and model.item(r, 0).data(_STRUCTURE_BYTE_RANGE_ROLE) is not None
+    ]
+    assert injected_rows
+    assert any(model.item(r, body_col).text() == "during-crash-txn" for r in injected_rows)
+
+    tv._toggle_hex_pane()
+    proxy_idx = tv._proxy_model.mapFromSource(model.index(injected_rows[0], 0))
+    tv._table_view.setCurrentIndex(proxy_idx)
+    assert tv._hex_file_kind == "base"
+    assert tv._hex_viewer._focus_ranges
+
+
+def test_rollback_journal_tab_recovers_deleted_row_with_hex_provenance(
+    qapp, tmp_path: Path
+) -> None:
+    """The dedicated Rollback Journal tab must surface a row deleted
+    *before* the crash (still sitting in a freeblock, per
+    sqlite_freeblocks.py) as a distinct entry with working hex provenance --
+    "alle Einträge, auch gelöschte" (see conversation ground rule).
+
+    Kept to a single leaf page throughout (small table, nothing else
+    inserted before the crash transaction) -- a b-tree split/rebalance
+    rebuilds a page's cell-content area from its live cells only, which
+    would silently destroy the freeblock before the crash transaction ever
+    got a chance to journal it (same technique as
+    test_sqlite_journal.py's test_extract_journal_rows_recovers_deleted_row_from_freeblock).
+    """
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    db_path = evidence_dir / "crash.db"
+
+    # id=1 is deleted, not id=2 -- freeing the physically *last*-allocated
+    # cell on a page (id=2, inserted after id=1) just moves the content-area
+    # boundary back with no freeblock created at all; only freeing an
+    # earlier cell, with something still allocated "above" it, forces a
+    # genuine freeblock-list entry (see sqlite_freeblocks.py).
+    conn = sqlite3.connect(str(db_path), isolation_level=None)
+    conn.execute("PRAGMA page_size=4096")
+    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("PRAGMA secure_delete=OFF")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO messages (id, body) VALUES (1, 'deleted-then-crash')")
+    conn.execute("INSERT INTO messages (id, body) VALUES (2, 'stays-alive')")
+    conn.execute("DELETE FROM messages WHERE id = 1")
+    conn.commit()
+
+    conn.execute("PRAGMA cache_size=10")
+    conn.execute("BEGIN")
+    conn.execute("UPDATE messages SET body = 'touched-during-crash' WHERE id = 2")
+    for i in range(300):  # force a cache spill so the journal header gets stamped
+        conn.execute("INSERT INTO messages (body) VALUES (?)", (f"filler-{i}" * 50,))
+
+    result = _open_crash_frozen_result(evidence_dir, conn)
+
+    tv = TableViewer(result.data, source_name="crash.db")
+    tv.show()
+    tv._toggle_hex_pane()
+
+    tv._table_combo.setCurrentText("Rollback Journal (generated)")
+    tv._load_table("Rollback Journal (generated)")
+    jmodel = tv._source_model
+    jheaders = [jmodel.headerData(c, Qt.Orientation.Horizontal) for c in range(jmodel.columnCount())]
+    kind_col, value_col, offset_col = (
+        jheaders.index("Kind"), jheaders.index("Value"), jheaders.index("Offset (B)")
+    )
+    deleted_rows = [
+        r for r in range(jmodel.rowCount())
+        if jmodel.item(r, kind_col).text() == "Freeblock (deleted)"
+        and "deleted-then-crash" in jmodel.item(r, value_col).text()
+    ]
+    assert deleted_rows
+
+    journal_bytes = Path(result.data["__journal_path"]).read_bytes()
+    offset = int(jmodel.item(deleted_rows[0], offset_col).text())
+    assert b"deleted-then-crash" in journal_bytes[offset:offset + 64]
+
+    proxy_idx = tv._proxy_model.mapFromSource(jmodel.index(deleted_rows[0], 0))
+    tv._table_view.setCurrentIndex(proxy_idx)
+    assert tv._hex_file_kind == "journal"
+    assert tv._hex_viewer._focus_ranges
+
+
 def _make_single_delete_db(path: Path, page_size: int = 1024) -> None:
     """Insert 10 rows, delete one from the middle -- a single-row DELETE
     doesn't free the whole page (freelist_count stays 0), so SQLite splices

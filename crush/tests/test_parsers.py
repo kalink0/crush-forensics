@@ -59,6 +59,39 @@ def test_sqlite_parser_parse(tmp_path: Path) -> None:
     assert result.data["messages"]["rows"][0][1] == "hello"
 
 
+def test_sqlite_wal_parser_opens_wal_file_standalone(tmp_path: Path) -> None:
+    """Opening a -wal file directly (no companion .db in the same open)
+    must show a structured per-frame view, not fall back to raw hex --
+    same standalone treatment as SQLiteJournalParser for -journal files."""
+    from crush.parsers.sqlite_wal_parser import SQLiteWALParser
+
+    db_path = tmp_path / "live.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.commit()
+    conn.execute("INSERT INTO messages (body) VALUES ('hello-wal-content')")
+    conn.commit()
+    try:
+        vfs = DirectoryVFS(tmp_path)
+        wal_node = next(c for c in vfs.root().children if c.name == "live.db-wal")
+        parser = SQLiteWALParser()
+        assert parser.can_parse(wal_node.path, vfs.peek(wal_node))
+        result = parser.parse(wal_node, vfs)
+    finally:
+        conn.close()  # closing the last connection checkpoints/removes -wal -- fine, already read
+
+    assert result.viewer_type == "table"
+    rows = result.data["WAL Frames"]["rows"]
+    columns = result.data["WAL Frames"]["columns"]
+    value_col = columns.index("Value")
+    status_col = columns.index("Status")
+    assert any(
+        r[status_col] == "Active" and "hello-wal-content" in r[value_col] for r in rows
+    )
+
+
 def test_sqlite_parser_survives_non_utf8_text_column(tmp_path: Path) -> None:
     """SQLite is dynamically typed: a real app (typically via a native, non-
     Python binding) can write bytes that aren't valid UTF-8 into a column

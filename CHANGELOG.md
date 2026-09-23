@@ -7,6 +7,8 @@ All notable changes to Crush will be documented in this file.
 ### New Features
 
 - Cellebrite UFDR (Physical Analyzer report/delivery container, 10.x) support: browse the original device's file/folder tree, decoded from the container's embedded PostgreSQL dump rather than its own internal, type-bucketed storage layout, with Cellebrite's own recorded MD5/SHA-256 shown in the Properties panel. Filesystem browsing only — Cellebrite's other forensic tables (contacts, calls, chats, etc.) are not decoded. Encrypted UFDR containers and split/segmented exports aren't supported yet.
+- **SQLite rollback-journal (`-journal`) support** — the legacy (pre-WAL) companion file, previously invisible to the SQLite parser and shown as raw hex when opened on its own. A valid, fully-checksummed journal is now rolled back automatically (in memory only, never touching any file) so the table grid shows the correct current state by default, same as `-wal`; a "Show pre-rollback state" toggle and a new "Rollback Journal" tab expose every recovered entry — including deleted rows — with full hex provenance.
+- Opening a `-journal` or `-wal` file directly (no companion database in the same open) now shows a structured record view instead of falling back to hex.
 
 ### Bug Fixes
 
