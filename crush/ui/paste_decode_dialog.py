@@ -16,10 +16,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.paste_decode import (
+    ENCODING_AUTO,
+    ENCODING_BASE64,
+    ENCODING_HEX,
+    ENCODING_UTF8,
+)
 from crush.core.paste_decode import try_decode_input as _try_decode_input
 from crush.viewers.blob_inspector import _BlobPanel
 
-_INPUT_ENCODINGS = ["Auto", "Hex", "Base64", "UTF-8 text"]
+# (display text, stable encoding key) — item text is translatable later,
+# the key passed to try_decode_input() never changes with the UI language.
+_INPUT_ENCODINGS = [
+    ("Auto", ENCODING_AUTO),
+    ("Hex", ENCODING_HEX),
+    ("Base64", ENCODING_BASE64),
+    ("UTF-8 text", ENCODING_UTF8),
+]
 
 _EMPTY = b""
 
@@ -61,8 +74,9 @@ class PasteDecodeDialog(QDialog):
         enc_row = QHBoxLayout()
         enc_row.addWidget(QLabel("Input encoding:"))
         self._encoding_combo = QComboBox()
-        self._encoding_combo.addItems(_INPUT_ENCODINGS)
-        self._encoding_combo.currentTextChanged.connect(self._decode_and_update)
+        for label, key in _INPUT_ENCODINGS:
+            self._encoding_combo.addItem(label, key)
+        self._encoding_combo.currentIndexChanged.connect(self._decode_and_update)
         enc_row.addWidget(self._encoding_combo)
         enc_row.addSpacing(16)
         self._status_label = QLabel("Paste data above")
@@ -85,7 +99,7 @@ class PasteDecodeDialog(QDialog):
 
     def _decode_and_update(self) -> None:
         text = self._paste_area.toPlainText()
-        encoding = self._encoding_combo.currentText()
+        encoding = self._encoding_combo.currentData()
         data, msg = _try_decode_input(text, encoding)
         if data is None:
             self._status_label.setText(msg)

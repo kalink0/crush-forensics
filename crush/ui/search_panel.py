@@ -183,11 +183,16 @@ class SearchPanel(QWidget):
 
         fb.addWidget(QLabel("Type:"))
         self._type_combo = QComboBox()
-        self._type_combo.addItems([
-            "All", "SQLite", "Image", "Media", "plist", "JSON", "XML",
-            "ABX", "SEGB", "LevelDB", "PDF", "Text",
-        ])
-        self._type_combo.currentTextChanged.connect(self._debounce.start)
+        # Item text is display-only (translatable later); the filter always
+        # branches on the paired data value, which matches _detect_type()'s
+        # return values and never changes with the UI language.
+        for label, key in [
+            ("All", ""), ("SQLite", "sqlite"), ("Image", "image"), ("Media", "media"),
+            ("plist", "plist"), ("JSON", "json"), ("XML", "xml"), ("ABX", "abx"),
+            ("SEGB", "segb"), ("LevelDB", "leveldb"), ("PDF", "pdf"), ("Text", "text"),
+        ]:
+            self._type_combo.addItem(label, key)
+        self._type_combo.currentIndexChanged.connect(self._debounce.start)
         fb.addWidget(self._type_combo)
 
         self._recurse_check = QCheckBox("Recursive")
@@ -243,7 +248,7 @@ class SearchPanel(QWidget):
             return
         name_pat = self._name_input.text().strip()
         ext_filter = self._ext_input.text().strip().lower()
-        type_filter = self._type_combo.currentText()
+        type_filter = self._type_combo.currentData()
         recursive = self._recurse_check.isChecked()
 
         # Build name regex
@@ -273,7 +278,7 @@ class SearchPanel(QWidget):
         self._populate(matched)
 
         # Type filter applied via proxy after population
-        self._proxy.set_type_filter("" if type_filter == "All" else type_filter.lower())
+        self._proxy.set_type_filter(type_filter)
         self._proxy.invalidateFilter()
 
     def _collect(
