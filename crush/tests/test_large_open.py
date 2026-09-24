@@ -257,7 +257,7 @@ def test_guard_covers_open_as_modes_but_not_default_twice(
 
 
 def _search(viewer: HexViewer, mode: str, query: str) -> list[int]:
-    viewer._search_mode.setCurrentText(mode)
+    viewer._set_search_mode(mode)
     viewer._search_input.setText(query)
     viewer._collect_hits()
     return list(viewer._search_hits)
@@ -271,12 +271,12 @@ def test_hex_search_finds_all_hits(
         monkeypatch.setattr("crush.viewers.hex_viewer._BUSY_SCAN_BYTES", 0)
     data = b"abc DEAD abc \xde\xad\xbe\xef abc \xff end"
     viewer = HexViewer(data)
-    assert _search(viewer, "ASCII", "abc") == [0, 9, 18]
-    assert _search(viewer, "ASCII", "ABC") == []  # case-sensitive, as before
-    assert _search(viewer, "Hex", "de ad be ef") == [13]
-    assert _search(viewer, "ASCII", "\xff") == [22]  # latin-1: byte 0xFF
-    assert _search(viewer, "ASCII", "€") == []  # cannot occur in the bytes
-    assert _search(viewer, "Hex", "zz") == []
+    assert _search(viewer, "ascii", "abc") == [0, 9, 18]
+    assert _search(viewer, "ascii", "ABC") == []  # case-sensitive, as before
+    assert _search(viewer, "hex", "de ad be ef") == [13]
+    assert _search(viewer, "ascii", "\xff") == [22]  # latin-1: byte 0xFF
+    assert _search(viewer, "ascii", "€") == []  # cannot occur in the bytes
+    assert _search(viewer, "hex", "zz") == []
 
 
 def test_scan_finds_every_match_across_slice_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,7 +299,7 @@ def test_highlights_cover_exactly_the_hits_on_the_current_page(qapp: QApplicatio
     for m in marks:
         data[m : m + 4] = b"\xde\xad\xbe\xef"
     viewer = HexViewer(bytes(data))
-    assert _search(viewer, "Hex", "de ad be ef") == marks
+    assert _search(viewer, "hex", "de ad be ef") == marks
 
     def selections_on(p: int) -> int:
         viewer._page = p

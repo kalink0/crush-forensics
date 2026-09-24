@@ -45,6 +45,11 @@ _PAGE_BYTES = 1024 * 256  # 256 KB per page
 _BUSY_SCAN_BYTES = 8 * 1024 * 1024
 _SCAN_SLICE = 16 * 1024 * 1024
 
+# Search-mode combo: item text is display-only (translatable later); logic
+# always branches on this stable, never-translated data value instead.
+_SEARCH_MODE_ASCII = "ascii"
+_SEARCH_MODE_HEX = "hex"
+
 # Hex dump line layout (see _compute_layout / _load_page):
 # the offset field width is dynamic (8 hex digits, or enough decimal digits
 # to cover the file length) -- everything after it is anchored to that width:
@@ -131,7 +136,8 @@ class HexViewer(QWidget):
 
         search_row.addWidget(QLabel("Search as:"))
         self._search_mode = QComboBox()
-        self._search_mode.addItems(["ASCII", "Hex"])
+        self._search_mode.addItem("ASCII", _SEARCH_MODE_ASCII)
+        self._search_mode.addItem("Hex", _SEARCH_MODE_HEX)
         self._search_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         search_row.addWidget(self._search_mode)
 
@@ -479,13 +485,20 @@ class HexViewer(QWidget):
     # Search — collect / navigate
     # ------------------------------------------------------------------
 
+    def _set_search_mode(self, mode: str) -> None:
+        """Select a search mode by its stable data value (see _SEARCH_MODE_*),
+        never by the combo's displayed (and later translated) text."""
+        index = self._search_mode.findData(mode)
+        if index >= 0:
+            self._search_mode.setCurrentIndex(index)
+
     def _on_search_mode_changed(self) -> None:
         self._search_input.clear()
         self._search_hits = []
         self._current_hit = -1
         self._count_label.setText("")
         self._update_highlights()
-        if self._search_mode.currentText() == "Hex":
+        if self._search_mode.currentData() == _SEARCH_MODE_HEX:
             self._search_input.setPlaceholderText("Hex pattern… (e.g. de ad be ef)")
             self._search_input.setValidator(self._hex_validator)
         else:
@@ -519,7 +532,7 @@ class HexViewer(QWidget):
             self._count_label.setText("")
             return False
 
-        if self._search_mode.currentText() == "Hex":
+        if self._search_mode.currentData() == _SEARCH_MODE_HEX:
             pattern = _parse_hex_query(query)
             if pattern is None:
                 self._count_label.setText("Invalid hex")
@@ -816,7 +829,7 @@ class HexViewer(QWidget):
         chunk = self._data[rng[0] : rng[1] + 1]
         query = chunk.decode("latin-1")
         if query:
-            self._search_mode.setCurrentText("ASCII")
+            self._set_search_mode(_SEARCH_MODE_ASCII)
             self._search_input.setText(query)
             self._do_search()
 
@@ -826,7 +839,7 @@ class HexViewer(QWidget):
             return
         chunk = self._data[rng[0] : rng[1] + 1]
         if chunk:
-            self._search_mode.setCurrentText("Hex")
+            self._set_search_mode(_SEARCH_MODE_HEX)
             self._search_input.setText(" ".join(f"{b:02X}" for b in chunk))
             self._do_search()
 
