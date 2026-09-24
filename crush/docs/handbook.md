@@ -30,7 +30,7 @@ Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also
 Most viewers need a file's bytes in memory — often several times over (raw bytes, decoded structures, widgets). Crush therefore checks a file's size against the memory that is free right now before it loads one (double-click, or any **Open as** mode):
 
 - Up to about a quarter of free memory it just opens.
-- Above that it asks what to do: **Open anyway**, **Open in New Window** (archives, backups, disk images), **Export…**, or **Cancel**. **Open anyway** is not offered once the file is more than about 80 % of free memory — it could not realistically fit.
+- Above that it asks what to do: **Open anyway**, **Open in New Window** (for any file — it is opened as a source of its own, so an archive, backup or disk image becomes browsable), **Export…**, or **Cancel**. **Open anyway** is not offered once the file is more than about 80 % of free memory — it could not realistically fit.
 - Nothing is ever cut short: a file is opened whole or not at all.
 
 **Compressed tar archives** (`.tar.gz`, `.tar.xz`, `.tar.bz2`) have no index. Crush reads the whole stream once to build the tree — the loading dialog stays up until that pass ends — and keeps the first bytes of every file during it, so browsing and type detection afterwards need no further reading. Opening one file's content still decompresses everything before it, behind a wait dialog. For big compressed tars, extract once to a fast disk or ask for ZIP/plain TAR.
@@ -43,9 +43,13 @@ Archive members, disk-image files and backups are streamed rather than unpacked 
 
 ## Raw Disk Images & EWF Acquisitions
 
-**Open file…** also accepts raw disk images (`.img`, `.dd`, `.raw`, or a numbered `.001` segment of a split set) and EWF (Expert Witness Format, `.E01` + segments) acquisitions — opened in place, without mounting and without administrator rights. Only the bytes an examiner actually opens ever leave the image.
+**Open file…** also accepts raw disk images (a whole disk or a single partition/filesystem dump, or a numbered `.001` segment of a split set) and EWF (Expert Witness Format, `.E01` + segments) acquisitions — opened in place, without mounting and without administrator rights. Only the bytes an examiner actually opens ever leave the image.
 
 Supported filesystems: NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, and QNX IFS boot images. A split `.001..NNN` dd set is joined automatically from whichever segment is opened; an `.E01` acquisition joins its own numbered segments the same way. Built on [abrignoni/qnxprobe](https://github.com/abrignoni/qnxprobe) and [abrignoni/ewfprobe](https://github.com/abrignoni/ewfprobe).
+
+A raw image is recognised by its content — an MBR/GPT partition table or a filesystem it can read — not by its file name, so `.bin` or extensionless images open the same way as `.img`/`.dd`. A file in which no readable filesystem is found opens as an ordinary file (Hex View) instead. EWF acquisitions and split sets are the exception: their segments are found by name, so they must keep their `.E01`/`.001` extensions.
+
+**Known limitation:** whole-disk images from media with 4096-byte logical sectors (e.g. UFS storage in current smartphones, Apple SSDs, 4Kn drives) are not partitioned correctly yet — the partition table is read as 512-byte sectors, so such an image opens as Hex View. Dumps of a single partition/filesystem from the same media are not affected.
 
 ### Volume tree
 

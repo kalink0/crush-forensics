@@ -314,3 +314,27 @@ def test_highlights_cover_exactly_the_hits_on_the_current_page(qapp: QApplicatio
     # a hit spanning bytes across rows may add one selection per row; never fewer than one per hit
     assert all(got >= want > 0 for got, want in zip(per_page, expected))
     assert per_page[2] >= 1
+
+
+def test_guard_offers_new_window_for_any_file(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A large .bin may be a disk image -- open_vfs() recognises one by its
+    content -- so opening it as a source is offered whatever its name."""
+    from crush.ui.main_window import MainWindow
+
+    vfs, node, _ = _source(tmp_path, 4096)
+    assert not node.name.endswith((".zip", ".img", ".e01"))
+    win = MainWindow()
+    seen: list[object] = []
+
+    def fake_confirm(*a: object, **k: object) -> Decision:
+        seen.append(k.get("can_open_as_source"))
+        return Decision.CANCEL
+
+    monkeypatch.setattr(large_open, "confirm_large_open", fake_confirm)
+    try:
+        win._open_node(node, vfs)
+    finally:
+        win.close()
+    assert seen == [True]

@@ -670,3 +670,114 @@ def test_streamed_open_matches_read_for_every_file(
         checked += 1
     assert checked > 0
     vfs.close()
+
+
+def _make_gpt_image(payload: bytes, first_lba: int = 2048) -> bytes:
+    """A protective MBR, a GPT header at LBA 1 and a 128-entry array at
+    LBA 2 holding one Microsoft basic data partition around `payload`."""
+    import uuid
+
+    assert len(payload) % 512 == 0
+    last_lba = first_lba + len(payload) // 512 - 1
+    total_sectors = last_lba + 1
+
+    header = bytearray(512)
+    header[0:8] = b"EFI PART"
+    header[72:80] = (2).to_bytes(8, "little")  # partition entry array LBA
+    header[80:84] = (128).to_bytes(4, "little")  # number of entries
+    header[84:88] = (128).to_bytes(4, "little")  # size of one entry
+
+    entries = bytearray(128 * 128)
+    entries[0:16] = uuid.UUID("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7").bytes_le
+    entries[32:40] = first_lba.to_bytes(8, "little")
+    entries[40:48] = last_lba.to_bytes(8, "little")
+    entries[56:64] = "data".encode("utf-16-le")
+
+    head = _make_mbr([(0xEE, 1, total_sectors - 1)]) + bytes(header) + bytes(entries)
+    return head + bytes(first_lba * 512 - len(head)) + payload
+
+
+class TestContentSniffedImage:
+    """A disk image is found by its content, whatever it's called -- `.bin`
+    is what many acquisition tools write, and a bare filesystem dump often
+    has no extension at all."""
+
+    def test_bare_filesystem_without_extension_opens_as_raw_image(
+        self, raw_ntfs_image: Path, tmp_path: Path
+    ) -> None:
+        dst = tmp_path / "volume_dump"
+        dst.write_bytes(raw_ntfs_image.read_bytes())
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, RawImageVFS)
+        finally:
+            vfs.close()
+
+    def test_ordinary_file_stays_file_vfs(self, tmp_path: Path) -> None:
+        import sqlite3
+
+        db = tmp_path / "chat.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE t (x)")
+        con.executemany("INSERT INTO t VALUES (?)", [(b"\x55\xaa" * 300,)] * 200)
+        con.commit()
+        con.close()
+        vfs = open_vfs(db)
+        try:
+            assert isinstance(vfs, FileVFS)
+        finally:
+            vfs.close()
+
+    def test_gpt_image_named_bin_opens_as_raw_image(self, tmp_path: Path) -> None:
+        ntfs_bytes = gzip.decompress((FIXTURES_DIR / "raw_ntfs.img.gz").read_bytes())
+        dst = tmp_path / "acquisition.bin"
+        dst.write_bytes(_make_gpt_image(ntfs_bytes))
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, RawImageVFS)
+            volume = next(c for c in vfs.root().children if c.is_dir)
+            _assert_all_files_match(vfs, volume)
+        finally:
+            vfs.close()
+
+    def test_mbr_image_named_bin_opens_as_raw_image(
+        self, raw_multi_partition_image: Path, tmp_path: Path
+    ) -> None:
+        dst = tmp_path / "multi.bin"
+        dst.write_bytes(raw_multi_partition_image.read_bytes())
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, RawImageVFS)
+        finally:
+            vfs.close()
+
+    def test_bin_with_no_partition_table_stays_file_vfs(self, tmp_path: Path) -> None:
+        dst = tmp_path / "firmware.bin"
+        dst.write_bytes(b"\xab" * (1024 * 1024))
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+        finally:
+            vfs.close()
+
+    def test_0x55aa_table_pointing_past_the_file_stays_file_vfs(self, tmp_path: Path) -> None:
+        """Boot code or data that merely ends in 0x55AA: none of its would-be
+        partitions starts inside the file, so it isn't a disk image."""
+        dst = tmp_path / "blob.bin"
+        dst.write_bytes(_make_mbr([(0x83, 10_000_000, 2048)]) + bytes(64 * 1024))
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+        finally:
+            vfs.close()
+
+    def test_gpt_image_with_no_readable_filesystem_falls_back_to_file_vfs(
+        self, tmp_path: Path
+    ) -> None:
+        dst = tmp_path / "unknown_fs.bin"
+        dst.write_bytes(_make_gpt_image(b"\xab" * (1024 * 1024)))
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+        finally:
+            vfs.close()

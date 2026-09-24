@@ -1239,8 +1239,10 @@ class MainWindow(QMainWindow):
             return True
         from crush.ui import large_open
 
+        # Any file can be a source: open_vfs() recognises a disk image by its
+        # content, not its name, so a large .bin may well be one.
         decision = large_open.confirm_large_open(
-            self, node.name, node.size, can_open_as_source=_is_openable_archive(node)
+            self, node.name, node.size, can_open_as_source=True
         )
         if decision is large_open.Decision.PROCEED:
             return True

@@ -1675,13 +1675,6 @@ def open_vfs(path: str | Path, *, password: str = "") -> VFS:
         return TarVFS(p) if _is_gzip_wrapped_tar(p) else GzipVFS(p)
     if p.suffix.lower() == ".ab" or _is_android_backup(p):
         return AndroidBackupVFS(p, password=password)
-    if p.suffix.lower() in (".img", ".dd", ".raw", ".e01", ".001"):
-        from crush.core.raw_image import RawImageOpenError
-
-        try:
-            return RawImageVFS(p)
-        except RawImageOpenError:
-            pass  # extension matched, but it isn't a readable image
     if p.suffix.lower() == ".ufdr":
         from crush.core.ufdr import UFDROpenError
 
@@ -1690,6 +1683,16 @@ def open_vfs(path: str | Path, *, password: str = "") -> VFS:
         except UFDROpenError:
             pass  # extension matched, but it isn't a readable UFDR
     if p.is_file():
+        # A disk image is recognised by its content, never its name -- .bin,
+        # .dmg, .vhd or no extension at all are as common as .img/.dd.
+        # qnxprobe itself decides (partition table, bare filesystem, EWF
+        # signature); anything it finds nothing browsable in stays a file.
+        from crush.core.raw_image import RawImageOpenError
+
+        try:
+            return RawImageVFS(p)
+        except RawImageOpenError:
+            pass
         return FileVFS(p)
     raise ValueError(f"Unsupported source type: {p}")
 
