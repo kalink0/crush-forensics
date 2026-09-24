@@ -55,7 +55,7 @@ from PySide6.QtWidgets import (
 
 import crush
 from crush.core import tempdir
-from crush.core.vfs import VFS, VFSNode, DirectoryVFS
+from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
 from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog
 from crush.ui.busy_dialog import busy_call
@@ -1003,8 +1003,13 @@ class MainWindow(QMainWindow):
             self._tree_loaded_connected = False
         if hasattr(self, "_progress"):
             self._progress.close()
-        self._status.showMessage(f"Loaded: {self._loading_path}")
         self._logger.info("Loaded: %s", self._loading_path)
+        fallback_note = getattr(getattr(self, "_loading_vfs", None), "fallback_note", "")
+        if fallback_note:
+            self._logger.warning("%s: %s", self._loading_path, fallback_note)
+            self._status.showMessage(f"Loaded: {self._loading_path}  — {fallback_note}")
+        else:
+            self._status.showMessage(f"Loaded: {self._loading_path}")
         self._add_to_recent_files(self._loading_path)
         if hasattr(self, "_tree_build_started"):
             elapsed = time.monotonic() - self._tree_build_started
@@ -1239,10 +1244,11 @@ class MainWindow(QMainWindow):
             return True
         from crush.ui import large_open
 
-        # Any file can be a source: open_vfs() recognises a disk image by its
-        # content, not its name, so a large .bin may well be one.
+        # open_vfs() recognises a disk image by its content, not its name, so
+        # a large .bin may well be one. Offered unless it is known not to be.
         decision = large_open.confirm_large_open(
-            self, node.name, node.size, can_open_as_source=True
+            self, node.name, node.size,
+            can_open_as_source=_can_open_as_source(node, vfs) is not False,
         )
         if decision is large_open.Decision.PROCEED:
             return True
@@ -1292,8 +1298,16 @@ class MainWindow(QMainWindow):
                 )
             else:
                 message = f"{node.path}  [{parser.DISPLAY_NAME}]"
-                if _is_openable_archive(node):
-                    message += "  — archive: right-click → Open in New Window to browse its contents"
+                fallback_note = getattr(vfs, "fallback_note", "")
+                if fallback_note:
+                    message += f"  — {fallback_note}"
+                elif _is_openable_archive(node) or (
+                    # Only a file no parser claimed is worth probing: a disk
+                    # image by any other name ends up here.
+                    isinstance(parser, HexFallbackParser)
+                    and _can_open_as_source(node, vfs) is True
+                ):
+                    message += "  — right-click → Open in New Window to browse its contents"
                 self._status.showMessage(message)
         except Exception as exc:
             self._status.showMessage(f"Parse error: {exc}")
@@ -3947,6 +3961,26 @@ _ARCHIVE_SUFFIXES = (
 def _is_openable_archive(node: VFSNode) -> bool:
     """True for a file Crush can open as a source of its own (archive, backup or disk image)."""
     return not node.is_dir and node.name.lower().endswith(_ARCHIVE_SUFFIXES)
+
+
+def _can_open_as_source(node: VFSNode, vfs: VFS) -> bool | None:
+    """Whether open_vfs() would open this file as a browsable source.
+
+    True/False when that is known: by extension, or by probing the content
+    of a file that is on disk as-is. None for a member of an archive or
+    image with no telling extension -- only extracting it would tell.
+    """
+    if node.is_dir or isinstance(vfs, FileVFS):
+        # A FileVFS is what open_vfs() fell back to after finding nothing to
+        # browse in this very file, whatever its extension says.
+        return False
+    if _is_openable_archive(node):
+        return True
+    if isinstance(vfs, DirectoryVFS):
+        from crush.core.vfs import is_browsable_source_file
+
+        return is_browsable_source_file(node.path)
+    return None
 
 
 def _format_size(size: int) -> str:

@@ -1683,18 +1683,66 @@ def open_vfs(path: str | Path, *, password: str = "") -> VFS:
         except UFDROpenError:
             pass  # extension matched, but it isn't a readable UFDR
     if p.is_file():
-        # A disk image is recognised by its content, never its name -- .bin,
-        # .dmg, .vhd or no extension at all are as common as .img/.dd.
-        # qnxprobe itself decides (partition table, bare filesystem, EWF
-        # signature); anything it finds nothing browsable in stays a file.
+        # A disk image is recognised by its content, never its name -- .bin
+        # or no extension at all are as common as .img/.dd. qnxprobe itself
+        # decides (partition table, bare filesystem, EWF signature); anything
+        # it finds nothing browsable in stays a file.
         from crush.core.raw_image import RawImageOpenError
 
         try:
             return RawImageVFS(p)
-        except RawImageOpenError:
-            pass
-        return FileVFS(p)
+        except RawImageOpenError as exc:
+            fallback = FileVFS(p)
+            fallback.fallback_note = _raw_image_fallback_note(p, exc)
+            return fallback
     raise ValueError(f"Unsupported source type: {p}")
+
+
+_RAW_IMAGE_SUFFIXES = (".img", ".dd", ".raw", ".e01", ".001")
+
+
+def _raw_image_fallback_note(path: Path, exc: Exception) -> str:
+    """Why a file that was meant to be a disk image opened as a plain file,
+    or "" when nothing suggests it was meant to be one.
+
+    Every file is offered to qnxprobe, so "nothing browsable found" is the
+    normal answer for a database or a log and says nothing. It is only worth
+    surfacing when the file announces itself as an image: an image
+    extension, the EWF signature, or a numbered segment of a split set
+    (FTK-style three-digit suffix) that couldn't be joined.
+    """
+    import crush.core.raw_image  # noqa: F401 — registers vendored ewfprobe before qnxprobe loads
+    from crush.third_party import qnxprobe
+
+    suffix = path.suffix.lower()
+    split_error = isinstance(exc.__cause__, qnxprobe.SplitImageError)
+    is_segment = len(suffix) >= 4 and suffix[1:].isascii() and suffix[1:].isdigit()
+    if (
+        suffix in _RAW_IMAGE_SUFFIXES
+        or qnxprobe.looks_like_ewf(str(path))  # type: ignore[no-untyped-call]
+        or (split_error and is_segment)
+    ):
+        return f"Not opened as a disk image — {exc}"
+    return ""
+
+
+def is_browsable_source_file(path: str | Path) -> bool:
+    """True when open_vfs() would open this on-disk file as a browsable
+    source (archive, backup, disk image) rather than a single file -- the
+    content-sniffed cases only; extension-routed archives are the caller's
+    cheaper check. Mirrors open_vfs()'s own sniffing."""
+    p = Path(path)
+    if not p.is_file():
+        return False
+    if _is_gzip(p) or _is_android_backup(p):
+        return True
+    from crush.core.raw_image import RawImageOpenError, open_raw_image
+
+    try:
+        open_raw_image(p).close()
+    except RawImageOpenError:
+        return False
+    return True
 
 
 def _is_android_backup(path: Path) -> bool:
@@ -1702,7 +1750,9 @@ def _is_android_backup(path: Path) -> bool:
     if not path.is_file():
         return False
     with open(path, "rb") as f:
-        return f.readline().strip() == b"ANDROID BACKUP"
+        # Bounded: an unbounded readline() on a file with no newline (e.g. a
+        # disk image that starts with zeros) would pull the whole file into RAM.
+        return f.readline(64).strip() == b"ANDROID BACKUP"
 
 
 def _is_gzip(path: Path) -> bool:
@@ -1815,6 +1865,10 @@ def open_itunes_backup_from_zip(
 
 class FileVFS(VFS):
     """VFS backed by a single file."""
+
+    # Set by open_vfs() when the file looked like a disk image but couldn't
+    # be opened as one; the UI must surface it rather than just show hex.
+    fallback_note: str = ""
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)

@@ -316,15 +316,11 @@ def test_highlights_cover_exactly_the_hits_on_the_current_page(qapp: QApplicatio
     assert per_page[2] >= 1
 
 
-def test_guard_offers_new_window_for_any_file(
-    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A large .bin may be a disk image -- open_vfs() recognises one by its
-    content -- so opening it as a source is offered whatever its name."""
+def _offered_new_window(
+    node: VFSNode, vfs: object, monkeypatch: pytest.MonkeyPatch
+) -> object:
     from crush.ui.main_window import MainWindow
 
-    vfs, node, _ = _source(tmp_path, 4096)
-    assert not node.name.endswith((".zip", ".img", ".e01"))
     win = MainWindow()
     seen: list[object] = []
 
@@ -334,7 +330,51 @@ def test_guard_offers_new_window_for_any_file(
 
     monkeypatch.setattr(large_open, "confirm_large_open", fake_confirm)
     try:
-        win._open_node(node, vfs)
+        win._open_node(node, vfs)  # type: ignore[arg-type]
     finally:
         win.close()
-    assert seen == [True]
+    assert len(seen) == 1
+    return seen[0]
+
+
+def test_guard_offers_new_window_for_on_disk_image_by_content(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A large .bin may be a disk image -- open_vfs() recognises one by its
+    content -- so an on-disk file is probed, whatever its name."""
+    import gzip
+
+    from crush.tests.conftest import FIXTURES_DIR
+
+    (tmp_path / "acquisition.bin").write_bytes(
+        gzip.decompress((FIXTURES_DIR / "raw_ntfs.img.gz").read_bytes())
+    )
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "acquisition.bin")
+    assert _offered_new_window(node, vfs, monkeypatch) is True
+
+
+def test_guard_hides_new_window_for_on_disk_non_image(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vfs, node, _ = _source(tmp_path, 4096)
+    assert _offered_new_window(node, vfs, monkeypatch) is False
+
+
+def test_guard_offers_new_window_for_nested_member_without_telling_name(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inside an archive only extracting it would tell, so it stays offered."""
+    import zipfile
+
+    from crush.core.vfs import ZipVFS
+
+    zpath = tmp_path / "src.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("blob.bin", b"\xab" * 4096)
+    vfs = ZipVFS(zpath)
+    node = next(c for c in vfs.root().children if c.name == "blob.bin")
+    try:
+        assert _offered_new_window(node, vfs, monkeypatch) is True
+    finally:
+        vfs.close()

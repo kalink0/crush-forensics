@@ -781,3 +781,68 @@ class TestContentSniffedImage:
             assert isinstance(vfs, FileVFS)
         finally:
             vfs.close()
+
+
+class TestFallbackNote:
+    """A file every name of which says "disk image" but that can't be opened
+    as one falls back to a plain file -- with the reason, never silently."""
+
+    def test_img_without_filesystem_carries_reason(self, tmp_path: Path) -> None:
+        dst = tmp_path / "disk.img"
+        dst.write_bytes(b"\xab" * (1024 * 1024))
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "Not opened as a disk image" in vfs.fallback_note
+            assert "no partition table or recognized filesystem" in vfs.fallback_note
+        finally:
+            vfs.close()
+
+    def test_split_set_with_hole_carries_reason(self, tmp_path: Path) -> None:
+        for n in (1, 3):
+            (tmp_path / f"case.{n:03d}").write_bytes(b"\xab" * 4096)
+        vfs = open_vfs(tmp_path / "case.003")
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "hole" in vfs.fallback_note
+        finally:
+            vfs.close()
+
+    def test_ordinary_files_carry_no_note(self, tmp_path: Path) -> None:
+        """Rotated logs look like a broken split set to qnxprobe; nothing
+        about them says "image", so no note."""
+        (tmp_path / "syslog.2").write_bytes(b"b\n")
+        (tmp_path / "syslog.3").write_bytes(b"c\n")
+        (tmp_path / "firmware.bin").write_bytes(b"\xab" * 4096)
+        for name in ("syslog.3", "firmware.bin"):
+            vfs = open_vfs(tmp_path / name)
+            try:
+                assert isinstance(vfs, FileVFS)
+                assert vfs.fallback_note == ""
+            finally:
+                vfs.close()
+
+
+def test_android_backup_sniff_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A file with no newline (a disk image starting with zeros) must not be
+    read whole just to check the Android backup magic."""
+    import builtins
+    import io
+
+    from crush.core.vfs import _is_android_backup
+
+    dst = tmp_path / "zeros.bin"
+    dst.write_bytes(bytes(1024 * 1024))
+    reads: list[int] = []
+    real_open = builtins.open
+
+    class _Spy(io.BufferedReader):
+        def readline(self, size: int | None = -1) -> bytes:
+            data = super().readline(size)
+            reads.append(len(data))
+            return data
+
+    monkeypatch.setattr(builtins, "open", lambda f, *a, **k: _Spy(real_open(f, "rb", buffering=0)))
+    assert _is_android_backup(dst) is False
+    monkeypatch.undo()
+    assert reads and max(reads) <= 64
