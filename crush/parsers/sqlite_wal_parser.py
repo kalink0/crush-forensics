@@ -28,6 +28,7 @@ from crush.core.sqlite_wal import (
 )
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.issues import ParseIssue
 
 _WAL_MAGIC_BYTES = (b"\x37\x7f\x06\x82", b"\x37\x7f\x06\x83")
 
@@ -96,7 +97,7 @@ class SQLiteWALParser(AbstractParser):
             "File size": f"{node.size:,} B",
         }
         if classified is None:
-            meta["Status"] = "Not a valid WAL file (magic mismatch or file too short)"
+            meta["Status"] = ParseIssue("sqlite_wal.invalid")
         else:
             _page_size, frames = classified
             counts = Counter(f["status"] for f in frames)
@@ -105,13 +106,7 @@ class SQLiteWALParser(AbstractParser):
             meta["Superseded"] = str(counts.get("Superseded", 0))
             meta["Uncommitted"] = str(counts.get("Uncommitted", 0))
             meta["WAL slack"] = str(counts.get("WAL slack", 0))
-        meta["Note"] = (
-            "Shown standalone (no companion database opened alongside it), so rows are "
-            "raw decoded values, not resolved to real column names. Open the companion "
-            "database normally instead to see this content with column names, table "
-            "attribution, and (for Active frames) merged transparently into the live "
-            "table view, plus this same per-frame inventory in its own 'WAL Frames' tab."
-        )
+        meta["Note"] = ParseIssue("sqlite_wal.standalone")
 
         data: dict[str, Any] = {
             "WAL Frames": {

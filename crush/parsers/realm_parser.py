@@ -70,6 +70,7 @@ from typing import Any
 
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.issues import ParseIssue
 
 _HEADER_SIZE = 24
 _MNEMONIC = b"T-DB"
@@ -2365,13 +2366,18 @@ def _decode_column_values(
 # Table data extraction
 # ---------------------------------------------------------------------------
 
+def _table_failed(table_name: str, reason: ParseIssue | None) -> ParseIssue:
+    """One table's failure, rendered as "<table>: <reason>"."""
+    return ParseIssue("realm.table_failed", {"table": table_name, "reason": reason})
+
+
 def _extract_table_data(
     data: bytes,
     root_offset: int,
     schema: list[str],
     file_size: int,
     table_key_map: dict[int, str] | None = None,
-) -> tuple[list[dict[str, Any]], str | None]:
+) -> tuple[list[dict[str, Any]], list[ParseIssue] | None]:
     """Walk each table's ClusterTree and decode its rows.
 
     Path: root_offset → child[1] (table refs) → table_node → child[2]
@@ -2389,8 +2395,9 @@ def _extract_table_data(
     Returns (tables, reason) -- tables is a list of dicts {name, row_count,
     columns, column_names, column_types, column_target_tables, obj_keys}
     (columns is {user_col_idx: [values]}); reason is None only when every
-    table in *schema* decoded, otherwise a "class_name: specific cause"
-    string per failed table (semicolon-joined) -- mirrors the pre-Cluster
+    table in *schema* decoded, otherwise a list of ParseIssues, one
+    "class_name: specific cause" (realm.table_failed) per failed table, or
+    a single structural issue -- mirrors the pre-Cluster
     path's own (result, reason) contract (see
     _extract_pre_cluster_tables_data) so a genuine structural failure here
     is never left as a silent, unexplained empty table list either
@@ -2398,49 +2405,49 @@ def _extract_table_data(
     """
     root_hdr = _parse_array_header(data, root_offset)
     if root_hdr is None or not root_hdr["has_refs"]:
-        return [], "Group top array is malformed or has no references"
+        return [], [ParseIssue("realm.group_top_malformed")]
 
     root_eb = _elem_bytes(root_hdr)
     if root_eb < 1 or root_hdr["Element count (size)"] < 2:
-        return [], "Group top array has no table-refs slot (fewer than 2 children)"
+        return [], [ParseIssue("realm.group_no_table_refs_slot")]
 
     table_refs_off = _read_ref(data, root_offset + 8, 1, root_eb)
     if table_refs_off <= 0 or table_refs_off >= file_size:
-        return [], "Table-refs reference is invalid or points outside the file"
+        return [], [ParseIssue("realm.table_refs_ref_invalid")]
 
     tr_hdr = _parse_array_header(data, table_refs_off)
     if tr_hdr is None or not tr_hdr["has_refs"]:
-        return [], "Table-refs array is malformed or has no references"
+        return [], [ParseIssue("realm.table_refs_malformed")]
     tr_eb = _elem_bytes(tr_hdr)
     num_tables = tr_hdr["Element count (size)"]
 
     tables: list[dict[str, Any]] = []
-    failures: list[str] = []
+    failures: list[ParseIssue] = []
 
     for t_idx in range(num_tables):
         table_name = schema[t_idx] if t_idx < len(schema) else f"table[{t_idx}]"
         table_ref = _read_ref(data, table_refs_off + 8, t_idx, tr_eb)
         if table_ref <= 0 or table_ref >= file_size:
-            failures.append(f"{table_name}: table reference is invalid or points outside the file")
+            failures.append(_table_failed(table_name, ParseIssue("realm.table_ref_invalid")))
             continue
 
         t_hdr = _parse_array_header(data, table_ref)
         if t_hdr is None or not t_hdr["has_refs"] or t_hdr["Element count (size)"] < 3:
             failures.append(
-                f"{table_name}: Table top array is malformed or missing its ClusterTree slot"
+                _table_failed(table_name, ParseIssue("realm.table_top_no_cluster_tree_slot"))
             )
             continue
         t_eb = _elem_bytes(t_hdr)
 
         cluster_root_ref = _read_ref(data, table_ref + 8, 2, t_eb)
         if cluster_root_ref <= 0 or cluster_root_ref >= file_size:
-            failures.append(f"{table_name}: ClusterTree reference is invalid or points outside the file")
+            failures.append(_table_failed(table_name, ParseIssue("realm.cluster_tree_ref_invalid")))
             continue
 
         col_names = _extract_column_names(data, table_ref, t_eb, file_size)
         col_infos = _extract_column_info(data, table_ref, t_eb, file_size)
         if not col_infos:
-            failures.append(f"{table_name}: Spec/colkeys array has no columns (empty or malformed)")
+            failures.append(_table_failed(table_name, ParseIssue("realm.colkeys_empty")))
             continue
         col_infos_by_idx = sorted(col_infos, key=lambda info: info["user_col_idx"])
         col_type_names = []
@@ -2479,7 +2486,9 @@ def _extract_table_data(
 
         leaves = _walk_cluster_leaves(data, cluster_root_ref, file_size)
         if not leaves:
-            failures.append(f"{table_name}: ClusterTree root is malformed or has no leaves")
+            failures.append(
+                _table_failed(table_name, ParseIssue("realm.cluster_tree_root_malformed"))
+            )
             continue
 
         columns: dict[int, list[Any]] = {info["user_col_idx"]: [] for info in col_infos}
@@ -2561,8 +2570,8 @@ def _extract_table_data(
     if num_tables == 0 and schema:
         # Class names resolved from Group.m_table_names, but the table-refs
         # array itself is empty -- a real mismatch, not "nothing to report".
-        return [], f"Table-refs array has 0 entries, but {len(schema)} class name(s) in schema"
-    return tables, ("; ".join(failures) if failures else None)
+        return [], [ParseIssue("realm.table_refs_empty", {"classes": len(schema)})]
+    return tables, (failures or None)
 
 
 # ---------------------------------------------------------------------------
@@ -3565,7 +3574,7 @@ def _decode_pre_cluster_column_values(
 
 def _extract_pre_cluster_table_data(
     data: bytes, table_ref: int, table_name: str, file_size: int, schema: list[str],
-) -> tuple[dict[str, Any] | None, str | None]:
+) -> tuple[dict[str, Any] | None, ParseIssue | None]:
     """Decode one pre-Cluster Table (table.hpp @ v5.23.9: m_top slot 0 =
     spec ref, slot 1 = columns ref). Row count is taken from the first
     successfully-decoded column's value count (every column in a
@@ -3574,26 +3583,26 @@ def _extract_pre_cluster_table_data(
     still listed rather than silently dropped.
 
     Returns (table, reason) -- reason is None on success, otherwise a
-    specific, human-readable description of the exact structural check
-    that failed (never just "could not be decoded"), so the caller can
+    ParseIssue naming the exact structural check that failed (never just
+    "could not be decoded"), so the caller can
     surface *why*, not only *that* this table didn't decode
     (feedback_explicit_unsupported_marking).
     """
     t_hdr = _parse_array_header(data, table_ref)
     if t_hdr is None or not t_hdr["has_refs"] or t_hdr["Element count (size)"] < 2:
-        return None, "Table top array is malformed or missing its spec/columns slots"
+        return None, ParseIssue("realm.table_top_no_spec_slots")
     t_eb = _elem_bytes(t_hdr)
     if t_eb < 1:
-        return None, "Table top array has a zero element width"
+        return None, ParseIssue("realm.table_top_zero_width")
 
     spec_ref = _read_ref(data, table_ref + 8, 0, t_eb)
     columns_ref = _read_ref(data, table_ref + 8, 1, t_eb)
     if spec_ref <= 0 or spec_ref >= file_size:
-        return None, "Spec reference is invalid or points outside the file"
+        return None, ParseIssue("realm.spec_ref_invalid")
 
     spec_columns = _extract_pre_cluster_spec(data, spec_ref, file_size)
     if not spec_columns:
-        return None, "Spec array has no columns (empty or malformed)"
+        return None, ParseIssue("realm.spec_no_columns")
     col_refs = (
         _resolve_pre_cluster_column_refs(data, columns_ref, spec_columns, file_size)
         if 0 < columns_ref < file_size else {}
@@ -3677,7 +3686,7 @@ def _extract_pre_cluster_table_data(
 
 def _extract_pre_cluster_tables_data(
     data: bytes, root_offset: int, schema: list[str], file_size: int,
-) -> tuple[list[dict[str, Any]], str | None]:
+) -> tuple[list[dict[str, Any]], list[ParseIssue] | None]:
     """Pre-Cluster equivalent of _extract_table_data: same Group -> tables
     array walk (root_offset -> child[1], stable across all file-format
     versions -- group.hpp s_table_refs_ndx=1 predates even the earliest
@@ -3685,8 +3694,8 @@ def _extract_pre_cluster_tables_data(
     _extract_pre_cluster_table_data instead of the Cluster-based path.
 
     Returns (tables, reason) -- reason is None only when every table in
-    *schema* decoded; otherwise a "class_name: specific cause" string per
-    failed table (semicolon-joined), so the caller can show the parser's
+    *schema* decoded; otherwise a list of ParseIssues, one "class_name:
+    specific cause" per failed table, so the caller can show the parser's
     own concrete diagnosis instead of a generic "could not be decoded"
     (feedback_explicit_unsupported_marking) -- e.g. a Group top array with
     no table-refs slot at all (root_hdr["Element count (size)"] < 2) is a
@@ -3695,39 +3704,39 @@ def _extract_pre_cluster_tables_data(
     """
     root_hdr = _parse_array_header(data, root_offset)
     if root_hdr is None or not root_hdr["has_refs"]:
-        return [], "Group top array is malformed or has no references"
+        return [], [ParseIssue("realm.group_top_malformed")]
     root_eb = _elem_bytes(root_hdr)
     if root_eb < 1 or root_hdr["Element count (size)"] < 2:
-        return [], "Group top array has no table-refs slot (fewer than 2 children)"
+        return [], [ParseIssue("realm.group_no_table_refs_slot")]
 
     table_refs_off = _read_ref(data, root_offset + 8, 1, root_eb)
     if table_refs_off <= 0 or table_refs_off >= file_size:
-        return [], "Table-refs reference is invalid or points outside the file"
+        return [], [ParseIssue("realm.table_refs_ref_invalid")]
     tr_hdr = _parse_array_header(data, table_refs_off)
     if tr_hdr is None or not tr_hdr["has_refs"]:
-        return [], "Table-refs array is malformed or has no references"
+        return [], [ParseIssue("realm.table_refs_malformed")]
     tr_eb = _elem_bytes(tr_hdr)
     num_tables = tr_hdr["Element count (size)"]
 
     tables: list[dict[str, Any]] = []
-    failures: list[str] = []
+    failures: list[ParseIssue] = []
     for t_idx in range(num_tables):
         table_name = schema[t_idx] if t_idx < len(schema) else f"table[{t_idx}]"
         table_ref = _read_ref(data, table_refs_off + 8, t_idx, tr_eb)
         if table_ref <= 0 or table_ref >= file_size:
-            failures.append(f"{table_name}: table reference is invalid or points outside the file")
+            failures.append(_table_failed(table_name, ParseIssue("realm.table_ref_invalid")))
             continue
         table, reason = _extract_pre_cluster_table_data(data, table_ref, table_name, file_size, schema)
         if table is not None:
             tables.append(table)
         else:
-            failures.append(f"{table_name}: {reason}")
+            failures.append(_table_failed(table_name, reason))
 
     if num_tables == 0 and schema:
         # Class names resolved from Group.m_table_names, but the table-refs
         # array itself is empty -- a real mismatch, not "nothing to report".
-        return [], f"Table-refs array has 0 entries, but {len(schema)} class name(s) in schema"
-    return tables, ("; ".join(failures) if failures else None)
+        return [], [ParseIssue("realm.table_refs_empty", {"classes": len(schema)})]
+    return tables, (failures or None)
 
 
 # ---------------------------------------------------------------------------
@@ -4016,8 +4025,8 @@ class RealmParser(AbstractParser):
         # column types still can't be decoded per-column; those are flagged
         # per-table via each table's "unsupported_columns" instead.
         unsupported_row_format: int | None = None
-        pre_cluster_reason: str | None = None
-        cluster_reason: str | None = None
+        pre_cluster_reason: list[ParseIssue] | None = None
+        cluster_reason: list[ParseIssue] | None = None
 
         tables: list[dict[str, Any]] = []
         if header_info and schema:
@@ -4121,7 +4130,7 @@ class RealmParser(AbstractParser):
             "File size": f"{node.size:,} B",
         }
         if password is not None:
-            meta["Encrypted"] = "Yes (AES-256, key supplied)"
+            meta["Encrypted"] = ParseIssue("realm.encrypted_key_supplied")
             meta["Decrypted size"] = f"{file_size:,} B"
         if header_info:
             meta["Header mnemonic"] = header_info.get("Mnemonic", "?")
@@ -4137,20 +4146,15 @@ class RealmParser(AbstractParser):
                 # since a corrupt footer must not read the same as "decoded,
                 # zero tables".
                 if streaming_form["footer_valid"]:
-                    meta["Streaming form"] = (
-                        f"Yes — top ref resolved from end-of-file footer "
-                        f"(offset {streaming_form['top_ref']})"
+                    meta["Streaming form"] = ParseIssue(
+                        "realm.streaming_footer_ok", {"top_ref": streaming_form["top_ref"]}
                     )
                 else:
-                    meta["Streaming form"] = (
-                        "Yes — but the footer is missing or its magic cookie "
-                        "doesn't match; top ref could not be resolved "
-                        "(truncated or corrupt file)"
-                    )
+                    meta["Streaming form"] = ParseIssue("realm.streaming_footer_bad")
             if schema:
                 meta["Tables found"] = str(len(schema))
             elif streaming_form is not None and not streaming_form["footer_valid"]:
-                meta["Tables found"] = "Unresolved (see Streaming form)"
+                meta["Tables found"] = ParseIssue("realm.tables_unresolved")
             if unsupported_row_format is not None:
                 # File format is already shown above ("File format"); this
                 # message adds the parser's own concrete diagnosis, not a
@@ -4162,19 +4166,16 @@ class RealmParser(AbstractParser):
                     for t in pc_tables
                     if t.get("unsupported_columns")
                 }
-                reasons: list[str] = []
-                if pre_cluster_reason:
-                    reasons.append(pre_cluster_reason)
+                reasons: list[ParseIssue] = list(pre_cluster_reason or [])
                 if gaps:
-                    n_cols = sum(len(v) for v in gaps.values())
-                    reasons.append(
-                        f"{n_cols} column(s) across {len(gaps)} table(s) not yet decoded "
-                        "(unimplemented old column type)"
-                    )
+                    reasons.append(ParseIssue(
+                        "realm.pre_cluster_undecoded_columns",
+                        {"columns": sum(len(v) for v in gaps.values()), "tables": len(gaps)},
+                    ))
                 if reasons:
-                    meta["Row data"] = "Pre-Cluster layout — " + "; ".join(reasons)
+                    meta["Row data"] = ParseIssue("realm.pre_cluster_partial", {"reasons": reasons})
                 else:
-                    meta["Row data"] = "Decoded via legacy pre-Cluster layout"
+                    meta["Row data"] = ParseIssue("realm.pre_cluster_decoded")
             elif cluster_reason:
                 # Same principle for format >=10: schema/class names may
                 # have resolved from Group.m_table_names while the
@@ -4182,8 +4183,8 @@ class RealmParser(AbstractParser):
                 # not just leave "tables" silently empty.
                 meta["Row data"] = cluster_reason
         else:
-            meta["Header"] = "Not detected (corrupt or non-standard)"
-            meta["Possibly Encrypted"] = "Try Open as → Realm DB (Encrypted)…"
+            meta["Header"] = ParseIssue("realm.header_not_detected")
+            meta["Possibly Encrypted"] = ParseIssue("realm.try_encrypted")
 
         text_parts: list[str] = []
         for t in tables:

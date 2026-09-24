@@ -602,7 +602,10 @@ def test_realm_schema_extraction_format9_big_blobs(tmp_path: Path) -> None:
     # must be explicitly flagged with the parser's own concrete reason,
     # never silently left at zero rows or a generic "could not be decoded".
     assert result.data["tables"] == []
-    assert result.metadata["Row data"] == (
+    row_data = result.metadata["Row data"]
+    assert row_data.code == "realm.pre_cluster_partial"
+    assert [r.code for r in row_data.params["reasons"]] == ["realm.group_no_table_refs_slot"]
+    assert str(row_data) == (
         "Pre-Cluster layout — Group top array has no table-refs slot (fewer than 2 children)"
     )
 
@@ -674,7 +677,10 @@ def test_realm_streaming_form_resolves_via_footer(
     assert result.data["streaming_form"] == {
         "top_ref": 96, "footer_valid": True,
     }
-    assert "resolved from end-of-file footer" in result.metadata["Streaming form"]
+    assert result.metadata["Streaming form"].code == "realm.streaming_footer_ok"
+    assert str(result.metadata["Streaming form"]) == (
+        "Yes — top ref resolved from end-of-file footer (offset 96)"
+    )
 
 
 def test_realm_streaming_form_corrupt_footer_marked_explicit(
@@ -696,8 +702,10 @@ def test_realm_streaming_form_corrupt_footer_marked_explicit(
 
     assert result.data["schema"] == []
     assert result.data["streaming_form"] == {"top_ref": None, "footer_valid": False}
-    assert "could not be resolved" in result.metadata["Streaming form"]
-    assert result.metadata["Tables found"] == "Unresolved (see Streaming form)"
+    assert result.metadata["Streaming form"].code == "realm.streaming_footer_bad"
+    assert "could not be resolved" in str(result.metadata["Streaming form"])
+    assert result.metadata["Tables found"].code == "realm.tables_unresolved"
+    assert str(result.metadata["Tables found"]) == "Unresolved (see Streaming form)"
 
 
 def test_realm_pre_cluster_mixed_column(tmp_path: Path) -> None:
@@ -1005,7 +1013,7 @@ def test_realm_parser_decrypts_with_correct_key(tmp_path: Path) -> None:
 
     assert result.viewer_type == "realm"
     assert "class_Task" in result.data["schema"]
-    assert result.metadata.get("Encrypted", "").startswith("Yes")
+    assert result.metadata["Encrypted"].code == "realm.encrypted_key_supplied"
 
     from crush.core.passwords import WrongPasswordError
 
@@ -1026,7 +1034,9 @@ def test_extract_table_data_reports_reason_when_table_refs_missing() -> None:
     raw = _array_hdr(0x46, 1) + _pad8((0).to_bytes(4, "little"))
     tables, reason = _extract_table_data(raw, 0, ["class_Foo"], len(raw))
     assert tables == []
-    assert reason == "Group top array has no table-refs slot (fewer than 2 children)"
+    assert reason is not None
+    assert [r.code for r in reason] == ["realm.group_no_table_refs_slot"]
+    assert str(reason[0]) == "Group top array has no table-refs slot (fewer than 2 children)"
 
 
 def test_extract_table_data_flags_estimated_row_count_on_corrupt_key_slot() -> None:

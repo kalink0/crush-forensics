@@ -798,7 +798,10 @@ def test_realm_format9_fixture_known_output(realm_format9_fixture: Path) -> None
     assert result.viewer_type == "realm"
     assert result.data["schema"] == ["metadata", "class_LegacyRecord"]
     assert result.data["tables"] == []
-    assert result.metadata["Row data"] == (
+    row_data = result.metadata["Row data"]
+    assert row_data.code == "realm.pre_cluster_partial"
+    assert [r.code for r in row_data.params["reasons"]] == ["realm.group_no_table_refs_slot"]
+    assert str(row_data) == (
         "Pre-Cluster layout — Group top array has no table-refs slot (fewer than 2 children)"
     )
 
@@ -845,7 +848,8 @@ def test_realm_ifttt_v9_fixture_known_output(realm_ifttt_v9_fixture: Path) -> No
 
     # Every column in every table decodes -- no unimplemented old column
     # type left in this real sample (Mixed/StringEnum don't occur in it).
-    assert result.metadata["Row data"] == "Decoded via legacy pre-Cluster layout"
+    assert result.metadata["Row data"].code == "realm.pre_cluster_decoded"
+    assert str(result.metadata["Row data"]) == "Decoded via legacy pre-Cluster layout"
     for t in result.data["tables"]:
         assert t["unsupported_columns"] == [], f"{t['name']} has unsupported columns"
 
@@ -895,7 +899,8 @@ def test_realm_mcdonalds_v9_fixture_known_output(realm_mcdonalds_v9_fixture: Pat
 
     # Every column decodes -- Float and Double both real-validated here
     # (neither appeared with non-trivial values in the IFTTT sample).
-    assert result.metadata["Row data"] == "Decoded via legacy pre-Cluster layout"
+    assert result.metadata["Row data"].code == "realm.pre_cluster_decoded"
+    assert str(result.metadata["Row data"]) == "Decoded via legacy pre-Cluster layout"
     for t in result.data["tables"]:
         assert t["unsupported_columns"] == [], f"{t['name']} has unsupported columns"
 

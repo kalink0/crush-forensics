@@ -131,6 +131,30 @@ the human-readable *why* goes in `metadata` (parser-owned, see conventions below
 should build its own generic message from the fact alone, not reproduce the parser's reasoning
 or import its internals.
 
+### Say *why* with a `ParseIssue`, not a sentence
+
+Status, reasons and notes about what a result does not contain are `ParseIssue` objects
+(`crush/parsers/issues.py`), never free text written by the parser:
+
+```python
+from crush.parsers.issues import ParseIssue
+
+meta["Status"] = ParseIssue("myformat.bad_header", {"offset": off}, detail=str(exc))
+```
+
+- `code`: stable, `<parser>.<reason>`. Tests and callers check the code, never the wording.
+- `params`: the facts (offsets, counts, names). A param may itself be a `ParseIssue` or a list
+  of them (rendered joined with `; `).
+- `detail`: the library's own message (json, lxml, sqlite3 …), verbatim. Never shortened,
+  never translated.
+- Add the English template to `MESSAGES` in `issues.py`. A test fails for any code used in
+  `crush/parsers/` without one.
+
+`str(issue)` renders the English sentence, so an issue works anywhere a string value did
+(Properties panel, status bar, exports). Keeping the sentence out of the parser lets the UI
+translate it later without touching any parser. When a helper can fail for several reasons,
+return `(result, issue)` instead of a bare `None`, so the concrete cause reaches the caller.
+
 ### Directory-based formats (e.g. LevelDB)
 
 If the format is detected from a directory rather than a single file, skip `can_parse` and
@@ -338,6 +362,7 @@ class ParseResult:
 ## Checklist
 
 - [ ] `crush/parsers/myformat_parser.py` — subclass `AbstractParser`, implement `can_parse` and `parse`
+- [ ] Every failure/unsupported path reports a `ParseIssue` with its code in `crush/parsers/issues.py`
 - [ ] `crush/parsers/__init__.py` — `ParserRegistry.register(MyFormatParser())` before `HexFallbackParser`
 - [ ] `crush/viewers/myformat_viewer.py` — subclass `QWidget` (only if reusing an existing viewer type is not possible)
 - [ ] `crush/viewers/__init__.py` — `ViewerRegistry.register("myformat", ...)` (only for new viewer types)
