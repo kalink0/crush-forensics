@@ -53,6 +53,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.sqlite_freeblocks import extract_freeblocks
 from crush.core.sqlite_unallocated import extract_unallocated_space
 from crush.core.sqlite_wal import PAGE_TYPE_TABLE_LEAF, parse_table_leaf_page
@@ -133,7 +134,7 @@ class JournalParseResult:
     # must check before doing so (ground rule: never present a guess as
     # ground truth -- see MEMORY feedback_forensic_cleanliness).
     mergeable: bool = False
-    error: str | None = None
+    error: ParseIssue | None = None
 
 
 def parse_rollback_journal(data: bytes) -> JournalParseResult:
@@ -204,12 +205,7 @@ def parse_rollback_journal(data: bytes) -> JournalParseResult:
     mergeable = bool(segments) and all(s.fully_valid for s in segments)
     error = None
     if not segments:
-        error = (
-            "No valid rollback-journal header found at the start of this file "
-            "(magic mismatch) -- likely a stale/invalidated PERSIST-mode "
-            "journal, a truncated/corrupt journal, or not a SQLite rollback "
-            "journal at all"
-        )
+        error = ParseIssue("sqlite_journal.no_valid_header")
 
     return JournalParseResult(
         segments=segments,

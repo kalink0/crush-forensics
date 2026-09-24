@@ -6,9 +6,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.parsers.issues import ParseIssue
 
 # Characters shown on each side of a syntax error's position.
 _EXCERPT_RADIUS = 250

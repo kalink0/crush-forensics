@@ -234,7 +234,8 @@ def test_sqlcipher_correct_password_parses_tables(tmp_path: Path) -> None:
         [1, "alice@example.com", "Hello Bob"],
         [2, "bob@example.com", "Hi Alice"],
     ]
-    assert result.metadata["Encrypted"] == "Yes (SQLCipher, password supplied)"
+    assert result.metadata["Encrypted"].code == "sqlite.encrypted_password"
+    assert str(result.metadata["Encrypted"]) == "Yes (SQLCipher, password supplied)"
 
 
 def test_sqlcipher_wal_companion_is_decrypted_and_merged(tmp_path: Path) -> None:
@@ -311,7 +312,8 @@ def test_sqlcipher_raw_key_opens_via_advanced_params(tmp_path: Path) -> None:
     result = parser.parse(node, vfs, password=raw_key_hex, raw_key=True)
 
     assert result.data["messages"]["rows"] == [[1, "secret"]]
-    assert result.metadata["Encrypted"] == "Yes (SQLCipher, raw key supplied)"
+    assert result.metadata["Encrypted"].code == "sqlite.encrypted_raw_key"
+    assert str(result.metadata["Encrypted"]) == "Yes (SQLCipher, raw key supplied)"
 
     # Same raw key, but treated as a passphrase (raw_key=False, the
     # default) must NOT open the file -- proving raw_key actually changes

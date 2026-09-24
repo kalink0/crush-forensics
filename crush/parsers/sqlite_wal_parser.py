@@ -20,6 +20,7 @@ from collections import Counter
 from typing import Any
 
 from crush.core.cell_locator import RawBytesCellLocator
+from crush.core.issues import ParseIssue
 from crush.core.sqlite_wal import (
     PAGE_TYPE_TABLE_LEAF,
     classify_wal_frames,
@@ -28,7 +29,6 @@ from crush.core.sqlite_wal import (
 )
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.parsers.issues import ParseIssue
 
 _WAL_MAGIC_BYTES = (b"\x37\x7f\x06\x82", b"\x37\x7f\x06\x83")
 

@@ -318,7 +318,9 @@ def test_sqlite_parser_merges_valid_journal_into_default_view(tmp_path: Path) ->
     assert "__journal_path" in result.data
     assert Path(result.data["__journal_path"]).is_file()
     assert not str(result.data["__journal_path"]).endswith("-journal")  # never SQLite's auto-detected name
-    assert "merged into current view" in result.metadata["Rollback journal"]
+    journal = result.metadata["Rollback journal"]
+    assert journal.params["status"].code == "sqlite.journal_merged"
+    assert "merged into current view" in str(journal)
 
 
 def test_sqlite_parser_skips_merge_when_wal_flag_set_in_header(tmp_path: Path) -> None:
@@ -351,9 +353,11 @@ def test_sqlite_parser_skips_merge_when_wal_flag_set_in_header(tmp_path: Path) -
     result = SQLiteParser().parse(node, vfs)
 
     assert "__recovered_db_path" not in result.data
-    status = result.metadata["Rollback journal"]
-    assert "NOT merged" in status
-    assert "WAL mode is active" in status
+    status = result.metadata["Rollback journal"].params["status"]
+    assert status.code == "sqlite.journal_valid_not_merged"
+    assert status.params["reason"].code == "sqlite.journal_stale_wal_mode"
+    assert "NOT merged" in str(status)
+    assert "WAL mode is active" in str(status)
 
 
 def test_sqlite_journal_parser_opens_journal_file_standalone(tmp_path: Path) -> None:
@@ -395,7 +399,8 @@ def test_sqlite_journal_parser_opens_journal_file_standalone(tmp_path: Path) -> 
         conn.close()
 
     assert result.viewer_type == "table"
-    assert "Valid / hot" in result.metadata["Status"]
+    assert result.metadata["Status"].code == "sqlite_journal.valid_hot"
+    assert "Valid / hot" in str(result.metadata["Status"])
     rows = result.data["Journal Records"]["rows"]
     columns = result.data["Journal Records"]["columns"]
     kind_col = columns.index("Kind")

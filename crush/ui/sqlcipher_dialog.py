@@ -9,6 +9,7 @@ rather than a low-entropy user password.
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -35,16 +36,23 @@ class SQLCipherCredentialsDialog(QDialog):
     the file. Call exec(); on QDialog.Accepted, read .key_text() and
     .cipher_params() (None unless Advanced was used)."""
 
-    def __init__(self, parent: QWidget | None = None, was_wrong: bool = False) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, wrong_reason: str | None = None,
+    ) -> None:
+        # wrong_reason: None on the first prompt, else why the previous
+        # attempt was rejected ("" if the source gave no reason).
+        was_wrong = wrong_reason is not None
         super().__init__(parent)
         self.setWindowTitle("Incorrect Key" if was_wrong else "SQLCipher Credentials")
-        self._build_ui(was_wrong)
+        self._build_ui(wrong_reason)
 
-    def _build_ui(self, was_wrong: bool) -> None:
+    def _build_ui(self, wrong_reason: str | None) -> None:
         root = QVBoxLayout(self)
 
-        if was_wrong:
-            warn = QLabel("Incorrect password/key, or unsupported parameters. Try again:")
+        if wrong_reason is not None:
+            retry = "Incorrect password/key, or unsupported parameters. Try again:"
+            warn = QLabel(f"{wrong_reason}\n\n{retry}" if wrong_reason else retry)
+            warn.setTextFormat(Qt.TextFormat.PlainText)
             warn.setStyleSheet("color: #b33;")
             warn.setWordWrap(True)
             root.addWidget(warn)

@@ -24,6 +24,9 @@ All notable changes to Crush will be documented in this file.
 - Fixed the Table Viewer's "Decode column as timestamp" silently doing nothing for numbers stored as text (e.g. `'1713884690406'` in a `TEXT` column) while still showing the format in the column header. Such values are now decoded too, and cells that can't be decoded are marked with the reason instead of looking decoded. Addresses [#104](https://github.com/kalink0/crush-forensics/issues/104).
 
 - Fixed invalid JSON showing only its first 500 characters instead of the part around the error; non-UTF-8 JSON is now flagged.
+- Fixed password and key prompts hiding why the previous attempt was rejected (e.g. a Realm key of the wrong length read as "Incorrect key"); the reason is now shown above the retry prompt.
+- Fixed a SQLite `-wal`/`-shm`/`-journal` companion that exists but can't be read being skipped silently; it's now listed under "Companion files not loaded" with the error.
+- Fixed the Properties panel showing SQLite's default journal mode (e.g. `delete`) as if the file recorded it; it now shows only what the header stores: WAL or rollback journal.
 
 ### Changed
 

@@ -68,9 +68,9 @@ import uuid as _uuid_mod
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.parsers.issues import ParseIssue
 
 _HEADER_SIZE = 24
 _MNEMONIC = b"T-DB"

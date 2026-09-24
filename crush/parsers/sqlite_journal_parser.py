@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from crush.core.cell_locator import RawBytesCellLocator
+from crush.core.issues import ParseIssue
 from crush.core.sqlite_journal import (
     JOURNAL_MAGIC,
     extract_journal_rows,
@@ -83,21 +84,15 @@ class SQLiteJournalParser(AbstractParser):
             "Recovered entries": str(len(rows)),
         }
         if not result.segments:
-            meta["Status"] = result.error or "Not a valid rollback journal"
+            meta["Status"] = result.error or ParseIssue("sqlite_journal.invalid")
         else:
             n_bad = sum(1 for s in result.segments for r in s.records if not r.checksum_valid)
             meta["Status"] = (
-                "Valid / hot — every segment header and page checksum validated"
+                ParseIssue("sqlite_journal.valid_hot")
                 if result.mergeable else
-                f"NOT fully valid — {n_bad} checksum mismatch(es); shown raw, unmerged"
+                ParseIssue("sqlite_journal.not_fully_valid", {"mismatches": n_bad})
             )
-        meta["Note"] = (
-            "This is the journal's own pre-transaction page content, shown standalone "
-            "(no companion database opened alongside it). Open the companion database "
-            "normally instead to see this same inventory in its own 'Rollback Journal' "
-            "tab, with a valid journal's content automatically merged into the "
-            "database's default table view (never applied to any file on disk)."
-        )
+        meta["Note"] = ParseIssue("sqlite_journal.standalone")
 
         data: dict[str, Any] = {
             "Journal Records": {

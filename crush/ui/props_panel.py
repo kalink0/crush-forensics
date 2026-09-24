@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
-from crush.parsers.issues import render_value
+from crush.core.issues import render_value
 from crush.ui import open_url
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 

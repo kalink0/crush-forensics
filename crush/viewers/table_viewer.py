@@ -97,6 +97,7 @@ from crush.core.work_priority import (
     foreground_io,
     release_foreground_io,
 )
+from crush.core.issues import render_value
 from crush.ui.busy_dialog import run_with_busy_dialog
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
@@ -1722,7 +1723,8 @@ class TableViewer(QWidget):
             ["Frame", "Page", "Transaction", "Status", "Table", "Offset (B)", "Content"]
         )
         if not frames:
-            parser_diag = self._data.get("__wal_diag", "") if isinstance(self._data, dict) else ""
+            diag_issues = self._data.get("__wal_diag", []) if isinstance(self._data, dict) else []
+            parser_diag = " | ".join(render_value(i) for i in diag_issues)
             diag = _wal_diag(self._db_path, parser_diag)
             item = QStandardItem(f"No WAL file found or format not recognised — {diag}")
             item.setEditable(False)

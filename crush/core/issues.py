@@ -14,8 +14,10 @@ Why codes instead of free text:
   without touching any parser, and a stale or missing translation falls
   back to the English template here.
 - Tests and callers check `issue.code`, never displayed wording.
-- `detail` is the library's own diagnosis. It is never translated, never
-  shortened, and always rendered where the template places it.
+- `detail` is the library's own diagnosis. It is never translated or
+  shortened. A template leaves it out only where the library's wording is
+  known to mislead (say why next to the template); it then stays on the
+  issue and is logged.
 
 str(issue) renders the English sentence, so an issue can sit anywhere a
 string used to (a metadata value, a status bar message) and exports stay
@@ -49,6 +51,79 @@ MESSAGES: dict[str, str] = {
     "json.not_utf8": (
         "Not valid UTF-8 (first invalid byte at offset {offset:,}: {detail}); "
         "invalid bytes are shown as U+FFFD — Open as → Hex for the original bytes"
+    ),
+    # -- SQLite -----------------------------------------------------------
+    "sqlite.parse_failed": "{detail}",
+    "sqlite.invalid_hex_key": "Not a valid hex key: {detail}",
+    # No {detail}: SQLCipher's message for a page that fails to decrypt is
+    # always "file is not a database", which reads as "this isn't a
+    # database" in a password prompt. The detail stays on the issue and in
+    # the log.
+    "sqlite.custom_params_rejected": (
+        "Incorrect key, or the given parameters don't match this file"
+    ),
+    "sqlite.password_rejected": (
+        "Incorrect password, or an unsupported SQLCipher version/parameters"
+    ),
+    "sqlite.encrypted_password": "Yes (SQLCipher, password supplied)",
+    "sqlite.encrypted_raw_key": "Yes (SQLCipher, raw key supplied)",
+    "sqlite.pragma_read_failed": (
+        "Page size, journal mode and encoding could not be read: {detail}"
+    ),
+    "sqlite.journal_mode_rollback": (
+        "Rollback journal (the file doesn't record which variant: "
+        "delete/truncate/persist)"
+    ),
+    "sqlite.row_limit": "First {limit:,} rows shown for: {tables}",
+    "sqlite.companion_empty": (
+        "VFS found {name} (path={path}, vfs_size={size} B) but read returned 0 bytes — "
+        "ZIP entry may be empty in the archive"
+    ),
+    "sqlite.companion_copied": "Copied {name} ({size:,} B) from {path}",
+    "sqlite.companion_loaded_fs": "Loaded filesystem companion {name} ({size:,} B)",
+    "sqlite.companion_not_in_vfs": "find_sibling returned None for db_node.path={path}",
+    "sqlite.companion_read_failed": "VFS found {name} but read raised: {detail}",
+    "sqlite.companion_fs_read_failed": "{name} could not be read from disk: {detail}",
+    "sqlite.journal_present": "present, {size:,} B, {status}",
+    "sqlite.journal_merged": (
+        "valid/hot, {segments} segment(s), {records} page record(s) -- merged into "
+        "current view (see 'Show pre-rollback state' toggle and the 'Rollback "
+        "Journal' tab)"
+    ),
+    "sqlite.journal_valid_not_merged": (
+        "valid/hot, {segments} segment(s), {records} page record(s) -- NOT merged, "
+        "{reason} (see the 'Rollback Journal' tab for the raw, unmerged record "
+        "inventory)"
+    ),
+    "sqlite.journal_not_merged": (
+        "NOT merged -- {reason} (see the 'Rollback Journal' tab for the raw, "
+        "unmerged record inventory)"
+    ),
+    "sqlite.journal_checksum_mismatch": "one or more page checksums did not validate",
+    "sqlite.journal_stale_wal_mode": (
+        "the database's own header shows WAL mode is active, so this -journal "
+        "predates the switch to WAL and is stale, not \"hot\""
+    ),
+    # -- SQLite rollback journal -----------------------------------------
+    "sqlite_journal.invalid": "Not a valid rollback journal",
+    "sqlite_journal.no_valid_header": (
+        "No valid rollback-journal header found at the start of this file "
+        "(magic mismatch) -- likely a stale/invalidated PERSIST-mode "
+        "journal, a truncated/corrupt journal, or not a SQLite rollback "
+        "journal at all"
+    ),
+    "sqlite_journal.valid_hot": (
+        "Valid / hot — every segment header and page checksum validated"
+    ),
+    "sqlite_journal.not_fully_valid": (
+        "NOT fully valid — {mismatches} checksum mismatch(es); shown raw, unmerged"
+    ),
+    "sqlite_journal.standalone": (
+        "This is the journal's own pre-transaction page content, shown standalone "
+        "(no companion database opened alongside it). Open the companion database "
+        "normally instead to see this same inventory in its own 'Rollback Journal' "
+        "tab, with a valid journal's content automatically merged into the "
+        "database's default table view (never applied to any file on disk)."
     ),
     # -- SQLite WAL -------------------------------------------------------
     "sqlite_wal.invalid": "Not a valid WAL file (magic mismatch or file too short)",
