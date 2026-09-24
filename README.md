@@ -56,6 +56,21 @@ Supported viewers (more planned):
 - PDF Viewer (page rendering, text extraction, revision history)
 - Realm Database Viewer (schema and table decoding)
 
+## Forensic Integrity Testing
+
+Beyond "does it parse?", a dedicated test suite checks whether Crush is safe to run on real evidence, on Linux, macOS and Windows:
+
+- **Source immutability** — reading a source leaves it byte-identical.
+- **No side effects** — parsing creates no files next to the evidence (e.g. no SQLite `-wal`/`-shm`).
+- **Read-only media** — everything works on write-protected evidence.
+- **Known-output verification** — committed reference files must parse to exact, pre-computed values.
+- **Completeness** — no valid interpretation of a value is ever silently dropped.
+- **Reproducibility** — parsing the same input twice gives identical results.
+
+The reference files themselves are SHA-256-pinned; the suite refuses to run if any of them was modified.
+
+Every release runs the suite fresh on its own commit and attaches the result: → [Forensic audit report of the latest release](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.html) (HTML, downloads; raw data as [JSON](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.json)). It lists every check with its result per OS and a link to the exact test code, and is attached even when a check fails.
+
 ## Documentation
 
 → [User Handbook](crush/docs/handbook.md)
