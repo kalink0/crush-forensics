@@ -738,11 +738,15 @@ A high-performance log viewer for large files and multi-source correlation. Open
 |---|---|
 | Level buttons | Toggle ERROR / WARN / INFO / DEBUG / TRACE / UNKNOWN on or off |
 | **Search** field | Filter by message, process, PID, subsystem, or category |
-| **Format…** | Define or load a custom log format profile |
+| **Format** | **Re-parse *source* as** a specific built-in format (overrides the detection), or **Define custom format…** |
 
 **Source bar** — one colour-coded chip per loaded file. Click a chip to hide or show that source. Chips scroll horizontally if many sources are loaded.
 
-**Time-range filter** — appears after the first file with timestamps finishes loading. Check **Time range:** to enable the from/to pickers; **Reset** restores the full range. The **Display TZ** dropdown toggles between UTC and local time.
+**Time-range filter** — appears after the first file with timestamps finishes loading. Check **Time range:** to enable the from/to pickers; **Reset** restores the full range. The **Display TZ** dropdown toggles between UTC and local time. Times the log recorded without a zone are shown as recorded with "(no zone)" and never converted; a missing year (Syslog, logcat) is shown as `????`.
+
+**Guessed levels** — Syslog, generic and plain-text logs have no level field; their level is guessed from a keyword in the message and shown as e.g. `ERROR (guessed)` (tooltip: every keyword found). The level buttons filter guessed levels too.
+
+**Format label** — next to the toolbar, one entry per source: its format, marked "(heuristic)" when detected rather than chosen. Click **ⓘ** for everything the parser reported: all candidate formats with how many lines each matched, the detection rule, lines that didn't match the format, timestamp notes and encoding problems.
 
 **Column filter inputs** — a persistent row of text fields above the log table, one per filterable column (Level, Process, PID, Subsystem, Category, Message). Type in any field to live-filter the table by a contains-match on that column. Multiple fields are AND-combined.
 
@@ -766,14 +770,14 @@ Log conversion's intermediate files (extracted archive contents, per-worker mini
 
 | Option | Action |
 |---|---|
-| Copy message | Copies the parsed message text |
+| Copy message | Copies the full parsed message text, all lines |
 | Copy raw line | Copies the original unparsed line(s) |
-| Copy selection (TSV) | Copies all selected rows as tab-separated values |
+| Copy selection (TSV) | Copies all selected rows as tab-separated values; tabs, line breaks and backslashes inside a field are escaped (`\t`, `\n`, `\\`), never cut |
 | Filter: [Column] = [value] | Pins an exact-match filter for the clicked cell; filter chip appears in the column filter bar |
 
 **Custom format profiles**
 
-For log files not auto-detected, click **Format…** to open the format dialog:
+For log files not auto-detected, click **Format → Define custom format…** to open the format dialog:
 
 1. Enter a **Profile Name** and a **Parse Pattern** — a Python regex with named groups. The groups `timestamp`, `level`, `process`, `pid`, and `message` map to the corresponding columns; any other named group is stored as an extra field and shown in the detail panel.
 2. Set **Timestamp Format** to a `strptime` string (e.g. `%d/%b/%Y:%H:%M:%S`). Leave empty to auto-detect ISO 8601 / epoch timestamps.

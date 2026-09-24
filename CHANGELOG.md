@@ -27,6 +27,11 @@ All notable changes to Crush will be documented in this file.
 - Fixed password and key prompts hiding why the previous attempt was rejected (e.g. a Realm key of the wrong length read as "Incorrect key"); the reason is now shown above the retry prompt.
 - Fixed a SQLite `-wal`/`-shm`/`-journal` companion that exists but can't be read being skipped silently; it's now listed under "Companion files not loaded" with the error.
 - Fixed the Properties panel showing SQLite's default journal mode (e.g. `delete`) as if the file recorded it; it now shows only what the header stores: WAL or rollback journal.
+- Fixed Syslog (RFC 3164) timestamps getting the analysis machine's current year; a missing year (Syslog, logcat) is now shown as `????`.
+- Fixed log timestamps with a UTC offset (e.g. `+02:00`) being dropped, and zone-less times being shown and converted as if they were UTC; they're now marked "(no zone)" and never converted.
+- Fixed Multi-Log Studio's "Copy message" and "Copy selection (TSV)" copying only the first line of a multi-line message plus "[n more lines]"; the full text is copied.
+- Fixed guessed log levels (Syslog, generic and plain-text logs have no level field) looking like recorded ones; they're now shown as "(guessed)" with the keywords found.
+- Fixed Multi-Log Studio's format detection looking only at the first 40 lines and never saying it guessed: all lines are scored, the ⓘ next to a source shows every candidate's score, and **Format → Re-parse … as** overrides it.
 
 ### Changed
 

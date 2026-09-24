@@ -46,7 +46,7 @@ def test_export_node_asks_before_overwriting_existing_target(qapp, tmp_path, mon
         win.close()
 
 
-def test_export_node_proceeds_when_overwrite_confirmed(qapp, tmp_path, monkeypatch) -> None:
+def test_export_node_proceeds_when_overwrite_confirmed(qapp, qtbot, tmp_path, monkeypatch) -> None:
     source_dir, vfs = _make_source(tmp_path)
     dest_dir = tmp_path / "dest"
     dest_dir.mkdir()
@@ -60,7 +60,12 @@ def test_export_node_proceeds_when_overwrite_confirmed(qapp, tmp_path, monkeypat
         win._export_node(vfs.root(), vfs)
 
         assert win._thread_is_running(win._export_thread)
-        win._export_thread.wait(5000)
+        # Not QThread.wait(): the worker's finished -> thread.quit is
+        # queued to this (main) thread, so a blocking wait always ran
+        # into its full timeout. waitUntil keeps processing events.
+        qtbot.waitUntil(
+            lambda: not win._thread_is_running(win._export_thread), timeout=10_000
+        )
         # Drain the queued cross-thread "finished" signal now, while our own
         # mocks above are still active, instead of leaving it pending for
         # whichever later, unrelated test's event loop happens to flush it
@@ -70,7 +75,7 @@ def test_export_node_proceeds_when_overwrite_confirmed(qapp, tmp_path, monkeypat
         win.close()
 
 
-def test_export_node_does_not_prompt_when_target_is_new(qapp, tmp_path, monkeypatch) -> None:
+def test_export_node_does_not_prompt_when_target_is_new(qapp, qtbot, tmp_path, monkeypatch) -> None:
     source_dir, vfs = _make_source(tmp_path)
     dest_dir = tmp_path / "dest"
     dest_dir.mkdir()  # empty — no collision
@@ -85,7 +90,12 @@ def test_export_node_does_not_prompt_when_target_is_new(qapp, tmp_path, monkeypa
 
         assert questions == []
         assert win._thread_is_running(win._export_thread)
-        win._export_thread.wait(5000)
+        # Not QThread.wait(): the worker's finished -> thread.quit is
+        # queued to this (main) thread, so a blocking wait always ran
+        # into its full timeout. waitUntil keeps processing events.
+        qtbot.waitUntil(
+            lambda: not win._thread_is_running(win._export_thread), timeout=10_000
+        )
         qapp.processEvents()
     finally:
         win.close()

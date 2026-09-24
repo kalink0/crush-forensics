@@ -3,22 +3,39 @@
 """Log parser — detects and parses common log file formats.
 
 Not registered in the auto-detection pipeline (can_parse always returns False).
-Invoked explicitly via the "Open as Log Viewer" context menu action.
+Used by Multi-Log Studio.
 
-Supported formats (auto-detected internally):
+Supported formats:
   - JSON Lines  (each line is a JSON object with timestamp+message keys)
   - Android logcat  (MM-DD HH:MM:SS.mmm  PID  TID  L  tag: message)
   - Syslog RFC 3164  (Mon DD HH:MM:SS host process[pid]: message)
   - Generic  (ISO-8601 / common timestamp at start of line)
-  - Fallback  (raw lines, no structure recognised)
+  - Plain text  (raw lines, no structure recognised)
+
+Plain-text logs carry no format marker, so choosing among these is a
+heuristic: every candidate is scored against every non-empty line, the
+first one (in the order above) whose share of matching lines reaches its
+threshold wins, and all scores are reported in the metadata. The analyst
+can override the choice (LogParser.parse(..., log_format=...)).
 """
 from __future__ import annotations
 
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
+from crush.core.issues import ParseIssue
+from crush.core.log_ts import (
+    PLACEHOLDER_YEAR,
+    TS_NO_YEAR,
+    TS_NO_ZONE,
+    TS_UNPARSED,
+    epoch_ts,
+    join_flags,
+    parse_iso_ts,
+)
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -31,6 +48,7 @@ from crush.parsers.base import AbstractParser, ParseResult
 #   process   : str  (tag, process name, or "")
 #   message   : str
 #   raw       : str  (original line, for copy/export)
+#   ts_flags  : str  (crush.core.log_ts TS_* tokens: what the log didn't record)
 
 
 _LEVEL_MAP: dict[str, str] = {
@@ -49,15 +67,12 @@ _LEVEL_MAP: dict[str, str] = {
     "s": "TRACE",
 }
 
-_SAMPLE_LINES = 40  # how many lines to inspect for format detection
-
-
 def _normalise_level(raw: str) -> str:
     return _LEVEL_MAP.get(raw.strip().lower(), "UNKNOWN")
 
 
 # ---------------------------------------------------------------------------
-# Timestamp parsers
+# Timestamp parsers -- each returns (datetime | None, ts_flags)
 # ---------------------------------------------------------------------------
 
 _ISO_RE = re.compile(
@@ -69,56 +84,58 @@ _CTIME_RE = re.compile(
     r"^([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \d{4})"
 )
 
+_SYSLOG_LEVEL_KEYWORDS = (
+    ("ERROR", "ERROR"), ("WARN", "WARN"), ("CRIT", "ERROR"),
+    ("NOTICE", "INFO"), ("INFO", "INFO"), ("DEBUG", "DEBUG"),
+)
 
-def _parse_iso(s: str) -> datetime | None:
-    s = s.rstrip("Z").replace("T", " ").replace(",", ".")
-    for fmt in (
-        "%Y-%m-%d %H:%M:%S.%f",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%m/%d/%y %H:%M:%S.%f",   # MM/dd/YY HH:MM:SS.ms
-        "%m/%d/%y %H:%M:%S",      # MM/dd/YY HH:MM:SS
-    ):
-        try:
-            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
-
-
-_CTIME_MONTHS = {m: i + 1 for i, m in enumerate(
+_MONTHS = {m: i + 1 for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 )}
 
 
-def _parse_ctime(s: str) -> datetime | None:
-    """Parse ctime/asctime: 'Sun Jul 28 07:57:00 2024' (locale-independent)."""
-    # Split: ['Sun', 'Jul', '28', '07:57:00', '2024']
+def _parse_ctime(s: str) -> tuple[datetime | None, str]:
+    """Parse ctime/asctime: 'Sun Jul 28 07:57:00 2024' (locale-independent,
+    no zone recorded)."""
     parts = s.strip().split()
     if len(parts) != 5:
-        return None
+        return None, TS_UNPARSED
+    mon = _MONTHS.get(parts[1])
+    if mon is None:
+        return None, TS_UNPARSED
     try:
-        mon = _CTIME_MONTHS.get(parts[1])
-        if mon is None:
-            return None
-        day  = int(parts[2])
+        day = int(parts[2])
         h, m, sec = (int(x) for x in parts[3].split(":"))
-        year = int(parts[4])
-        return datetime(year, mon, day, h, m, sec, tzinfo=timezone.utc)
-    except (ValueError, IndexError):
-        return None
+        dt = datetime(int(parts[4]), mon, day, h, m, sec, tzinfo=timezone.utc)
+    except ValueError:
+        return None, TS_UNPARSED
+    return dt, TS_NO_ZONE
 
 
-def _parse_epoch(s: str) -> datetime | None:
-    try:
-        val = float(s)
-        if val > 1e12:
-            val /= 1000.0
-        return datetime.fromtimestamp(val, tz=timezone.utc)
-    except (ValueError, OSError):
-        return None
+def _entry(
+    ts: tuple[datetime | None, str], level: str, process: str, message: str, raw: str,
+    level_note: str = "",
+) -> dict[str, Any]:
+    return {"timestamp": ts[0], "ts_flags": ts[1], "level": level,
+            "level_note": level_note, "process": process, "message": message, "raw": raw}
+
+
+def _guess_inline_level(text: str) -> tuple[str, str]:
+    """Level for formats without a level field, guessed from keywords in
+    *text* (a heuristic). Returns (level, level_note): the note lists every
+    keyword found, leftmost first -- the one used."""
+    found = list(dict.fromkeys(m.upper() for m in _LEVEL_INLINE_RE.findall(text)))
+    if not found:
+        return "UNKNOWN", ""
+    return _normalise_level(found[0]), ", ".join(found)
+
+
+_NO_TS: tuple[datetime | None, str] = (None, "")
+
+
+def _unmatched(line: str, message: str | None = None) -> dict[str, Any]:
+    return _entry(_NO_TS, "UNKNOWN", "", line if message is None else message, line)
 
 
 # ---------------------------------------------------------------------------
@@ -141,22 +158,14 @@ _PROC_KEYS = ("logger", "name", "source", "component", "service", "tag",
 _STRUCTURAL_KEYS = frozenset(_TS_KEYS) | frozenset(_LVL_KEYS) | frozenset(_PROC_KEYS)
 
 
-def _try_json_lines(lines: list[str]) -> list[dict[str, Any]] | None:
-    """Return parsed entries if ≥60 % of non-empty lines are JSON objects."""
-    non_empty = [ln for ln in lines if ln.strip()]
-    if not non_empty:
-        return None
-    hits = 0
-    for line in non_empty[:_SAMPLE_LINES]:
-        try:
-            obj = json.loads(line)
-            if isinstance(obj, dict):
-                hits += 1
-        except (json.JSONDecodeError, ValueError):
-            pass
-    if hits / len(non_empty[:_SAMPLE_LINES]) < 0.6:
-        return None
+def _is_json_object_line(line: str) -> bool:
+    try:
+        return isinstance(json.loads(line), dict)
+    except (json.JSONDecodeError, ValueError):
+        return False
 
+
+def _parse_json_lines(lines: list[str]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for line in lines:
         line = line.rstrip("\n\r")
@@ -165,29 +174,28 @@ def _try_json_lines(lines: list[str]) -> list[dict[str, Any]] | None:
         try:
             obj = json.loads(line)
         except (json.JSONDecodeError, ValueError):
-            entries.append({"timestamp": None, "level": "UNKNOWN",
-                            "process": "", "message": line, "raw": line})
+            entries.append(_unmatched(line))
             continue
         if not isinstance(obj, dict):
-            entries.append({"timestamp": None, "level": "UNKNOWN",
-                            "process": "", "message": str(obj), "raw": line})
+            entries.append(_unmatched(line, str(obj)))
             continue
 
         # -- timestamp --
-        ts: datetime | None = None
+        ts: tuple[datetime | None, str] = _NO_TS
         ts_raw = ""
         for k in _TS_KEYS:
             if k in obj:
                 ts_raw = str(obj[k])
                 break
         if ts_raw:
+            ts = (None, TS_UNPARSED)
             m = _ISO_RE.search(ts_raw)
             if m:
-                ts = _parse_iso(m.group(1))
-            if ts is None:
+                ts = parse_iso_ts(m.group(1))
+            if ts[0] is None:
                 m2 = _EPOCH_RE.match(ts_raw)
                 if m2:
-                    ts = _parse_epoch(m2.group(1))
+                    ts = epoch_ts(m2.group(1))
 
         # -- level --
         lvl_raw = ""
@@ -217,8 +225,7 @@ def _try_json_lines(lines: list[str]) -> list[dict[str, Any]] | None:
                 if k not in _STRUCTURAL_KEYS
             )
 
-        entries.append({"timestamp": ts, "level": level,
-                        "process": proc, "message": msg, "raw": line})
+        entries.append(_entry(ts, level, proc, msg, line))
     return entries
 
 
@@ -236,12 +243,7 @@ _LOGCAT_RE = re.compile(
 )
 
 
-def _try_logcat(lines: list[str]) -> list[dict[str, Any]] | None:
-    sample = [ln for ln in lines[:_SAMPLE_LINES] if ln.strip()]
-    hits = sum(1 for ln in sample if _LOGCAT_RE.match(ln))
-    if not sample or hits / len(sample) < 0.5:
-        return None
-
+def _parse_logcat(lines: list[str]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for line in lines:
         line = line.rstrip("\n\r")
@@ -249,19 +251,13 @@ def _try_logcat(lines: list[str]) -> list[dict[str, Any]] | None:
             continue
         m = _LOGCAT_RE.match(line)
         if not m:
-            entries.append({"timestamp": None, "level": "UNKNOWN",
-                            "process": "", "message": line, "raw": line})
+            entries.append(_unmatched(line))
             continue
         md, time_str, lvl_char, tag, msg = m.groups()
-        ts_str = f"1970-{md} {time_str}"  # no year in logcat
-        ts = _parse_iso(ts_str)
-        entries.append({
-            "timestamp": ts,
-            "level": _normalise_level(lvl_char),
-            "process": tag.strip(),
-            "message": msg,
-            "raw": line,
-        })
+        # logcat records neither a year nor a zone.
+        dt, flags = parse_iso_ts(f"{PLACEHOLDER_YEAR}-{md} {time_str}")
+        ts = (dt, join_flags(flags, TS_NO_YEAR) if dt is not None else flags)
+        entries.append(_entry(ts, _normalise_level(lvl_char), tag.strip(), msg, line))
     return entries
 
 
@@ -276,17 +272,9 @@ _SYSLOG_RE = re.compile(
     r"([^\[:]+)(?:\[\d+\])?:\s*"         # process[pid]
     r"(.*)"                              # message
 )
-_MONTHS = {m: i+1 for i, m in enumerate(
-    ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"])}
 
 
-def _try_syslog(lines: list[str]) -> list[dict[str, Any]] | None:
-    sample = [ln for ln in lines[:_SAMPLE_LINES] if ln.strip()]
-    hits = sum(1 for ln in sample if _SYSLOG_RE.match(ln))
-    if not sample or hits / len(sample) < 0.5:
-        return None
-
-    current_year = datetime.now().year
+def _parse_syslog(lines: list[str]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for line in lines:
         line = line.rstrip("\n\r")
@@ -294,28 +282,26 @@ def _try_syslog(lines: list[str]) -> list[dict[str, Any]] | None:
             continue
         m = _SYSLOG_RE.match(line)
         if not m:
-            entries.append({"timestamp": None, "level": "UNKNOWN",
-                            "process": "", "message": line, "raw": line})
+            entries.append(_unmatched(line))
             continue
         mon_str, day_str, time_str, _host, proc, msg = m.groups()
-        mon = _MONTHS.get(mon_str, 1)
-        ts_str = f"{current_year}-{mon:02d}-{int(day_str):02d} {time_str}"
-        ts = _parse_iso(ts_str)
-        # Syslog has no severity field — try to detect from message start
-        level = "UNKNOWN"
-        upper_msg = msg.upper()
-        for kw, lv in [("ERROR", "ERROR"), ("WARN", "WARN"), ("CRIT", "ERROR"),
-                        ("NOTICE", "INFO"), ("INFO", "INFO"), ("DEBUG", "DEBUG")]:
-            if kw in upper_msg[:20]:
-                level = lv
-                break
-        entries.append({
-            "timestamp": ts,
-            "level": level,
-            "process": proc.strip(),
-            "message": msg,
-            "raw": line,
-        })
+        mon = _MONTHS.get(mon_str)
+        # RFC 3164 records neither a year nor a zone: the year is a
+        # placeholder, never the year of the analysis machine's clock.
+        ts: tuple[datetime | None, str] = (None, TS_UNPARSED)
+        if mon is not None:
+            dt, flags = parse_iso_ts(
+                f"{PLACEHOLDER_YEAR}-{mon:02d}-{int(day_str):02d} {time_str}"
+            )
+            ts = (dt, join_flags(flags, TS_NO_YEAR) if dt is not None else flags)
+        # RFC 3164 files carry no severity (the <PRI> is stripped when
+        # syslogd writes them): guessed from keywords at the message start,
+        # first in this list wins; every keyword found is kept as the note.
+        upper_msg = msg.upper()[:20]
+        found = [(kw, lv) for kw, lv in _SYSLOG_LEVEL_KEYWORDS if kw in upper_msg]
+        level = found[0][1] if found else "UNKNOWN"
+        note = ", ".join(kw for kw, _lv in found)
+        entries.append(_entry(ts, level, proc.strip(), msg, line, note))
     return entries
 
 
@@ -369,17 +355,11 @@ def _group_events(lines: list[str], is_start: Any) -> list[list[str]]:
     return groups
 
 
-def _try_generic(lines: list[str]) -> list[dict[str, Any]] | None:
-    sample = [ln for ln in lines[:_SAMPLE_LINES] if ln.strip()]
-    # Use absolute count instead of percentage — multiline events skew the ratio
-    hits = sum(1 for ln in sample if _is_generic_start(ln))
-    if hits < 2:
-        return None
-
+def _parse_generic(lines: list[str]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for group in _group_events(lines, _is_generic_start):
         first = group[0]
-        ts: datetime | None = None
+        ts: tuple[datetime | None, str] = _NO_TS
         remainder = first
         cm = _CTIME_RE.match(first)
         if cm:
@@ -389,28 +369,21 @@ def _try_generic(lines: list[str]) -> list[dict[str, Any]] | None:
             m = _GENERIC_TS_RE.match(first)
             if m:
                 if m.group(1):
-                    ts = _parse_iso(m.group(1))
+                    ts = parse_iso_ts(m.group(1))
                 elif m.group(2):
-                    ts = _parse_iso(m.group(2))
+                    ts = parse_iso_ts(m.group(2))
                 else:
-                    ts = _parse_epoch(m.group(3))
+                    ts = epoch_ts(m.group(3))
                 remainder = first[m.end():]
 
-        lv_m = _LEVEL_INLINE_RE.search(remainder[:60])
-        level = _normalise_level(lv_m.group(1)) if lv_m else "UNKNOWN"
+        level, level_note = _guess_inline_level(remainder[:60])
 
         if len(group) > 1:
             message = remainder.strip() + "\n" + "\n".join(group[1:])
         else:
             message = remainder.strip()
 
-        entries.append({
-            "timestamp": ts,
-            "level": level,
-            "process": "",
-            "message": message,
-            "raw": "\n".join(group),
-        })
+        entries.append(_entry(ts, level, "", message, "\n".join(group), level_note))
     return entries
 
 
@@ -424,16 +397,75 @@ def _fallback(lines: list[str]) -> list[dict[str, Any]]:
         line = line.rstrip("\n\r")
         if not line.strip():
             continue
-        lv_m = _LEVEL_INLINE_RE.search(line[:80])
-        level = _normalise_level(lv_m.group(1)) if lv_m else "UNKNOWN"
-        entries.append({
-            "timestamp": None,
-            "level": level,
-            "process": "",
-            "message": line,
-            "raw": line,
-        })
+        level, level_note = _guess_inline_level(line[:80])
+        entries.append(_entry(_NO_TS, level, "", line, line, level_note))
     return entries
+
+
+# ---------------------------------------------------------------------------
+# Format detection (heuristic)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LogFormat:
+    key: str
+    name: str
+    # Line-level test for scoring; None for the plain-text fallback.
+    matches: Callable[[str], bool] | None
+    parse: Callable[[list[str]], list[dict[str, Any]]]
+    # Detection threshold: share of non-empty lines that must match, or,
+    # for "generic", an absolute count (multi-line events skew a share).
+    min_share: float | None = None
+    min_count: int | None = None
+
+
+# Detection order matters: the first format reaching its threshold wins.
+LOG_FORMATS: tuple[LogFormat, ...] = (
+    LogFormat("jsonl", "JSON Lines", _is_json_object_line, _parse_json_lines, min_share=0.6),
+    LogFormat("logcat", "Android logcat", lambda ln: bool(_LOGCAT_RE.match(ln)),
+              _parse_logcat, min_share=0.5),
+    LogFormat("syslog", "Syslog (RFC 3164)", lambda ln: bool(_SYSLOG_RE.match(ln)),
+              _parse_syslog, min_share=0.5),
+    LogFormat("generic", "Generic (timestamp-prefixed)", _is_generic_start,
+              _parse_generic, min_count=2),
+    LogFormat("plain", "Plain text (no structure detected)", None, _fallback),
+)
+_BY_KEY = {f.key: f for f in LOG_FORMATS}
+
+
+def score_formats(lines: list[str]) -> tuple[dict[str, int], int]:
+    """Matching-line count per candidate format over all non-empty lines,
+    plus the number of non-empty lines."""
+    non_empty = [ln.rstrip("\n\r") for ln in lines if ln.strip()]
+    scores = {
+        f.key: sum(1 for ln in non_empty if f.matches(ln))
+        for f in LOG_FORMATS if f.matches is not None
+    }
+    return scores, len(non_empty)
+
+
+def _meets_threshold(f: LogFormat, scores: dict[str, int], total: int) -> bool:
+    if f.matches is None:
+        return True
+    hits = scores[f.key]
+    if f.min_share is not None:
+        return bool(total) and hits / total >= f.min_share
+    return f.min_count is not None and hits >= f.min_count
+
+
+def _pick_format(scores: dict[str, int], total: int) -> LogFormat:
+    return next(f for f in LOG_FORMATS if _meets_threshold(f, scores, total))
+
+
+def timestamp_notes(entries: list[dict[str, Any]]) -> list[ParseIssue]:
+    counts = {TS_NO_ZONE: 0, TS_NO_YEAR: 0, TS_UNPARSED: 0}
+    for e in entries:
+        for flag in e.get("ts_flags", "").split():
+            if flag in counts:
+                counts[flag] += 1
+    codes = {TS_NO_ZONE: "log.ts_no_zone", TS_NO_YEAR: "log.ts_no_year",
+             TS_UNPARSED: "log.ts_unparsed"}
+    return [ParseIssue(codes[f], {"count": n}) for f, n in counts.items() if n]
 
 
 # ---------------------------------------------------------------------------
@@ -444,8 +476,7 @@ class LogParser(AbstractParser):
     """Explicit-only log file parser.
 
     can_parse() always returns False — this parser is never selected
-    automatically. It is invoked directly from the UI via
-    "Open as Log Viewer".
+    automatically. Multi-Log Studio calls it directly.
     """
 
     DISPLAY_NAME = "Log file"
@@ -454,44 +485,59 @@ class LogParser(AbstractParser):
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:  # noqa: ARG002
         return False
 
-    def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
+    def parse(
+        self, node: VFSNode, vfs: VFS, log_format: str | None = None,
+    ) -> ParseResult:
+        """*log_format*: a LOG_FORMATS key chosen by the analyst; None
+        detects it (heuristic, see module docstring)."""
         raw = vfs.read(node)
+        encoding_issue: ParseIssue | None = None
         try:
             text = raw.decode("utf-8")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as exc:
             text = raw.decode("utf-8", errors="replace")
+            encoding_issue = ParseIssue(
+                "log.not_utf8", {"offset": exc.start}, detail=exc.reason,
+            )
 
         lines = text.splitlines(keepends=False)
-
-        entries: list[dict[str, Any]] | None = None
-        detected_format = "Unknown"
-
-        entries = _try_json_lines(lines)
-        if entries is not None:
-            detected_format = "JSON Lines"
-        if entries is None:
-            entries = _try_logcat(lines)
-            if entries is not None:
-                detected_format = "Android logcat"
-        if entries is None:
-            entries = _try_syslog(lines)
-            if entries is not None:
-                detected_format = "Syslog (RFC 3164)"
-        if entries is None:
-            entries = _try_generic(lines)
-            if entries is not None:
-                detected_format = "Generic (timestamp-prefixed)"
-        if entries is None:
-            entries = _fallback(lines)
-            detected_format = "Plain text (no structure detected)"
+        scores, total = score_formats(lines)
+        if log_format is not None:
+            fmt = _BY_KEY[log_format]
+            format_issue = ParseIssue("log.format_selected", {"name": fmt.name})
+        else:
+            fmt = _pick_format(scores, total)
+            format_issue = ParseIssue("log.format_detected", {"name": fmt.name})
+        entries = fmt.parse(lines)
 
         ts_count = sum(1 for e in entries if e["timestamp"] is not None)
         metadata: dict[str, Any] = {
             "File size": f"{node.size:,} B",
-            "Log format": detected_format,
+            "Log format": format_issue,
+            "Format candidates": [
+                ParseIssue("log.format_score", {
+                    "name": f.name, "hits": scores[f.key], "total": total,
+                })
+                for f in LOG_FORMATS if f.matches is not None
+            ],
+            "Detection rule": ParseIssue("log.detection_rule"),
             "Total entries": str(len(entries)),
             "Entries with timestamp": str(ts_count),
         }
+        if fmt.matches is not None and fmt.key != "generic":
+            unmatched = total - scores[fmt.key]
+            if unmatched:
+                metadata["Lines not matching the format"] = ParseIssue(
+                    "log.lines_unmatched", {"count": unmatched},
+                )
+        notes = timestamp_notes(entries)
+        if notes:
+            metadata["Timestamp notes"] = notes
+        guessed = sum(1 for e in entries if e.get("level_note"))
+        if guessed:
+            metadata["Level"] = ParseIssue("log.level_guessed", {"count": guessed})
+        if encoding_issue is not None:
+            metadata["Encoding"] = encoding_issue
 
         text_index = " ".join(e["message"] for e in entries[:500])
 

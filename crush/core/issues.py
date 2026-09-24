@@ -52,6 +52,33 @@ MESSAGES: dict[str, str] = {
         "Not valid UTF-8 (first invalid byte at offset {offset:,}: {detail}); "
         "invalid bytes are shown as U+FFFD — Open as → Hex for the original bytes"
     ),
+    # -- Logs (Multi-Log Studio) -------------------------------------------
+    "log.format_detected": "{name} (heuristic)",
+    "log.format_selected": "{name} (selected by analyst)",
+    "log.format_custom": "Custom: {name}",
+    "log.format_score": "{name} {hits:,}/{total:,}",
+    "log.detection_rule": (
+        "Plain-text logs have no format marker. The first of JSON Lines "
+        "(≥ 60 % of lines), Android logcat (≥ 50 %), Syslog (≥ 50 %) and Generic "
+        "(≥ 2 lines) that reaches its threshold is used, otherwise plain text. "
+        "Another format can be chosen via Format → Re-parse as"
+    ),
+    "log.lines_unmatched": "{count:,} line(s) kept as separate entries with level UNKNOWN",
+    "log.ts_no_zone": (
+        "{count:,} entries: no time zone in the log — shown as recorded, never converted"
+    ),
+    "log.level_guessed": (
+        "{count:,} entries: this format has no level field — level guessed from a "
+        "keyword in the message (marked \"guessed\")"
+    ),
+    "log.ts_no_year": "{count:,} entries: no year in the log — shown as ????",
+    "log.ts_unparsed": (
+        "{count:,} entries: timestamp present but not decodable — see the raw line"
+    ),
+    "log.not_utf8": (
+        "Not valid UTF-8 (first invalid byte at offset {offset:,}: {detail}); "
+        "invalid bytes are shown as U+FFFD — Open as → Hex for the original bytes"
+    ),
     # -- SQLite -----------------------------------------------------------
     "sqlite.parse_failed": "{detail}",
     "sqlite.invalid_hex_key": "Not a valid hex key: {detail}",

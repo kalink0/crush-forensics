@@ -7,13 +7,17 @@ from datetime import datetime, timezone
 
 import pytest
 
+from crush.core.log_ts import parse_iso_ts
 from crush.parsers.multi_log_parser import (
     CustomFormatParser,
     CustomFormatProfile,
     _group_events,
     _normalise_level,
-    _parse_iso_fallback,
 )
+
+
+def _parse_iso_fallback(s: str) -> datetime | None:
+    return parse_iso_ts(s)[0]
 
 
 # ---------------------------------------------------------------------------

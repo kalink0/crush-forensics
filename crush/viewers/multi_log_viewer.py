@@ -18,6 +18,9 @@ Architecture
 
 Entry dict schema (standard fields — all parsers must map to these):
     timestamp  : datetime | None   — UTC-normalised
+    ts_flags   : str               — crush.core.log_ts TS_* tokens: what the log
+                                     didn't record (zone, year), or that a
+                                     timestamp couldn't be decoded
     level      : str               — ERROR / WARN / INFO / DEBUG / TRACE / UNKNOWN
     process    : str               — process name, logger name, tag, etc.
     pid        : str               — process ID (empty string if unavailable)
@@ -71,6 +74,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -84,7 +88,9 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core import tempdir
-from crush.core.log_db import _INSERT_SQL, FilterSpec, LogDatabase, _ts_to_unix, _unix_to_ts
+from crush.core.issues import render_value
+from crush.core.log_db import _INSERT_SQL, FilterSpec, LogDatabase, _unix_to_ts, entry_rows
+from crush.core.log_ts import TS_NO_YEAR, TS_NO_ZONE, TS_UNPARSED
 from crush.core.vfs import VFS, VFSNode
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
@@ -137,10 +143,44 @@ _ROLE_RAW      = Qt.ItemDataRole.UserRole + 3   # str (original lines)
 _ROLE_MSG_FULL = Qt.ItemDataRole.UserRole + 4   # str (full message, may be multiline)
 
 
-def _fmt_ts(dt: datetime | None, tz: tzinfo = timezone.utc) -> str:
+def _fmt_ts(dt: datetime | None, tz: tzinfo = timezone.utc, flags: str = "") -> str:
+    """Show only what the log recorded: a zone-less time is never converted
+    to the display zone, a missing year is never filled in."""
+    tokens = flags.split()
     if dt is None:
-        return "—"
-    return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S")
+        return "— (not decoded)" if TS_UNPARSED in tokens else "—"
+    no_zone = TS_NO_ZONE in tokens
+    text = dt.astimezone(timezone.utc if no_zone else tz).strftime("%Y-%m-%d %H:%M:%S")
+    if TS_NO_YEAR in tokens:
+        text = "????" + text[4:]
+    if no_zone:
+        text += " (no zone)"
+    return text
+
+
+def _level_display(level: str, level_note: str) -> str:
+    return f"{level} (guessed)" if level_note else level
+
+
+def _tsv_field(text: str) -> str:
+    """One TSV cell, lossless: escape the characters that would break the
+    row instead of cutting the text."""
+    return (text.replace("\\", "\\\\").replace("\t", "\\t")
+            .replace("\r", "\\r").replace("\n", "\\n"))
+
+
+def _ts_tooltip(flags: str) -> str | None:
+    tokens = flags.split()
+    notes = []
+    if TS_NO_ZONE in tokens:
+        notes.append("The log records no time zone: shown as recorded, not converted "
+                     "to the display zone. Sorting and the time filter treat it as UTC.")
+    if TS_NO_YEAR in tokens:
+        notes.append("The log records no year: shown as ????. Sorting uses a placeholder "
+                     "year, so its order against other sources is not meaningful.")
+    if TS_UNPARSED in tokens:
+        notes.append("The line has a timestamp that couldn't be decoded — see the raw line.")
+    return "\n".join(notes) or None
 
 
 def _msg_display(msg: str) -> str:
@@ -584,8 +624,10 @@ class LogLoaderWorker(QThread):
         parent:    QWidget | None = None,
         temp_dir:  str | None = None,
         window_id: str | None = None,
+        log_format: str | None = None,
     ) -> None:
         super().__init__(parent)
+        self._log_format  = log_format  # LogParser format key chosen by the analyst
         self._node        = node
         self._vfs         = vfs
         self._source_id   = source_id
@@ -611,22 +653,7 @@ class LogLoaderWorker(QThread):
         entries: list[dict[str, Any]],
     ) -> None:
         """Bulk-insert *entries* into the worker's own DB connection."""
-        rows = [
-            (
-                self._source_id,
-                _ts_to_unix(e.get("timestamp")),
-                e.get("level",   "UNKNOWN"),
-                e.get("process", ""),
-                e.get("pid",     ""),
-                e.get("message", ""),
-                e.get("raw",     ""),
-                json.dumps(e.get("extra") or {}),
-                (e.get("extra") or {}).get("subsystem", ""),
-                (e.get("extra") or {}).get("category", ""),
-            )
-            for e in entries
-        ]
-        con.executemany(_INSERT_SQL, rows)
+        con.executemany(_INSERT_SQL, entry_rows(self._source_id, entries))
 
     def _stream_to_db(
         self,
@@ -674,7 +701,18 @@ class LogLoaderWorker(QThread):
             from crush.parsers.unified_log_parser import is_ios_diagnostics_node
             _is_ios_diag = self._node.is_dir and is_ios_diagnostics_node(self._node)
 
-            if _is_ios_diag:
+            if self._log_format is not None:
+                from crush.parsers.log_parser import LogParser
+                result = LogParser().parse(self._node, self._vfs, log_format=self._log_format)
+                total = self._stream_to_db(con, iter(result.data), self.CHUNK_SIZE)
+                if not self._cancel_flag:
+                    self.load_finished.emit(
+                        self._source_id,
+                        render_value(result.metadata.get("Log format", "Unknown")),
+                        result.metadata,
+                    )
+
+            elif _is_ios_diag:
                 from crush.parsers.unified_log_parser import UnifiedLogConverter
                 converter = UnifiedLogConverter(temp_dir=self._temp_dir)
                 self._converter = converter
@@ -711,7 +749,7 @@ class LogLoaderWorker(QThread):
                 if not self._cancel_flag:
                     self.load_finished.emit(
                         self._source_id,
-                        result.metadata.get("Log format", "Unknown"),
+                        render_value(result.metadata.get("Log format", "Unknown")),
                         result.metadata,
                     )
 
@@ -724,7 +762,7 @@ class LogLoaderWorker(QThread):
                 if not self._cancel_flag:
                     self.load_finished.emit(
                         self._source_id,
-                        result.metadata.get("Log format", "Unknown"),
+                        render_value(result.metadata.get("Log format", "Unknown")),
                         result.metadata,
                     )
         except Exception as exc:  # noqa: BLE001
@@ -935,15 +973,16 @@ class MultiLogModel(QAbstractTableModel):
             return None
 
         # Tuple layout: (rowid, source_id, ts_unix, level, process, pid, message, subsystem, category)
-        db_rowid, source_id, ts_unix, level, process, pid, message, subsystem, category = page[page_row]
+        (db_rowid, source_id, ts_unix, level, process, pid, message, subsystem, category,
+         ts_flags, level_note) = page[page_row]
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col == _COL_SRC:
                 return self._source_names.get(source_id, str(source_id))
             if col == _COL_TS:
-                return _fmt_ts(_unix_to_ts(ts_unix), self._display_tz)
+                return _fmt_ts(_unix_to_ts(ts_unix), self._display_tz, ts_flags)
             if col == _COL_LVL:
-                return level
+                return _level_display(level, level_note)
             if col == _COL_PROC:
                 return process
             if col == _COL_PID:
@@ -965,6 +1004,13 @@ class MultiLogModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.ToolTipRole and col == _COL_MSG:
             return message if "\n" in message else None
+        if role == Qt.ItemDataRole.ToolTipRole and col == _COL_TS:
+            return _ts_tooltip(ts_flags)
+        if role == Qt.ItemDataRole.ToolTipRole and col == _COL_LVL and level_note:
+            return (
+                "This format has no level field. Guessed from keyword(s) in the "
+                f"message: {level_note} (the first one is used)."
+            )
 
         if role == _ROLE_TS_DT:
             return _unix_to_ts(ts_unix)
@@ -1068,7 +1114,8 @@ class MultiLogModel(QAbstractTableModel):
         page_row = proxy_row % _PAGE_SIZE
         if not page or page_row >= len(page):
             return {}
-        db_rowid, source_id, ts_unix, level, process, pid, message, subsystem, category = page[page_row]
+        (db_rowid, source_id, ts_unix, level, process, pid, message, subsystem, category,
+         ts_flags, level_note) = page[page_row]
         detail = self._db.fetch_row_detail(db_rowid)
         raw   = detail[0] if detail else ""
         extra = detail[1] if detail else {}
@@ -1076,7 +1123,9 @@ class MultiLogModel(QAbstractTableModel):
             "source_id": source_id,
             "source":    self._source_names.get(source_id, ""),
             "timestamp": _unix_to_ts(ts_unix),
+            "ts_flags":  ts_flags,
             "level":     level,
+            "level_note": level_note,
             "process":   process,
             "pid":       pid,
             "subsystem": subsystem,
@@ -1222,6 +1271,8 @@ class MultiLogViewer(QWidget):
         self._workers: dict[int, LogLoaderWorker] = {}
         self._source_chips: dict[int, QPushButton] = {}
         self._source_nodes: dict[int, tuple[VFSNode, VFS]] = {}
+        # source_id -> (format label, parser metadata) of the latest load
+        self._source_meta: dict[int, tuple[str, dict[str, Any]]] = {}
         self._load_start_times: dict[int, float] = {}
         self._next_source_id     = 0
 
@@ -1401,14 +1452,23 @@ class MultiLogViewer(QWidget):
         layout.addWidget(self._search)
 
         layout.addSpacing(8)
-        fmt_btn = QPushButton("Format…")
-        fmt_btn.setToolTip("Define or apply a custom log format profile")
-        fmt_btn.clicked.connect(self._on_format_clicked)
+        fmt_btn = QPushButton("Format")
+        fmt_btn.setToolTip(
+            "Re-parse a source as another built-in format, or define a custom one"
+        )
+        self._fmt_menu = QMenu(fmt_btn)
+        self._fmt_submenus: list[QMenu] = []
+        self._fmt_menu.aboutToShow.connect(self._populate_format_menu)
+        fmt_btn.setMenu(self._fmt_menu)
         layout.addWidget(fmt_btn)
 
         layout.addStretch()
 
+        # Per source "name: format ⓘ"; the ⓘ link opens everything the
+        # parser reported (detection scores, timestamp notes, encoding).
         self._fmt_label = QLabel("")
+        self._fmt_label.setTextFormat(Qt.TextFormat.RichText)
+        self._fmt_label.linkActivated.connect(self._show_source_details)
         layout.addWidget(self._fmt_label)
 
         layout.addSpacing(8)
@@ -1663,10 +1723,8 @@ class MultiLogViewer(QWidget):
             if cap and self._table.columnWidth(col) > cap:
                 self._table.setColumnWidth(col, cap)
 
-        # Append source info to the format label
-        new_entry = f"{src_name}: {fmt}"
-        existing = self._fmt_label.text()
-        self._fmt_label.setText(new_entry if not existing else f"{existing}  |  {new_entry}")
+        self._source_meta[source_id] = (fmt, metadata)
+        self._refresh_fmt_label()
 
         # Enable sorting + hide progress once every worker has finished
         if all(not w.isRunning() for w in self._workers.values()):
@@ -1687,7 +1745,8 @@ class MultiLogViewer(QWidget):
     def _on_error(self, source_id: int, message: str) -> None:
         self._stop_status_anim()
         src_name = self._model.source_name(source_id) or "?"
-        self._fmt_label.setText(f"Error ({src_name}): {message}")
+        self._source_meta[source_id] = (f"Error: {message}", {})
+        self._refresh_fmt_label()
         self._logger.error("[Multi-Log] Error loading %s: %s", src_name, message)
         if all(not w.isRunning() for w in self._workers.values()):
             self._progress.setVisible(False)
@@ -1695,6 +1754,65 @@ class MultiLogViewer(QWidget):
     # ------------------------------------------------------------------
     # Slot handlers — Format button (Phase 4)
     # ------------------------------------------------------------------
+
+    def _refresh_fmt_label(self) -> None:
+        parts = []
+        for sid, (fmt, metadata) in sorted(self._source_meta.items()):
+            name = html.escape(self._model.source_name(sid) or "?")
+            part = f"{name}: {html.escape(fmt)}"
+            if metadata:
+                part += f' <a href="{sid}">ⓘ</a>'
+            parts.append(part)
+        self._fmt_label.setText("  |  ".join(parts))
+        self._fmt_label.setToolTip(
+            "\n\n".join(self._source_details(sid) for sid in sorted(self._source_meta))
+        )
+
+    def _source_details(self, source_id: int) -> str:
+        fmt, metadata = self._source_meta.get(source_id, ("", {}))
+        lines = [self._model.source_name(source_id) or "?"]
+        lines += [f"{key}: {render_value(val)}" for key, val in metadata.items()]
+        return "\n".join(lines) if metadata else f"{lines[0]}: {fmt}"
+
+    def _show_source_details(self, link: str) -> None:
+        sid = int(link)
+        box = QMessageBox(self)
+        box.setWindowTitle("Log source details")
+        box.setText(self._source_details(sid))
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.exec()
+
+    def _populate_format_menu(self) -> None:
+        from crush.parsers.log_parser import LOG_FORMATS
+
+        self._fmt_menu.clear()
+        # clear() drops the actions but not submenu objects; they're
+        # created with an explicit parent (a bare addMenu(title) submenu
+        # isn't kept alive by PySide once this method returns).
+        for old in self._fmt_submenus:
+            old.deleteLater()
+        self._fmt_submenus = []
+        for sid in sorted(self._source_nodes):
+            node, _vfs = self._source_nodes[sid]
+            name_lower = node.name.lower()
+            # Binary Apple Unified Log sources go through the converter,
+            # not the text-log parser.
+            if node.is_dir or name_lower.endswith((".tracev3", ".logarchive")):
+                continue
+            sub = QMenu(f"Re-parse {node.name} as", self._fmt_menu)
+            self._fmt_menu.addMenu(sub)
+            self._fmt_submenus.append(sub)
+            for fmt in LOG_FORMATS:
+                act = sub.addAction(fmt.name)
+                act.triggered.connect(
+                    lambda _checked=False, s=sid, k=fmt.key: self.reload_source(s, log_format=k)
+                )
+        if self._fmt_menu.actions():
+            self._fmt_menu.addSeparator()
+        custom = self._fmt_menu.addAction("Define custom format…")
+        custom.setEnabled(bool(self._source_nodes))
+        custom.triggered.connect(self._on_format_clicked)
 
     def _on_format_clicked(self) -> None:
         if not self._source_nodes:
@@ -1716,11 +1834,17 @@ class MultiLogViewer(QWidget):
                 self.reload_source_with_profile(dlg.result_source_id(), profile)
 
     def reload_source_with_profile(self, source_id: int, profile: Any) -> None:
-        """Re-parse an existing source using a custom format profile.
+        """Re-parse an existing source using a custom format profile."""
+        self.reload_source(source_id, profile=profile)
+
+    def reload_source(
+        self, source_id: int, profile: Any = None, log_format: str | None = None,
+    ) -> None:
+        """Re-parse an existing source with a custom *profile* or a built-in
+        LogParser *log_format* key chosen by the analyst.
 
         Cancels the existing worker for that source (if still running),
-        clears its entries from the model, then starts a fresh worker
-        backed by ``profile``.
+        clears its entries from the model, then starts a fresh worker.
         """
         if source_id not in self._source_nodes:
             return
@@ -1739,7 +1863,9 @@ class MultiLogViewer(QWidget):
         worker = LogLoaderWorker(
             node, vfs, source_id, self._db.path, profile=profile, parent=self,
             temp_dir=self._log_temp_dir(), window_id=self._window_id,
+            log_format=log_format,
         )
+        self._load_start_times[source_id] = time.monotonic()
         worker.progress.connect(self._on_progress)
         worker.load_finished.connect(self._on_load_finished)
         worker.error.connect(self._on_error)
@@ -1870,25 +1996,12 @@ class MultiLogViewer(QWidget):
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
 
         if action == copy_msg:
-            QApplication.clipboard().setText(_msg_display(entry.get("message", "")))
+            QApplication.clipboard().setText(entry.get("message", ""))
         elif action == copy_raw:
             QApplication.clipboard().setText(entry.get("raw", ""))
         elif action == copy_rows:
             rows = sorted({i.row() for i in self._table.selectedIndexes()})
-            lines: list[str] = []
-            for r in rows:
-                e = self._model.entry_at(r)
-                lines.append("\t".join([
-                    e.get("source", ""),
-                    _fmt_ts(e.get("timestamp"), self._display_tz),
-                    e.get("level", ""),
-                    e.get("process", ""),
-                    e.get("pid", ""),
-                    e.get("subsystem", ""),
-                    e.get("category", ""),
-                    _msg_display(e.get("message", "")),
-                ]))
-            QApplication.clipboard().setText("\n".join(lines))
+            QApplication.clipboard().setText(self._rows_as_tsv(rows))
         elif filter_action is not None and action == filter_action:
             self._model.set_column_filter(sql_col, cell_val)
             self._refresh_col_filter_bar()
@@ -1896,6 +2009,23 @@ class MultiLogViewer(QWidget):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _rows_as_tsv(self, rows: list[int]) -> str:
+        """Visible rows as TSV, one line per entry, nothing cut."""
+        lines: list[str] = []
+        for r in rows:
+            e = self._model.entry_at(r)
+            lines.append("\t".join(_tsv_field(v) for v in [
+                e.get("source", ""),
+                _fmt_ts(e.get("timestamp"), self._display_tz, e.get("ts_flags", "")),
+                _level_display(e.get("level", ""), e.get("level_note", "")),
+                e.get("process", ""),
+                e.get("pid", ""),
+                e.get("subsystem", ""),
+                e.get("category", ""),
+                e.get("message", ""),
+            ]))
+        return "\n".join(lines)
 
     def _update_count(self) -> None:
         total   = self._model.total_count()
