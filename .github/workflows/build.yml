@@ -377,3 +377,112 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: crush-windows-${{ github.ref_name }}.zip
+
+  # Forensic integrity audit, run fresh on the release's own commit with the
+  # same pinned dependencies as the shipped binaries (release-constraints.txt)
+  # -- not reused from an earlier CI run, so the report attached to the
+  # release describes exactly this tag. Only @pytest.mark.forensic tests.
+  forensic-audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 \
+            libegl1 \
+            libxcb-xinerama0 \
+            libxkbcommon-x11-0 \
+            libmagic1 \
+            libpulse0
+
+      - name: Install system deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libmagic
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=cryptography -c release-constraints.txt ".[dev]"
+
+      - name: Install Python deps (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pip install python-magic-bin
+
+      - name: Forensic tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -m forensic -q -p no:cacheprovider
+
+      # Uploaded even when tests failed: a failing report is still published.
+      - name: Upload run data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forensic-audit-${{ matrix.os }}
+          path: reports/forensic_audit.json
+          if-no-files-found: warn
+
+  # Merge the per-OS runs into one report and attach it to the release under
+  # a version-less name, so .../releases/latest/download/crush-forensic-audit.html
+  # always points at the newest release's report (the version is inside it).
+  # Published whatever the outcome -- a FAIL is attached and shown in the
+  # release notes, then this job goes red.
+  forensic-audit-publish:
+    needs: forensic-audit
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download run data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: forensic-audit-*
+          path: audit-runs
+
+      - name: Combine report
+        run: |
+          python scripts/combine_forensic_audit.py audit-runs/*/forensic_audit.json \
+            --html crush-forensic-audit.html \
+            --json crush-forensic-audit.json \
+            --notes forensic-audit-notes.md \
+            --expected 3 \
+            --report-url "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/crush-forensic-audit.html"
+
+      - name: Attach report to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            crush-forensic-audit.html
+            crush-forensic-audit.json
+          body_path: forensic-audit-notes.md
+          append_body: true
+
+      - name: Fail on audit failure
+        if: needs.forensic-audit.result != 'success'
+        run: |
+          echo "Forensic audit did not pass on every platform (${{ needs.forensic-audit.result }}); the report was attached anyway."
+          exit 1
