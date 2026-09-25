@@ -13,6 +13,7 @@ from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 from crush.core.vfs import (
     AndroidBackupVFS,
     DirectoryVFS,
+    FileVFS,
     GzipVFS,
     ITunesBackupVFS,
     SevenZipVFS,
@@ -245,12 +246,13 @@ def test_android_backup_vfs_rejects_wrong_password(android_backup_encrypted_fixt
         open_vfs(android_backup_encrypted_fixture, password="not-the-password")
 
 
-def test_android_backup_vfs_rejects_bad_magic(tmp_path: Path) -> None:
+def test_named_android_backup_without_magic_opens_as_file_with_note(tmp_path: Path) -> None:
     path = tmp_path / "backup.ab"
     path.write_bytes(b"not an android backup at all")
 
-    with pytest.raises(ValueError, match="Not an Android backup"):
-        open_vfs(path)
+    vfs = open_vfs(path)
+    assert isinstance(vfs, FileVFS)
+    assert vfs.fallback_note == "Named .ab, but no Android backup signature found"
 
 
 def test_itunes_backup_vfs(itunes_backup_fixture: Path) -> None:

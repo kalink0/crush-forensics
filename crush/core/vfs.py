@@ -211,6 +211,12 @@ class VFSNode:
 class VFS(ABC):
     """Abstract virtual filesystem."""
 
+    # Set by open_vfs() when the source didn't open the way its name or
+    # content suggested (e.g. named .zip but no ZIP signature, a UFDR shown
+    # as plain ZIP, a disk image that couldn't be read); the UI must
+    # surface it.
+    fallback_note: str = ""
+
     @abstractmethod
     def root(self) -> VFSNode: ...
 
@@ -1650,8 +1656,70 @@ def resolve_relative_path(root: VFSNode, rel_path: str) -> "VFSNode | None":
     return node
 
 
-def open_vfs(path: str | Path, *, password: str = "") -> VFS:
-    """Factory — open the right VFS type based on the source path."""
+# Archive signatures at offset 0. ZIP: local file header, end of central
+# directory (all an empty archive has) and the split/spanned-archive marker
+# ahead of the first local header (PKWARE APPNOTE 4.3.7, 4.3.16, 8.5.3).
+# 7z: signature header (7-Zip 7zFormat.txt). TAR: "ustar" at offset 257 in
+# the first header block, POSIX ("ustar\0") and GNU ("ustar  \0") alike.
+_ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08PK\x03\x04")
+_7Z_SIGNATURE = b"7z\xbc\xaf\x27\x1c"
+_GZIP_MAGIC = b"\x1f\x8b"
+_BZIP2_MAGIC = b"BZh"
+_XZ_MAGIC = b"\xfd7zXZ\x00"
+_ANDROID_BACKUP_MAGIC = b"ANDROID BACKUP"
+SNIFF_BYTES = 512
+
+# Names that announce an archive. Only used to say "named X, but it isn't"
+# when the content disagrees -- and for pre-POSIX (V7) TAR, which has no
+# magic, so its name is all there is to go by.
+_NAMED_ARCHIVES = {".zip": "ZIP", ".7z": "7z", ".ufdr": "ZIP (UFDR)", ".gz": "gzip", ".ab": "Android backup"}
+_TAR_SUFFIXES = (".tar", ".tgz", ".tbz2", ".txz", ".tar.gz", ".tar.bz2", ".tar.xz")
+
+
+def archive_kind(head: bytes) -> str | None:
+    """The browsable-source kind that a file's first bytes prove: "zip",
+    "7z", "tar", "gzip" or "android_backup"; None otherwise. bzip2/xz give
+    None -- only decompressing shows whether a TAR is inside. Needs up to
+    SNIFF_BYTES of *head* (the TAR magic sits at offset 257)."""
+    if head.startswith(_ZIP_SIGNATURES):
+        return "zip"
+    if head.startswith(_7Z_SIGNATURE):
+        return "7z"
+    if head[257:262] == b"ustar":
+        return "tar"
+    if head.startswith(_GZIP_MAGIC):
+        return "gzip"
+    # The first line, within 64 bytes (a file with no newline, e.g. a disk
+    # image starting with zeros, must not be read whole to find out).
+    if head[:64].split(b"\n", 1)[0].strip() == _ANDROID_BACKUP_MAGIC:
+        return "android_backup"
+    return None
+
+
+def zip_leading_bytes(path: str | Path) -> int | None:
+    """How many bytes precede a ZIP archive that is found through its end
+    of central directory record rather than at offset 0 (self-extracting
+    executable, ZIP appended to an image), or None when there is none or
+    it holds no entries."""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            infos = zf.infolist()
+    except (zipfile.BadZipFile, OSError, ValueError, EOFError, NotImplementedError):
+        return None
+    if not infos:
+        return None
+    return min(info.header_offset for info in infos) or None
+
+
+def open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = False) -> VFS:
+    """Factory — open the right VFS type for a source path, by its content.
+
+    Archives, backups and disk images are recognised by their bytes; a name
+    only counts for V7 TAR (no magic). A file named like an archive whose
+    content isn't one opens as a single file, and its fallback_note says so.
+    *embedded_zip* also opens a ZIP that follows leading bytes -- the
+    explicit "Open in New Window" path; a plain open only notes it.
+    """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"File no longer exists: {p}")
@@ -1659,43 +1727,111 @@ def open_vfs(path: str | Path, *, password: str = "") -> VFS:
         if _is_itunes_backup_dir(p):
             return ITunesBackupVFS(p, password=password)
         return DirectoryVFS(p)
-    name_lower = p.name.lower()
-    if p.suffix.lower() == ".zip":
-        return ZipVFS(p, password=password)
-    if p.suffix.lower() == ".7z":
-        return SevenZipVFS(p, password=password)
-    if (
-        p.suffix.lower() in (".tar", ".tgz", ".tbz2", ".txz")
-        or name_lower.endswith(".tar.gz")
-        or name_lower.endswith(".tar.bz2")
-        or name_lower.endswith(".tar.xz")
-    ):
-        return TarVFS(p)
-    if p.suffix.lower() == ".gz" or _is_gzip(p):
-        return TarVFS(p) if _is_gzip_wrapped_tar(p) else GzipVFS(p)
-    if p.suffix.lower() == ".ab" or _is_android_backup(p):
-        return AndroidBackupVFS(p, password=password)
-    if p.suffix.lower() == ".ufdr":
-        from crush.core.ufdr import UFDROpenError
+    if not p.is_file():
+        raise ValueError(f"Unsupported source type: {p}")
 
+    notes: list[str] = []
+    with open(p, "rb") as f:
+        head = f.read(SNIFF_BYTES)
+    kind = archive_kind(head)
+    vfs: VFS | None = None
+    if kind == "zip":
+        vfs = _open_zip(p, password, notes)
+    elif kind == "7z":
+        vfs = _open_7z(p, password, notes)
+    elif kind == "tar":
+        vfs = _open_tar(p, "TAR signature found", notes)
+    elif kind == "gzip":
+        return TarVFS(p) if _is_gzip_wrapped_tar(p) else GzipVFS(p)
+    elif kind == "android_backup":
+        return AndroidBackupVFS(p, password=password)
+    elif head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p):
+        vfs = _open_tar(p, "Compressed TAR found", notes)
+    elif p.name.lower().endswith(_TAR_SUFFIXES):
+        # Pre-POSIX (V7) TAR has no magic; its name is all there is.
+        vfs = _open_tar(p, f"Named {_tar_suffix(p)}", notes)
+    if vfs is not None:
+        vfs.fallback_note = "; ".join(notes)
+        return vfs
+
+    label = _NAMED_ARCHIVES.get(p.suffix.lower())
+    if label is not None and kind is None and not notes:
+        notes.append(f"Named {p.suffix.lower()}, but no {label} signature found")
+    if kind is None:
+        leading = zip_leading_bytes(p)
+        if leading is not None:
+            if embedded_zip:
+                zip_vfs = _open_zip(p, password, notes)
+                if zip_vfs is not None:
+                    zip_vfs.fallback_note = "; ".join(
+                        [f"ZIP archive opened after {leading:,} leading bytes", *notes]
+                    )
+                    return zip_vfs
+            else:
+                notes.append(
+                    f"Contains a ZIP archive after {leading:,} leading bytes — "
+                    "right-click → Open in New Window to browse it"
+                )
+
+    # A disk image is recognised by its content, never its name -- .bin
+    # or no extension at all are as common as .img/.dd. qnxprobe itself
+    # decides (partition table, bare filesystem, EWF signature); anything
+    # it finds nothing browsable in stays a file.
+    from crush.core.raw_image import RawImageOpenError
+
+    try:
+        vfs = RawImageVFS(p)
+    except RawImageOpenError as exc:
+        vfs = FileVFS(p)
+        raw_note = _raw_image_fallback_note(p, exc)
+        if raw_note:
+            notes.append(raw_note)
+    vfs.fallback_note = "; ".join(notes)
+    return vfs
+
+
+def _open_zip(p: Path, password: str, notes: list[str]) -> VFS | None:
+    """UFDRVFS for a UFDR's layout, else ZipVFS; None (reason in *notes*)
+    when the archive can't be read. Password errors propagate."""
+    from crush.core.ufdr import UFDROpenError, is_ufdr_zip
+
+    if is_ufdr_zip(p):
         try:
             return UFDRVFS(p)
-        except UFDROpenError:
-            pass  # extension matched, but it isn't a readable UFDR
-    if p.is_file():
-        # A disk image is recognised by its content, never its name -- .bin
-        # or no extension at all are as common as .img/.dd. qnxprobe itself
-        # decides (partition table, bare filesystem, EWF signature); anything
-        # it finds nothing browsable in stays a file.
-        from crush.core.raw_image import RawImageOpenError
+        except UFDROpenError as exc:
+            notes.append(f"UFDR layout found, but not opened as UFDR ({exc}); shown as plain ZIP")
+    try:
+        return ZipVFS(p, password=password)
+    except (zipfile.BadZipFile, OSError, ValueError, EOFError, NotImplementedError) as exc:
+        if isinstance(exc, (PasswordRequiredError, WrongPasswordError)):
+            raise
+        notes.append(f"ZIP signature found, but not opened as ZIP — {exc}")
+        return None
 
-        try:
-            return RawImageVFS(p)
-        except RawImageOpenError as exc:
-            fallback = FileVFS(p)
-            fallback.fallback_note = _raw_image_fallback_note(p, exc)
-            return fallback
-    raise ValueError(f"Unsupported source type: {p}")
+
+def _open_7z(p: Path, password: str, notes: list[str]) -> VFS | None:
+    """SevenZipVFS; None (reason in *notes*) when the archive can't be
+    read. Password errors propagate."""
+    import py7zr
+
+    try:
+        return SevenZipVFS(p, password=password)
+    except (py7zr.exceptions.ArchiveError, TypeError) as exc:
+        notes.append(f"7z signature found, but not opened as 7z — {exc}")
+        return None
+
+
+def _open_tar(p: Path, what: str, notes: list[str]) -> VFS | None:
+    try:
+        return TarVFS(p)
+    except (tarfile.TarError, OSError, EOFError) as exc:
+        notes.append(f"{what}, but not opened as TAR — {exc}")
+        return None
+
+
+def _tar_suffix(p: Path) -> str:
+    name = p.name.lower()
+    return next(s for s in sorted(_TAR_SUFFIXES, key=len, reverse=True) if name.endswith(s))
 
 
 _RAW_IMAGE_SUFFIXES = (".img", ".dd", ".raw", ".e01", ".001")
@@ -1734,7 +1870,11 @@ def is_browsable_source_file(path: str | Path) -> bool:
     p = Path(path)
     if not p.is_file():
         return False
-    if _is_gzip(p) or _is_android_backup(p):
+    with open(p, "rb") as f:
+        head = f.read(SNIFF_BYTES)
+    if archive_kind(head) is not None:
+        return True
+    if head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p):
         return True
     from crush.core.raw_image import RawImageOpenError, open_raw_image
 
@@ -1745,22 +1885,24 @@ def is_browsable_source_file(path: str | Path) -> bool:
     return True
 
 
-def _is_android_backup(path: Path) -> bool:
-    """Magic-byte sniff for extensionless Android backup containers."""
-    if not path.is_file():
-        return False
-    with open(path, "rb") as f:
-        # Bounded: an unbounded readline() on a file with no newline (e.g. a
-        # disk image that starts with zeros) would pull the whole file into RAM.
-        return f.readline(64).strip() == b"ANDROID BACKUP"
+def _is_compressed_tar(path: Path) -> bool:
+    """True if a bzip2- or xz-magic file decompresses to a TAR (ustar magic
+    at offset 257) -- the bzip2/xz counterpart of _is_gzip_wrapped_tar."""
+    import bz2
+    import lzma
 
-
-def _is_gzip(path: Path) -> bool:
-    """Magic-byte sniff for extensionless gzip-compressed files."""
-    if not path.is_file():
+    try:
+        with open(path, "rb") as f:
+            is_bzip2 = f.read(3) == _BZIP2_MAGIC
+    except OSError:
         return False
-    with open(path, "rb") as f:
-        return f.read(2) == b"\x1f\x8b"
+    opener = bz2.open if is_bzip2 else lzma.open
+    try:
+        with opener(path, "rb") as f:
+            head = f.read(265)
+    except (OSError, EOFError, lzma.LZMAError):
+        return False
+    return head[257:262] == b"ustar"
 
 
 def _is_gzip_wrapped_tar(path: Path) -> bool:
@@ -1865,10 +2007,6 @@ def open_itunes_backup_from_zip(
 
 class FileVFS(VFS):
     """VFS backed by a single file."""
-
-    # Set by open_vfs() when the file looked like a disk image but couldn't
-    # be opened as one; the UI must surface it rather than just show hex.
-    fallback_note: str = ""
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)

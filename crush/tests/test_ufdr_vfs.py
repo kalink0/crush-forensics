@@ -344,6 +344,15 @@ def test_open_vfs_dispatches_ufdr_extension(tmp_path: Path) -> None:
     vfs.close()
 
 
+@pytest.mark.parametrize("name", ["renamed.zip", "renamed.bin", "no_extension"])
+def test_open_vfs_recognises_ufdr_by_content_whatever_its_name(tmp_path: Path, name: str) -> None:
+    rows = [_row("n1", 1, "system", "/system")]
+    path = _build_fake_ufdr(tmp_path, devices={DEVICE: rows}, files={}, name=name)
+    vfs = open_vfs(path)
+    assert isinstance(vfs, UFDRVFS)
+    vfs.close()
+
+
 def test_is_ufdr_zip_sniff(tmp_path: Path) -> None:
     rows = [_row("n1", 1, "system", "/system")]
     ufdr_path = _build_fake_ufdr(tmp_path, devices={DEVICE: rows}, files={}, name="renamed.zip")
