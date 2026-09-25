@@ -23,8 +23,12 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed the Table Viewer's "Decode column as timestamp" silently doing nothing for numbers stored as text (e.g. `'1713884690406'` in a `TEXT` column) while still showing the format in the column header. Such values are now decoded too, and cells that can't be decoded are marked with the reason instead of looking decoded. Addresses [#104](https://github.com/kalink0/crush-forensics/issues/104).
 
+- Fixed ZIP, 7z and TAR (plain, bzip2, xz) archives only opening as browsable trees when named `.zip`/`.7z`/`.tar…`; they're now recognised by content, e.g. a ZIP inside a ZIP named `.bin`, `.apk` or `.docx`, and a renamed UFDR opens as a UFDR.
+- Fixed a file named like an archive or backup (`.zip`, `.7z`, `.ab`, …) that isn't one failing to open; it now opens as a single file and the status bar says why.
+
 ### Changed
 
+- A ZIP that follows leading data (self-extracting executable, ZIP appended to an image) is noted in the status bar; **Open in New Window** opens it as a ZIP.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.30 (from v1.29). No change in behaviour for Crush: the release adds a faster whole-volume listing (`walk_all()`) that Crush does not use yet.

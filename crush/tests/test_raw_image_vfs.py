@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -823,26 +824,35 @@ class TestFallbackNote:
                 vfs.close()
 
 
-def test_android_backup_sniff_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_source_sniff_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A file with no newline (a disk image starting with zeros) must not be
-    read whole just to check the Android backup magic."""
+    read whole just to check the archive/backup signatures."""
     import builtins
     import io
 
-    from crush.core.vfs import _is_android_backup
-
     dst = tmp_path / "zeros.bin"
-    dst.write_bytes(bytes(1024 * 1024))
+    dst.write_bytes(bytes(4 * 1024 * 1024))
     reads: list[int] = []
     real_open = builtins.open
 
     class _Spy(io.BufferedReader):
+        def read(self, size: int | None = -1) -> bytes:
+            data = super().read(size)
+            reads.append(len(data))
+            return data
+
         def readline(self, size: int | None = -1) -> bytes:
             data = super().readline(size)
             reads.append(len(data))
             return data
 
-    monkeypatch.setattr(builtins, "open", lambda f, *a, **k: _Spy(real_open(f, "rb", buffering=0)))
-    assert _is_android_backup(dst) is False
+    def _open(f: Any, *a: Any, **k: Any) -> Any:
+        if str(f) == str(dst):
+            return _Spy(real_open(f, "rb", buffering=0))
+        return real_open(f, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", _open)
+    vfs = open_vfs(dst)
     monkeypatch.undo()
-    assert reads and max(reads) <= 64
+    vfs.close()
+    assert reads and max(reads) <= 64 * 1024

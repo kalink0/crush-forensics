@@ -14,7 +14,7 @@ Use the **File** menu to load a source:
 
 | Menu item | When to use |
 |---|---|
-| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. |
+| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. Archives are recognised by their content, not their name: a ZIP named `.bin`, `.apk`, `.ipa` or `.docx` opens as a ZIP, and a UFDR opens as a UFDR whatever it is called. A file named like an archive whose content isn't one opens as a single file, and the status bar says so. |
 | **Open folder…** | Already-extracted acquisition or any folder of files on disk |
 
 Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
@@ -140,7 +140,7 @@ The left panel shows the loaded archive or folder as a tree.
 - **Single-click** selects a file and updates the Properties panel
 - **Right-click** a file or folder for options:
   - **Open** — best viewer for the format
-  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z/gzip archive, Android/iTunes backup, or raw disk image/EWF acquisition — the file is extracted to the [temp directory](#large-files-memory-and-the-temp-directory) for the new window, behind a progress dialog with **Cancel** (free space is checked first). The new window's title names where it came from, and its temp copy is deleted when that window closes
+  - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z/gzip archive, Android/iTunes backup, or raw disk image/EWF acquisition — the file is extracted to the [temp directory](#large-files-memory-and-the-temp-directory) for the new window, behind a progress dialog with **Cancel** (free space is checked first). The new window's title names where it came from, and its temp copy is deleted when that window closes. A ZIP that follows other data in a file (a self-extracting executable, a ZIP appended to an image) is only noted in the status bar when the file itself is opened; **Open in New Window** opens that ZIP
   - **Open as** — submenu to force a specific viewer regardless of auto-detection:
     - **Hex** — force raw hex view
     - **Text** — force text view
