@@ -32,20 +32,20 @@ _OGG_MAGIC = b"OggS"
 _AMR_MAGIC = b"#!AMR"
 
 
-def _decode_audio_pcm(data: bytes) -> tuple[bytes, int, int] | None:
+def _decode_audio_pcm(data: bytes) -> tuple[bytes, int, int] | str:
     """Decode OGG/Opus/Vorbis/AMR to interleaved signed-16-bit PCM.
 
-    Returns (pcm_bytes, sample_rate, channels) or None on failure.
+    Returns (pcm_bytes, sample_rate, channels), or the reason it failed.
     PyAV bundles FFmpeg on Windows/macOS so no system codec is required.
     """
     try:
         import av  # type: ignore
     except ImportError:
-        return None
+        return "PyAV is not installed"
     try:
         container = av.open(io.BytesIO(data))
         if not container.streams.audio:
-            return None
+            return "no audio stream found"
         stream = container.streams.audio[0]
         rate: int = stream.rate or 48000
         channels: int = min(stream.channels or 1, 2)
@@ -58,8 +58,8 @@ def _decode_audio_pcm(data: bytes) -> tuple[bytes, int, int] | None:
         for out in resampler.resample(None):  # flush
             chunks.append(bytes(out.planes[0]))
         return b"".join(chunks), rate, channels
-    except Exception:
-        return None
+    except Exception as exc:
+        return str(exc) or type(exc).__name__
 
 
 class MediaViewer(QWidget):
@@ -73,6 +73,7 @@ class MediaViewer(QWidget):
     def __init__(self, data: bytes, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._tmp_path: str | None = None
+        self._pcm_failure = ""
         # PCM backend state
         self._using_pcm = False
         self._sink: QAudioSink | None = None
@@ -122,18 +123,29 @@ class MediaViewer(QWidget):
 
         layout.addWidget(controls)
 
+        # Why playback failed -- hidden unless it did.
+        self._error_label = QLabel()
+        self._error_label.setWordWrap(True)
+        self._error_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._error_label.setStyleSheet("padding: 4px 8px;")
+        self._error_label.hide()
+        layout.addWidget(self._error_label)
+
         # Qt player signals
         self._player.positionChanged.connect(self._on_position_changed)
         self._player.durationChanged.connect(self._on_duration_changed)
         self._player.playbackStateChanged.connect(self._on_state_changed)
+        self._player.errorOccurred.connect(self._on_player_error)
 
     def _load(self, data: bytes) -> None:
         if data[:4] == _OGG_MAGIC or data[:5] == _AMR_MAGIC:
             result = _decode_audio_pcm(data)
-            if result is not None:
+            if isinstance(result, tuple):
                 pcm, rate, channels = result
                 self._start_pcm(pcm, rate, channels)
                 return
+            # Qt Multimedia may still play it; if not, both reasons are shown.
+            self._pcm_failure = result
         # Qt multimedia path (video, MP3, M4A, …)
         tmp = tempdir.named_temporary_file(prefix="crush-media-", suffix=".media")
         tmp.write(data)
@@ -211,6 +223,13 @@ class MediaViewer(QWidget):
 
     def _on_duration_changed(self, duration: int) -> None:
         self._position_slider.setRange(0, duration)
+
+    def _on_player_error(self, _error: QMediaPlayer.Error, error_string: str) -> None:
+        lines = [f"Playback failed: {error_string or 'unknown Qt Multimedia error'}"]
+        if self._pcm_failure:
+            lines.append(f"PyAV decode failed first: {self._pcm_failure}")
+        self._error_label.setText("\n".join(lines))
+        self._error_label.show()
 
     def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         if state == QMediaPlayer.PlaybackState.PlayingState:

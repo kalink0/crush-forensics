@@ -155,6 +155,14 @@ meta["Status"] = ParseIssue("myformat.bad_header", {"offset": off}, detail=str(e
 (Properties panel, status bar, exports). Keeping the sentence out of the parser lets the UI
 translate it later without touching any parser. When a helper can fail for several reasons,
 return `(result, issue)` instead of a bare `None`, so the concrete cause reaches the caller.
+Where a decoder already reports failure by raising, raise `ParseIssueError(issue)` (a
+`ValueError`) and turn the caught exception back into an issue with
+`issue_from_exception(exc)`; any other exception becomes `common.library_error` with the
+library's message as `detail`.
+
+A check that could not run is never reported as a negative finding: "could not be checked:
+<reason>" is a different result from "not present". Where a negative result only covers part
+of the format (e.g. only document-level PDF JavaScript), its template says what was checked.
 
 ### Directory-based formats (e.g. LevelDB)
 

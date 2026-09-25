@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -15,18 +16,19 @@ _AMR_MAGIC = b"#!AMR"
 
 
 def _extract_audio_metadata(data: bytes) -> dict[str, Any]:
-    """Extract codec info and Vorbis/Opus tags from OGG/Opus/AMR via PyAV."""
+    """Extract codec info and Vorbis/Opus tags from OGG/Opus/AMR via PyAV.
+    When nothing can be read, a "Metadata" row says why."""
     try:
         import av
         import av.container
     except ImportError:
-        return {}
+        return {"Metadata": ParseIssue("media.pyav_missing")}
     try:
         container = av.open(io.BytesIO(data))
         if not isinstance(container, av.container.InputContainer):
-            return {}
+            return {"Metadata": ParseIssue("media.metadata_failed", detail="not an input container")}
         if not container.streams.audio:
-            return {}
+            return {"Metadata": ParseIssue("media.no_audio_stream")}
         stream = container.streams.audio[0]
         meta: dict[str, Any] = {}
 
@@ -63,8 +65,8 @@ def _extract_audio_metadata(data: bytes) -> dict[str, Any]:
                 meta[label] = val
 
         return meta
-    except Exception:
-        return {}
+    except Exception as exc:
+        return {"Metadata": ParseIssue("media.metadata_failed", detail=str(exc))}
 
 
 class MediaParser(AbstractParser):
@@ -95,4 +97,6 @@ class MediaParser(AbstractParser):
         }
         if raw[:4] == _OGG_MAGIC or raw[:5] == _AMR_MAGIC:
             meta.update(_extract_audio_metadata(raw))
+        else:
+            meta["Metadata"] = ParseIssue("media.metadata_not_checked")
         return ParseResult(viewer_type="media", data=raw, metadata=meta)

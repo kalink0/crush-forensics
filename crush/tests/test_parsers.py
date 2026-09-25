@@ -2039,7 +2039,7 @@ def test_image_parser_atx_metadata(tmp_path: Path) -> None:
     assert result.metadata["Height"] == 16
     assert result.metadata["Pixel format"] == "ASTC 4x4"
     assert result.metadata["Chunks"] == "HEAD"
-    assert result.metadata["Decode status"] == "ATX metadata parsed; image decode unavailable"
+    assert result.metadata["Decode status"].code == "atx.decode_unavailable"
 
 
 def test_image_parser_atx_image_decode(tmp_path: Path) -> None:
@@ -2056,7 +2056,7 @@ def test_image_parser_atx_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Width"] == 4
     assert result.metadata["Height"] == 4
     assert result.metadata["Pixel format"] == "ASTC 4x4"
-    assert result.metadata["Decode status"] == "Decoded ATX to PNG"
+    assert result.metadata["Decode status"].code == "atx.decoded"
 
 
 def test_image_parser_can_parse_ktx_magic(tmp_path: Path) -> None:
@@ -2083,7 +2083,7 @@ def test_image_parser_ktx_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Width"] == 8
     assert result.metadata["Height"] == 4
     assert result.metadata["Payload"] == "ASTC"
-    assert result.metadata["Decode status"] == "Decoded KTX to PNG"
+    assert result.metadata["Decode status"].code == "ktx.decoded"
 
 
 def test_image_parser_ktx_lzfse_image_decode(tmp_path: Path) -> None:
@@ -2102,7 +2102,7 @@ def test_image_parser_ktx_lzfse_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Format"] == "KTX"
     assert result.metadata["Payload"] == "LZFSE-compressed ASTC"
     assert "Compression_APPLE" in result.metadata["Key/value entries"]
-    assert result.metadata["Decode status"] == "Decoded KTX to PNG"
+    assert result.metadata["Decode status"].code == "ktx.decoded"
 
 
 def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Path) -> None:
@@ -2116,8 +2116,8 @@ def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Pa
 
     assert result.viewer_type == "text"
     assert result.metadata["Format"] == "KTX"
-    assert result.metadata["Pixel format"] == "Unsupported (glInternalFormat 0x881A)"
-    assert result.metadata["Decode status"] == "KTX metadata parsed; image decode unavailable"
+    assert str(result.metadata["Pixel format"]) == "Unsupported (glInternalFormat 0x881A)"
+    assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
 
 
 def _tiny_jpeg() -> bytes:
@@ -2159,7 +2159,7 @@ def test_image_parser_reports_c2pa_manifest_in_metadata(tmp_path: Path) -> None:
     node = next(c for c in vfs.root().children if c.name == "signed.jpg")
     result = ImageParser().parse(node, vfs)
 
-    assert result.metadata["C2PA"] == "Manifest found"
+    assert result.metadata["C2PA"].code == "c2pa.manifest_found"
     assert result.metadata["C2PA Manifest ID"] == "test:manifest"
 
 
@@ -2171,7 +2171,7 @@ def test_image_parser_reports_c2pa_not_present_for_plain_jpeg(tmp_path: Path) ->
     node = next(c for c in vfs.root().children if c.name == "plain.jpg")
     result = ImageParser().parse(node, vfs)
 
-    assert result.metadata["C2PA"] == "Not present"
+    assert result.metadata["C2PA"].code == "c2pa.not_present"
 
 
 def test_ktx_big_endian_decodes_to_the_same_pixels() -> None:
@@ -2199,7 +2199,10 @@ def test_ktx_mislabelled_byte_order_is_refused_not_guessed() -> None:
     result = decode_ktx(bytes(data))
 
     assert result.image is None
-    assert any("unsupported KTX pixel format" in w for w in result.warnings)
+    assert any(
+        w.code == "ktx.decode_failed" and w.params["reason"].code == "ktx.unsupported_pixel_format"
+        for w in result.warnings
+    )
 
 
 def test_ktx_rejects_other_versions() -> None:
@@ -2209,7 +2212,7 @@ def test_ktx_rejects_other_versions() -> None:
 
     assert result.header is None
     assert result.image is None
-    assert result.warnings == ("Unsupported KTX version",)
+    assert [w.code for w in result.warnings] == ["ktx.unsupported_version"]
 
 
 def test_ktx_rejects_atx_container() -> None:
@@ -2218,7 +2221,7 @@ def test_ktx_rejects_atx_container() -> None:
     result = decode_ktx(_make_atx_metadata_bytes())
 
     assert result.header is None
-    assert result.warnings == ("Not a KTX 1.1 file",)
+    assert [w.code for w in result.warnings] == ["ktx.not_ktx"]
 
 
 def test_ktx_truncated_key_value_block_warns_without_raising() -> None:
@@ -2229,7 +2232,7 @@ def test_ktx_truncated_key_value_block_warns_without_raising() -> None:
 
     assert result.header is not None
     assert result.image is None
-    assert any("key/value" in w.lower() for w in result.warnings)
+    assert any(w.code == "ktx.kv_beyond_eof" for w in result.warnings)
 
 # ---------------------------------------------------------------------------
 # HexFallbackParser — format identification via FormatDatabase

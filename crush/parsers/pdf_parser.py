@@ -7,6 +7,7 @@ import logging
 from io import BytesIO
 from typing import Any, NamedTuple
 
+from crush.core.issues import ParseIssue
 from crush.core.passwords import WrongPasswordError
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
@@ -20,12 +21,30 @@ class PdfRevision(NamedTuple):
     the current/final document -- JavaScript, signatures, and attachments
     can each be added in one revision and removed in a later one, so
     checking only the final state can miss them (relevant for IR, not
-    just "what does this PDF look like now")."""
+    just "what does this PDF look like now").
+
+    Each signal is a ParseIssue stating what was found, or why it could
+    not be checked; *error* is set when the revision could not be opened
+    at all (the other fields are then empty, not negative findings)."""
     data: bytes
     text: str
-    has_javascript: bool
-    signatures: str
+    text_status: ParseIssue | None
+    javascript: ParseIssue
+    signatures: ParseIssue
     attachments: list[tuple[str, bytes]]
+    attachments_status: ParseIssue
+    error: ParseIssue | None = None
+
+    @property
+    def notable(self) -> bool:
+        """True unless every check ran and found nothing."""
+        return bool(
+            self.error
+            or self.attachments
+            or self.javascript.code != "pdf.js_not_present"
+            or self.signatures.code != "pdf.signatures_none"
+            or self.attachments_status.code != "pdf.attachments"
+        )
 
 
 class PDFParser(AbstractParser):
@@ -46,7 +65,7 @@ class PDFParser(AbstractParser):
                 data=raw,
                 metadata={
                     "Format": "PDF",
-                    "Note": "Install pypdf for text extraction: pip install pypdf",
+                    "Note": ParseIssue("pdf.pypdf_missing"),
                     "File size": f"{node.size:,} B",
                 },
             )
@@ -71,13 +90,13 @@ class PDFParser(AbstractParser):
                             "Format": "PDF",
                             "PDF Version": pdf_version,
                             "File size": f"{node.size:,} B",
-                            "Possibly Encrypted": "Try Open as → PDF (Encrypted)…",
+                            "Possibly Encrypted": ParseIssue("pdf.try_encrypted"),
                         },
                     )
                 result = reader.decrypt(password)
                 if not result:
-                    raise WrongPasswordError(f"Wrong password for encrypted PDF: {node.path}")
-            full_text = self._extract_text(reader)
+                    raise WrongPasswordError(ParseIssue("pdf.wrong_password", {"path": node.path}))
+            full_text, text_status = self._extract_text(reader)
 
             meta: dict[str, Any] = {
                 "Format": "PDF",
@@ -86,7 +105,7 @@ class PDFParser(AbstractParser):
                 "File size": f"{node.size:,} B",
             }
             if password is not None:
-                meta["Encrypted"] = "Yes (password supplied)"
+                meta["Encrypted"] = ParseIssue("pdf.encrypted_password")
             info = reader.metadata
             if info:
                 for attr, label in (
@@ -99,34 +118,22 @@ class PDFParser(AbstractParser):
                 ):
                     val = info.get(attr, "")
                     if val:
-                        meta[label] = str(val)[:200]
-            self._add_xmp_metadata(reader, meta)
-            meta["JavaScript"] = "Present" if self._has_javascript(reader) else "Not present"
-            meta["Signatures"] = self._signature_summary(reader) or "None"
-            attachments = self._extract_attachments(reader)
-            meta["Attachments"] = f"{len(attachments)} file(s)"
+                        meta[label] = str(val)
+            meta["XMP"] = self._add_xmp_metadata(reader, meta)
+            if text_status is not None:
+                meta["Text extraction"] = text_status
+            meta["JavaScript"] = self._javascript_status(reader)
+            meta["Signatures"] = self._signature_status(reader)
+            attachments, attachments_status = self._extract_attachments(reader)
+            meta["Attachments"] = attachments_status
 
-            revision_slices = self._split_revisions(raw)
+            revision_slices, chain_issue = self._split_revisions(raw)
             meta["Revisions"] = str(len(revision_slices))
+            if chain_issue is not None:
+                meta["Revision chain"] = chain_issue
             revisions: list[PdfRevision] = []
             if len(revision_slices) > 1:
-                for rev_bytes in revision_slices:
-                    try:
-                        rev_reader = pypdf.PdfReader(BytesIO(rev_bytes), strict=False)
-                        if rev_reader.is_encrypted and password is not None:
-                            rev_reader.decrypt(password)
-                        revisions.append(PdfRevision(
-                            data=rev_bytes,
-                            text=self._extract_text(rev_reader),
-                            has_javascript=self._has_javascript(rev_reader),
-                            signatures=self._signature_summary(rev_reader) or "None",
-                            attachments=self._extract_attachments(rev_reader),
-                        ))
-                    except Exception:
-                        revisions.append(PdfRevision(
-                            rev_bytes, "[Unable to extract text for this revision]",
-                            False, "Unknown", [],
-                        ))
+                revisions = [self._revision(rev_bytes, password) for rev_bytes in revision_slices]
 
             return ParseResult(
                 viewer_type="pdf",
@@ -135,6 +142,7 @@ class PDFParser(AbstractParser):
                 text_index=full_text[:4000],
                 viewer_hints={
                     "extracted_text": full_text,
+                    "text_status": text_status,
                     "password": password,
                     "attachments": attachments,
                     "revisions": revisions,
@@ -148,23 +156,58 @@ class PDFParser(AbstractParser):
                 viewer_type="hex",
                 data=raw,
                 metadata={
-                    "Parse error": str(exc),
-                    "Format": "PDF (parse failed)",
+                    "Parse error": ParseIssue("pdf.parse_failed", detail=str(exc)),
+                    "Format": ParseIssue("pdf.format_parse_failed"),
                     "File size": f"{node.size:,} B",
                 },
             )
 
+    @classmethod
+    def _revision(cls, rev_bytes: bytes, password: str | None) -> PdfRevision:
+        import pypdf
+
+        try:
+            rev_reader = pypdf.PdfReader(BytesIO(rev_bytes), strict=False)
+            if rev_reader.is_encrypted and password is not None:
+                rev_reader.decrypt(password)
+            text, text_status = cls._extract_text(rev_reader)
+            attachments, attachments_status = cls._extract_attachments(rev_reader)
+            return PdfRevision(
+                data=rev_bytes,
+                text=text,
+                text_status=text_status,
+                javascript=cls._javascript_status(rev_reader),
+                signatures=cls._signature_status(rev_reader),
+                attachments=attachments,
+                attachments_status=attachments_status,
+            )
+        except Exception as exc:
+            error = ParseIssue("pdf.revision_failed", detail=str(exc))
+            return PdfRevision(rev_bytes, "", error, error, error, [], error, error)
+
     @staticmethod
-    def _extract_text(reader: Any) -> str:
+    def _extract_text(reader: Any) -> tuple[str, ParseIssue | None]:
+        """(text, status). The status names every page whose extraction
+        failed, or says there is no text at all; None when every page was
+        read and at least one had text."""
         pages: list[str] = []
+        failures: list[ParseIssue] = []
         for i, page in enumerate(reader.pages, 1):
             try:
                 text = page.extract_text() or ""
-            except Exception:
-                text = ""
+            except Exception as exc:
+                failures.append(ParseIssue("pdf.text_page_failure", {"page": i}, detail=str(exc)))
+                continue
             if text.strip():
                 pages.append(f"--- Page {i} ---\n{text.strip()}")
-        return "\n\n".join(pages) if pages else "[No extractable text in this PDF]"
+        status = None
+        if failures:
+            status = ParseIssue("pdf.text_pages_failed", {
+                "count": len(failures), "failures": failures,
+            })
+        elif not pages:
+            status = ParseIssue("pdf.no_text")
+        return "\n\n".join(pages), status
 
     @staticmethod
     def _format_xmp_value(val: Any) -> str:
@@ -179,16 +222,17 @@ class PDFParser(AbstractParser):
         return str(val)
 
     @classmethod
-    def _add_xmp_metadata(cls, reader: Any, meta: dict[str, Any]) -> None:
+    def _add_xmp_metadata(cls, reader: Any, meta: dict[str, Any]) -> ParseIssue:
         """XMP is a metadata stream separate from the /Info dictionary --
         a mismatch between the two (e.g. different tool names or dates) is
-        itself a forensic signal, so both are kept, never merged."""
+        itself a forensic signal, so both are kept, never merged. Returns
+        the XMP status (present / not present / why it couldn't be read)."""
         try:
             xmp = reader.xmp_metadata
-        except Exception:
-            xmp = None
+        except Exception as exc:
+            return ParseIssue("pdf.xmp_failed", detail=str(exc))
         if xmp is None:
-            return
+            return ParseIssue("pdf.xmp_not_present")
         for attr, label in (
             ("dc_creator", "XMP Creator"),
             ("dc_title", "XMP Title"),
@@ -201,42 +245,43 @@ class PDFParser(AbstractParser):
         ):
             try:
                 val = getattr(xmp, attr, None)
-            except Exception:
-                val = None
+            except Exception as exc:
+                meta[label] = ParseIssue("pdf.xmp_failed", detail=str(exc))
+                continue
             if val:
                 formatted = cls._format_xmp_value(val)
                 if formatted:
-                    meta[label] = formatted[:200]
+                    meta[label] = formatted
+        return ParseIssue("pdf.xmp_present")
 
     @staticmethod
-    def _has_javascript(reader: Any) -> bool:
+    def _javascript_status(reader: Any) -> ParseIssue:
         """Document-level JavaScript, per the two standard PDF-spec
         locations (ISO 32000-1 12.6.4.16): the Catalog's /Names/JavaScript
         name tree, and a /JavaScript /OpenAction. Does not recurse into
         every annotation/form-field's own /AA (additional-actions) dict --
-        that would need a full object-graph walk, not attempted here."""
+        that would need a full object-graph walk, not attempted here; the
+        "not present" status says so."""
         try:
             catalog = reader.root_object
             names = catalog.get("/Names")
             if names is not None and "/JavaScript" in names:
-                return True
+                return ParseIssue("pdf.js_present")
             open_action = catalog.get("/OpenAction")
             if open_action is not None and open_action.get("/S") == "/JavaScript":
-                return True
-        except Exception:
-            pass
-        return False
+                return ParseIssue("pdf.js_present")
+        except Exception as exc:
+            return ParseIssue("pdf.js_check_failed", detail=str(exc))
+        return ParseIssue("pdf.js_not_present")
 
     @staticmethod
-    def _signature_summary(reader: Any) -> str:
+    def _signature_status(reader: Any) -> ParseIssue:
         """Signature form fields (ISO 32000-1 12.8): AcroForm /Fields
         entries with /FT /Sig. Only top-level fields are checked, not
-        fields nested inside a /Kids hierarchy."""
+        fields nested inside a /Kids hierarchy; the "none" status says so."""
         try:
             acroform = reader.root_object.get("/AcroForm")
-            if not acroform:
-                return ""
-            fields = acroform.get("/Fields") or []
+            fields = (acroform.get("/Fields") or []) if acroform else []
             total = 0
             signed = 0
             for f in fields:
@@ -245,28 +290,29 @@ class PDFParser(AbstractParser):
                     total += 1
                     if field.get("/V"):
                         signed += 1
-            if total == 0:
-                return ""
-            return f"{signed}/{total} signature field(s) signed"
-        except Exception:
-            return ""
+        except Exception as exc:
+            return ParseIssue("pdf.signatures_check_failed", detail=str(exc))
+        if total == 0:
+            return ParseIssue("pdf.signatures_none")
+        return ParseIssue("pdf.signatures_signed", {"signed": signed, "total": total})
 
     @staticmethod
-    def _extract_attachments(reader: Any) -> list[tuple[str, bytes]]:
+    def _extract_attachments(reader: Any) -> tuple[list[tuple[str, bytes]], ParseIssue]:
         """Embedded files (ISO 32000-1 7.11), exposed by pypdf as filename
         -> list[bytes] since the /EmbeddedFiles name tree allows more than
-        one attachment under the same name."""
+        one attachment under the same name. The status gives the count, or
+        how many were read before reading failed and why."""
         out: list[tuple[str, bytes]] = []
         try:
             for name, blobs in reader.attachments.items():
                 for blob in blobs:
                     out.append((name, blob))
-        except Exception:
-            pass
-        return out
+        except Exception as exc:
+            return out, ParseIssue("pdf.attachments_failed", {"count": len(out)}, detail=str(exc))
+        return out, ParseIssue("pdf.attachments", {"count": len(out)})
 
     @staticmethod
-    def _split_revisions(raw: bytes) -> list[bytes]:
+    def _split_revisions(raw: bytes) -> tuple[list[bytes], ParseIssue | None]:
         """Walk the /Prev trailer chain backward from the current (newest)
         revision (ISO 32000-1 7.5.6/7.5.8: each incremental update's
         trailer points at the byte offset of the previous revision's own
@@ -275,28 +321,43 @@ class PDFParser(AbstractParser):
         complete, independently parseable PDF -- verified directly against
         hand-built multi-revision fixtures, not assumed. Returns
         oldest-first; always at least [raw], even for a never-updated
-        file or one that fails to parse at all."""
+        file or one that fails to parse at all. The issue says why the
+        walk stopped early, if it did (None: the chain ended normally)."""
         import pypdf
 
         revisions = [raw]
         current = raw
         seen_offsets: set[int] = set()
+        stop: ParseIssue | None = None
         while True:
             try:
                 r = pypdf.PdfReader(BytesIO(current), strict=False)
                 prev = r.trailer.get("/Prev")
-            except Exception:
+            except Exception as exc:
+                stop = ParseIssue(
+                    "pdf.revchain_parse_failed", {"count": len(revisions)}, detail=str(exc),
+                )
                 break
             if prev is None:
                 break
-            prev_offset = int(prev)
+            try:
+                prev_offset = int(prev)
+            except (TypeError, ValueError) as exc:
+                stop = ParseIssue("pdf.revchain_bad_prev", {"count": len(revisions)}, detail=str(exc))
+                break
             if prev_offset in seen_offsets:
-                break  # cyclic /Prev chain -- stop rather than loop forever
+                stop = ParseIssue("pdf.revchain_cycle", {
+                    "count": len(revisions), "offset": prev_offset,
+                })
+                break
             seen_offsets.add(prev_offset)
             eof_pos = current.find(b"%%EOF", prev_offset)
             if eof_pos == -1:
+                stop = ParseIssue("pdf.revchain_no_eof", {
+                    "count": len(revisions), "offset": prev_offset,
+                })
                 break
             current = current[: eof_pos + len(b"%%EOF")]
             revisions.append(current)
         revisions.reverse()
-        return revisions
+        return revisions, stop

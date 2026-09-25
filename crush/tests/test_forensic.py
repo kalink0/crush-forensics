@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import (
     AndroidBackupVFS,
     DirectoryVFS,
@@ -2200,7 +2201,7 @@ def test_atx_fixture_known_output(atx_fixture: Path) -> None:
     assert result.metadata["Width"] == 32
     assert result.metadata["Height"] == 16
     assert result.metadata["Pixel format"] == "ASTC 4x4"
-    assert result.metadata["Decode status"] == "ATX metadata parsed; image decode unavailable"
+    assert result.metadata["Decode status"].code == "atx.decode_unavailable"
 
 
 @pytest.mark.forensic(
@@ -2285,8 +2286,8 @@ def test_ktx_fixture_known_output(ktx_fixture: Path) -> None:
 
     assert result.viewer_type == "text"
     assert result.metadata["Format"] == "KTX"
-    assert result.metadata["Pixel format"] == "Unsupported (glInternalFormat 0x881A)"
-    assert result.metadata["Decode status"] == "KTX metadata parsed; image decode unavailable"
+    assert str(result.metadata["Pixel format"]) == "Unsupported (glInternalFormat 0x881A)"
+    assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
 
 
 @pytest.mark.forensic(
@@ -2682,10 +2683,11 @@ def test_pdf_fixture_known_output(pdf_fixture: Path) -> None:
     assert result.metadata["Pages"] == "1"
     assert result.metadata["Title"] == "crush-forensics evidence"
     assert result.metadata["Author"] == "crush-forensics"
-    assert result.metadata["JavaScript"] == "Not present"
-    assert result.metadata["Signatures"] == "None"
-    assert result.metadata["Attachments"] == "0 file(s)"
+    assert result.metadata["JavaScript"].code == "pdf.js_not_present"
+    assert result.metadata["Signatures"].code == "pdf.signatures_none"
+    assert result.metadata["Attachments"] == ParseIssue("pdf.attachments", {"count": 0})
     assert result.metadata["Revisions"] == "1"
+    assert "Revision chain" not in result.metadata
 
 
 @pytest.mark.forensic(

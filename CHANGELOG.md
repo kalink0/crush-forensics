@@ -32,9 +32,15 @@ All notable changes to Crush will be documented in this file.
 - Fixed Multi-Log Studio's "Copy message" and "Copy selection (TSV)" copying only the first line of a multi-line message plus "[n more lines]"; the full text is copied.
 - Fixed guessed log levels (Syslog, generic and plain-text logs have no level field) looking like recorded ones; they're now shown as "(guessed)" with the keywords found.
 - Fixed Multi-Log Studio's format detection looking only at the first 40 lines and never saying it guessed: all lines are scored, the ⓘ next to a source shows every candidate's score, and **Format → Re-parse … as** overrides it.
+- Fixed EXIF altitudes below sea level being shown as positive; an EXIF rational with denominator 0 (e.g. in GPS coordinates) is now shown as invalid instead of 0.
+- Fixed EXIF entries past the 512th per directory or 8th array value, and PDF `/Info`/XMP values past 200 characters, being dropped without notice.
+- Fixed PDF JavaScript, signature and attachment checks that failed reporting "Not present", "None" or "0 file(s)"; they now say they couldn't be checked, and why.
+- Fixed the image `Format` row showing the file extension; it's now taken from the content.
+- Fixed images, audio/video and PDF revisions that can't be decoded, played or rendered not saying why (Visual Diff said the page doesn't exist).
 
 ### Changed
 
+- Images always show an `EXIF` and `XMP` status row (present, not present, not checked for this format, or why parsing failed), a `Frames` row when only the first of several is shown, and a `Block order` row marking the ATX Morton-orientation choice as a heuristic with both scores. PDFs list pages whose text extraction failed and say why a revision chain stopped early.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.30 (from v1.29). No change in behaviour for Crush: the release adds a faster whole-volume listing (`walk_all()`) that Crush does not use yet.

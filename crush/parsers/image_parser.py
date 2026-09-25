@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.apple_atx import AAPL_MAGIC, decode_atx, is_atx
 from crush.parsers.apple_ktx import KTX11_MAGIC, decode_ktx, is_ktx
@@ -43,9 +44,8 @@ class ImageParser(AbstractParser):
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         raw = vfs.read(node)
-        ext = Path(node.path).suffix.upper().lstrip(".")
         meta: dict[str, Any] = {
-            "Format": ext or "Image",
+            "Format": _format_by_content(raw, Path(node.path).suffix),
             "File size": f"{node.size:,} B",
         }
         if is_ktx(raw):
@@ -71,40 +71,39 @@ class ImageParser(AbstractParser):
                 })
             if result.chunks:
                 meta["Chunks"] = ", ".join(chunk.tag for chunk in result.chunks)
+            if result.block_order:
+                meta["Block order"] = result.block_order
             if result.warnings:
-                meta["ATX warnings"] = "; ".join(result.warnings)
+                meta["ATX warnings"] = list(result.warnings)
             if result.image:
                 out = io.BytesIO()
                 result.image.to_pil().save(out, "PNG")
-                meta["Decode status"] = "Decoded ATX to PNG"
+                meta["Decode status"] = ParseIssue("atx.decoded")
                 return ParseResult(
                     viewer_type="image",
                     data=out.getvalue(),
                     metadata=meta,
                 )
-            meta["Decode status"] = "ATX metadata parsed; image decode unavailable"
-            detail = meta["Decode status"]
-            if result.warnings:
-                detail = f"{detail}\n\n" + "\n".join(result.warnings)
-            return ParseResult(viewer_type="text", data=detail, metadata=meta)
+            meta["Decode status"] = ParseIssue("atx.decode_unavailable")
+            return ParseResult(
+                viewer_type="text",
+                data=_undecoded_text(meta["Decode status"], result.warnings),
+                metadata=meta,
+            )
 
+        from crush.parsers.c2pa_reader import summarize_c2pa
+        from crush.parsers.exif_reader import exif_metadata
+        from crush.parsers.xmp_provenance import extract_xmp_provenance
+
+        frames = _frame_count(raw)
+        if frames > 1:
+            meta["Frames"] = ParseIssue("image.frames_first_only", {"count": frames})
+        meta.update(exif_metadata(raw))
         try:
-            from crush.parsers.exif_reader import extract_exif, format_for_metadata
-            exif_raw = extract_exif(raw)
-            if exif_raw:
-                meta.update(format_for_metadata(exif_raw))
-        except Exception:
-            pass
-        try:
-            from crush.parsers.c2pa_reader import summarize_c2pa
             meta.update(summarize_c2pa(raw))
-        except Exception:
-            meta["C2PA"] = "Detection failed"
-        try:
-            from crush.parsers.xmp_provenance import extract_xmp_provenance
-            meta.update(extract_xmp_provenance(raw))
-        except Exception:
-            pass
+        except Exception as exc:
+            meta["C2PA"] = ParseIssue("image.c2pa_detection_failed", detail=str(exc))
+        meta.update(extract_xmp_provenance(raw))
         return ParseResult(viewer_type="image", data=raw, metadata=meta)
 
 
@@ -131,17 +130,79 @@ class ImageParser(AbstractParser):
                 "Declared payload bytes": f"{result.payload.declared_size:,} B",
             })
         if result.warnings:
-            meta["KTX warnings"] = "; ".join(result.warnings)
+            meta["KTX warnings"] = list(result.warnings)
         if result.image:
             out = io.BytesIO()
             result.image.to_pil().save(out, "PNG")
-            meta["Decode status"] = "Decoded KTX to PNG"
+            meta["Decode status"] = ParseIssue("ktx.decoded")
             return ParseResult(viewer_type="image", data=out.getvalue(), metadata=meta)
-        meta["Decode status"] = "KTX metadata parsed; image decode unavailable"
-        detail = meta["Decode status"]
-        if result.warnings:
-            detail = f"{detail}\n\n" + "\n".join(result.warnings)
-        return ParseResult(viewer_type="text", data=detail, metadata=meta)
+        meta["Decode status"] = ParseIssue("ktx.decode_unavailable")
+        return ParseResult(
+            viewer_type="text",
+            data=_undecoded_text(meta["Decode status"], result.warnings),
+            metadata=meta,
+        )
+
+
+def _undecoded_text(status: ParseIssue, warnings: tuple[ParseIssue, ...]) -> str:
+    """Text shown in place of a texture that could not be decoded."""
+    text = str(status)
+    if warnings:
+        text = f"{text}\n\n" + "\n".join(str(w) for w in warnings)
+    return text
+
+
+# ISOBMFF major brand -> image format name.
+_ISOBMFF_FORMAT_NAMES: dict[bytes, str] = {
+    **dict.fromkeys(
+        (b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"), "HEIC",
+    ),
+    b"mif1": "HEIF", b"msf1": "HEIF",
+    b"avif": "AVIF", b"avis": "AVIF",
+}
+
+
+def _format_by_content(raw: bytes, suffix: str) -> str | ParseIssue:
+    """The image format named by the file's signature bytes (the same
+    signatures _looks_like_image accepts). A file routed here by its
+    extension alone says so instead of echoing the extension."""
+    if raw.startswith(AAPL_MAGIC):
+        return "ATX"
+    if raw.startswith(KTX11_MAGIC):
+        return "KTX"
+    if raw.startswith(b"\xFF\xD8\xFF"):
+        return "JPEG"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "PNG"
+    if raw.startswith((b"GIF87a", b"GIF89a")):
+        return "GIF"
+    if raw.startswith(b"BM"):
+        return "BMP"
+    if raw.startswith((b"II*\x00", b"MM\x00*")):
+        return "TIFF"
+    if len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
+        return "WebP"
+    if len(raw) >= 12 and raw[4:8] == b"ftyp" and raw[8:12] in _ISOBMFF_FORMAT_NAMES:
+        return f"{_ISOBMFF_FORMAT_NAMES[raw[8:12]]} (brand {raw[8:12].decode('ascii')})"
+    if raw[:2] == b"\xFF\x0A" or raw[:12] == _JXL_CONTAINER_SIG:
+        return "JPEG XL"
+    return ParseIssue("image.format_unrecognised", {"ext": suffix or "—"})
+
+
+def _frame_count(raw: bytes) -> int:
+    """Number of frames/pages/top-level images Pillow sees (animated GIF,
+    multi-page TIFF, HEIC sequences). 1 when Pillow can't open the file --
+    the viewer then reports its own decode failure."""
+    try:
+        import PIL.Image
+
+        from crush.core.pil_plugins import ensure_pil_plugins
+
+        ensure_pil_plugins()
+        with PIL.Image.open(io.BytesIO(raw)) as img:
+            return int(getattr(img, "n_frames", 1))
+    except Exception:
+        return 1
 
 
 def _looks_like_image(peek: bytes) -> bool:

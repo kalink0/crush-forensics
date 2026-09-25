@@ -142,17 +142,22 @@ Limitations
 
 ### Images
 - Routes supported image formats to the Image Viewer: JPEG, PNG, GIF, BMP, WebP, TIFF, HEIC/HEIF/AVIF, JPEG XL, Apple ATX texture archives (`.atx`, magic `AAPL\r\n\x1a\n` — iOS PosterBoard/wallpaper assets), and Khronos KTX 1.1 textures (`.ktx`, magic `\xabKTX 11\xbb\r\n\x1a\n` — iOS app snapshots, Safari tab thumbnails and some Photos attachment previews). `.ktx` is used for both this container and Apple's ATX one; snapshots appear in either depending on the release, and Safari tab thumbnails were this container in every tested image.
-- Extracts a focused set of EXIF metadata (camera, time, GPS, dimensions).
+- The Properties panel's `Format` row is taken from the file's signature bytes, not its extension; a file opened here by extension alone whose content matches no image signature says so.
+- Extracts a focused set of EXIF metadata (camera, time, GPS, dimensions). An `EXIF` row always says what was found: present, not present, not checked for this format yet, not defined for this format (GIF, BMP, bare JPEG XL codestream), or why it couldn't be parsed. Listed tags that are present but unreadable (value outside the EXIF data, undecoded type) are listed under `EXIF problems`; a rational with denominator 0 is shown as invalid, never as 0.
+- An `XMP` row likewise always says whether an XMP packet was found, couldn't be parsed (with the XML parser's message), or has no closing tag, and how many packets there are when there is more than one.
+- Files holding several frames/pages/images (animated GIF, multi-page TIFF, HEIC sequences, JPEG with an MPF second image) get a `Frames` row with the count; the viewer shows the first.
 - Detects embedded C2PA (Content Credentials) manifests for JPEG, PNG, GIF, WebP, TIFF, and HEIC/HEIF/AVIF, and box-form JPEG XL — generator software, actions and their software agent(s), IPTC Digital Source Type (AI-provenance signal, shown with its official IPTC name), ingredients (prior assets), and the claim signature's leaf certificate identity (Signed By/Cert Issuer/Cert Valid). A second, independent check reads the IPTC Digital Source Type directly from XMP (container-agnostic) for images with no C2PA manifest at all.
-- ATX is parsed as a chunked container (`HEAD`/`FILL`/`astc`/`LZFS` chunks); a raw ASTC 4x4 payload is decoded to an image, with width/height/depth/array layers/mipmap count/pixel format/texture UUID shown in the Properties panel. ASTC's Morton-order block layout has two plausible X/Y interpretations the format itself doesn't disambiguate — both are decoded and the one with smoother macro-tile boundaries is kept, flagged as a heuristic rather than a spec-verified decode.
+- ATX is parsed as a chunked container (`HEAD`/`FILL`/`astc`/`LZFS` chunks); a raw ASTC 4x4 payload is decoded to an image, with width/height/depth/array layers/mipmap count/pixel format/texture UUID shown in the Properties panel. ASTC's Morton-order block layout has two plausible X/Y interpretations the format itself doesn't disambiguate — both are decoded and the one with smoother macro-tile boundaries is kept. The Properties panel's `Block order` row marks this as a heuristic and shows both candidates' seam scores.
 - KTX 1.1 is parsed to the Khronos specification; an ASTC 4x4 payload (`glInternalFormat` 0x93B0) is decoded to an image, with dimensions, depth, array layers, faces, mipmap count, pixel format, byte order and the key/value entries shown in the Properties panel. iOS also writes an LZFSE-compressed variant, flagged by a `Compression_APPLE` key/value entry and carrying an `LZFS` marker ahead of the compressed block; that is decompressed before decoding. An app snapshot is the image the system captured when the app was last backgrounded, so a decoded snapshot can show what was on screen at that point.
 
 Limitations
 - EXIF coverage is not complete; only a subset of tags is shown.
-- Decoding depends on Qt image codecs installed on the system.
-- IFD entries are capped at 512 per directory, and SHORT/LONG/SLONG tag arrays at 8 items; RATIONAL/SRATIONAL arrays (e.g. GPS coordinates) are read in full, uncapped. Data beyond the entry/array cap is not read. HEIF/HEIC/AVIF: the TIFF block's start offset inside the container's `exif` payload is located by pattern/offset heuristics (pillow-heif doesn't expose it directly) — on an HEIF variant whose prefix doesn't match, EXIF silently comes back empty rather than partially wrong.
+- EXIF is not read yet from WebP, box-form JPEG XL or the PNG `eXIf` chunk (PNG `tEXt` chunks are read; `zTXt`/`iTXt` are not); the `EXIF` row says "not checked" for these.
+- Only the first frame of a multi-frame file is displayed.
+- Decoding depends on Qt image codecs installed on the system, with Pillow (plus pillow-heif / pillow-jxl-plugin) as fallback; when neither can decode a file, the viewer shows Pillow's reason.
+- HEIF/HEIC/AVIF: the TIFF block's start offset inside the container's `exif` payload is located by pattern/offset heuristics (pillow-heif doesn't expose it directly) — on an HEIF variant whose prefix doesn't match, the `EXIF` row reports a parse failure.
 - C2PA detection is structure parsing only: the claim signature's leaf certificate is read but never cryptographically verified against a trust store, and revocation is never checked (the Properties panel's `C2PA Signature` row states this explicitly). BMP, ATX, and KTX have no C2PA embedding defined by the spec at all, and a bare (box-less) JPEG XL codestream cannot carry a manifest either — all four are reported as such, not as "not present".
-- ATX: only plain (uncompressed) ASTC 4x4 payloads decode to an image; other pixel formats and `LZFS`-compressed payloads are parsed for metadata only, shown as text. The Morton-orientation choice is a heuristic (see above), not a documented Apple flag.
+- ATX: only ASTC 4x4 payloads (raw `astc`/`ASTC` or `LZFS`-compressed) decode to an image; other pixel formats are parsed for metadata only, shown as text. For raw payloads the Morton-orientation choice is a heuristic (see above), not a documented Apple flag; only the chosen candidate is displayed.
 - KTX: only ASTC 4x4 decodes to an image. The same extension is used for textures shipped inside system frameworks and apps, which carry other pixel formats (other ASTC block sizes, PVRTC, uncompressed) and are parsed for metadata only, shown as text. KTX 2.0 is not read. Only the first mipmap level, array layer and face is decoded; a file declaring more than one is decoded to its first image with a warning.
 
 ### Media (Audio/Video)
@@ -162,24 +167,24 @@ Limitations
 
 Limitations
 - Detection for every other container (MP4/MOV/MKV/AVI/etc.) is extension-only; a renamed file with a mismatched extension is not recognized.
-- Metadata extraction (codec/tags) only runs for OGG/Opus/AMR; other containers show no extracted metadata beyond file size.
-- Metadata extraction requires PyAV; without it, only file size is shown.
-- Playback depends on system multimedia codecs.
+- Metadata extraction (codec/tags) only runs for OGG/Opus/AMR; for other containers a `Metadata` row says so.
+- Metadata extraction requires PyAV; without it, or when PyAV can't read the file, the `Metadata` row says why.
+- Playback depends on system multimedia codecs; when playback fails, the viewer shows Qt Multimedia's error (and PyAV's, for OGG/Opus/AMR).
 
 ### PDF
 - Renders pages as images (via `pypdfium2`) in a **Pages** tab, with prev/next navigation and zoom (also Ctrl+scroll wheel), alongside a **Text** tab with the text extracted via `pypdf`.
 - Password-protected PDFs: right-click → **Open as** → **PDF (Encrypted)…**; a wrong password re-prompts instead of failing silently. A normal double-click never auto-prompts, since an encrypted PDF's content can't be told apart from a corrupt one from the header alone.
-- Properties panel: PDF version, `/Info` fields, and separately XMP metadata (a mismatch between the two is itself a forensic signal). JavaScript presence (`/Names/JavaScript`, `/OpenAction`), signature form fields (`/AcroForm` `/FT /Sig`), and attachment count are always shown, even when none are found, so it's clear these were actually checked.
+- Properties panel: PDF version, `/Info` fields, and separately XMP metadata (a mismatch between the two is itself a forensic signal). JavaScript presence (`/Names/JavaScript`, `/OpenAction`), signature form fields (`/AcroForm` `/FT /Sig`), and attachment count are always shown, even when none are found, so it's clear these were actually checked; a negative result names what was checked, and a check that fails says "could not be checked" with the reason instead of reporting absence. The same applies per revision in the History tab.
+- Text extraction failures are listed per page (`Text extraction` row and above the Text tab), as is a PDF with no extractable text. If the revision chain can't be followed to its end, a `Revision chain` row says where and why it stopped.
 - Embedded files get an **Attachments** tab — open one as a new tab (routed through the normal parser pipeline) or export to disk.
 - **Revision history**: PDFs saved multiple times without a full rewrite (incremental updates, chained via each trailer's `/Prev` offset) get a **History** tab exposing every revision, including content, JavaScript, or attachments only present in an earlier revision and since removed from the current one. Sub-tabs: **Browse** (one revision at a time, full Pages/Text/Attachments; revisions with JavaScript/signatures/attachments are flagged with ⚠), **Text Diff** (line-level diff between any two revisions), and **Visual Diff** (pixel-level page comparison — catches a redaction box drawn *over* text, which a text diff can't see since the underlying content stream is untouched).
 
 Limitations
 - Without `pypdf`/`pypdfium2` installed, PDFs open in Hex Viewer with a note.
-- Some PDFs have no extractable text (scanned or protected files) — the Pages tab still renders normally in that case.
+- Some PDFs have no extractable text (scanned or protected files) — the Pages tab still renders normally in that case, and the Text tab says there is no text.
 - JavaScript detection only checks the two standard document-level locations, not every annotation/form-field's own `/AA` actions. Signature-field detection only checks top-level `/AcroForm` fields, not fields nested inside a `/Kids` hierarchy.
 - Revision detection was validated against classic cross-reference tables; PDF 1.5+ cross-reference *streams* use the same `/Prev` mechanism through `pypdf`'s public API and aren't expected to need special handling, but weren't separately tested against a real-world sample.
 - Visual Diff doesn't diff pages whose size differs between the two selected revisions (shows the newer one only, to avoid a misleading resize).
-- `/Info` and XMP metadata field values are truncated to 200 characters each.
 - The global/case-wide text search index only covers the first 4,000 characters of a PDF's extracted text; the Text tab itself always shows the complete extraction regardless of length.
 
 ### Log Files (Explicit Only)
