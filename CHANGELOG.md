@@ -51,6 +51,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed symbolic links appearing as empty files (TAR, iTunes backups), as ordinary files (ZIP, 7z) or not at all (disk images), and being followed in folders, where a link to a parent folder never finished loading and a broken link stopped the folder from opening; links now show as links with their target and are never followed.
 - Fixed a single folder without read permission stopping a whole folder from opening, and FIFOs in an opened folder blocking reads.
 - Fixed block devices and sockets in disk images being treated as directories.
+- Fixed SQLite Freelist Recovery and Freeblocks showing "No … found" when the file or a page couldn't be read, and a freelist or freeblock chain that stopped early, or cells that couldn't be decoded (also in WAL history and the Rollback Journal), leaving no trace; a status line above the table now says so.
+- Fixed SQLite overflow values larger than 10,000 overflow pages being cut short in WAL Frames, Freelist Recovery and File Structure, and File Structure cutting cell values at 120 characters.
 
 ### Changed
 

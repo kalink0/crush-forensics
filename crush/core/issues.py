@@ -559,6 +559,88 @@ MESSAGES: dict[str, str] = {
         "A parser exists for this format, but this file's content did not match it"
     ),
     "hexfallback.parser_none": "Not yet supported",
+    # -- SQLite page scans (Freelist Recovery, Freeblocks, Unallocated, WAL) --
+    "sqlite_scan.file_unreadable": "The database file could not be read: {detail}",
+    "sqlite_scan.read_stopped": (
+        "Reading stopped at page {page:,}: {detail}; later pages were not scanned"
+    ),
+    "sqlite_scan.page_short": (
+        "Page {page:,} holds only {size:,} of {page_size:,} bytes (file ends) "
+        "and was not scanned"
+    ),
+    "sqlite_page.cells_skipped": (
+        "Page {page}: {count:,} of {total:,} cell(s) could not be decoded and are not shown"
+    ),
+    "freelist.header_unreadable": (
+        "Page 1 (the database header) could not be read, so the freelist could not be located"
+    ),
+    "freelist.none": "The database header records no freelist pages",
+    "freelist.trunk_unreadable": (
+        "Freelist trunk page {page:,} could not be read; the rest of the chain was not followed"
+    ),
+    "freelist.cycle": "The freelist chain returns to page {page:,} (a cycle); stopped there",
+    "freelist.over_count": (
+        "The freelist chain holds more pages than the {declared:,} the header declares; "
+        "stopped there"
+    ),
+    "freelist.leaf_count_clamped": (
+        "Trunk page {page:,} declares {declared:,} leaf pages, but only {fits:,} fit on "
+        "a page; {fits:,} were read"
+    ),
+    "freelist.summary": (
+        "{pages:,} freelist page(s) walked ({trunks:,} trunk, {leaves:,} leaf): "
+        "{carved:,} still hold table rows, {empty:,} are table-leaf pages without cells, "
+        "{not_leaf:,} no longer hold a table-leaf page (zeroed or reused), "
+        "{unreadable:,} could not be read"
+    ),
+    "freeblock.ptr_outside": (
+        "Page {page:,}: the freeblock chain points to offset {offset:,}, outside the page; "
+        "stopped there"
+    ),
+    "freeblock.too_small": (
+        "Page {page:,}: freeblock at offset {offset:,} declares {size} B, below the 4-byte "
+        "minimum; the chain stopped there"
+    ),
+    "freeblock.overruns_page": (
+        "Page {page:,}: freeblock at offset {offset:,} declares {size:,} B, but only "
+        "{available:,} fit on the page; shown up to the page end"
+    ),
+    "unallocated.bad_content_start": (
+        "Page {page:,}: the cell content area starts at {start:,}, beyond the page; "
+        "its unallocated gap was not read"
+    ),
+    "sqlite_wal.table_map_failed": (
+        "Table attribution unavailable: the schema could not be read: {detail}"
+    ),
+    "sqlite_wal.table_map_no_file": (
+        "Table attribution incomplete: the database file could not be read ({detail}); "
+        "only pages in the -wal file were attributed"
+    ),
+    # -- SQLite File Structure tab -------------------------------------------
+    "sqlite_structure.page_size_unavailable": "page size unavailable",
+    "sqlite_structure.file_unavailable": "file unavailable",
+    "sqlite_structure.no_unallocated": "none/non-empty bytes not found",
+    "sqlite_structure.page_unreadable": "could not be read (read error or file ends)",
+    "sqlite_structure.cells_not_shown": "{problems}",
+    # -- Realm File Structure tab --------------------------------------------
+    "realm_structure.header_not_detected": "Not detected (possibly encrypted or non-standard)",
+    "realm_structure.top_unresolved": "Unresolved -- no valid active top reference",
+    "realm_structure.top_unreadable": "Unreadable at offset 0x{offset:x}",
+    "realm_structure.ref_unresolved": "unresolved",
+    "realm_structure.table_ref_invalid": "Table reference is invalid or points outside the file",
+    "realm_structure.table_top_unreadable": "Table top array is malformed or unreadable",
+    "realm_structure.no_columns": "(no columns)",
+    "realm_structure.no_cluster_tree_slot": "Table top array is missing its ClusterTree slot",
+    "realm_structure.cluster_tree_ref_invalid": (
+        "ClusterTree reference is invalid or points outside the file"
+    ),
+    # -- Locate in Hex ----------------------------------------------------------
+    "locate.no_range": "No byte range for this cell: {reason}",
+    "locate.not_recorded": "the decoder recorded none for it",
+    "locate.segb_record_offsets": "the record's offsets could not be read ({detail})",
+    # -- Timestamp column decoding (cell markers) ------------------------------
+    "ts_decode.not_a_number": "not a number",
+    "ts_decode.out_of_range": "out of range for this format",
 }
 
 

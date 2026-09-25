@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal, overload
 
 from crush.core.cell_locator import CellLocation
+from crush.core.issues import ParseIssue
 
 
 # ---------------------------------------------------------------------------
@@ -232,12 +233,16 @@ def _follow_overflow_chain_ex(
     remaining: int,
     usable_size: int,
     overflow_reader: Callable[[int], bytes | None],
-    max_pages: int = 10_000,
 ) -> tuple[bytes, list[tuple[int, int]]]:
     """Like _follow_overflow_chain(), but also returns the (page_num,
     bytes_taken) for each overflow page actually visited, in chain order --
     needed to map a reconstructed payload's logical byte positions back to
     their physical page/offset (see locate_cell()).
+
+    The walk ends when *remaining* is collected, the chain ends or breaks,
+    or a page repeats (cycle); each page gives at most usable_size - 4
+    bytes, so a chain can't be longer than the payload needs -- no fixed
+    page cap.
     """
     collected = bytearray()
     segments: list[tuple[int, int]] = []
@@ -245,7 +250,7 @@ def _follow_overflow_chain_ex(
     visited: set[int] = set()
     per_page_capacity = usable_size - 4
 
-    while page_num and remaining > 0 and page_num not in visited and len(visited) < max_pages:
+    while page_num and remaining > 0 and page_num not in visited:
         visited.add(page_num)
         page = overflow_reader(page_num)
         if page is None or len(page) < 4:
@@ -265,7 +270,6 @@ def _follow_overflow_chain(
     remaining: int,
     usable_size: int,
     overflow_reader: Callable[[int], bytes | None],
-    max_pages: int = 10_000,
 ) -> bytes:
     """Follow an overflow page chain, collecting up to *remaining* bytes.
 
@@ -276,7 +280,7 @@ def _follow_overflow_chain(
     None for anything else rather than risk splicing in unrelated live data.
     """
     data, _segments = _follow_overflow_chain_ex(
-        first_page, remaining, usable_size, overflow_reader, max_pages
+        first_page, remaining, usable_size, overflow_reader
     )
     return data
 
@@ -309,6 +313,8 @@ def parse_table_leaf_page(
     overflow_reader: Callable[[int], bytes | None] | None = None,
     btree_offset: int = 0,
     want_ranges: Literal[False] = False,
+    problems: list[ParseIssue] | None = None,
+    page_num: int | str | None = None,
 ) -> list[tuple[int, list[Any]]] | None: ...
 @overload
 def parse_table_leaf_page(
@@ -318,6 +324,8 @@ def parse_table_leaf_page(
     overflow_reader: Callable[[int], bytes | None] | None = None,
     btree_offset: int = 0,
     want_ranges: Literal[True],
+    problems: list[ParseIssue] | None = None,
+    page_num: int | str | None = None,
 ) -> list[tuple[int, list[Any], RowByteLayout]] | None: ...
 def parse_table_leaf_page(
     page: bytes,
@@ -326,6 +334,8 @@ def parse_table_leaf_page(
     overflow_reader: Callable[[int], bytes | None] | None = None,
     btree_offset: int = 0,
     want_ranges: bool = False,
+    problems: list[ParseIssue] | None = None,
+    page_num: int | str | None = None,
 ) -> list[tuple[int, list[Any]]] | list[tuple[int, list[Any], RowByteLayout]] | None:
     """Parse a SQLite table-leaf page (type 0x0D).
 
@@ -340,6 +350,11 @@ def parse_table_leaf_page(
     Pass *want_ranges=True* to additionally get each row's on-disk byte
     layout back — returns (rowid, values, RowByteLayout) tuples instead.
     Existing callers that don't pass it are unaffected.
+
+    Cells that can't be decoded (pointer outside the page, malformed
+    record) are left out of the result; pass *problems* to get one
+    sqlite_page.cells_skipped issue (naming *page_num*) when that happens,
+    so a caller never shows fewer rows than the page holds without saying so.
     """
     if btree_offset < 0 or len(page) < btree_offset + 8:
         return None
@@ -357,13 +372,16 @@ def parse_table_leaf_page(
     rows: list[tuple[int, list[Any]]] = []
     row_layouts: list[RowByteLayout] = []
     usable_size = page_size or len(page)
+    skipped = 0
 
     for i in range(cell_count):
         ptr_off = ptr_area_start + i * 2
         if ptr_off + 2 > len(page):
+            skipped += cell_count - i  # the pointer array runs past the page
             break
         cell_offset = struct.unpack_from(">H", page, ptr_off)[0]
         if cell_offset == 0 or cell_offset >= len(page):
+            skipped += 1
             continue
         try:
             pos = cell_offset
@@ -412,7 +430,14 @@ def parse_table_leaf_page(
                     column_logical_ranges=_record_field_ranges(bytes(payload)),
                 ))
         except Exception:
+            skipped += 1
             continue
+
+    if skipped and problems is not None:
+        problems.append(ParseIssue("sqlite_page.cells_skipped", {
+            "page": "?" if page_num is None else page_num,
+            "count": skipped, "total": cell_count,
+        }))
 
     if want_ranges:
         return [
@@ -582,13 +607,15 @@ def build_page_table_map(
     conn: sqlite3.Connection,
     wal_data: bytes | None = None,
     page_size: int = 0,
+    problems: list[ParseIssue] | None = None,
 ) -> dict[int, str]:
     """Return a mapping of {page_number: table_name} for every page reachable
     from a table's B-tree root.
 
     Works by reading sqlite_master root pages, then walking interior pages
     (from the DB connection or from WAL frames) to collect all child page
-    numbers.  Index pages and non-table objects are excluded.
+    numbers.  Index pages and non-table objects are excluded. Pass
+    *problems* to learn why the mapping is empty or incomplete.
     """
     mapping: dict[int, str] = {}
     wal_pages = build_wal_page_overlay(wal_data, page_size)
@@ -598,7 +625,9 @@ def build_page_table_map(
         rows = conn.execute(
             "SELECT name, rootpage FROM sqlite_master WHERE type='table'"
         ).fetchall()
-    except Exception:
+    except Exception as exc:
+        if problems is not None:
+            problems.append(ParseIssue("sqlite_wal.table_map_failed", detail=str(exc)))
         return mapping
 
     # Resolve the DB file path and page count once up front, and keep a single
@@ -615,8 +644,14 @@ def build_page_table_map(
             if db_path.is_file():
                 page_count = db_path.stat().st_size // page_size
                 db_file = open(db_path, "rb")
-    except Exception:
+            elif problems is not None:
+                problems.append(ParseIssue(
+                    "sqlite_wal.table_map_no_file", detail=f"no file at {db_path_row[2]!r}",
+                ))
+    except Exception as exc:
         db_file = None
+        if problems is not None:
+            problems.append(ParseIssue("sqlite_wal.table_map_no_file", detail=str(exc)))
 
     try:
         # For each root page, BFS-walk interior pages to collect all child pages

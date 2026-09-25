@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.sqlite_wal import (
     PAGE_TYPE_INDEX_INTERIOR,
     PAGE_TYPE_INDEX_LEAF,
@@ -27,7 +28,7 @@ from crush.core.sqlite_wal import (
 @dataclass
 class StructureNode:
     label: str
-    value: str = ""
+    value: str | ParseIssue = ""
     kind: str = ""
     file_kind: str = "base"
     byte_range: tuple[int, int] | None = None
@@ -226,12 +227,15 @@ def _cell_nodes(
 ) -> StructureNode | None:
     if len(page) <= btree_offset or page[btree_offset] != PAGE_TYPE_TABLE_LEAF:
         return None
+    skipped: list[ParseIssue] = []
     parsed = parse_table_leaf_page(
         page,
         page_size=page_size,
         overflow_reader=read_page,
         btree_offset=btree_offset,
         want_ranges=True,
+        problems=skipped,
+        page_num=page_num,
     )
     if parsed is None:
         return None
@@ -288,6 +292,12 @@ def _cell_nodes(
                 )
             )
         children.append(item)
+    if skipped:
+        children.append(StructureNode(
+            "Cells not shown",
+            ParseIssue("sqlite_structure.cells_not_shown", {"problems": skipped}),
+            "", file_kind,
+        ))
     return StructureNode("Cells", f"{len(children)} cells", "", file_kind, None, children=children)
 
 
@@ -297,11 +307,22 @@ def _column_label(col: int, column_names: list[str]) -> str:
     return f"Column {col + 1}"
 
 
+# Control characters shown as escapes, so a value always stays on one line
+# (a multi-line value would stretch its tree row); the exact bytes are one
+# click away via Show Hex.
+_CONTROL_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
 def _display_cell_value(value: Any) -> str:
+    """The whole value, never shortened: long text is only elided by the
+    tree's column width (the tooltip shows it all)."""
     if isinstance(value, bytes):
         return f"<BLOB {len(value):,} B>"
     text = "" if value is None else str(value)
-    return text if len(text) <= 120 else text[:117] + "..."
+    return "".join(
+        _CONTROL_ESCAPES.get(ch) or (f"\\x{ord(ch):02x}" if ord(ch) < 0x20 else ch)
+        for ch in text
+    )
 
 
 def _cell_layout_nodes(
@@ -349,7 +370,9 @@ def _freeblock_nodes(page: bytes, btree_offset: int, file_kind: str, file_offset
 def _unallocated_node(page: bytes, btree_offset: int, file_kind: str, file_offset: int) -> StructureNode | None:
     entry = _extract_page_unallocated_space(page, btree_offset)
     if entry is None:
-        return StructureNode("Unallocated area", "none/non-empty bytes not found", "", file_kind)
+        return StructureNode(
+            "Unallocated area", ParseIssue("sqlite_structure.no_unallocated"), "", file_kind,
+        )
     start = file_offset + entry["offset"]
     end = start + entry["size"]
     return StructureNode(
@@ -416,12 +439,12 @@ def build_sqlite_structure_tree(
 ) -> list[StructureNode]:
     """Return top-level structure nodes for a SQLite database file."""
     if page_size <= 0:
-        return [StructureNode("SQLite file", "page size unavailable")]
+        return [StructureNode("SQLite file", ParseIssue("sqlite_structure.page_size_unavailable"))]
 
     try:
         file_size = db_path.stat().st_size
     except OSError:
-        return [StructureNode("SQLite file", "file unavailable")]
+        return [StructureNode("SQLite file", ParseIssue("sqlite_structure.file_unavailable"))]
 
     wal_index = build_wal_page_index(wal_data, page_size)
     page_count = max(file_size // page_size, max(wal_index, default=0))
@@ -450,6 +473,10 @@ def build_sqlite_structure_tree(
         for page_num in range(1, page_count + 1):
             page = read_page(page_num)
             if page is None:
+                pages_node.children.append(StructureNode(
+                    f"Page {page_num}", ParseIssue("sqlite_structure.page_unreadable"),
+                    "database page",
+                ))
                 continue
             page_file_kind, page_file_offset = _page_file_location(page_num, page_size, wal_index)
             btree_offset = 100 if page_num == 1 else 0

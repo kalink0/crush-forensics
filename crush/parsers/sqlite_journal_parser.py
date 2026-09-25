@@ -49,7 +49,8 @@ class SQLiteJournalParser(AbstractParser):
         # row index (see RawBytesCellLocator/data["rowids"] below), same as
         # table_viewer.py's own companion-mode Rollback Journal tab.
         row_ranges: dict[int, tuple[int, int]] = {}
-        for jr in extract_journal_rows(result):
+        decode_problems: list[ParseIssue] = []
+        for jr in extract_journal_rows(result, decode_problems):
             if jr.kind == "Live cell":
                 value = str(jr.values)
                 for v in jr.values or []:
@@ -93,6 +94,8 @@ class SQLiteJournalParser(AbstractParser):
                 ParseIssue("sqlite_journal.not_fully_valid", {"mismatches": n_bad})
             )
         meta["Note"] = ParseIssue("sqlite_journal.standalone")
+        if decode_problems:
+            meta["Not decoded"] = decode_problems
 
         data: dict[str, Any] = {
             "Journal Records": {

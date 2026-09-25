@@ -24,6 +24,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.sqlite_wal import parse_table_leaf_page
 
 _HEADER_FIRST_TRUNK_OFFSET = 32
@@ -74,7 +75,10 @@ def _read_page_via_handle(
 
 
 def walk_freelist_pages(
-    db_path: Path, page_size: int, wal_pages: dict[int, bytes] | None = None
+    db_path: Path,
+    page_size: int,
+    wal_pages: dict[int, bytes] | None = None,
+    problems: list[ParseIssue] | None = None,
 ) -> list[dict[str, Any]]:
     """Walk the freelist trunk chain, returning one entry per freed page.
 
@@ -88,20 +92,31 @@ def walk_freelist_pages(
     frozen bytes — a header whose freelist fields were last updated by a
     still-in-WAL transaction would otherwise look empty even though the
     connection-level PRAGMA freelist_count already reports pages.
+
+    Pass *problems* to learn why the result is empty or the walk stopped
+    early -- an unreadable file or header looks exactly like "no freelist"
+    otherwise.
     """
+    def note(issue: ParseIssue) -> None:
+        if problems is not None:
+            problems.append(issue)
+
     try:
         fh = open(db_path, "rb")
-    except OSError:
+    except OSError as exc:
+        note(ParseIssue("sqlite_scan.file_unreadable", detail=str(exc)))
         return []
 
     try:
         header = _read_page_via_handle(fh, 1, page_size, wal_pages)
         if header is None or len(header) < _HEADER_FREELIST_COUNT_OFFSET + 4:
+            note(ParseIssue("freelist.header_unreadable"))
             return []
 
         first_trunk = struct.unpack_from(">I", header, _HEADER_FIRST_TRUNK_OFFSET)[0]
         declared_count = struct.unpack_from(">I", header, _HEADER_FREELIST_COUNT_OFFSET)[0]
         if first_trunk == 0 or declared_count == 0:
+            note(ParseIssue("freelist.none"))
             return []
 
         entries: list[dict[str, Any]] = []
@@ -109,27 +124,43 @@ def walk_freelist_pages(
         trunk_num = first_trunk
         budget = declared_count + 1  # +1: trunk pages aren't counted separately in some builds
 
-        while trunk_num and trunk_num not in visited and budget > 0:
+        while trunk_num:
+            if trunk_num in visited:
+                note(ParseIssue("freelist.cycle", {"page": trunk_num}))
+                break
+            if budget <= 0:
+                note(ParseIssue("freelist.over_count", {"declared": declared_count}))
+                break
             visited.add(trunk_num)
             budget -= 1
             trunk = _read_page_via_handle(fh, trunk_num, page_size, wal_pages)
             if trunk is None or len(trunk) < 8:
+                note(ParseIssue("freelist.trunk_unreadable", {"page": trunk_num}))
                 break
             entries.append({"page": trunk_num, "kind": "trunk"})
 
             next_trunk = struct.unpack_from(">I", trunk, 0)[0]
             leaf_count = struct.unpack_from(">I", trunk, 4)[0]
             max_leaves = (page_size - 8) // 4
-            leaf_count = min(leaf_count, max_leaves)
+            if leaf_count > max_leaves:
+                note(ParseIssue("freelist.leaf_count_clamped", {
+                    "page": trunk_num, "declared": leaf_count, "fits": max_leaves,
+                }))
+                leaf_count = max_leaves
 
             for i in range(leaf_count):
                 if budget <= 0:
+                    note(ParseIssue("freelist.over_count", {"declared": declared_count}))
+                    next_trunk = 0
                     break
                 leaf_off = 8 + i * 4
                 if leaf_off + 4 > len(trunk):
                     break
                 leaf_num = struct.unpack_from(">I", trunk, leaf_off)[0]
-                if leaf_num == 0 or leaf_num in visited:
+                if leaf_num == 0:
+                    continue
+                if leaf_num in visited:
+                    note(ParseIssue("freelist.cycle", {"page": leaf_num}))
                     continue
                 visited.add(leaf_num)
                 budget -= 1
@@ -147,6 +178,7 @@ def carve_freelist_rows(
     page_size: int,
     entries: list[dict[str, Any]] | None = None,
     wal_pages: dict[int, bytes] | None = None,
+    problems: list[ParseIssue] | None = None,
 ) -> list[dict[str, Any]]:
     """Carve leftover table-leaf rows out of freed pages.
 
@@ -169,15 +201,20 @@ def carve_freelist_rows(
     overflow bytes. Only leaf-kind freelist pages are never touched by
     SQLite once freed (per [[feedback_no_heuristics_in_parsers]] — only
     reconstruct what can be verified).
+
+    Pass *problems* to get a freelist.summary of what every walked page
+    turned out to hold, plus any cells that couldn't be decoded.
     """
     if entries is None:
-        entries = walk_freelist_pages(db_path, page_size, wal_pages)
+        entries = walk_freelist_pages(db_path, page_size, wal_pages, problems)
 
     freelist_page_set = {e["page"] for e in entries if e["kind"] == "leaf"}
 
     try:
         fh = open(db_path, "rb")
-    except OSError:
+    except OSError as exc:
+        if problems is not None and entries:
+            problems.append(ParseIssue("sqlite_scan.file_unreadable", detail=str(exc)))
         return []
 
     def _overflow_reader(page_num: int) -> bytes | None:
@@ -187,17 +224,31 @@ def carve_freelist_rows(
 
     try:
         carved: list[dict[str, Any]] = []
+        counts = {"empty": 0, "not_leaf": 0, "unreadable": 0}
         for entry in entries:
             page = _read_page_via_handle(fh, entry["page"], page_size, wal_pages)
             if page is None:
+                counts["unreadable"] += 1
                 continue
             rows = parse_table_leaf_page(
-                page, page_size=page_size, overflow_reader=_overflow_reader
+                page, page_size=page_size, overflow_reader=_overflow_reader,
+                problems=problems, page_num=entry["page"],
             )
+            if rows is None:
+                counts["not_leaf"] += 1
+                continue
             if not rows:
+                counts["empty"] += 1
                 continue
             carved.append({"page": entry["page"], "kind": entry["kind"], "rows": rows})
 
+        if problems is not None and entries:
+            problems.append(ParseIssue("freelist.summary", {
+                "pages": len(entries),
+                "trunks": sum(1 for e in entries if e["kind"] == "trunk"),
+                "leaves": sum(1 for e in entries if e["kind"] == "leaf"),
+                "carved": len(carved), **counts,
+            }))
         return carved
     finally:
         fh.close()

@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.cell_locator import CellLocation
 from crush.third_party.ccl_segb import ccl_segb1, ccl_segb2
 
@@ -94,6 +95,8 @@ class SegbCellLocator:
     rows: list[list[Any]]
     _row_ranges: dict[int, list[tuple[int, int]]] = field(default_factory=dict, init=False)
     _col_ranges: dict[int, dict[int, tuple[int, int]]] = field(default_factory=dict, init=False)
+    # Rows whose offsets couldn't be read, with why (see why_not_located).
+    _row_failures: dict[int, ParseIssue] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         file_len = len(self.file_bytes)
@@ -107,7 +110,8 @@ class SegbCellLocator:
                     )
                 else:
                     continue
-            except (TypeError, ValueError, IndexError):
+            except (TypeError, ValueError, IndexError) as exc:
+                self._row_failures[idx] = ParseIssue("locate.segb_record_offsets", detail=str(exc))
                 continue
             if not row_ranges:
                 continue
@@ -116,6 +120,10 @@ class SegbCellLocator:
 
     def default_file_kind(self) -> str:
         return _MAIN
+
+    def why_not_located(self, table_name: str, row_key: Any) -> ParseIssue | None:  # noqa: ARG002
+        """Why locate_cell() has nothing for *row_key*, when known."""
+        return self._row_failures.get(row_key) if isinstance(row_key, int) else None
 
     def read_file(self, file_kind: str) -> bytes | None:  # noqa: ARG002
         return self.file_bytes

@@ -383,7 +383,9 @@ class JournalRow:
     checksum_valid: bool
 
 
-def extract_journal_rows(result: JournalParseResult) -> list[JournalRow]:
+def extract_journal_rows(
+    result: JournalParseResult, problems: list[ParseIssue] | None = None,
+) -> list[JournalRow]:
     """Decode every live row, deleted-but-recoverable row, and non-zero
     unallocated-space gap out of every page record in *result* -- reusing
     the same page-level decoders sqlite_wal.py/sqlite_freeblocks.py/
@@ -392,7 +394,8 @@ def extract_journal_rows(result: JournalParseResult) -> list[JournalRow]:
     page image stands on its own (no overflow-chain following across
     records, and no base-database context needed), so this works equally
     for a journal opened standalone (no companion database available) and
-    for one opened alongside its database.
+    for one opened alongside its database. Pass *problems* to learn about
+    cells that couldn't be decoded and broken freeblock chains.
     """
     rows: list[JournalRow] = []
     for segment in result.segments:
@@ -404,6 +407,7 @@ def extract_journal_rows(result: JournalParseResult) -> list[JournalRow]:
 
             parsed = parse_table_leaf_page(
                 page, page_size=rec.page_size, btree_offset=btree_offset, want_ranges=True,
+                problems=problems, page_num=rec.page_num,
             )
             if parsed:
                 for rowid, values, layout in parsed:
@@ -421,7 +425,7 @@ def extract_journal_rows(result: JournalParseResult) -> list[JournalRow]:
             # headers (see sqlite_freeblocks.py/sqlite_unallocated.py); page
             # 1's is at offset 100, same known limitation those modules
             # already have scanning a live database's own page 1.
-            for fb in extract_freeblocks(page):
+            for fb in extract_freeblocks(page, problems, rec.page_num):
                 # fb["offset"]/["size"] describe the whole freeblock
                 # (including its own 4-byte next-pointer+size header);
                 # fb["data"] is only the content after that header -- offset
@@ -438,7 +442,7 @@ def extract_journal_rows(result: JournalParseResult) -> list[JournalRow]:
                     checksum_valid=rec.checksum_valid,
                 ))
 
-            slack = extract_unallocated_space(page)
+            slack = extract_unallocated_space(page, problems, rec.page_num)
             if slack is not None:
                 rows.append(JournalRow(
                     segment_index=rec.segment_index, record_index=rec.record_index,

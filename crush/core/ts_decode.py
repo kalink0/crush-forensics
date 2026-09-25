@@ -6,6 +6,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
+from crush.core.issues import ParseIssue
+
 _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 # A plain decimal literal and nothing else: ASCII digits, optional sign, fraction
@@ -82,7 +84,7 @@ def numeric_value(value: object) -> int | float | None:
     return None
 
 
-def decode_cell(value: object, fmt: str) -> tuple[str | None, str | None]:
+def decode_cell(value: object, fmt: str) -> tuple[str | None, ParseIssue | None]:
     """Decode one table cell as *fmt*, returning ``(decoded_text, problem)``.
 
     *problem* is ``None`` when the cell decoded, and also when there was nothing to
@@ -96,8 +98,8 @@ def decode_cell(value: object, fmt: str) -> tuple[str | None, str | None]:
         return None, None
     number = numeric_value(value)
     if number is None:
-        return None, "not a number"
+        return None, ParseIssue("ts_decode.not_a_number")
     decoded = decode_ts(number, fmt)
     if decoded is None:
-        return None, "out of range for this format"
+        return None, ParseIssue("ts_decode.out_of_range")
     return decoded, None
