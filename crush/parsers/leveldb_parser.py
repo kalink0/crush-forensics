@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from crush.core import tempdir
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.ccl_leveldb import KeyState, RawLevelDb
@@ -17,9 +18,6 @@ from crush.third_party.ccl_leveldb.ccl_leveldb import ManifestFile
 
 _DATA_FILE_RE = re.compile(r"^[0-9]{6}\.(ldb|log|sst)$", re.IGNORECASE)
 _logger = logging.getLogger(__name__)
-
-_MAX_TEXT_LEN = 256  # truncation limit for decoded text fields
-
 
 def _try_utf8(raw: bytes) -> str | None:
     """Return UTF-8 decoded string, or None if not valid UTF-8."""
@@ -34,8 +32,8 @@ def _decode_internal_key(raw: bytes) -> str:
     user_key = raw[:-8] if len(raw) > 8 else raw
     text = _try_utf8(user_key)
     if text is not None:
-        return text[:_MAX_TEXT_LEN]
-    return user_key[:32].hex() + ("…" if len(user_key) > 32 else "")
+        return text
+    return user_key.hex()
 
 
 class LeveldbParser(AbstractParser):
@@ -71,6 +69,9 @@ class LeveldbParser(AbstractParser):
 
     def _parse_tmp(self, node: VFSNode, vfs: VFS, tmp_dir: Path) -> ParseResult:
         manifests_display: dict[str, Any] = {}
+        # Files that exist but couldn't be read or parsed, with the reason --
+        # shown in the Overview instead of silently leaving them out.
+        unreadable: dict[str, ParseIssue] = {}
         file_to_level: dict[int, int] = {}
         file_key_ranges: dict[int, dict[str, Any]] = {}
 
@@ -79,7 +80,7 @@ class LeveldbParser(AbstractParser):
                 current_fno = db.manifest.file_no if db.manifest else -1
 
                 if db.manifest:
-                    _, file_to_level, file_key_ranges = _parse_manifest(db.manifest)
+                    _, file_to_level, file_key_ranges, _ = _parse_manifest(db.manifest)
 
                 # Parse ALL MANIFEST files for the Overview, not just the latest (#6)
                 _mfest_re = re.compile(ManifestFile.MANIFEST_FILENAME_PATTERN)
@@ -88,14 +89,17 @@ class LeveldbParser(AbstractParser):
                         continue
                     try:
                         mf = ManifestFile(mpath)
-                        mdata, _, _ = _parse_manifest(mf)
+                        mdata, _, _, partial = _parse_manifest(mf)
                         fno = mf.file_no
                         mf.close()  # type: ignore[no-untyped-call]
                         label = mpath.name + (" (current)" if fno == current_fno else "")
+                        if partial is not None:
+                            mdata = {"Status": partial, **mdata}
                         if mdata:
                             manifests_display[label] = mdata
                     except Exception as exc:  # noqa: BLE001
                         _logger.debug("Could not parse %s: %s", mpath.name, exc)
+                        unreadable[mpath.name] = ParseIssue("leveldb.manifest_failed", detail=str(exc))
 
                 # CURRENT file (#9)
                 current_file = tmp_dir / "CURRENT"
@@ -105,12 +109,13 @@ class LeveldbParser(AbstractParser):
                         manifests_display["CURRENT"] = {"Active MANIFEST": target}
                     except Exception as exc:  # noqa: BLE001
                         _logger.debug("Could not read CURRENT: %s", exc)
+                        unreadable["CURRENT"] = ParseIssue("leveldb.file_unreadable", detail=str(exc))
 
                 # Per-file counters: file_name → {type, level, total, live, deleted, unknown}
                 file_stats: dict[str, dict[str, Any]] = {}
 
                 records: list[dict[str, Any]] = []
-                parse_warning = ""
+                parse_warning: ParseIssue | None = None
 
                 try:
                     for record in db.iterate_records_raw():
@@ -159,14 +164,16 @@ class LeveldbParser(AbstractParser):
 
                 except Exception as exc:
                     _logger.warning("LevelDB read error for %s: %s", node.path, exc)
-                    parse_warning = str(exc)
+                    parse_warning = ParseIssue(
+                        "leveldb.read_stopped", {"count": len(records)}, detail=str(exc),
+                    )
                     if not records:
                         return ParseResult(
                             viewer_type="tree",
-                            data={"error": str(exc), "hint": "LevelDB could not be opened"},
+                            data=_open_failed_data(exc),
                             metadata={
-                                "Format": "LevelDB (parse failed)",
-                                "Parse error": str(exc),
+                                "Format": ParseIssue("leveldb.format_parse_failed"),
+                                "Parse error": ParseIssue("leveldb.open_failed", detail=str(exc)),
                                 "Files": f"{vfs.file_count(node):,}",
                             },
                         )
@@ -175,8 +182,11 @@ class LeveldbParser(AbstractParser):
             _logger.warning("LevelDB open error for %s: %s", node.path, exc)
             return ParseResult(
                 viewer_type="tree",
-                data={"error": str(exc), "hint": "LevelDB could not be opened"},
-                metadata={"Format": "LevelDB (parse failed)", "Parse error": str(exc)},
+                data=_open_failed_data(exc),
+                metadata={
+                    "Format": ParseIssue("leveldb.format_parse_failed"),
+                    "Parse error": ParseIssue("leveldb.open_failed", detail=str(exc)),
+                },
             )
 
         # Merge manifest key ranges and file sizes into file_stats (#8)
@@ -199,6 +209,9 @@ class LeveldbParser(AbstractParser):
                     log_files[log_name] = log_path.read_text(encoding="utf-8", errors="replace")
                 except Exception as exc:  # noqa: BLE001
                     _logger.debug("Could not read %s: %s", log_name, exc)
+                    unreadable[log_name] = ParseIssue("leveldb.file_unreadable", detail=str(exc))
+        if unreadable:
+            manifests_display["Unreadable files"] = unreadable
 
         total = len(records)
         live_count = sum(1 for r in records if r["state"] == "Live")
@@ -225,9 +238,9 @@ class LeveldbParser(AbstractParser):
         text_parts: list[str] = []
         for r in records:
             if r["user_key_text"]:
-                text_parts.append(r["user_key_text"][:_MAX_TEXT_LEN])
+                text_parts.append(r["user_key_text"][:256])
             if r["value_text"]:
-                text_parts.append(r["value_text"][:_MAX_TEXT_LEN])
+                text_parts.append(r["value_text"][:256])
             if len(text_parts) >= 2000:
                 break
 
@@ -239,10 +252,18 @@ class LeveldbParser(AbstractParser):
         )
 
 
+def _open_failed_data(exc: Exception) -> dict[str, Any]:
+    return {
+        "error": ParseIssue("leveldb.open_failed", detail=str(exc)),
+        "hint": ParseIssue("leveldb.open_failed_hint"),
+    }
+
+
 def _parse_manifest(
     manifest: ManifestFile,
-) -> tuple[dict[str, Any], dict[int, int], dict[int, dict[str, Any]]]:
-    """Extract summary info, file-to-level map, and per-file key ranges from a ManifestFile."""
+) -> tuple[dict[str, Any], dict[int, int], dict[int, dict[str, Any]], ParseIssue | None]:
+    """Extract summary info, file-to-level map, and per-file key ranges from
+    a ManifestFile, plus why reading stopped early (None: read to the end)."""
     file_to_level: dict[int, int] = dict(manifest.file_to_level)
     file_key_ranges: dict[int, dict[str, Any]] = {}  # fno → {size, smallest, largest}
 
@@ -252,6 +273,7 @@ def _parse_manifest(
     prev_log_number: int | None = None
     next_file_number: int | None = None
     compaction_history: list[dict[str, Any]] = []
+    partial: ParseIssue | None = None
 
     try:
         for edit in manifest:
@@ -287,6 +309,7 @@ def _parse_manifest(
                     compaction_history.append(entry)
     except Exception as exc:
         _logger.debug("Manifest parse warning: %s", exc)
+        partial = ParseIssue("leveldb.manifest_partial", detail=str(exc))
 
     # Build levels summary: level → list of file numbers
     levels: dict[str, list[str]] = {}
@@ -310,7 +333,7 @@ def _parse_manifest(
     if compaction_history:
         manifest_data["Compaction history"] = compaction_history
 
-    return manifest_data, file_to_level, file_key_ranges
+    return manifest_data, file_to_level, file_key_ranges, partial
 
 
 def _export_dir(node: VFSNode, vfs: VFS, target: Path) -> None:

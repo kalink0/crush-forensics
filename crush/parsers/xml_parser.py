@@ -3,8 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+
+# Characters shown on each side of a syntax error's position (as for JSON).
+_EXCERPT_RADIUS = 250
 
 
 class XmlParser(AbstractParser):
@@ -27,13 +31,26 @@ class XmlParser(AbstractParser):
             data = _element_to_dict(root)
             text = " ".join(str(t) for t in root.itertext())[:4000]
         except etree.XMLSyntaxError as exc:
-            data = {"error": str(exc), "raw": raw[:500].decode("utf-8", errors="replace")}
-            text = ""
+            # A window around the error position, not the file's start (same
+            # as the JSON parser); the whole file stays reachable via Open as
+            # → Text / Hex (see xml.syntax_error).
+            text = raw.decode("utf-8", errors="replace")
+            pos = _char_offset(text, *exc.position)
+            start = max(0, pos - _EXCERPT_RADIUS)
+            end = min(len(text), pos + _EXCERPT_RADIUS)
+            data = {
+                "error": str(exc),
+                f"excerpt (chars {start:,}–{end:,} of {len(text):,})": text[start:end],
+            }
             return ParseResult(
                 viewer_type="tree",
                 data=data,
-                metadata={"File size": f"{node.size:,} B"},
-                text_index=text,
+                metadata={
+                    "File size": f"{node.size:,} B",
+                    "Format": ParseIssue("xml.format_parse_failed"),
+                    "Status": ParseIssue("xml.syntax_error", detail=str(exc)),
+                },
+                text_index="",
             )
         return ParseResult(
             viewer_type="tree_text",
@@ -82,6 +99,17 @@ def _element_to_dict(el: Any) -> dict[str, Any]:
         else:
             result["@map"] = normalized_map
     return result
+
+
+def _char_offset(text: str, line: int, column: int) -> int:
+    """Offset in *text* of lxml's 1-based (line, column) error position."""
+    offset = 0
+    for _ in range(max(0, line - 1)):
+        newline = text.find("\n", offset)
+        if newline == -1:
+            return len(text)
+        offset = newline + 1
+    return min(len(text), offset + max(0, column - 1))
 
 
 def _looks_like_plist_xml(peek_bytes: bytes) -> bool:

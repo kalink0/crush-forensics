@@ -19,6 +19,7 @@ import struct
 from typing import Any, cast
 
 from crush.core import tempdir
+from crush.core.issues import ParseIssue
 from crush.core.passwords import WrongPasswordError
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
@@ -41,11 +42,7 @@ _META_VERSION_ACTUAL_SIZE = 3  # from this meta version, actualSize is meaningfu
 
 # Why a non-zero .crc vector was overridden -- one wording, shown both in the
 # parse metadata and in the viewer's Overview tab.
-_FALSE_POSITIVE_NOTE = (
-    ".crc meta file's vector field is non-zero, which normally flags AES "
-    "encryption, but the store read cleanly as plaintext anyway, so that flag "
-    "is treated as a false positive here"
-)
+_FALSE_POSITIVE_NOTE = ParseIssue("mmkv.false_positive_note")
 
 
 def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
@@ -266,12 +263,26 @@ class MMKVParser(AbstractParser):
     ) -> ParseResult:
         raw = vfs.read(node)
         crc_bytes: bytes | None = None
+        # Why there is no meta info, when there isn't: missing, unreadable
+        # and too short are different findings (short form for the viewer's
+        # Overview, long form with the consequence for the Properties panel).
+        meta_status: ParseIssue | None = None
+        meta_status_long: ParseIssue | None = None
         sibling = find_sibling(node, vfs, ".crc")
-        if sibling is not None:
+        if sibling is None:
+            meta_status = ParseIssue("mmkv.meta_not_found_short")
+            meta_status_long = ParseIssue("mmkv.meta_not_found")
+        else:
             try:
                 crc_bytes = vfs.read(sibling)
-            except Exception:
-                crc_bytes = None
+            except Exception as exc:
+                meta_status = ParseIssue("mmkv.meta_unreadable_short", detail=str(exc))
+                meta_status_long = ParseIssue("mmkv.meta_unreadable", detail=str(exc))
+            else:
+                if len(crc_bytes) < _META_MIN_LEN:
+                    too_short = {"size": len(crc_bytes), "needed": _META_MIN_LEN}
+                    meta_status = ParseIssue("mmkv.meta_too_short_short", too_short)
+                    meta_status_long = ParseIssue("mmkv.meta_too_short", too_short)
 
         meta_info = _read_meta_info(crc_bytes)
         meta_flagged_encrypted = meta_info is not None and meta_info["encrypted"]
@@ -283,13 +294,13 @@ class MMKVParser(AbstractParser):
                 return ParseResult(
                     viewer_type="tree",
                     data={
-                        "error": "This MMKV store is AES-encrypted.",
-                        "hint": 'Use "Open as -> MMKV (Encrypted)..." and supply the key.',
+                        "error": ParseIssue("mmkv.encrypted_error"),
+                        "hint": ParseIssue("mmkv.encrypted_hint"),
                     },
                     metadata={
-                        "Format": "MMKV Key-Value Store (encrypted)",
+                        "Format": ParseIssue("mmkv.format_encrypted"),
                         "File size": f"{node.size:,} B",
-                        "Encrypted": "yes",
+                        "Encrypted": ParseIssue("mmkv.encrypted_yes"),
                     },
                 )
             # The .crc file's vector-nonzero flag said "encrypted", but the
@@ -314,14 +325,17 @@ class MMKVParser(AbstractParser):
                 except MMKVError as exc:
                     msg = str(exc)
                     if password is not None and "did not decrypt" in msg:
-                        raise WrongPasswordError(msg) from exc
+                        raise WrongPasswordError(ParseIssue("mmkv.wrong_key", detail=msg)) from exc
                     return ParseResult(
                         viewer_type="tree",
-                        data={"error": msg, "hint": "MMKV store could not be read"},
+                        data={
+                            "error": ParseIssue("mmkv.read_failed", detail=msg),
+                            "hint": ParseIssue("mmkv.read_failed_hint"),
+                        },
                         metadata={
-                            "Format": "MMKV Key-Value Store (parse failed)",
+                            "Format": ParseIssue("mmkv.format_parse_failed"),
                             "File size": f"{node.size:,} B",
-                            "Parse error": msg,
+                            "Parse error": ParseIssue("mmkv.read_failed", detail=msg),
                         },
                     )
             finally:
@@ -343,10 +357,17 @@ class MMKVParser(AbstractParser):
         # unencrypted here too rather than re-triggering the "need a key" guard.
         offsets_meta_info = None if false_positive_encrypted_flag else meta_info
         offsets = _compute_entry_offsets(raw, offsets_meta_info, password, aes256)
+        offsets_issue: ParseIssue | None = None
         if offsets is not None and len(offsets) == len(records):
             for record, (entry_start, _key_end, value_start, value_end) in zip(records, offsets):
                 record["entry_range"] = (entry_start, value_end)
                 record["value_range"] = (value_start, value_end)
+        elif offsets is None:
+            offsets_issue = ParseIssue("mmkv.offsets_unavailable")
+        else:
+            offsets_issue = ParseIssue("mmkv.offsets_mismatch", {
+                "found": len(offsets), "total": len(records),
+            })
 
         live = sum(1 for r in records if r["state"] == "Live")
         superseded = sum(1 for r in records if r["state"] == "Superseded")
@@ -364,27 +385,27 @@ class MMKVParser(AbstractParser):
             meta["Meta version"] = str(meta_info["version"])
             meta["Sequence"] = str(meta_info["sequence"])
         else:
-            # No sibling .crc file — encryption status and the recorded region
-            # size (vs. the header's own copy) could not be cross-checked.
-            meta["Meta file"] = "not found (.crc companion missing) — encryption status unverified"
+            # No usable .crc meta file — encryption status and the recorded
+            # region size (vs. the header's own copy) could not be cross-checked.
+            meta["Meta file"] = meta_status_long
+        if offsets_issue is not None:
+            meta["Hex offsets"] = offsets_issue
         if password is not None:
             if meta_info is not None and meta_info["encrypted"]:
-                meta["Encrypted"] = "yes (decrypted)"
+                meta["Encrypted"] = ParseIssue("mmkv.encrypted_decrypted")
             elif meta_info is None:
                 # The reader can only decrypt with the .crc's AES vector; without
                 # the file the key is ignored and the bytes are walked as-is.
                 meta["Encrypted"] = (
-                    "unverified — a key was supplied but ignored: no .crc meta file "
-                    "was found, so there is no AES vector to decrypt with and the "
-                    "store was read as plaintext"
+                    ParseIssue("mmkv.key_ignored_no_meta") if sibling is None
+                    else ParseIssue("mmkv.key_ignored_bad_meta", {"meta": meta_status})
                 )
             else:
-                meta["Encrypted"] = (
-                    "no — a key was supplied but ignored: the .crc meta file's AES "
-                    "vector is zero, so the store is not encrypted"
-                )
+                meta["Encrypted"] = ParseIssue("mmkv.key_ignored_zero_vector")
         elif false_positive_encrypted_flag:
-            meta["Encrypted"] = f"no — {_FALSE_POSITIVE_NOTE}"
+            meta["Encrypted"] = ParseIssue(
+                "mmkv.encrypted_false_positive", {"note": _FALSE_POSITIVE_NOTE},
+            )
 
         # The Overview tab reads meta_info["encrypted"]; hand it the verdict, not
         # the raw flag the false-positive check just overrode, plus the reasoning
@@ -403,7 +424,12 @@ class MMKVParser(AbstractParser):
 
         return ParseResult(
             viewer_type="mmkv",
-            data={"records": records, "meta_info": viewer_meta_info, "__mmkv_file_bytes": raw},
+            data={
+                "records": records,
+                "meta_info": viewer_meta_info,
+                "meta_status": meta_status,
+                "__mmkv_file_bytes": raw,
+            },
             metadata=meta,
             text_index=" ".join(text_parts[:2000]),
         )

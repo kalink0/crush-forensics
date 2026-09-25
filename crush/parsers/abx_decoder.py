@@ -8,6 +8,8 @@ import re
 import struct
 from dataclasses import dataclass
 
+from crush.core.issues import ParseIssue
+
 
 PROTOCOL_MAGIC_VERSION_0 = b"ABX\x00"
 
@@ -44,14 +46,14 @@ TYPE_BOOLEAN_FALSE = 13 << 4
 @dataclass
 class AbxDecodeResult:
     xml: str
-    warnings: list[str]
+    warnings: list[ParseIssue]
 
 
 def decode_abx(data: bytes) -> AbxDecodeResult:
     """Decode ABX bytes into XML (best-effort)."""
-    warnings: list[str] = []
+    warnings: list[ParseIssue] = []
     if not data.startswith(PROTOCOL_MAGIC_VERSION_0):
-        return AbxDecodeResult("", ["Missing ABX magic header"])
+        return AbxDecodeResult("", [ParseIssue("abx.no_magic")])
 
     reader = _AbxReader(data)
     reader.pos = len(PROTOCOL_MAGIC_VERSION_0)
@@ -83,7 +85,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                 name = _to_string(reader.read_value(dtype))
                 if not name:
                     name = "unknown"
-                    warnings.append("Empty start tag name")
+                    warnings.append(ParseIssue("abx.empty_start_tag"))
                 out.append(f"<{_xml_escape(name, warnings)}")
                 open_tag = True
                 tag_stack.append(name)
@@ -161,7 +163,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                     DOCDECL: "DOCDECL",
                 }[token]
                 value = _to_string(reader.read_value(dtype))
-                warnings.append(f"Unsupported {token_name} token encountered (rare/unverified format)")
+                warnings.append(ParseIssue("abx.unsupported_token", {"token": token_name}))
                 if open_tag:
                     out.append(">")
                     open_tag = False
@@ -172,21 +174,21 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
                 # Attribute outside of a start tag; best-effort skip.
                 _ = reader.read_interned_utf()
                 _ = reader.read_value(dtype)
-                warnings.append("Dangling attribute token")
+                warnings.append(ParseIssue("abx.dangling_attribute"))
                 continue
 
-            warnings.append(f"Unknown token: {token}")
+            warnings.append(ParseIssue("abx.unknown_token", {"token": token}))
             _ = reader.read_value(dtype)
 
         if open_tag:
             out.append(">")
     except Exception as exc:
         remaining = len(data) - token_start_pos
-        warnings.insert(
-            0,
-            f"TRUNCATED: decode error at offset {token_start_pos} (0x{token_start_pos:x}): "
-            f"{exc} — {remaining} of {len(data)} bytes not decoded",
-        )
+        warnings.insert(0, ParseIssue(
+            "abx.truncated",
+            {"offset": token_start_pos, "remaining": remaining, "total": len(data)},
+            detail=str(exc),
+        ))
         if open_tag:
             out.append(">")
             open_tag = False
@@ -196,10 +198,7 @@ def decode_abx(data: bytes) -> AbxDecodeResult:
         )
 
     if root_element_count > 1:
-        warnings.append(
-            f"Multiple root elements ({root_element_count}) found; wrapped in "
-            f"synthetic <abx-root> for well-formed XML"
-        )
+        warnings.append(ParseIssue("abx.multiple_roots", {"count": root_element_count}))
         out.insert(1, "<abx-root>")
         out.append("</abx-root>")
 
@@ -314,7 +313,7 @@ def _to_string(value: object | None) -> str:
     return str(value)
 
 
-def _xml_escape(text: str, warnings: list[str] | None = None) -> str:
+def _xml_escape(text: str, warnings: list[ParseIssue] | None = None) -> str:
     escaped = (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -332,13 +331,10 @@ def _xml_escape(text: str, warnings: list[str] | None = None) -> str:
 _INVALID_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def _sanitize_control_chars(text: str, warnings: list[str] | None = None) -> str:
+def _sanitize_control_chars(text: str, warnings: list[ParseIssue] | None = None) -> str:
     if not _INVALID_XML_CHARS.search(text):
         return text
-    control_char_warning = (
-        "Raw XML-illegal control character(s) found in decoded value(s); "
-        "re-encoded as \\xHH to keep the XML well-formed"
-    )
+    control_char_warning = ParseIssue("abx.control_chars")
     if warnings is not None and control_char_warning not in warnings:
         warnings.append(control_char_warning)
     return _INVALID_XML_CHARS.sub(lambda m: f"\\x{ord(m.group(0)):02x}", text)

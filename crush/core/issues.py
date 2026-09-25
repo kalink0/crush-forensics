@@ -407,6 +407,158 @@ MESSAGES: dict[str, str] = {
     "media.pyav_missing": "Not read (PyAV is not installed)",
     "media.no_audio_stream": "No audio stream found",
     "media.metadata_failed": "Could not be read: {detail}",
+    # -- plist ------------------------------------------------------------
+    "plist.parse_failed": "{detail}",
+    "plist.format_parse_failed": "plist (parse failed)",
+    "plist.format_nska_failed": "binary (NSKeyedArchiver — deserialization failed)",
+    "plist.nska_failed": (
+        "NSKeyedArchiver deserialization failed, so the tree shows the archive's "
+        "undecoded object table: {detail}"
+    ),
+    # -- XML --------------------------------------------------------------
+    "xml.syntax_error": (
+        "Not well-formed XML: {detail}. The tree shows only an excerpt around the "
+        "error position; full content: Open as → Text / Hex"
+    ),
+    "xml.format_parse_failed": "XML (parse error)",
+    # -- ABX (Android Binary XML) -----------------------------------------
+    "abx.truncated": (
+        "TRUNCATED: decode error at offset {offset} (0x{offset:x}): {detail} — "
+        "{remaining} of {total} bytes not decoded"
+    ),
+    "abx.no_magic": "Missing ABX magic header",
+    "abx.empty_start_tag": "Empty start tag name",
+    "abx.unsupported_token": "Unsupported {token} token encountered (rare/unverified format)",
+    "abx.dangling_attribute": "Dangling attribute token",
+    "abx.unknown_token": "Unknown token: {token}",
+    "abx.control_chars": (
+        "Raw XML-illegal control character(s) found in decoded value(s); "
+        "re-encoded as \\xHH to keep the XML well-formed"
+    ),
+    "abx.multiple_roots": (
+        "Multiple root elements ({count}) found; wrapped in synthetic <abx-root> "
+        "for well-formed XML"
+    ),
+    "abx.xml_failed": "{detail}",
+    "abx.xml_failed_hint": "XML reconstruction failed; see right pane",
+    "abx.parse_failed": "{detail}",
+    "abx.parse_failed_hint": "File may be a newer ABX version",
+    "abx.format_parse_failed": "ABX (parse error)",
+    # -- Protobuf (schema-less) --------------------------------------------
+    "protobuf.truncated_key": "Truncated varint key",
+    "protobuf.truncated_varint": "Truncated varint value",
+    "protobuf.truncated_fixed64": "Truncated 64-bit value",
+    "protobuf.truncated_fixed32": "Truncated 32-bit value",
+    "protobuf.truncated_length": "Truncated length-delimited size",
+    "protobuf.truncated_payload": "Truncated length-delimited payload",
+    "protobuf.truncated_group": "Truncated group field {field}",
+    "protobuf.unexpected_end_group": "Unexpected end-group tag for field {field}",
+    "protobuf.unknown_wire_type": "Unknown wire type: {wire_type}",
+    "protobuf.decode_error": "Decode error: {detail}",
+    "protobuf.depth_limit": (
+        "{count:,} length-delimited field(s) at nesting depth {limit} were not tried "
+        "as nested messages (depth limit, the protobuf libraries' default); shown "
+        "as string/bytes"
+    ),
+    # -- LevelDB ----------------------------------------------------------
+    "leveldb.open_failed": "{detail}",
+    "leveldb.open_failed_hint": "LevelDB could not be opened",
+    "leveldb.format_parse_failed": "LevelDB (parse failed)",
+    "leveldb.read_stopped": "Reading stopped after {count:,} records: {detail}",
+    "leveldb.manifest_failed": "Could not be parsed: {detail}",
+    "leveldb.manifest_partial": "Read only up to an error: {detail}",
+    "leveldb.file_unreadable": "Could not be read: {detail}",
+    # -- MMKV -------------------------------------------------------------
+    "mmkv.encrypted_error": "This MMKV store is AES-encrypted.",
+    "mmkv.encrypted_hint": 'Use "Open as -> MMKV (Encrypted)..." and supply the key.',
+    "mmkv.format_encrypted": "MMKV Key-Value Store (encrypted)",
+    "mmkv.encrypted_yes": "yes",
+    "mmkv.read_failed": "{detail}",
+    "mmkv.read_failed_hint": "MMKV store could not be read",
+    "mmkv.format_parse_failed": "MMKV Key-Value Store (parse failed)",
+    "mmkv.wrong_key": "{detail}",
+    "mmkv.meta_not_found": (
+        "not found (.crc companion missing) — encryption status unverified"
+    ),
+    "mmkv.meta_unreadable": (
+        "found, but could not be read ({detail}) — encryption status unverified"
+    ),
+    "mmkv.meta_not_found_short": "not found (.crc companion missing)",
+    "mmkv.meta_too_short": (
+        "found, but only {size} B — too short for the meta layout ({needed} B) — "
+        "encryption status unverified"
+    ),
+    "mmkv.meta_too_short_short": (
+        "found, but only {size} B — too short for the meta layout ({needed} B)"
+    ),
+    "mmkv.meta_unreadable_short": "found, but could not be read ({detail})",
+    "mmkv.encrypted_decrypted": "yes (decrypted)",
+    "mmkv.key_ignored_no_meta": (
+        "unverified — a key was supplied but ignored: no .crc meta file was found, "
+        "so there is no AES vector to decrypt with and the store was read as plaintext"
+    ),
+    "mmkv.key_ignored_bad_meta": (
+        "unverified — a key was supplied but ignored: the .crc meta file was {meta}, "
+        "so there is no AES vector to decrypt with and the store was read as plaintext"
+    ),
+    "mmkv.key_ignored_zero_vector": (
+        "no — a key was supplied but ignored: the .crc meta file's AES vector is "
+        "zero, so the store is not encrypted"
+    ),
+    "mmkv.encrypted_false_positive": "no — {note}",
+    "mmkv.false_positive_note": (
+        ".crc meta file's vector field is non-zero, which normally flags AES "
+        "encryption, but the store read cleanly as plaintext anyway, so that flag "
+        "is treated as a false positive here"
+    ),
+    "mmkv.offsets_unavailable": (
+        "Entry byte offsets could not be derived; Locate in Hex is unavailable"
+    ),
+    "mmkv.offsets_mismatch": (
+        "Entry byte offsets found for {found:,} of {total:,} entries; Locate in Hex "
+        "is unavailable"
+    ),
+    # -- SEGB -------------------------------------------------------------
+    "segb.unrecognized": "Not a recognized SEGB v1/v2 file",
+    "segb.format_unrecognized": "SEGB (unrecognized)",
+    "segb.parse_failed": "{detail}",
+    "segb.format_parse_failed": "SEGB (parse failed)",
+    "segb.record_failed": (
+        "Reading stopped at record {index}: {detail}; later records not read"
+    ),
+    "segb.stream_failed": "Reading stopped after {count:,} records: {detail}",
+    "segb.payload_heuristic": (
+        "Schema-less rendering (heuristic): valid UTF-8 is shown as text and "
+        "64/32-bit fields as double/float; the exact bytes are in the cell "
+        "(Inspect BLOB / Open as Protobuf)"
+    ),
+    "segb.payload_partial": (
+        "{count:,} record(s): payload decoded only up to the byte shown in the cell"
+    ),
+    "segb.payload_stopped_marker": "[not decoded from byte {offset:,} on]",
+    "segb.sql_failed": (
+        "SQL view unavailable: the temporary database could not be created: {detail}"
+    ),
+    # -- Hex fallback -------------------------------------------------------
+    "hexfallback.read_error": "{detail}",
+    "hexfallback.not_identified": (
+        "Not identified (no signature in the format database matched)"
+    ),
+    "hexfallback.identify_failed": "Identification failed: {detail}",
+    "hexfallback.parser_open_as": (
+        "Supported — not detected from content; use Open as → {name}"
+    ),
+    "hexfallback.parser_source": (
+        "Supported as a browsable source — right-click → Open in New Window"
+    ),
+    "hexfallback.parser_folder": (
+        "Supported for the whole LevelDB folder — select the folder, not a single file"
+    ),
+    "hexfallback.parser_logs": "Supported in Multi-Log Studio — right-click → Open in Multi-Log Studio",
+    "hexfallback.parser_mismatch": (
+        "A parser exists for this format, but this file's content did not match it"
+    ),
+    "hexfallback.parser_none": "Not yet supported",
 }
 
 

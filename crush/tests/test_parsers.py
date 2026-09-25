@@ -1891,7 +1891,7 @@ def test_abx_decode_unknown_value_type_reports_error() -> None:
 
     result = decode_abx(data)
 
-    assert any("Unknown ABX value type" in w for w in result.warnings)
+    assert any("Unknown ABX value type" in w.detail for w in result.warnings)
 
 
 def test_abx_decode_invalid_string_pool_reference_reports_error() -> None:
@@ -1905,7 +1905,7 @@ def test_abx_decode_invalid_string_pool_reference_reports_error() -> None:
 
     result = decode_abx(data)
 
-    assert any("Invalid ABX string pool reference" in w for w in result.warnings)
+    assert any("Invalid ABX string pool reference" in w.detail for w in result.warnings)
 
 
 def test_abx_decode_multi_root_wraps_synthetic_root() -> None:
@@ -1923,7 +1923,7 @@ def test_abx_decode_multi_root_wraps_synthetic_root() -> None:
 
     result = decode_abx(data)
 
-    assert any("Multiple root elements" in w for w in result.warnings)
+    assert any(w.code == "abx.multiple_roots" for w in result.warnings)
 
     from lxml import etree
 
@@ -1947,7 +1947,7 @@ def test_abx_decode_sanitizes_illegal_control_chars() -> None:
 
     assert "\\x01" in result.xml
     assert "\x01" not in result.xml
-    assert any("illegal control character" in w.lower() for w in result.warnings)
+    assert any(w.code == "abx.control_chars" for w in result.warnings)
 
     from lxml import etree
 
@@ -1968,7 +1968,7 @@ def test_abx_decode_surfaces_processing_instruction_not_silently() -> None:
     result = decode_abx(data)
 
     assert "mypi data" in result.xml
-    assert any("PROCESSING_INSTRUCTION" in w for w in result.warnings)
+    assert any(w.params.get("token") == "PROCESSING_INSTRUCTION" for w in result.warnings)
 
 
 def test_abx_decode_reports_truncation_scope_on_error() -> None:
@@ -1987,9 +1987,9 @@ def test_abx_decode_reports_truncation_scope_on_error() -> None:
     result = decode_abx(data)
 
     assert any(
-        w.startswith("TRUNCATED:")
-        and f"offset {expected_offset}" in w
-        and f"{expected_remaining} of {len(data)} bytes not decoded" in w
+        str(w).startswith("TRUNCATED:")
+        and f"offset {expected_offset}" in str(w)
+        and f"{expected_remaining} of {len(data)} bytes not decoded" in str(w)
         for w in result.warnings
     )
     assert "ABX-DECODE-TRUNCATED" in result.xml
@@ -2253,10 +2253,10 @@ def test_hex_fallback_identifies_sqlite_format(tmp_path: Path) -> None:
     assert "Format (identified)" in result.metadata
     assert "SQLite" in result.metadata["Format (identified)"]
     assert "Parser support" in result.metadata
-    assert result.metadata["Parser support"] == "Supported"
+    assert result.metadata["Parser support"].code == "hexfallback.parser_mismatch"
 
 
-def test_hex_fallback_unknown_has_no_format_key(tmp_path: Path) -> None:
+def test_hex_fallback_unknown_says_not_identified(tmp_path: Path) -> None:
     raw = b"\xDE\xAD\xBE\xEF" * 32
     (tmp_path / "random.xyz999").write_bytes(raw)
 
@@ -2268,7 +2268,7 @@ def test_hex_fallback_unknown_has_no_format_key(tmp_path: Path) -> None:
     result = parser.parse(node, vfs)
 
     assert result.viewer_type == "hex"
-    assert "Format (identified)" not in result.metadata
+    assert result.metadata["Format (identified)"].code == "hexfallback.not_identified"
 
 
 # ---------------------------------------------------------------------------
@@ -3051,7 +3051,7 @@ def test_render_proto_payload_shows_undecodable_blobs_as_hex() -> None:
     from crush.parsers.segb_parser import _render_proto_payload
     binary = b"\xde\xad\xbe\xef"
     data = _proto_field(5, 2, _varint(len(binary)) + binary)
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     # field 5 must stay visible — no field silently vanishes from the rendered view.
     assert "5" in result
     assert "4 B" in result
@@ -3064,7 +3064,7 @@ def test_render_proto_payload_double_field_gets_cocoa_hint_not_replaced() -> Non
     from crush.parsers.segb_parser import _render_proto_payload
     # 694656000.0 = 2023-01-06 UTC as a Cocoa timestamp (2001-01-01 epoch + 8040 days).
     data = _proto_field(4, 1, struct.pack("<d", 694_656_000.0))
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     assert f"{694_656_000.0:.6g}" in result  # raw value still present, not replaced
     assert "possible Cocoa timestamp" in result
     assert "2023" in result
@@ -3086,7 +3086,7 @@ def test_render_proto_payload_repeated_fields() -> None:
     """Repeated fields appear in the rendered output."""
     from crush.parsers.segb_parser import _render_proto_payload
     data = _proto_field(3, 0, _varint(1)) + _proto_field(3, 0, _varint(2))
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     assert result  # non-empty
     assert "3" in result
 
@@ -3101,7 +3101,7 @@ def test_render_proto_payload_nested_message_also_shows_raw_bytes() -> None:
     # continuation byte), but grammatically valid protobuf -> {1: 200}.
     inner = _proto_field(1, 0, _varint(200))
     data = _proto_field(5, 2, _varint(len(inner)) + inner)
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     assert "{1:200}" in result
     assert f"[raw: {len(inner)} B: {inner.hex()}]" in result
 
@@ -3118,7 +3118,7 @@ def test_create_segb_sqlite_payload_columns() -> None:
         [0, 0, "Current", "2024-01-01", "2024-01-01", 0, 0, True,
          len(raw), (rendered, raw)],
     ]
-    path = _create_segb_sqlite(_COLUMNS_V1, rows)
+    path, _issue = _create_segb_sqlite(_COLUMNS_V1, rows)
     assert path is not None
     conn = sqlite3.connect(str(path))
     cols = [r[1] for r in conn.execute('PRAGMA table_info("SEGB")').fetchall()]
@@ -3238,7 +3238,7 @@ def test_decode_message_skips_simple_group() -> None:
     # field 1 end-group (0x0C), then field 3 varint 7 (0x18 0x07)
     raw = bytes([0x0B, 0x10, 0x63, 0x0C, 0x18, 0x07])
     decoded, warning, _ = _decode_message(raw)
-    assert warning == ""
+    assert warning is None
     entries = decoded["entries"]
     assert len(entries) == 1
     assert entries[0]["field"] == 3
@@ -3257,7 +3257,7 @@ def test_decode_message_skips_nested_group() -> None:
     # field 3 varint 7 (0x18 0x07)
     raw = bytes([0x0B, 0x1B, 0x20, 0x05, 0x1C, 0x0C, 0x18, 0x07])
     decoded, warning, _ = _decode_message(raw)
-    assert warning == ""
+    assert warning is None
     entries = decoded["entries"]
     assert len(entries) == 1
     assert entries[0]["field"] == 3
@@ -3271,7 +3271,7 @@ def test_decode_message_warns_on_truncated_group() -> None:
     # field 1 start-group (0x0B), field 2 varint 99 inside (0x10 0x63), then EOF
     raw = bytes([0x0B, 0x10, 0x63])
     decoded, warning, _ = _decode_message(raw)
-    assert "Truncated" in warning or "truncated" in warning.lower()
+    assert warning is not None and "truncated" in str(warning).lower()
 
 
 def test_decode_message_warns_on_unexpected_end_group() -> None:
@@ -3281,7 +3281,7 @@ def test_decode_message_warns_on_unexpected_end_group() -> None:
     # field 1 end-group (0x0C) at top level — no matching start-group
     raw = bytes([0x0C])
     decoded, warning, _ = _decode_message(raw)
-    assert "end-group" in warning.lower() or "Unexpected" in warning
+    assert warning is not None and warning.code == "protobuf.unexpected_end_group"
 
 
 # ---------------------------------------------------------------------------

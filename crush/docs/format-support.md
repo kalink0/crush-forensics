@@ -48,7 +48,8 @@ Limitations
 - Flattens Android-style `<map>` structures for easier reading.
 
 Limitations
-- Not a validating parser; malformed XML shows an error record.
+- Not a validating parser; malformed XML shows an error record with the parser's message and location, plus an excerpt around the error position (labelled with its character range); the full content stays reachable via **Open as** → Text / Hex.
+- External entities are not resolved (lxml's default); a document that relies on one reports it as an error.
 - Plist XML is handled by the plist parser instead.
 
 ### JSON
@@ -64,7 +65,7 @@ Limitations
 - Deprecated group encoding (wire types 3/4) is skipped over rather than aborting the rest of the decode.
 
 Limitations
-- Decoding stops (with a warning) at 50,000 entries per message or 6 levels of nested-message depth — a message beyond either cap is truncated, not silently dropped.
+- Length-delimited fields are tried as nested messages down to a depth of 100 (the default recursion limit of the official protobuf libraries); deeper ones are shown as string/bytes, and a `Nesting` row says how many fields that affected. There is no entry-count cap.
 - Schema-based decoding requires a `.proto` file or descriptor set.
 
 ### Android Binary XML (ABX)
@@ -73,7 +74,7 @@ Limitations
 - Raw XML-illegal control characters in decoded values (occasionally present in real `settings_secure.xml` data) are re-encoded visibly (`\xHH`) rather than breaking reconstruction or being silently dropped.
 
 Limitations
-- Best-effort decode; newer ABX variants may not parse.
+- Best-effort decode; newer ABX variants may not parse. Every decoder warning is listed in the Properties panel.
 - `ENTITY_REF`/`PROCESSING_INSTRUCTION`/`DOCDECL` tokens are not known to be emitted by Android's serializer; if encountered they are shown as a comment with a warning rather than reconstructed to exact original syntax.
 
 ### SEGB (Biome)
@@ -88,14 +89,15 @@ Limitations
 - The Table Viewer's embedded **Show Hex** pane is byte-precise here too: selecting a row highlights its exact on-disk bytes (v2's trailer entry included, even though it physically lives at the end of the file, separate from the row's own data), and selecting a specific column narrows the highlight further where that field maps to a distinct stored byte range (State, Timestamp/Creation, CRC Stored, Payload, and — for v2 — Trailer Offset/Entry End Offset).
 
 Limitations
-- Record parsing is best-effort; some records may show a warning.
+- Record parsing is best-effort. If a record can't be read, reading stops there and the `Parse warning` row says so, including that later records were not read.
 - Payloads that cannot be decoded as protobuf are stored as raw bytes accessible via the Blob Inspector.
-- The inline protobuf decode stops at the first field with an unsupported wire type (a deprecated group, or anything outside varint/fixed64/length-delimited/fixed32) and shows only the fields decoded up to that point — unlike a record-level parse failure, this truncation is not flagged with a warning.
+- The inline protobuf decode stops at the first field with an unsupported wire type (a deprecated group, or anything outside varint/fixed64/length-delimited/fixed32); the Payload text then ends with `[not decoded from byte N on]`, and a `Payload decoding` row counts the affected records.
+- The inline rendering is schema-less and heuristic (marked by the `Payload rendering` row): valid UTF-8 is shown as text even where it could be a nested message, and 64/32-bit fields as double/float, never as integers. The exact bytes are always in the cell (Blob Inspector / **Open as** → Protobuf, which shows every candidate interpretation).
 
 ### LevelDB
 - Parses LevelDB directories (`.ldb`/`.log`/`.sst` data files, `MANIFEST-*`, `CURRENT`, `LOG`) into a dedicated LevelDB Viewer.
 - Every record's key state is classified as **Live**, **Deleted**, or **Unknown** from the underlying key-value log — LevelDB marks a deleted key with a tombstone rather than erasing bytes immediately, so a deleted key's last value stays readable until compaction actually reclaims the space. The Records tab lists all states together with an All/Live/Deleted/Unknown filter and full-text search across key/value; the Files tab breaks out per-file Live/Deleted/Unknown counts.
-- Parses every `MANIFEST-*` file present (not just the current one) into an Overview tab, plus `CURRENT` and the full `LOG`/`LOG.old` content in their own tabs.
+- Parses every `MANIFEST-*` file present (not just the current one) into an Overview tab, plus `CURRENT` and the full `LOG`/`LOG.old` content in their own tabs. A MANIFEST read only up to an error carries a `Status` entry; files that exist but can't be read or parsed are listed under **Unreadable files** with the reason. Key ranges are shown in full.
 - Record rows expose key and value as text and hex; selecting a row shows Key / Value / Internal Key in an embedded Hex Viewer.
 
 Limitations
@@ -113,7 +115,8 @@ Limitations
 - Each entry's real on-disk byte span (key+value together, and the value container on its own) is computed independently of the vendored reader (which discards positions while walking) by re-deriving the same walk with its own helper functions reused directly, not duplicated. AES-CFB is a position-preserving stream cipher, so this works the same way for encrypted stores too — the file offset math doesn't change, only finding where entries end needs the decrypted bytes.
 
 Limitations
-- No `.crc` file next to the main file means encryption status and the header's recorded region size can't be cross-checked against the meta file's own copy — the Overview tab states this explicitly rather than silently assuming "not encrypted."
+- No usable `.crc` file next to the main file means encryption status and the header's recorded region size can't be cross-checked against the meta file's own copy — the Overview tab states this explicitly rather than silently assuming "not encrypted", and says whether the file is missing, unreadable, or too short.
+- If entry byte offsets can't be re-derived, a `Hex offsets` row says so (Locate in Hex is then unavailable).
 - A value's on-disk container is untyped (MMKV records the type in the calling app's code, not in the file) — a container that's exactly a length-prefixed string is shown as text, anything else as a varint scalar; this means a single zero byte (empty string, integer `0`, and boolean `false` are all encoded identically) cannot be told apart and is shown as an empty string. This is an inherent format limitation, not a decode failure.
 - No record-count cap, same tradeoff as LevelDB above.
 
@@ -206,7 +209,7 @@ Limitations
 
 ### Hex Fallback
 - Any file without a matching parser opens in the Hex Viewer.
-- If the format database recognizes it, the Properties panel shows its name, category, platforms, forensic-relevance notes, a reference link, and whether Crush actually parses it yet ("Supported" / "Not yet supported") — even for a format Crush can identify but doesn't decode.
+- The Properties panel's `Format (identified)` row always says whether the format database recognized the file (or why identification failed). If it did, the panel shows its name, category, platforms, forensic-relevance notes, every reference link, and how Crush supports it: not yet, via **Open as** (MMKV, Protobuf), as a browsable source (Open in New Window), as a LevelDB folder, in Multi-Log Studio, or — for formats detected from content — that this file's content didn't match the parser.
 
 Limitations
 - Raw bytes only; no structured decoding.

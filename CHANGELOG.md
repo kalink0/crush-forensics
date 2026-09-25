@@ -37,9 +37,16 @@ All notable changes to Crush will be documented in this file.
 - Fixed PDF JavaScript, signature and attachment checks that failed reporting "Not present", "None" or "0 file(s)"; they now say they couldn't be checked, and why.
 - Fixed the image `Format` row showing the file extension; it's now taken from the content.
 - Fixed images, audio/video and PDF revisions that can't be decoded, played or rendered not saying why (Visual Diff said the page doesn't exist).
+- Fixed invalid XML showing only its first 500 characters instead of the part around the error.
+- Fixed MMKV reporting a `.crc` meta file that exists but can't be read, or is too short, as "not found".
+- Fixed SEGB silently leaving out every record after one that couldn't be read, and payloads decoded only partly looking complete.
+- Fixed LevelDB MANIFEST, CURRENT and LOG files that couldn't be read being left out of the Overview without notice.
+- Fixed ABX warnings after the third, LevelDB key ranges past 256 characters, and protobuf messages nested deeper than 6 levels being cut without notice.
+- Fixed Biome stream discovery reading every file in full just to check its first bytes.
 
 ### Changed
 
+- Files that fall back to the hex view always say whether their format was identified, and how Crush supports it (Open as, Open in New Window, as a LevelDB folder, Multi-Log Studio) instead of a bare "Supported". SEGB payload rendering is marked as heuristic.
 - Images always show an `EXIF` and `XMP` status row (present, not present, not checked for this format, or why parsing failed), a `Frames` row when only the first of several is shown, and a `Block order` row marking the ATX Morton-orientation choice as a heuristic with both scores. PDFs list pages whose text extraction failed and say why a revision chain stopped early.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.

@@ -7,6 +7,7 @@ import logging
 import plistlib
 from typing import Any, cast
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.ccl_bplist import (
@@ -35,6 +36,8 @@ class PlistParser(AbstractParser):
         try:
             raw = vfs.read(node)
             raw_text: str | bytes
+            nska_issue: ParseIssue | None = None
+            fmt: str | ParseIssue
             if raw[:6] == _BPLIST_MAGIC:
                 fmt = "binary"
                 _set_object_converter = cast(Any, set_object_converter)
@@ -47,7 +50,8 @@ class PlistParser(AbstractParser):
                         data = _deserialize(data)
                         fmt = "binary (NSKeyedArchiver)"
                     except Exception as nska_exc:
-                        fmt = "binary (NSKeyedArchiver — deserialization failed)"
+                        fmt = ParseIssue("plist.format_nska_failed")
+                        nska_issue = ParseIssue("plist.nska_failed", detail=str(nska_exc))
                         logging.getLogger(__name__).warning(
                             "NSKeyedArchiver deserialization failed for %s: %s", node.path, nska_exc
                         )
@@ -58,10 +62,13 @@ class PlistParser(AbstractParser):
                 fmt = "XML"
                 data = plistlib.loads(raw)
                 raw_text = raw
+            meta: dict[str, Any] = {"Format": fmt, "File size": f"{node.size:,} B"}
+            if nska_issue is not None:
+                meta["Status"] = nska_issue
             return ParseResult(
                 viewer_type="tree_text",
                 data=data,
-                metadata={"Format": fmt, "File size": f"{node.size:,} B"},
+                metadata=meta,
                 text_index=_flatten_text(data),
                 viewer_hints={"raw_text": raw_text},
             )
@@ -75,8 +82,8 @@ class PlistParser(AbstractParser):
                 viewer_type="hex",
                 data=raw_bytes,
                 metadata={
-                    "Parse error": str(exc),
-                    "Format": "plist (parse failed)",
+                    "Parse error": ParseIssue("plist.parse_failed", detail=str(exc)),
+                    "Format": ParseIssue("plist.format_parse_failed"),
                     "File size": f"{node.size:,} B",
                 },
             )

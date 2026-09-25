@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.parsers.abx_decoder import decode_abx
@@ -39,20 +40,15 @@ class AbxParser(AbstractParser):
                 display_xml_str = _pretty_print(root, fallback=xml_str)
             except Exception as exc:
                 tree = {
-                    "error": str(exc),
-                    "hint": "XML reconstruction failed; see right pane",
+                    "error": ParseIssue("abx.xml_failed", detail=str(exc)),
+                    "hint": ParseIssue("abx.xml_failed_hint"),
                 }
             meta: dict[str, Any] = {
                 "Format": "Android Binary XML (ABX)",
                 "File size": f"{node.size:,} B",
             }
             if decoded.warnings:
-                shown = decoded.warnings[:3]
-                remaining = len(decoded.warnings) - len(shown)
-                summary = "; ".join(shown)
-                if remaining > 0:
-                    summary += f" (+{remaining} more)"
-                meta["Warnings"] = summary
+                meta["Warnings"] = list(decoded.warnings)
             return ParseResult(
                 viewer_type="abx",
                 data={"tree": tree, "xml_str": display_xml_str},
@@ -63,8 +59,14 @@ class AbxParser(AbstractParser):
             # Fallback: show error in tree viewer
             return ParseResult(
                 viewer_type="tree",
-                data={"error": str(exc), "hint": "File may be a newer ABX version"},
-                metadata={"Format": "ABX (parse error)", "File size": f"{node.size:,} B"},
+                data={
+                    "error": ParseIssue("abx.parse_failed", detail=str(exc)),
+                    "hint": ParseIssue("abx.parse_failed_hint"),
+                },
+                metadata={
+                    "Format": ParseIssue("abx.format_parse_failed"),
+                    "File size": f"{node.size:,} B",
+                },
             )
 
 
