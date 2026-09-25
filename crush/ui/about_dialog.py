@@ -27,6 +27,8 @@ _ABOUT_HTML = f"""\
 archives, raw disk images/EWF, and iTunes/Android backups. Parse and view ABX, SQLite, SEGB,
 (B)PLIST, REALM, Protobuf, MMKV, Logs, hex, JSON, XML, images, audio/video, PDF, and more —
 all in one GUI.</p>
+<p><i><small>Thank you to someone special — for every word of encouragement, for believing
+in me, for motivating me, and for the inspiration.</small></i></p>
 <p>Licensed under the <b>Apache License 2.0</b></p>
 <p><a href="https://github.com/kalink0/crush-forensics">
 github.com/kalink0/crush-forensics</a></p>
