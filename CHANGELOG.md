@@ -44,9 +44,12 @@ All notable changes to Crush will be documented in this file.
 - Fixed ABX warnings after the third, LevelDB key ranges past 256 characters, and protobuf messages nested deeper than 6 levels being cut without notice.
 - Fixed Biome stream discovery reading every file in full just to check its first bytes.
 - Fixed Multi-Log Studio hitting database errors in the background when closed while a sort was still running.
+- Fixed ZIP, 7z and TAR (plain, bzip2, xz) archives only opening as browsable trees when named `.zip`/`.7z`/`.tar…`; they're now recognised by content, e.g. a ZIP inside a ZIP named `.bin`, `.apk` or `.docx`, and a renamed UFDR opens as a UFDR.
+- Fixed a file named like an archive or backup (`.zip`, `.7z`, `.ab`, …) that isn't one failing to open; it now opens as a single file and the status bar says why.
 
 ### Changed
 
+- A ZIP that follows leading data (self-extracting executable, ZIP appended to an image) is noted in the status bar; **Open in New Window** opens it as a ZIP.
 - Files that fall back to the hex view always say whether their format was identified, and how Crush supports it (Open as, Open in New Window, as a LevelDB folder, Multi-Log Studio) instead of a bare "Supported". SEGB payload rendering is marked as heuristic.
 - Images always show an `EXIF` and `XMP` status row (present, not present, not checked for this format, or why parsing failed), a `Frames` row when only the first of several is shown, and a `Block order` row marking the ATX Morton-orientation choice as a heuristic with both scores. PDFs list pages whose text extraction failed and say why a revision chain stopped early.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.

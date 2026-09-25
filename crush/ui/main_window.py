@@ -82,6 +82,7 @@ class _LoadSourceWorker(QObject):
         itunes_zip_prefix: str | None = None,
         password: str = "",
         window_id: str | None = None,
+        embedded_zip: bool = False,
     ) -> None:
         super().__init__()
         self._session = session
@@ -90,6 +91,7 @@ class _LoadSourceWorker(QObject):
         self._itunes_zip_prefix = itunes_zip_prefix
         self._password = password
         self._window_id = window_id
+        self._embedded_zip = embedded_zip
 
     def run(self) -> None:
         with window_log_scope(self._window_id):
@@ -108,7 +110,9 @@ class _LoadSourceWorker(QObject):
                     )
                 )
             else:
-                vfs = self._session.add_source(self._path, password=self._password)
+                vfs = self._session.add_source(
+                    self._path, password=self._password, embedded_zip=self._embedded_zip,
+                )
             if self._integrity:
                 self._log_source_hash()
         except WrongPasswordError as exc:
@@ -556,7 +560,7 @@ class MainWindow(QMainWindow):
         self._always_hex = False
         self._pending_open: tuple[VFSNode, VFS] | None = None
         self._pending_focus_path: str | None = None
-        self._load_queue: list[tuple[str, bool, bool, str | None, str, str | None]] = []
+        self._load_queue: list[tuple[str, bool, bool, str | None, str, str | None, bool]] = []
         self._settings = QSettings("Crush DFIR", "Crush")
         extract_dialog.apply_saved_temp_dir(self._settings)
         self._multi_log_windows: list[QWidget] = []
@@ -871,7 +875,9 @@ class MainWindow(QMainWindow):
             # cleanup runs when that window closes, not this one.
             self._external_temp_paths.remove(path)
             window._external_temp_paths = [path]
-        window._load_source(str(path))
+        # The explicit action: also opens a ZIP that follows leading bytes
+        # (self-extractor, appended ZIP), which a plain open only notes.
+        window._load_source(str(path), embedded_zip=True)
 
     @classmethod
     def _remove_window_reference(cls, destroyed: QObject | None = None) -> None:
@@ -899,13 +905,15 @@ class MainWindow(QMainWindow):
         itunes_zip_prefix: str | None = None,
         password: str = "",
         focus_path: str | None = None,
+        embedded_zip: bool = False,
     ) -> None:
-        if itunes_zip_prefix is None and Path(path).suffix.lower() == ".zip":
+        if itunes_zip_prefix is None and _is_zip_file(path):
             itunes_zip_prefix = self._maybe_confirm_itunes_backup_zip(path)
 
         if self._thread_is_running(getattr(self, "_load_thread", None)):
             self._load_queue.append(
-                (path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path)
+                (path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path,
+                 embedded_zip)
             )
             self._status.showMessage("Queued source for loading…")
             self._logger.debug("Load queued: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
@@ -915,6 +923,7 @@ class MainWindow(QMainWindow):
         self._logger.debug("Load start: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
         self._loading_path = path
         self._loading_itunes_zip_prefix = itunes_zip_prefix
+        self._loading_embedded_zip = embedded_zip
         self._open_after_load = open_after_load
         self._append_to_tree = append_to_tree
         self._pending_focus_path = focus_path
@@ -926,7 +935,7 @@ class MainWindow(QMainWindow):
         self._load_thread = QThread(self)
         self._load_worker = _LoadSourceWorker(
             self.session, path, self.session.integrity_mode, itunes_zip_prefix, password,
-            window_id=self._window_id,
+            window_id=self._window_id, embedded_zip=embedded_zip,
         )
         self._load_worker.moveToThread(self._load_thread)
         self._load_thread.started.connect(self._load_worker.run)
@@ -1309,13 +1318,12 @@ class MainWindow(QMainWindow):
                 fallback_note = getattr(vfs, "fallback_note", "")
                 if fallback_note:
                     message += f"  — {fallback_note}"
-                elif _is_openable_archive(node) or (
-                    # Only a file no parser claimed is worth probing: a disk
-                    # image by any other name ends up here.
-                    isinstance(parser, HexFallbackParser)
-                    and _can_open_as_source(node, vfs) is True
-                ):
-                    message += "  — right-click → Open in New Window to browse its contents"
+                else:
+                    hint = _open_as_source_hint(
+                        node, vfs, probe_disk_image=isinstance(parser, HexFallbackParser),
+                    )
+                    if hint:
+                        message += f"  — {hint}"
                 self._status.showMessage(message)
         except Exception as exc:
             self._status.showMessage(f"Parse error: {exc}")
@@ -3026,7 +3034,10 @@ class MainWindow(QMainWindow):
     def _on_load_thread_finished(self) -> None:
         self._load_thread = None
         if self._load_queue:
-            path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path = self._load_queue.pop(0)
+            (
+                path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path,
+                embedded_zip,
+            ) = self._load_queue.pop(0)
             self._load_source(
                 path,
                 open_after_load=open_after_load,
@@ -3034,6 +3045,7 @@ class MainWindow(QMainWindow):
                 itunes_zip_prefix=itunes_zip_prefix,
                 password=password,
                 focus_path=focus_path,
+                embedded_zip=embedded_zip,
             )
 
     def _on_password_required(self, was_wrong: bool, reason: str = "") -> None:
@@ -3058,6 +3070,7 @@ class MainWindow(QMainWindow):
             append_to_tree=self._append_to_tree,
             itunes_zip_prefix=getattr(self, "_loading_itunes_zip_prefix", None),
             password=password,
+            embedded_zip=getattr(self, "_loading_embedded_zip", False),
         )
 
     def _maybe_confirm_itunes_backup_zip(self, path: str) -> str | None:
@@ -3981,34 +3994,79 @@ class MainWindow(QMainWindow):
 # A UX cut-off only -- nothing is skipped or shortened on either side of it.
 _BUSY_BYTES = 8 * 1024 * 1024
 
-_ARCHIVE_SUFFIXES = (
-    ".zip", ".7z", ".tar", ".tgz", ".tbz2", ".txz", ".tar.gz", ".tar.bz2", ".tar.xz",
-    ".gz", ".ab", ".e01", ".img", ".dd", ".raw", ".001", ".ufdr",
-)
+# A disk image inside an archive or image can't be recognised from its first
+# bytes (qnxprobe needs the partition table/filesystem, i.e. extracting it),
+# so for such members the name is the only hint there is.
+_DISK_IMAGE_SUFFIXES = (".e01", ".img", ".dd", ".raw", ".001")
+
+_BROWSE_HINT = "right-click → Open in New Window to browse its contents"
 
 
-def _is_openable_archive(node: VFSNode) -> bool:
-    """True for a file Crush can open as a source of its own (archive, backup or disk image)."""
-    return not node.is_dir and node.name.lower().endswith(_ARCHIVE_SUFFIXES)
+def _is_zip_file(path: str) -> bool:
+    """True for an on-disk file with a ZIP signature at offset 0."""
+    from crush.core.vfs import SNIFF_BYTES, archive_kind
+
+    p = Path(path)
+    if not p.is_file():
+        return False
+    with open(p, "rb") as f:
+        return archive_kind(f.read(SNIFF_BYTES)) == "zip"
+
+
+def _peeked_archive_kind(node: VFSNode, vfs: VFS) -> str | None:
+    """Archive kind from the member's first bytes (cached from the tree
+    build for archive members, so this costs no extraction)."""
+    from crush.core.vfs import SNIFF_BYTES, archive_kind
+
+    try:
+        return archive_kind(vfs.peek(node, SNIFF_BYTES))
+    except (OSError, ValueError):
+        return None
+
+
+def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_disk_image: bool) -> str:
+    """Status-bar hint that this file can be browsed via Open in New Window,
+    decided by content; "" when there is nothing to say. *probe_disk_image*
+    runs the (costlier) qnxprobe check on an on-disk file."""
+    if node.is_dir or isinstance(vfs, FileVFS):
+        return ""
+    if _peeked_archive_kind(node, vfs) is not None:
+        return _BROWSE_HINT
+    if isinstance(vfs, DirectoryVFS):
+        from crush.core.vfs import is_browsable_source_file, zip_leading_bytes
+
+        leading = zip_leading_bytes(node.path)
+        if leading is not None:
+            return (
+                f"contains a ZIP archive after {leading:,} leading bytes — "
+                "right-click → Open in New Window to browse it"
+            )
+        if probe_disk_image and is_browsable_source_file(node.path):
+            return _BROWSE_HINT
+        return ""
+    if node.name.lower().endswith(_DISK_IMAGE_SUFFIXES):
+        return _BROWSE_HINT
+    return ""
 
 
 def _can_open_as_source(node: VFSNode, vfs: VFS) -> bool | None:
     """Whether open_vfs() would open this file as a browsable source.
 
-    True/False when that is known: by extension, or by probing the content
-    of a file that is on disk as-is. None for a member of an archive or
-    image with no telling extension -- only extracting it would tell.
+    True/False when that is known: from the file's first bytes, or by
+    probing a file that is on disk as-is. None for an archive member whose
+    first bytes don't tell (a disk image, a bzip2/xz TAR) -- only
+    extracting it would.
     """
     if node.is_dir or isinstance(vfs, FileVFS):
         # A FileVFS is what open_vfs() fell back to after finding nothing to
         # browse in this very file, whatever its extension says.
         return False
-    if _is_openable_archive(node):
+    if _peeked_archive_kind(node, vfs) is not None:
         return True
     if isinstance(vfs, DirectoryVFS):
-        from crush.core.vfs import is_browsable_source_file
+        from crush.core.vfs import is_browsable_source_file, zip_leading_bytes
 
-        return is_browsable_source_file(node.path)
+        return is_browsable_source_file(node.path) or zip_leading_bytes(node.path) is not None
     return None
 
 
