@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import gzip
 import io
+import logging
 import os
 import plistlib
 import re
 import shutil
 import sqlite3
+import stat
 import sys
 import tarfile
 import threading
@@ -33,6 +35,8 @@ from crush.core.vfs_stream import (
     LockedStream,
     buffered,
 )
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from crush.core import ios_keybag
@@ -141,8 +145,8 @@ class _AtimeRestoringIO:
         self._f.close()
         try:
             os.utime(self._path, ns=(self._atime_ns, self._mtime_ns))
-        except OSError:
-            pass
+        except OSError as exc:
+            _logger.warning("Could not restore the access time of %s: %s", self._path, exc)
 
 
 def _read_noatime(path: Path) -> bytes:
@@ -157,6 +161,7 @@ def _read_noatime(path: Path) -> bytes:
         try:
             fd = os.open(str(path), os.O_RDONLY | os.O_NOATIME)
         except OSError:
+            _logger.debug("O_NOATIME not permitted for %s; its access time may update", path)
             return path.read_bytes()
         with os.fdopen(fd, "rb") as f:
             return f.read()
@@ -165,8 +170,8 @@ def _read_noatime(path: Path) -> bytes:
         data = path.read_bytes()
         try:
             os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
-        except OSError:
-            pass
+        except OSError as exc:
+            _logger.warning("Could not restore the access time of %s: %s", path, exc)
         return data
     return path.read_bytes()
 
@@ -182,6 +187,7 @@ def _open_noatime(path: Path) -> IO[bytes]:
         try:
             fd = os.open(str(path), os.O_RDONLY | os.O_NOATIME)
         except OSError:
+            _logger.debug("O_NOATIME not permitted for %s; its access time may update", path)
             return open(path, "rb")
         return os.fdopen(fd, "rb")
     if sys.platform == "win32":
@@ -202,6 +208,10 @@ class VFSNode:
     changed: float = 0.0
     birth: float = 0.0
     children: list[VFSNode] = field(default_factory=list)
+    # What the analyst must know about this entry that its name and bytes
+    # don't show: a symbolic link, one of several entries stored under the
+    # same name, a directory that couldn't be listed ... "" when nothing.
+    status: str = ""
 
     @property
     def extension(self) -> str:
@@ -216,6 +226,9 @@ class VFS(ABC):
     # as plain ZIP, a disk image that couldn't be read); the UI must
     # surface it.
     fallback_note: str = ""
+    # Said once when the source is loaded, not with every file opened from
+    # it (e.g. that reading may update the evidence files' access times).
+    load_note: str = ""
 
     @abstractmethod
     def root(self) -> VFSNode: ...
@@ -246,12 +259,94 @@ class VFS(ABC):
             return src.read(n)
 
 
+def _atime_note(root: Path, not_owned: int) -> str:
+    """Why reading this source may update the evidence files' access
+    times, or "" when Crush prevents it (see _read_noatime)."""
+    if sys.platform == "win32":
+        return ""  # restored after every read; a failure is logged per file
+    if sys.platform != "linux":
+        return (
+            "Crush does not prevent access-time updates on this platform; "
+            "mount the evidence read-only to prevent them"
+        )
+    if _read_only_mount(root):
+        return ""
+    if os.geteuid() == 0 or not not_owned:
+        return ""
+    return (
+        f"{not_owned:,} file(s) are not owned by the current user, so Crush can't "
+        "read them with O_NOATIME: reading them may update their access time "
+        "(mount the evidence read-only to prevent this)"
+    )
+
+
+def _special_file_kind(mode: int) -> str:
+    """"character device", "FIFO" ... for a mode that is neither a regular
+    file, a directory nor a symbolic link."""
+    for test, kind in (
+        (stat.S_ISCHR, "character device"), (stat.S_ISBLK, "block device"),
+        (stat.S_ISFIFO, "FIFO"), (stat.S_ISSOCK, "socket"),
+    ):
+        if test(mode):
+            return kind
+    return f"mode {stat.S_IFMT(mode):o}"
+
+
+def _member_parts(name: str) -> list[str]:
+    """Path components of an archive member name as stored: empty and "."
+    components are dropped (a leading "./" or "/"), ".." and the leading
+    dot of a name (".bashrc") are kept."""
+    return [p for p in name.split("/") if p and p != "."]
+
+
+def _free_sibling(nodes: dict[str, VFSNode], parent_path: str, name: str) -> tuple[str, str]:
+    """Name and path for another entry stored under *name* in the same
+    folder: "name (2)", "name (3)" ... (same scheme as $Recovered)."""
+    k = 2
+    while True:
+        candidate = f"{name} ({k})"
+        path = f"{parent_path.rstrip('/')}/{candidate}"
+        if path not in nodes:
+            return candidate, path
+        k += 1
+
+
+def _mark_duplicates(occurrences: dict[str, list[VFSNode]]) -> None:
+    """Give every entry that shares its stored path with others a status
+    saying so, numbered in archive order -- one is not the "real" one."""
+    for same_name in occurrences.values():
+        count = len(same_name)
+        if count < 2:
+            continue
+        for k, node in enumerate(same_name, 1):
+            note = (
+                f"Stored {count} times in this archive under this name; "
+                f"this is occurrence {k} of {count} (archive order)"
+            )
+            node.status = f"{node.status}; {note}" if node.status else note
+
+
 class DirectoryVFS(VFS):
-    """VFS backed by a plain directory on disk."""
+    """VFS backed by a plain directory on disk.
+
+    Symbolic links below the opened folder are shown as links (their target
+    is their content) and never followed: following would show the target's
+    bytes under the link's name, loop on a link to a parent folder, and fail
+    on a broken link. A folder that can't be listed and an entry that can't
+    be read stay in the tree with a status instead of failing the whole
+    source. Special files (FIFO, device, socket) are never read -- reading a
+    FIFO blocks forever.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._root_path = Path(path)
-        self._tree = self._build_node(self._root_path)
+        # Content that isn't read from the file itself: a link's target, or
+        # nothing at all for a special file.
+        self._stored_content: dict[str, bytes] = {}
+        self._not_owned = 0
+        self._euid = os.geteuid() if hasattr(os, "geteuid") else None
+        self._tree = self._build_node(self._root_path, is_root=True)
+        self.load_note = _atime_note(self._root_path, self._not_owned)
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
         self._compute_file_counts(self._tree)
@@ -260,29 +355,61 @@ class DirectoryVFS(VFS):
     def root(self) -> VFSNode:
         return self._tree
 
-    def _build_node(self, path: Path) -> VFSNode:
-        stat = path.stat()
+    def _build_node(self, path: Path, is_root: bool = False) -> VFSNode:
+        name = path.name or str(path)
+        try:
+            # The opened folder itself may be reached through a link (the
+            # analyst chose it); everything below is taken as stored.
+            st = path.stat() if is_root else path.lstat()
+        except OSError as exc:
+            node = VFSNode(name=name, path=str(path), is_dir=False,
+                           status=f"Could not be read: {exc}")
+            self._stored_content[node.path] = b""
+            return node
         node = VFSNode(
-            name=path.name or str(path),
+            name=name,
             path=str(path),
-            is_dir=path.is_dir(),
-            size=stat.st_size if path.is_file() else 0,
-            modified=stat.st_mtime,
-            accessed=stat.st_atime,
-            changed=stat.st_ctime,
-            birth=getattr(stat, "st_birthtime", 0.0),
+            is_dir=stat.S_ISDIR(st.st_mode),
+            size=st.st_size if stat.S_ISREG(st.st_mode) else 0,
+            modified=st.st_mtime,
+            accessed=st.st_atime,
+            changed=st.st_ctime,
+            birth=getattr(st, "st_birthtime", 0.0),
         )
-        if path.is_dir():
-            node.children = sorted(
-                [self._build_node(child) for child in path.iterdir()],
-                key=lambda n: (not n.is_dir, n.name.lower()),
-            )
+        if stat.S_ISLNK(st.st_mode):
+            try:
+                target = os.readlink(path)
+            except OSError as exc:
+                node.status = f"Symbolic link (not followed); its target could not be read: {exc}"
+                self._stored_content[node.path] = b""
+            else:
+                node.status = f"Symbolic link → {target} (not followed; content shown is the target)"
+                self._stored_content[node.path] = os.fsencode(target)
+                node.size = len(self._stored_content[node.path])
+        elif node.is_dir:
+            try:
+                children = [self._build_node(child) for child in path.iterdir()]
+            except OSError as exc:
+                node.status = f"Folder could not be listed: {exc}"
+                children = []
+            node.children = sorted(children, key=lambda n: (not n.is_dir, n.name.lower()))
+        elif not stat.S_ISREG(st.st_mode):
+            node.status = f"Special file ({_special_file_kind(st.st_mode)}) — no content is read"
+            self._stored_content[node.path] = b""
+        elif self._euid is not None and st.st_uid != self._euid:
+            self._not_owned += 1
         return node
 
     def read(self, node: VFSNode) -> bytes:
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return stored
         return _read_noatime(Path(node.path))
 
     def open(self, node: VFSNode) -> IO[bytes]:
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return BytesIO(stored)
         return _open_noatime(Path(node.path))
 
     def file_count(self, node: VFSNode) -> int:
@@ -336,7 +463,9 @@ class ZipVFS(VFS):
         self._password = password
         self._aes_zf: Any = None  # pyzipper.AESZipFile, constructed on first need
         self._zf_lock = threading.Lock()
-        self._zip_names: dict[str, str] = {}
+        # virtual path -> index into infolist(): the exact entry, since a ZIP
+        # may hold several entries under one name (open(name) gives the last).
+        self._zip_entries: dict[str, int] = {}
         self._tree = self._build_tree()
         self._validate_password_if_needed()
         self._file_counts: dict[str, int] = {}
@@ -350,13 +479,13 @@ class ZipVFS(VFS):
         open time — matching every other password-protected VFS in this
         module — rather than only when the user later opens a specific file.
         """
-        encrypted_names = [info.filename for info in self._zf.infolist() if info.flag_bits & 0x1]
-        if not encrypted_names:
+        encrypted = [i for i, info in enumerate(self._zf.infolist()) if info.flag_bits & 0x1]
+        if not encrypted:
             return
         if not self._password:
             raise PasswordRequiredError(f"ZIP archive is password-protected: {self._zip_path}")
         try:
-            with self._open_entry(encrypted_names[0]) as f:
+            with self._open_entry(encrypted[0]) as f:
                 f.read()
         except RuntimeError as exc:
             raise WrongPasswordError("Incorrect ZIP archive password") from exc
@@ -368,45 +497,62 @@ class ZipVFS(VFS):
             self._aes_zf = pyzipper.AESZipFile(self._zip_path, "r")
         return self._aes_zf
 
-    def _open_entry(self, name: str) -> IO[bytes]:
+    def _open_entry(self, index: int) -> IO[bytes]:
+        """Open the infolist() entry at *index* -- by entry, not by name, so
+        each of several same-named entries reads its own bytes."""
         pwd = self._password.encode("utf-8") if self._password else None
-        if self._zf.getinfo(name).compress_type == self._WZ_AES_COMPRESS_TYPE:
-            return cast(IO[bytes], self._aes_zip().open(name, pwd=pwd))
-        return self._zf.open(name, pwd=pwd)
+        info = self._zf.infolist()[index]
+        if info.compress_type == self._WZ_AES_COMPRESS_TYPE:
+            aes = self._aes_zip()
+            return cast(IO[bytes], aes.open(aes.infolist()[index], pwd=pwd))
+        return self._zf.open(info, pwd=pwd)
 
     def _build_tree(self) -> VFSNode:
         root = VFSNode(name=self._zip_path.name, path="/", is_dir=True)
         nodes: dict[str, VFSNode] = {"/": root}
         _offsets: dict[str, int] = {}  # virtual_path -> header_offset for storage-order prescan
+        occurrences: dict[str, list[VFSNode]] = {}
 
-        for info in sorted(self._zf.infolist(), key=lambda i: i.filename):
-            # Filter empty components (from leading/double slashes) and "." — same
-            # normalisation TarVFS applies with lstrip("./").  Keeps ".." intact so
-            # the archive structure is represented faithfully.
-            parts = [p for p in info.filename.rstrip("/").split("/") if p and p != "."]
+        # Archive order, so same-named entries are numbered as stored.
+        for index, info in enumerate(self._zf.infolist()):
+            is_dir_entry = info.filename.endswith("/")
+            parts = _member_parts(info.filename.rstrip("/"))
             if not parts:
                 continue
-            for depth, _ in enumerate(parts, 1):
+            zip_ts = 0.0
+            if info.date_time:
+                from datetime import datetime
+                zip_ts = datetime(*info.date_time).timestamp()
+            for depth in range(1, len(parts)):
                 virtual_path = "/" + "/".join(parts[:depth])
                 if virtual_path not in nodes:
-                    is_dir = depth < len(parts) or info.filename.endswith("/")
-                    zip_ts = 0.0
-                    if info.date_time:
-                        from datetime import datetime
-                        zip_ts = datetime(*info.date_time).timestamp()
-                    node = VFSNode(
-                        name=parts[depth - 1],
-                        path=virtual_path,
-                        is_dir=is_dir,
-                        size=info.file_size if not is_dir else 0,
-                        modified=zip_ts,
-                    )
                     parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True,
+                                   modified=zip_ts)
                     nodes[parent_path].children.append(node)
                     nodes[virtual_path] = node
-                if depth == len(parts) and not info.filename.endswith("/"):
-                    self._zip_names[virtual_path] = info.filename
-                    _offsets[virtual_path] = info.header_offset
+            stored_path = "/" + "/".join(parts)
+            parent_path = "/" + "/".join(parts[:-1]) if len(parts) > 1 else "/"
+            name = parts[-1]
+            if is_dir_entry:
+                if stored_path not in nodes:
+                    node = VFSNode(name=name, path=stored_path, is_dir=True, modified=zip_ts)
+                    nodes[parent_path].children.append(node)
+                    nodes[stored_path] = node
+                continue
+            virtual_path = stored_path
+            if virtual_path in nodes:
+                name, virtual_path = _free_sibling(nodes, parent_path, name)
+            node = VFSNode(name=name, path=virtual_path, is_dir=False,
+                           size=info.file_size, modified=zip_ts)
+            if info.create_system == 3 and stat.S_ISLNK(info.external_attr >> 16):
+                node.status = "Symbolic link (content shown is the stored link target)"
+            nodes[parent_path].children.append(node)
+            nodes[virtual_path] = node
+            occurrences.setdefault(stored_path, []).append(node)
+            self._zip_entries[virtual_path] = index
+            _offsets[virtual_path] = info.header_offset
+        _mark_duplicates(occurrences)
 
         for node in nodes.values():
             node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -426,7 +572,7 @@ class ZipVFS(VFS):
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
         with self._zf_lock:
             try:
-                with self._open_entry(self._zip_name(node)) as f:
+                with self._open_entry(self._zip_entry(node)) as f:
                     return f.read(n)
             except RuntimeError as exc:
                 raise WrongPasswordError("Incorrect ZIP archive password") from exc
@@ -434,7 +580,7 @@ class ZipVFS(VFS):
     def read(self, node: VFSNode) -> bytes:
         with self._zf_lock:
             try:
-                with self._open_entry(self._zip_name(node)) as f:
+                with self._open_entry(self._zip_entry(node)) as f:
                     return f.read()
             except RuntimeError as exc:
                 raise WrongPasswordError("Incorrect ZIP archive password") from exc
@@ -444,13 +590,16 @@ class ZipVFS(VFS):
             return BytesIO(self.read(node))
         with self._zf_lock:
             try:
-                inner = self._open_entry(self._zip_name(node))
+                inner = self._open_entry(self._zip_entry(node))
             except RuntimeError as exc:
                 raise WrongPasswordError("Incorrect ZIP archive password") from exc
         return buffered(LockedStream(inner, self._zf_lock))
 
-    def _zip_name(self, node: VFSNode) -> str:
-        return self._zip_names.get(node.path, node.path.lstrip("/"))
+    def _zip_entry(self, node: VFSNode) -> int:
+        index = self._zip_entries.get(node.path)
+        if index is None:
+            raise FileNotFoundError(f"Not in ZIP: {node.path}")
+        return index
 
     def close(self) -> None:
         self._zf.close()
@@ -514,7 +663,7 @@ class TarVFS(VFS):
         self._compute_total_sizes(self._tree)
 
     @classmethod
-    def _read_compressed_heads(cls, path: Path, tf: tarfile.TarFile) -> dict[str, bytes] | None:
+    def _read_compressed_heads(cls, path: Path, tf: tarfile.TarFile) -> dict[int, bytes] | None:
         """For a gzip/bzip2/xz tar: walk every member once (the same pass
         getmembers() makes, forward only) and keep the first bytes of each
         regular file. None for a plain tar, where random access is cheap and
@@ -523,44 +672,83 @@ class TarVFS(VFS):
             magic = f.read(6)
         if not (magic[:2] == b"\x1f\x8b" or magic[:3] == b"BZh" or magic[:6] == b"\xfd7zXZ\x00"):
             return None
-        heads: dict[str, bytes] = {}
+        # Keyed by the member's header offset, not its name: a TAR may hold
+        # several members under one name.
+        heads: dict[int, bytes] = {}
         while (member := tf.next()) is not None:
             if member.isfile():
                 fh = tf.extractfile(member)
                 if fh is not None:
-                    heads[member.name] = fh.read(cls._HEAD_CACHE_BYTES)
+                    heads[member.offset] = fh.read(cls._HEAD_CACHE_BYTES)
         return heads
 
-    def _build_tree(self, heads: dict[str, bytes] | None = None) -> VFSNode:
+    def _build_tree(self, heads: dict[int, bytes] | None = None) -> VFSNode:
+        """Every member in archive order: several members under one name
+        (appended updates) each get their own node, symbolic links show
+        their target as content, hard links read their target's bytes, and
+        special files (devices, FIFOs) stay visible with no content."""
         root = VFSNode(name=self._tar_path.name, path="/", is_dir=True)
         nodes: dict[str, VFSNode] = {"/": root}
         self._head_cache = {}
+        # Content that isn't a member's data stream: a symbolic link's target,
+        # or nothing for a special file.
+        self._stored_content: dict[str, bytes] = {}
+        occurrences: dict[str, list[VFSNode]] = {}
+        by_name: dict[str, tarfile.TarInfo] = {}
 
         for member in self._tf.getmembers():
-            raw_name = member.name.lstrip("./")
-            if not raw_name:
+            parts = _member_parts(member.name)
+            if not parts:
                 continue
-            parts = raw_name.split("/")
-            for depth in range(1, len(parts) + 1):
+            mtime = float(member.mtime)
+            for depth in range(1, len(parts)):
                 virtual_path = "/" + "/".join(parts[:depth])
-                if virtual_path in nodes:
-                    continue
-                is_dir = depth < len(parts) or member.isdir()
-                node = VFSNode(
-                    name=parts[depth - 1],
-                    path=virtual_path,
-                    is_dir=is_dir,
-                    size=member.size if (not is_dir and member.isfile()) else 0,
-                    modified=float(member.mtime),
-                )
-                parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
-                if parent_path in nodes:
+                if virtual_path not in nodes:
+                    parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True,
+                                   modified=mtime)
                     nodes[parent_path].children.append(node)
-                nodes[virtual_path] = node
+                    nodes[virtual_path] = node
+            stored_path = "/" + "/".join(parts)
+            parent_path = "/" + "/".join(parts[:-1]) if len(parts) > 1 else "/"
+            name = parts[-1]
+            if member.isdir():
+                if stored_path not in nodes:
+                    node = VFSNode(name=name, path=stored_path, is_dir=True, modified=mtime)
+                    nodes[parent_path].children.append(node)
+                    nodes[stored_path] = node
+                continue
+            virtual_path = stored_path
+            if virtual_path in nodes:
+                name, virtual_path = _free_sibling(nodes, parent_path, name)
+            node = VFSNode(name=name, path=virtual_path, is_dir=False, modified=mtime)
             if member.isfile():
+                node.size = member.size
                 self._members[virtual_path] = member
-                if heads is not None and member.name in heads:
-                    self._head_cache[virtual_path] = heads[member.name]
+                if heads is not None and member.offset in heads:
+                    self._head_cache[virtual_path] = heads[member.offset]
+            elif member.issym():
+                target = member.linkname.encode("utf-8", "surrogateescape")
+                node.size = len(target)
+                node.status = f"Symbolic link → {member.linkname} (content shown is the target)"
+                self._stored_content[virtual_path] = target
+            elif member.islnk():
+                linked = by_name.get(member.linkname)
+                node.size = linked.size if linked is not None else 0
+                node.status = f"Hard link to {member.linkname}"
+                self._members[virtual_path] = member
+            else:
+                kind = (
+                    "character device" if member.ischr() else "block device" if member.isblk()
+                    else "FIFO" if member.isfifo() else f"type {member.type!r}"
+                )
+                node.status = f"Special file ({kind}) — no content stored"
+                self._stored_content[virtual_path] = b""
+            by_name[member.name] = member
+            nodes[parent_path].children.append(node)
+            nodes[virtual_path] = node
+            occurrences.setdefault(stored_path, []).append(node)
+        _mark_duplicates(occurrences)
 
         for node in nodes.values():
             node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -570,6 +758,9 @@ class TarVFS(VFS):
         return self._tree
 
     def read(self, node: VFSNode) -> bytes:
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return stored
         member = self._members.get(node.path)
         if member is None:
             raise FileNotFoundError(f"Not in TAR: {node.path}")
@@ -580,6 +771,9 @@ class TarVFS(VFS):
             return f.read()
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return stored[:n]
         member = self._members.get(node.path)
         if member is None:
             raise FileNotFoundError(f"Not in TAR: {node.path}")
@@ -594,7 +788,7 @@ class TarVFS(VFS):
                 return f.read(n)
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        if node.size <= STREAM_THRESHOLD:
+        if node.size <= STREAM_THRESHOLD or node.path in self._stored_content:
             return BytesIO(self.read(node))
         member = self._members.get(node.path)
         if member is None:
@@ -867,6 +1061,7 @@ class ITunesBackupVFS(VFS):
     """
 
     _FLAG_DIR = 2  # iOS backup Files.flags: 1 = file, 2 = directory, 4 = symlink.
+    _FLAG_SYMLINK = 4
 
     def __init__(
         self, path: str | Path, *, password: str = "", _cleanup_dir: Path | None = None
@@ -878,6 +1073,7 @@ class ITunesBackupVFS(VFS):
 
         self._file_locations: dict[str, Path] = {}
         self._file_protection: dict[str, tuple[int, bytes]] = {}
+        self._stored_content: dict[str, bytes] = {}  # symbolic links: their target
         self._tree = self._build_tree()
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
@@ -948,11 +1144,34 @@ class ITunesBackupVFS(VFS):
                     protection = None  # Malformed per-file metadata; read back raw bytes.
                 if protection is not None:
                     self._file_protection[virtual_path] = protection
-            if not is_leaf_dir:
+            if flags == self._FLAG_SYMLINK:
+                # A link has no content file in the backup; its target is
+                # recorded in the file's metadata blob.
+                node = nodes[virtual_path]
+                target = None
+                if file_blob:
+                    from crush.core import ios_keybag
+
+                    try:
+                        target = ios_keybag.extract_symlink_target(file_blob)
+                    except Exception:
+                        target = None
+                if target is None:
+                    node.status = "Symbolic link (the backup records no target for it)"
+                    self._stored_content[virtual_path] = b""
+                else:
+                    node.status = f"Symbolic link → {target} (content shown is the target)"
+                    self._stored_content[virtual_path] = target.encode("utf-8")
+                node.size = len(self._stored_content[virtual_path])
+            elif not is_leaf_dir:
                 located = self._locate_file(file_id)
                 if located is not None:
                     nodes[virtual_path].size = located.stat().st_size
                     self._file_locations[virtual_path] = located
+                else:
+                    nodes[virtual_path].status = (
+                        f"No content stored in the backup for this entry (fileID {file_id})"
+                    )
 
         for node in nodes.values():
             node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -981,6 +1200,9 @@ class ITunesBackupVFS(VFS):
         return self._tree
 
     def read(self, node: VFSNode) -> bytes:
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return stored
         located = self._file_locations.get(node.path)
         if located is None:
             raise FileNotFoundError(f"Not backed by a file in the backup: {node.path}")
@@ -996,6 +1218,9 @@ class ITunesBackupVFS(VFS):
         return ios_keybag.aes_cbc_decrypt_and_unpad(file_key, raw)
 
     def open(self, node: VFSNode) -> IO[bytes]:
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return BytesIO(stored)
         located = self._file_locations.get(node.path)
         if located is None:
             raise FileNotFoundError(f"Not backed by a file in the backup: {node.path}")
@@ -1092,6 +1317,7 @@ def _make_7z_spool_factory() -> Any:
         def create(self, filename: str) -> Py7zIO:
             spool = _SpoolIO()
             self._files[filename] = spool
+            self.last = spool
             return spool
 
         def take(self, filename: str) -> IO[bytes]:
@@ -1100,6 +1326,31 @@ def _make_7z_spool_factory() -> Any:
             return spool.fh
 
     return _SpoolFactory()
+
+
+def _make_7z_sequence_factory(spool: bool) -> Any:
+    """A py7zr WriterFactory that keeps every product in creation order
+    (see SevenZipVFS._extract_entries): in memory, or each in an unlinked
+    temp file when *spool* (large entries)."""
+    from py7zr.io import Py7zBytesIO, WriterFactory
+
+    spool_factory = _make_7z_spool_factory() if spool else None
+
+    class _SequenceFactory(WriterFactory):
+        def __init__(self) -> None:
+            self.products: list[Any] = []
+
+        def create(self, filename: str) -> Any:
+            if spool_factory is not None:
+                spool_factory.create(filename)
+                product = spool_factory.last
+                self.products.append(product.fh)
+                return product
+            product = Py7zBytesIO(filename, _SEVENZIP_EXTRACT_LIMIT)
+            self.products.append(product)
+            return product
+
+    return _SequenceFactory()
 
 
 class SevenZipVFS(VFS):
@@ -1154,8 +1405,12 @@ class SevenZipVFS(VFS):
                 raise WrongPasswordError("Incorrect 7z archive password") from exc
             raise
         self._zf_lock = threading.Lock()
+        # virtual path -> stored filename, and its position in the archive's
+        # entry list: several entries may share one filename, and py7zr
+        # extracts them in archive order (see _extract_entries).
         self._entry_names: dict[str, str] = {}
-        self._read_cache: dict[str, bytes] = {}
+        self._entry_order: dict[str, int] = {}
+        self._read_cache: dict[str, bytes] = {}  # by virtual path
         self._tree = self._build_tree()
         self._validate_password_against_content()
         self._file_counts: dict[str, int] = {}
@@ -1173,7 +1428,7 @@ class SevenZipVFS(VFS):
         """
         if not self._entry_names:
             return
-        from py7zr.io import BytesIOFactory, NullIOFactory
+        from py7zr.io import NullIOFactory
 
         # The smallest entry is enough to prove the key works (all content
         # shares one), and is the cheapest to decompress. Its bytes are only
@@ -1182,15 +1437,12 @@ class SevenZipVFS(VFS):
         # An empty entry has no data stream, so it proves nothing about the key.
         candidates = [vp for vp in self._entry_names if sizes.get(vp, 0) > 0] or list(self._entry_names)
         vpath = min(candidates, key=lambda vp: sizes.get(vp, 0))
-        name = self._entry_names[vpath]
         with self._zf_lock:
             if sizes.get(vpath, 0) <= STREAM_THRESHOLD:
-                factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
-                self._extract([name], factory)
-                buf = factory.get(name)  # type: ignore[no-untyped-call]
-                self._read_cache[name] = buf.read() if buf is not None else b""
+                for vp, data in self._extract_bytes([vpath]).items():
+                    self._read_cache[vp] = data
             else:
-                self._extract([name], NullIOFactory())  # type: ignore[no-untyped-call]
+                self._extract([self._entry_names[vpath]], NullIOFactory())  # type: ignore[no-untyped-call]
 
     @staticmethod
     def _iter_files(node: VFSNode) -> Iterator[VFSNode]:
@@ -1205,31 +1457,47 @@ class SevenZipVFS(VFS):
     def _build_tree(self) -> VFSNode:
         root = VFSNode(name=self._path.name, path="/", is_dir=True)
         nodes: dict[str, VFSNode] = {"/": root}
+        occurrences: dict[str, list[VFSNode]] = {}
 
         infos = self._zf.list()
         self._zf.reset()
 
-        for info in sorted(infos, key=lambda i: i.filename):
-            parts = [p for p in info.filename.rstrip("/").split("/") if p and p != "."]
+        # Archive order, so same-named entries are numbered as stored.
+        for order, info in enumerate(infos):
+            parts = _member_parts(info.filename.rstrip("/"))
             if not parts:
                 continue
-            for depth, _ in enumerate(parts, 1):
+            ts = info.creationtime.timestamp() if info.creationtime else 0.0
+            for depth in range(1, len(parts)):
                 virtual_path = "/" + "/".join(parts[:depth])
                 if virtual_path not in nodes:
-                    is_dir = depth < len(parts) or info.is_directory
-                    ts = info.creationtime.timestamp() if info.creationtime else 0.0
-                    node = VFSNode(
-                        name=parts[depth - 1],
-                        path=virtual_path,
-                        is_dir=is_dir,
-                        size=info.uncompressed if not is_dir else 0,
-                        modified=ts,
-                    )
                     parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True,
+                                   modified=ts)
                     nodes[parent_path].children.append(node)
                     nodes[virtual_path] = node
-                if depth == len(parts) and not info.is_directory:
-                    self._entry_names[virtual_path] = info.filename
+            stored_path = "/" + "/".join(parts)
+            parent_path = "/" + "/".join(parts[:-1]) if len(parts) > 1 else "/"
+            name = parts[-1]
+            if info.is_directory:
+                if stored_path not in nodes:
+                    node = VFSNode(name=name, path=stored_path, is_dir=True, modified=ts)
+                    nodes[parent_path].children.append(node)
+                    nodes[stored_path] = node
+                continue
+            virtual_path = stored_path
+            if virtual_path in nodes:
+                name, virtual_path = _free_sibling(nodes, parent_path, name)
+            node = VFSNode(name=name, path=virtual_path, is_dir=False,
+                           size=info.uncompressed, modified=ts)
+            if info.is_symlink:
+                node.status = "Symbolic link (content shown is the stored link target)"
+            nodes[parent_path].children.append(node)
+            nodes[virtual_path] = node
+            occurrences.setdefault(stored_path, []).append(node)
+            self._entry_names[virtual_path] = info.filename
+            self._entry_order[virtual_path] = order
+        _mark_duplicates(occurrences)
 
         for node in nodes.values():
             node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -1252,32 +1520,57 @@ class SevenZipVFS(VFS):
         finally:
             self._zf.reset()
 
+    def _extract_entries(self, vpaths: list[str], spool: bool) -> dict[str, Any]:
+        """Extract the entries behind *vpaths* in one pass and map each
+        virtual path to its own product. Targets are filenames, so every
+        entry stored under a requested filename comes out -- in archive
+        order, which pairs each product with its entry even when several
+        share one filename (py7zr renames the copies, so names can't)."""
+        names = {self._entry_names[vp] for vp in vpaths}
+        expected = sorted(
+            (vp for vp, name in self._entry_names.items() if name in names),
+            key=self._entry_order.__getitem__,
+        )
+        factory = _make_7z_sequence_factory(spool)
+        self._extract(sorted(names), factory)
+        if len(factory.products) != len(expected):
+            raise OSError(
+                f"7z extraction returned {len(factory.products)} entries, "
+                f"expected {len(expected)} for {sorted(names)}"
+            )
+        return dict(zip(expected, factory.products))
+
+    def _extract_bytes(self, vpaths: list[str]) -> dict[str, bytes]:
+        return {vp: product.read() for vp, product in self._extract_entries(vpaths, spool=False).items()}
+
     def read(self, node: VFSNode) -> bytes:
-        name = self._entry_names.get(node.path, node.path.lstrip("/"))
-        cached = self._read_cache.get(name)
+        if node.path not in self._entry_names:
+            raise FileNotFoundError(f"Not in 7z: {node.path}")
+        cached = self._read_cache.get(node.path)
         if cached is not None:
             return cached
-        from py7zr.io import BytesIOFactory
-
         with self._zf_lock:
-            factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
-            self._extract([name], factory)
-            buf = factory.get(name)  # type: ignore[no-untyped-call]
-            data = buf.read() if buf is not None else b""
-        if len(data) <= STREAM_THRESHOLD:
-            self._read_cache[name] = data
-        return data
+            extracted = self._extract_bytes([node.path])
+        for vp, data in extracted.items():
+            if len(data) <= STREAM_THRESHOLD:
+                self._read_cache[vp] = data
+        return extracted[node.path]
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        name = self._entry_names.get(node.path, node.path.lstrip("/"))
-        if name in self._read_cache or node.size <= STREAM_THRESHOLD:
+        if node.path in self._read_cache or node.size <= STREAM_THRESHOLD:
             return BytesIO(self.read(node))
+        if node.path not in self._entry_names:
+            raise FileNotFoundError(f"Not in 7z: {node.path}")
         # py7zr can only decompress a member front to back, so a large one is
         # staged once in an unlinked temp file (bounded RAM, seekable).
         with self._zf_lock:
-            factory = _make_7z_spool_factory()
-            self._extract([name], factory)
-            return cast(IO[bytes], factory.take(name))
+            spools = self._extract_entries([node.path], spool=True)
+        for vp, fh in spools.items():
+            if vp != node.path:
+                fh.close()
+        fh = spools[node.path]
+        fh.seek(0)
+        return cast(IO[bytes], fh)
 
     def prefetch_all(self) -> bool:
         """Batch-extract every not-yet-cached entry in a single archive pass.
@@ -1290,18 +1583,11 @@ class SevenZipVFS(VFS):
         """
         if self.total_size(self._tree) > _SEVENZIP_PREFETCH_SIZE_LIMIT:
             return False
-        missing = [name for name in self._entry_names.values() if name not in self._read_cache]
+        missing = [vp for vp in self._entry_names if vp not in self._read_cache]
         if not missing:
             return True
-        from py7zr.io import BytesIOFactory
-
         with self._zf_lock:
-            factory = BytesIOFactory(limit=_SEVENZIP_EXTRACT_LIMIT)
-            self._zf.extract(targets=missing, factory=factory)
-            for name in missing:
-                buf = factory.get(name)  # type: ignore[no-untyped-call]
-                self._read_cache[name] = buf.read() if buf is not None else b""
-            self._zf.reset()
+            self._read_cache.update(self._extract_bytes(missing))
         return True
 
     def close(self) -> None:
@@ -1383,6 +1669,8 @@ class RawImageVFS(VFS):
         from crush.core.raw_image import read_deleted_file, read_raw_region, read_walker_file
 
         entry = self._resolve_entry(node)
+        if entry.stored is not None:
+            return bytes(entry.stored)
         with self._lock:
             if entry.deleted is not None:
                 return read_deleted_file(entry.walker, entry.deleted, entry.size)
@@ -1417,6 +1705,8 @@ class RawImageVFS(VFS):
         from crush.core.raw_image import peek_deleted_file, peek_raw_region, peek_walker_file
 
         entry = self._resolve_entry(node)
+        if entry.stored is not None:
+            return bytes(entry.stored[:n])
         with self._lock:
             if entry.deleted is not None:
                 return peek_deleted_file(entry.walker, entry.deleted, entry.size, n)
@@ -1437,7 +1727,7 @@ class RawImageVFS(VFS):
         an explicit status.
         """
         entry = self._read_map.get(node.path)
-        if entry is None:
+        if entry is None or entry.stored is not None:
             return None
         if entry.deleted is not None:
             status = (
@@ -1712,7 +2002,38 @@ def zip_leading_bytes(path: str | Path) -> int | None:
 
 
 def open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = False) -> VFS:
-    """Factory — open the right VFS type for a source path, by its content.
+    """Factory — open the right VFS type for a source path, by its content
+    (see _open_vfs), and note once if reading it may update the evidence's
+    access times."""
+    vfs = _open_vfs(path, password=password, embedded_zip=embedded_zip)
+    if not vfs.load_note:
+        vfs.load_note = _source_atime_note(Path(path), vfs)
+    return vfs
+
+
+def _read_only_mount(path: Path) -> bool:
+    try:
+        return bool(os.statvfs(path).f_flag & os.ST_RDONLY)
+    except (OSError, AttributeError):  # no statvfs on Windows
+        return False
+
+
+def _source_atime_note(path: Path, vfs: VFS) -> str:
+    """load_note for a single file opened directly (DirectoryVFS sets its
+    own). Archives, backups and disk images get none: only the container's
+    access time can change there, never that of the files inside it."""
+    if not isinstance(vfs, FileVFS):
+        return ""
+    try:
+        owner = path.stat().st_uid
+    except OSError:
+        return ""
+    euid = os.geteuid() if hasattr(os, "geteuid") else None
+    return _atime_note(path, 1 if euid is not None and owner != euid else 0)
+
+
+def _open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = False) -> VFS:
+    """Open the right VFS type for a source path, by its content.
 
     Archives, backups and disk images are recognised by their bytes; a name
     only counts for V7 TAR (no magic). A file named like an archive whose

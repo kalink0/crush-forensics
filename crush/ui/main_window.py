@@ -1013,10 +1013,16 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_progress"):
             self._progress.close()
         self._logger.info("Loaded: %s", self._loading_path)
-        fallback_note = getattr(getattr(self, "_loading_vfs", None), "fallback_note", "")
-        if fallback_note:
-            self._logger.warning("%s: %s", self._loading_path, fallback_note)
-            self._status.showMessage(f"Loaded: {self._loading_path}  — {fallback_note}")
+        loaded_vfs = getattr(self, "_loading_vfs", None)
+        notes = [
+            note for note in (
+                getattr(loaded_vfs, "fallback_note", ""), getattr(loaded_vfs, "load_note", ""),
+            ) if note
+        ]
+        if notes:
+            for note in notes:
+                self._logger.warning("%s: %s", self._loading_path, note)
+            self._status.showMessage(f"Loaded: {self._loading_path}  — {'; '.join(notes)}")
         else:
             self._status.showMessage(f"Loaded: {self._loading_path}")
         self._add_to_recent_files(self._loading_path)
@@ -1727,7 +1733,7 @@ class MainWindow(QMainWindow):
 
     def _open_external_mode(self, node: VFSNode, vfs: VFS, mode: str) -> None:
         if node.is_dir:
-            if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
+            if isinstance(vfs, DirectoryVFS) and not node.status and Path(node.path).exists():
                 self._open_local_file(Path(node.path))
             else:
                 QMessageBox.information(
@@ -1925,7 +1931,10 @@ class MainWindow(QMainWindow):
         self._materialize_cancelled = False
         tmp_dir: Path | None = None
         try:
-            if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
+            # A node with a status (symbolic link, special file, unreadable
+            # entry) is served from the VFS, never via its path: the path
+            # would follow the link or block on a FIFO.
+            if isinstance(vfs, DirectoryVFS) and not node.status and Path(node.path).exists():
                 return Path(node.path)
             if not hasattr(self, "_external_temp_paths"):
                 self._external_temp_paths: list[Path] = []
@@ -1998,7 +2007,7 @@ class MainWindow(QMainWindow):
         """
         tmp_dir: Path | None = None
         try:
-            if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
+            if isinstance(vfs, DirectoryVFS) and not node.status and Path(node.path).exists():
                 return Path(node.path), None
 
             if not extract_dialog.confirm_temp_space(
@@ -2050,7 +2059,7 @@ class MainWindow(QMainWindow):
         """
         tmp_dir: Path | None = None
         try:
-            if isinstance(vfs, DirectoryVFS) and Path(node.path).exists():
+            if isinstance(vfs, DirectoryVFS) and not node.status and Path(node.path).exists():
                 return Path(node.path), None
 
             tmp_dir = tempdir.mkdtemp(prefix="crush-analyze-")
@@ -2520,6 +2529,8 @@ class MainWindow(QMainWindow):
             metadata["Total size"] = _format_size(vfs.total_size(node))
         else:
             metadata["Size"] = _format_size(node.size)
+        if node.status:
+            metadata["Entry status"] = node.status
         self._props_panel.update_properties(node, metadata, vfs)
 
     def _wrap_with_encryption_banner(self, view: QWidget, hint: str) -> QWidget:
@@ -2803,6 +2814,13 @@ class MainWindow(QMainWindow):
             from crush.parsers.base import ParseResult
 
             fmt_meta: dict = {}
+
+            # Anything about this entry its name and bytes don't show (a
+            # symbolic link, one of several same-named entries, a directory
+            # that couldn't be listed) -- set by the VFS while building the
+            # tree, for every source type alike.
+            if node.status:
+                fmt_meta["Entry status"] = node.status
 
             # A raw disk image/EWF region that isn't a walked file (an
             # unallocated gap, or a partition whose filesystem is

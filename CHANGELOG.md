@@ -25,9 +25,15 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed ZIP, 7z and TAR (plain, bzip2, xz) archives only opening as browsable trees when named `.zip`/`.7z`/`.tar…`; they're now recognised by content, e.g. a ZIP inside a ZIP named `.bin`, `.apk` or `.docx`, and a renamed UFDR opens as a UFDR.
 - Fixed a file named like an archive or backup (`.zip`, `.7z`, `.ab`, …) that isn't one failing to open; it now opens as a single file and the status bar says why.
+- Fixed TAR archives and Android backups dropping the leading dot of file names (`.bashrc` shown as `bashrc`).
+- Fixed archives holding several entries under the same name (TAR appends, ZIP, 7z) showing only one of them — and in ZIP the first one's size with the last one's content; every entry is now shown, numbered in archive order.
+- Fixed symbolic links appearing as empty files (TAR, iTunes backups), as ordinary files (ZIP, 7z) or not at all (disk images), and being followed in folders, where a link to a parent folder never finished loading and a broken link stopped the folder from opening; links now show as links with their target and are never followed.
+- Fixed a single folder without read permission stopping a whole folder from opening, and FIFOs in an opened folder blocking reads.
+- Fixed block devices and sockets in disk images being treated as directories.
 
 ### Changed
 
+- Opening a folder or single file says once when Crush can't keep the evidence files' access times unchanged (on Linux, files not owned by the current user can't be read with `O_NOATIME`); a disk image's directory-depth loop guard is now marked on the directory it stopped at.
 - A ZIP that follows leading data (self-extracting executable, ZIP appended to an image) is noted in the status bar; **Open in New Window** opens it as a ZIP.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.

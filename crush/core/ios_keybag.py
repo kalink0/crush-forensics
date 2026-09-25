@@ -171,6 +171,15 @@ def extract_file_protection(file_blob: bytes) -> tuple[int, bytes] | None:
     return int(metadata.get("ProtectionClass", 0)), bytes(encryption_key)
 
 
+def extract_symlink_target(file_blob: bytes) -> str | None:
+    """The `Target` of a symbolic link's `Files.file` NSKeyedArchiver blob,
+    or None when the blob records none."""
+    cast(Any, set_object_converter)(_nsdata_converter)
+    metadata = cast(Any, deserialise_NsKeyedArchiver)(cast(Any, bplist_load)(BytesIO(file_blob)))
+    target = metadata.get("Target") if isinstance(metadata, dict) else None
+    return target if isinstance(target, str) else None
+
+
 class BackupKeyBag:
     """A parsed, password-unlocked backup KeyBag.
 
