@@ -102,6 +102,10 @@ class _Entry:
     base: int | None = None
     kind: str = ""
     note: str = ""
+    # Content not read from the image: b"" for a symbolic link or special
+    # file, whose node status says what it is (the walkers don't decode
+    # link targets).
+    stored: bytes | None = None
     deleted: Any | None = None  # a *DeletedFile record, when this is a recovered entry
 
 
@@ -267,7 +271,17 @@ def _walk_into(
 ) -> None:
     from crush.core.vfs import VFSNode
 
-    if depth > _MAX_DEPTH or wnode in seen:
+    if depth > _MAX_DEPTH:
+        vfs_node.status = (
+            f"Not listed: nested deeper than {_MAX_DEPTH} directories "
+            "(guard against a directory loop in a damaged filesystem)"
+        )
+        return
+    if wnode in seen:
+        vfs_node.status = (
+            "Not listed again: this directory was already reached by another "
+            "path (a directory loop in the filesystem structure)"
+        )
         return
     seen.add(wnode)
     try:
@@ -294,7 +308,7 @@ def _walk_into(
             continue
         mode, size, mtime = ent
         child_path = f"{base_path}/{name}"
-        if mode & qnxprobe.S_IFDIR:
+        if (mode & 0o170000) == qnxprobe.S_IFDIR:  # not just the bit: block devices and sockets share it
             child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime or 0.0)
             children.append(child_node)
             _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1)
@@ -304,7 +318,19 @@ def _walk_into(
             )
             children.append(child_node)
             read_map[child_path] = _Entry(walker=walker, node=child, size=size or 0)
-        # symlinks and specials hold no bytes to stage — not represented
+        else:
+            # Symbolic links and special files stay visible: the walkers
+            # don't decode link targets, and specials hold no content.
+            kind = "Symbolic link" if (mode & 0o170000) == qnxprobe.S_IFLNK else (
+                f"Special file (mode {mode & 0o170000:o})"
+            )
+            child_node = VFSNode(
+                name=name, path=child_path, is_dir=False, size=0, modified=mtime or 0.0,
+                status=f"{kind} — its target/content is not decoded by the filesystem reader"
+                if kind == "Symbolic link" else f"{kind} — no content",
+            )
+            children.append(child_node)
+            read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")
 
     children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
     vfs_node.children = children
