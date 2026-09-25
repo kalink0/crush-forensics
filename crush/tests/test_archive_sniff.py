@@ -68,7 +68,7 @@ def test_zip_opens_as_zip_whatever_its_name(tmp_path: Path, name: str) -> None:
     vfs = open_vfs(path)
     assert isinstance(vfs, ZipVFS)
     assert _names(vfs) == {"inner"}
-    assert vfs.fallback_note == ""
+    assert str(vfs.fallback_note) == ""
     vfs.close()
 
 
@@ -111,7 +111,7 @@ def test_named_archive_without_signature_opens_as_file_with_note(
     path.write_bytes(b"just some text, not an archive")
     vfs = open_vfs(path)
     assert isinstance(vfs, FileVFS)
-    assert vfs.fallback_note == note
+    assert str(vfs.fallback_note) == note
 
 
 def test_named_tar_that_isnt_one_says_so(tmp_path: Path) -> None:
@@ -119,8 +119,8 @@ def test_named_tar_that_isnt_one_says_so(tmp_path: Path) -> None:
     path.write_bytes(b"just some text, not an archive")
     vfs = open_vfs(path)
     assert isinstance(vfs, FileVFS)
-    assert vfs.fallback_note.startswith("Named .tar.gz, but not opened as TAR — ")
-    assert "Named .gz" not in vfs.fallback_note  # one note, not a second one for .gz
+    assert str(vfs.fallback_note).startswith("Named .tar.gz, but not opened as TAR — ")
+    assert "Named .gz" not in str(vfs.fallback_note)  # one note, not a second one for .gz
 
 
 def test_zip_signature_but_unreadable_archive_says_so(tmp_path: Path) -> None:
@@ -128,7 +128,7 @@ def test_zip_signature_but_unreadable_archive_says_so(tmp_path: Path) -> None:
     path.write_bytes(b"PK\x03\x04" + bytes(60))
     vfs = open_vfs(path)
     assert isinstance(vfs, FileVFS)
-    assert vfs.fallback_note.startswith("ZIP signature found, but not opened as ZIP — ")
+    assert str(vfs.fallback_note).startswith("ZIP signature found, but not opened as ZIP — ")
 
 
 # -- ZIP after leading bytes ------------------------------------------------------
@@ -140,7 +140,7 @@ def test_zip_after_leading_bytes_is_noted_not_routed(tmp_path: Path) -> None:
 
     vfs = open_vfs(path)
     assert isinstance(vfs, FileVFS)
-    assert vfs.fallback_note == (
+    assert str(vfs.fallback_note) == (
         "Contains a ZIP archive after 100 leading bytes — "
         "right-click → Open in New Window to browse it"
     )
@@ -152,7 +152,7 @@ def test_zip_after_leading_bytes_opens_on_explicit_request(tmp_path: Path) -> No
     vfs = open_vfs(path, embedded_zip=True)
     assert isinstance(vfs, ZipVFS)
     assert _names(vfs) == {"inner"}
-    assert vfs.fallback_note == "ZIP archive opened after 100 leading bytes"
+    assert str(vfs.fallback_note) == "ZIP archive opened after 100 leading bytes"
     vfs.close()
 
 

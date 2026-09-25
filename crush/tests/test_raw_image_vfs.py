@@ -465,7 +465,7 @@ class TestVolumeInfoPropertiesEnrichment:
             info = vfs.volume_info(unsupported)
             assert info is not None
             assert info["kind"]
-            assert info["note"]
+            assert str(info["note"])
         finally:
             vfs.close()
 
@@ -491,7 +491,7 @@ class TestVolumeInfoPropertiesEnrichment:
             enriched = win._enrich_with_format_info(None, unsupported, vfs, base_result)
 
             assert enriched.metadata["Filesystem"] == info["kind"]
-            assert enriched.metadata["Status"] == info["note"]
+            assert enriched.metadata["Status"] == str(info["note"])
         finally:
             win.close()
             vfs.close()
@@ -542,7 +542,8 @@ class TestDeletedFileRecovery:
                 node = next((c for c in recovered.children if c.name == name), None)
                 assert node is not None, f"missing: {name}"
                 info = vfs.volume_info(node)
-                assert info == {"kind": "deleted file", "note": "recovered (content intact)"}
+                assert info is not None and info["kind"] == "deleted file"
+                assert str(info["note"]) == "recovered (content intact)"
                 assert hashlib.sha256(vfs.read(node)).hexdigest() == digest
         finally:
             vfs.close()
@@ -595,7 +596,7 @@ class TestDeletedFileRecovery:
             by_hash = {}
             for c in recovered.children:
                 info = vfs.volume_info(c)
-                if info and info["note"] == "recovered (content intact)":
+                if info and str(info["note"]) == "recovered (content intact)":
                     by_hash[hashlib.sha256(vfs.read(c)).hexdigest()] = c.name
 
             for name, digest in expected.items():
@@ -623,11 +624,11 @@ class TestDeletedFileRecovery:
             recovered = next(c for c in volume.children if c.name == "$Recovered")
             unrecoverable = next(
                 c for c in recovered.children
-                if (vfs.volume_info(c) or {}).get("note", "").startswith("not recoverable")
+                if str((vfs.volume_info(c) or {}).get("note", "")).startswith("not recoverable")
             )
             info = vfs.volume_info(unrecoverable)
             assert info is not None
-            assert "not recoverable" in info["note"]
+            assert "not recoverable" in str(info["note"])
             with pytest.raises(RawImageFileUnreadableError):
                 vfs.read(unrecoverable)
         finally:
@@ -794,8 +795,8 @@ class TestFallbackNote:
         vfs = open_vfs(dst)
         try:
             assert isinstance(vfs, FileVFS)
-            assert "Not opened as a disk image" in vfs.fallback_note
-            assert "no partition table or recognized filesystem" in vfs.fallback_note
+            assert "Not opened as a disk image" in str(vfs.fallback_note)
+            assert "no partition table or recognized filesystem" in str(vfs.fallback_note)
         finally:
             vfs.close()
 
@@ -805,7 +806,7 @@ class TestFallbackNote:
         vfs = open_vfs(tmp_path / "case.003")
         try:
             assert isinstance(vfs, FileVFS)
-            assert "hole" in vfs.fallback_note
+            assert "hole" in str(vfs.fallback_note)
         finally:
             vfs.close()
 
@@ -819,7 +820,7 @@ class TestFallbackNote:
             vfs = open_vfs(tmp_path / name)
             try:
                 assert isinstance(vfs, FileVFS)
-                assert vfs.fallback_note == ""
+                assert str(vfs.fallback_note) == ""
             finally:
                 vfs.close()
 

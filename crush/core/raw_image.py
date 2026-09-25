@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 # both from source and in a frozen (PyInstaller) build, where qnxprobe's own
 # sys.path fallback cannot find a sibling file — mirrors how iLEAPP/ALEAPP
 # wire the same two vendored libraries together.
+from crush.core.issues import ParseIssue
 from crush.third_party.ewfprobe import ewfprobe as _ewfprobe
 
 sys.modules.setdefault("ewfprobe", _ewfprobe)
@@ -232,12 +233,17 @@ def _add_deleted_files_node(
     explicit reason available via read(), never silently absent, matching
     every other unsupported/partial case in this module.
     """
-    from crush.core.vfs import VFSNode
+    from crush.core.vfs import VFSNode, join_notes
 
     try:
         entries = list(walker.deleted_files())
-    except Exception:
-        return  # a failure enumerating deleted files must not break the live tree
+    except Exception as exc:
+        # Must not break the live tree -- but must not look like "no deleted
+        # files" either.
+        volume_node.status = join_notes([
+            volume_node.status, ParseIssue("entry.raw_deleted_enum_failed", detail=str(exc)),
+        ])
+        return
     if not entries:
         return
 
@@ -272,16 +278,10 @@ def _walk_into(
     from crush.core.vfs import VFSNode
 
     if depth > _MAX_DEPTH:
-        vfs_node.status = (
-            f"Not listed: nested deeper than {_MAX_DEPTH} directories "
-            "(guard against a directory loop in a damaged filesystem)"
-        )
+        vfs_node.status = ParseIssue("entry.raw_depth", {"limit": _MAX_DEPTH})
         return
     if wnode in seen:
-        vfs_node.status = (
-            "Not listed again: this directory was already reached by another "
-            "path (a directory loop in the filesystem structure)"
-        )
+        vfs_node.status = ParseIssue("entry.raw_loop")
         return
     seen.add(wnode)
     try:
@@ -294,20 +294,30 @@ def _walk_into(
             ]
         else:
             listing = [(name, child, "") for name, child in walker.listdir(wnode)]
-    except Exception:
-        return  # this directory couldn't be listed; its siblings still can be
+    except Exception as exc:
+        # Its siblings still can be listed; this one says why it's empty.
+        vfs_node.status = ParseIssue("entry.raw_unlisted", detail=str(exc))
+        return
     listing.sort(key=lambda item: item[0])
 
     children: list[VFSNode] = []
     for name, child, _reading in listing:
+        child_path = f"{base_path}/{name}"
         try:
             ent = walker.entry(child)
-        except Exception:
-            continue
+            problem = None if ent else "no metadata returned"
+        except Exception as exc:
+            ent, problem = None, str(exc)
         if not ent:
+            # Listed by its directory, but its type and size are unknown:
+            # keep it visible, with no content, instead of dropping it.
+            children.append(VFSNode(
+                name=name, path=child_path, is_dir=False,
+                status=ParseIssue("entry.raw_entry_unreadable", detail=problem or ""),
+            ))
+            read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")
             continue
         mode, size, mtime = ent
-        child_path = f"{base_path}/{name}"
         if (mode & 0o170000) == qnxprobe.S_IFDIR:  # not just the bit: block devices and sockets share it
             child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime or 0.0)
             children.append(child_node)
@@ -321,13 +331,13 @@ def _walk_into(
         else:
             # Symbolic links and special files stay visible: the walkers
             # don't decode link targets, and specials hold no content.
-            kind = "Symbolic link" if (mode & 0o170000) == qnxprobe.S_IFLNK else (
-                f"Special file (mode {mode & 0o170000:o})"
+            status = (
+                ParseIssue("entry.symlink_raw") if (mode & 0o170000) == qnxprobe.S_IFLNK
+                else ParseIssue("entry.special_raw", {"mode": f"{mode & 0o170000:o}"})
             )
             child_node = VFSNode(
                 name=name, path=child_path, is_dir=False, size=0, modified=mtime or 0.0,
-                status=f"{kind} — its target/content is not decoded by the filesystem reader"
-                if kind == "Symbolic link" else f"{kind} — no content",
+                status=status,
             )
             children.append(child_node)
             read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")

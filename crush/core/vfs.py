@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Iterator, cast
 
 from crush.core import tempdir
+from crush.core.issues import ParseIssue, ParseIssueError
 from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 from crush.core.vfs_stream import (
     COPY_CHUNK,
@@ -211,7 +212,7 @@ class VFSNode:
     # What the analyst must know about this entry that its name and bytes
     # don't show: a symbolic link, one of several entries stored under the
     # same name, a directory that couldn't be listed ... "" when nothing.
-    status: str = ""
+    status: str | ParseIssue = ""
 
     @property
     def extension(self) -> str:
@@ -225,10 +226,10 @@ class VFS(ABC):
     # content suggested (e.g. named .zip but no ZIP signature, a UFDR shown
     # as plain ZIP, a disk image that couldn't be read); the UI must
     # surface it.
-    fallback_note: str = ""
+    fallback_note: str | ParseIssue = ""
     # Said once when the source is loaded, not with every file opened from
     # it (e.g. that reading may update the evidence files' access times).
-    load_note: str = ""
+    load_note: str | ParseIssue = ""
 
     @abstractmethod
     def root(self) -> VFSNode: ...
@@ -259,25 +260,18 @@ class VFS(ABC):
             return src.read(n)
 
 
-def _atime_note(root: Path, not_owned: int) -> str:
+def _atime_note(root: Path, not_owned: int) -> str | ParseIssue:
     """Why reading this source may update the evidence files' access
     times, or "" when Crush prevents it (see _read_noatime)."""
     if sys.platform == "win32":
         return ""  # restored after every read; a failure is logged per file
     if sys.platform != "linux":
-        return (
-            "Crush does not prevent access-time updates on this platform; "
-            "mount the evidence read-only to prevent them"
-        )
+        return ParseIssue("vfs.atime_platform")
     if _read_only_mount(root):
         return ""
     if os.geteuid() == 0 or not not_owned:
         return ""
-    return (
-        f"{not_owned:,} file(s) are not owned by the current user, so Crush can't "
-        "read them with O_NOATIME: reading them may update their access time "
-        "(mount the evidence read-only to prevent this)"
-    )
+    return ParseIssue("vfs.atime_not_owned", {"count": not_owned})
 
 
 def _special_file_kind(mode: int) -> str:
@@ -290,6 +284,20 @@ def _special_file_kind(mode: int) -> str:
         if test(mode):
             return kind
     return f"mode {stat.S_IFMT(mode):o}"
+
+
+def join_notes(notes: list[Any]) -> str | ParseIssue:
+    """One note from several (empty ones dropped): "" for none, the note
+    itself for one, else all of them joined with "; " when rendered."""
+    kept = [n for n in notes if n]
+    if not kept:
+        return ""
+    if len(kept) == 1:
+        return cast("str | ParseIssue", kept[0])
+    return ParseIssue("common.notes", {"notes": [
+        n if isinstance(n, ParseIssue) else ParseIssue("common.library_error", detail=str(n))
+        for n in kept
+    ]})
 
 
 def _member_parts(name: str) -> list[str]:
@@ -319,11 +327,8 @@ def _mark_duplicates(occurrences: dict[str, list[VFSNode]]) -> None:
         if count < 2:
             continue
         for k, node in enumerate(same_name, 1):
-            note = (
-                f"Stored {count} times in this archive under this name; "
-                f"this is occurrence {k} of {count} (archive order)"
-            )
-            node.status = f"{node.status}; {note}" if node.status else note
+            note = ParseIssue("entry.duplicate", {"count": count, "k": k})
+            node.status = join_notes([node.status, note])
 
 
 class DirectoryVFS(VFS):
@@ -363,7 +368,7 @@ class DirectoryVFS(VFS):
             st = path.stat() if is_root else path.lstat()
         except OSError as exc:
             node = VFSNode(name=name, path=str(path), is_dir=False,
-                           status=f"Could not be read: {exc}")
+                           status=ParseIssue("entry.unreadable", detail=str(exc)))
             self._stored_content[node.path] = b""
             return node
         node = VFSNode(
@@ -380,21 +385,21 @@ class DirectoryVFS(VFS):
             try:
                 target = os.readlink(path)
             except OSError as exc:
-                node.status = f"Symbolic link (not followed); its target could not be read: {exc}"
+                node.status = ParseIssue("entry.symlink_unreadable", detail=str(exc))
                 self._stored_content[node.path] = b""
             else:
-                node.status = f"Symbolic link → {target} (not followed; content shown is the target)"
+                node.status = ParseIssue("entry.symlink_folder", {"target": target})
                 self._stored_content[node.path] = os.fsencode(target)
                 node.size = len(self._stored_content[node.path])
         elif node.is_dir:
             try:
                 children = [self._build_node(child) for child in path.iterdir()]
             except OSError as exc:
-                node.status = f"Folder could not be listed: {exc}"
+                node.status = ParseIssue("entry.folder_unlisted", detail=str(exc))
                 children = []
             node.children = sorted(children, key=lambda n: (not n.is_dir, n.name.lower()))
         elif not stat.S_ISREG(st.st_mode):
-            node.status = f"Special file ({_special_file_kind(st.st_mode)}) — no content is read"
+            node.status = ParseIssue("entry.special_not_read", {"kind": _special_file_kind(st.st_mode)})
             self._stored_content[node.path] = b""
         elif self._euid is not None and st.st_uid != self._euid:
             self._not_owned += 1
@@ -483,12 +488,12 @@ class ZipVFS(VFS):
         if not encrypted:
             return
         if not self._password:
-            raise PasswordRequiredError(f"ZIP archive is password-protected: {self._zip_path}")
+            raise PasswordRequiredError(ParseIssue("password.zip_required", {"path": str(self._zip_path)}))
         try:
             with self._open_entry(encrypted[0]) as f:
                 f.read()
         except RuntimeError as exc:
-            raise WrongPasswordError("Incorrect ZIP archive password") from exc
+            raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
 
     def _aes_zip(self) -> Any:
         if self._aes_zf is None:
@@ -546,7 +551,7 @@ class ZipVFS(VFS):
             node = VFSNode(name=name, path=virtual_path, is_dir=False,
                            size=info.file_size, modified=zip_ts)
             if info.create_system == 3 and stat.S_ISLNK(info.external_attr >> 16):
-                node.status = "Symbolic link (content shown is the stored link target)"
+                node.status = ParseIssue("entry.symlink_stored_target")
             nodes[parent_path].children.append(node)
             nodes[virtual_path] = node
             occurrences.setdefault(stored_path, []).append(node)
@@ -575,7 +580,7 @@ class ZipVFS(VFS):
                 with self._open_entry(self._zip_entry(node)) as f:
                     return f.read(n)
             except RuntimeError as exc:
-                raise WrongPasswordError("Incorrect ZIP archive password") from exc
+                raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
 
     def read(self, node: VFSNode) -> bytes:
         with self._zf_lock:
@@ -583,7 +588,7 @@ class ZipVFS(VFS):
                 with self._open_entry(self._zip_entry(node)) as f:
                     return f.read()
             except RuntimeError as exc:
-                raise WrongPasswordError("Incorrect ZIP archive password") from exc
+                raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
 
     def open(self, node: VFSNode) -> IO[bytes]:
         if node.size <= STREAM_THRESHOLD:
@@ -592,7 +597,7 @@ class ZipVFS(VFS):
             try:
                 inner = self._open_entry(self._zip_entry(node))
             except RuntimeError as exc:
-                raise WrongPasswordError("Incorrect ZIP archive password") from exc
+                raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
         return buffered(LockedStream(inner, self._zf_lock))
 
     def _zip_entry(self, node: VFSNode) -> int:
@@ -730,19 +735,19 @@ class TarVFS(VFS):
             elif member.issym():
                 target = member.linkname.encode("utf-8", "surrogateescape")
                 node.size = len(target)
-                node.status = f"Symbolic link → {member.linkname} (content shown is the target)"
+                node.status = ParseIssue("entry.symlink_target", {"target": member.linkname})
                 self._stored_content[virtual_path] = target
             elif member.islnk():
                 linked = by_name.get(member.linkname)
                 node.size = linked.size if linked is not None else 0
-                node.status = f"Hard link to {member.linkname}"
+                node.status = ParseIssue("entry.hard_link", {"target": member.linkname})
                 self._members[virtual_path] = member
             else:
                 kind = (
                     "character device" if member.ischr() else "block device" if member.isblk()
                     else "FIFO" if member.isfifo() else f"type {member.type!r}"
                 )
-                node.status = f"Special file ({kind}) — no content stored"
+                node.status = ParseIssue("entry.special_stored", {"kind": kind})
                 self._stored_content[virtual_path] = b""
             by_name[member.name] = member
             nodes[parent_path].children.append(node)
@@ -995,7 +1000,7 @@ class AndroidBackupVFS(TarVFS):
         with open(path, "rb") as f:
             magic = f.readline().strip()
             if magic != b"ANDROID BACKUP":
-                raise ValueError(f"Not an Android backup: {path}")
+                raise ParseIssueError(ParseIssue("vfs.ab_not_backup", {"path": str(path)}))
             version = int(f.readline().strip())
             compressed = f.readline().strip() == b"1"
             encryption = f.readline().strip()
@@ -1005,9 +1010,9 @@ class AndroidBackupVFS(TarVFS):
                 chunks = AndroidBackupVFS._read_chunks(f)
             else:
                 if encryption != b"AES-256":
-                    raise ValueError(f"Unsupported Android backup encryption: {encryption!r}")
+                    raise ParseIssueError(ParseIssue("vfs.ab_unsupported_encryption", {"value": repr(encryption)}))
                 if not password:
-                    raise PasswordRequiredError(f"Android backup is password-protected: {path}")
+                    raise PasswordRequiredError(ParseIssue("password.ab_required", {"path": str(path)}))
 
                 user_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
                 checksum_salt = bytes.fromhex(f.readline().strip().decode("ascii"))
@@ -1088,7 +1093,7 @@ class ITunesBackupVFS(VFS):
 
         if manifest_plist.get("IsEncrypted", False) and not self._password:
             raise PasswordRequiredError(
-                f"iTunes backup is password-protected: {self._backup_path}"
+                ParseIssue("password.itunes_required", {"path": str(self._backup_path)})
             )
 
         raw = (self._backup_path / "Manifest.db").read_bytes()
@@ -1140,8 +1145,13 @@ class ITunesBackupVFS(VFS):
 
                 try:
                     protection = ios_keybag.extract_file_protection(file_blob)
-                except Exception:
-                    protection = None  # Malformed per-file metadata; read back raw bytes.
+                except Exception as exc:
+                    # Malformed per-file metadata: the bytes can only be shown
+                    # as stored -- which for an encrypted backup is ciphertext.
+                    protection = None
+                    nodes[virtual_path].status = ParseIssue(
+                        "entry.file_key_unreadable", detail=str(exc),
+                    )
                 if protection is not None:
                     self._file_protection[virtual_path] = protection
             if flags == self._FLAG_SYMLINK:
@@ -1157,10 +1167,10 @@ class ITunesBackupVFS(VFS):
                     except Exception:
                         target = None
                 if target is None:
-                    node.status = "Symbolic link (the backup records no target for it)"
+                    node.status = ParseIssue("entry.symlink_no_target")
                     self._stored_content[virtual_path] = b""
                 else:
-                    node.status = f"Symbolic link → {target} (content shown is the target)"
+                    node.status = ParseIssue("entry.symlink_target", {"target": target})
                     self._stored_content[virtual_path] = target.encode("utf-8")
                 node.size = len(self._stored_content[virtual_path])
             elif not is_leaf_dir:
@@ -1169,8 +1179,8 @@ class ITunesBackupVFS(VFS):
                     nodes[virtual_path].size = located.stat().st_size
                     self._file_locations[virtual_path] = located
                 else:
-                    nodes[virtual_path].status = (
-                        f"No content stored in the backup for this entry (fileID {file_id})"
+                    nodes[virtual_path].status = ParseIssue(
+                        "entry.no_backup_content", {"file_id": file_id},
                     )
 
         for node in nodes.values():
@@ -1390,7 +1400,7 @@ class SevenZipVFS(VFS):
         try:
             self._zf = py7zr.SevenZipFile(self._path, "r", password=password or None)
         except py7zr.exceptions.PasswordRequired as exc:
-            raise PasswordRequiredError(f"7z archive is password-protected: {path}") from exc
+            raise PasswordRequiredError(ParseIssue("password.7z_required", {"path": str(path)})) from exc
         except (TypeError, py7zr.exceptions.Bad7zFile) as exc:
             # Decrypting the header with the wrong AES key yields garbage
             # that fails to parse as a valid 7z header structure -- py7zr
@@ -1402,7 +1412,7 @@ class SevenZipVFS(VFS):
             # Bad7zFile ("end id expected but ... found") on Windows CI for
             # the same wrong-password fixture.
             if password:
-                raise WrongPasswordError("Incorrect 7z archive password") from exc
+                raise WrongPasswordError(ParseIssue("password.7z_wrong")) from exc
             raise
         self._zf_lock = threading.Lock()
         # virtual path -> stored filename, and its position in the archive's
@@ -1491,7 +1501,7 @@ class SevenZipVFS(VFS):
             node = VFSNode(name=name, path=virtual_path, is_dir=False,
                            size=info.uncompressed, modified=ts)
             if info.is_symlink:
-                node.status = "Symbolic link (content shown is the stored link target)"
+                node.status = ParseIssue("entry.symlink_stored_target")
             nodes[parent_path].children.append(node)
             nodes[virtual_path] = node
             occurrences.setdefault(stored_path, []).append(node)
@@ -1514,9 +1524,9 @@ class SevenZipVFS(VFS):
         try:
             self._zf.extract(targets=targets, factory=factory)
         except py7zr.exceptions.PasswordRequired as exc:
-            raise PasswordRequiredError(f"7z archive is password-protected: {self._path}") from exc
+            raise PasswordRequiredError(ParseIssue("password.7z_required", {"path": str(self._path)})) from exc
         except (lzma.LZMAError, py7zr.exceptions.CrcError) as exc:
-            raise WrongPasswordError("Incorrect 7z archive password") from exc
+            raise WrongPasswordError(ParseIssue("password.7z_wrong")) from exc
         finally:
             self._zf.reset()
 
@@ -1717,7 +1727,7 @@ class RawImageVFS(VFS):
     def close(self) -> None:
         self._handle.close()
 
-    def volume_info(self, node: VFSNode) -> dict[str, str] | None:
+    def volume_info(self, node: VFSNode) -> dict[str, Any] | None:
         """qnxprobe's own diagnosis for a node that needs an explicit status
         rather than looking like an ordinary, unremarkable file: a recovered
         deleted file, an unallocated gap, or a partition whose filesystem is
@@ -1731,8 +1741,8 @@ class RawImageVFS(VFS):
             return None
         if entry.deleted is not None:
             status = (
-                "recovered (content intact)" if entry.deleted.recoverable
-                else f"not recoverable: {entry.deleted.reason}"
+                ParseIssue("entry.recovered_intact") if entry.deleted.recoverable
+                else ParseIssue("entry.not_recoverable", detail=str(entry.deleted.reason))
             )
             return {"kind": "deleted file", "note": status}
         if entry.walker is not None:
@@ -2018,7 +2028,7 @@ def _read_only_mount(path: Path) -> bool:
         return False
 
 
-def _source_atime_note(path: Path, vfs: VFS) -> str:
+def _source_atime_note(path: Path, vfs: VFS) -> str | ParseIssue:
     """load_note for a single file opened directly (DirectoryVFS sets its
     own). Archives, backups and disk images get none: only the container's
     access time can change there, never that of the files inside it."""
@@ -2051,7 +2061,7 @@ def _open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = Fals
     if not p.is_file():
         raise ValueError(f"Unsupported source type: {p}")
 
-    notes: list[str] = []
+    notes: list[ParseIssue] = []
     with open(p, "rb") as f:
         head = f.read(SNIFF_BYTES)
     kind = archive_kind(head)
@@ -2061,38 +2071,35 @@ def _open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = Fals
     elif kind == "7z":
         vfs = _open_7z(p, password, notes)
     elif kind == "tar":
-        vfs = _open_tar(p, "TAR signature found", notes)
+        vfs = _open_tar(p, ParseIssue("vfs.tar_signature_found"), notes)
     elif kind == "gzip":
         return TarVFS(p) if _is_gzip_wrapped_tar(p) else GzipVFS(p)
     elif kind == "android_backup":
         return AndroidBackupVFS(p, password=password)
     elif head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p):
-        vfs = _open_tar(p, "Compressed TAR found", notes)
+        vfs = _open_tar(p, ParseIssue("vfs.compressed_tar_found"), notes)
     elif p.name.lower().endswith(_TAR_SUFFIXES):
         # Pre-POSIX (V7) TAR has no magic; its name is all there is.
-        vfs = _open_tar(p, f"Named {_tar_suffix(p)}", notes)
+        vfs = _open_tar(p, ParseIssue("vfs.named_as", {"suffix": _tar_suffix(p)}), notes)
     if vfs is not None:
-        vfs.fallback_note = "; ".join(notes)
+        vfs.fallback_note = join_notes(notes)
         return vfs
 
     label = _NAMED_ARCHIVES.get(p.suffix.lower())
     if label is not None and kind is None and not notes:
-        notes.append(f"Named {p.suffix.lower()}, but no {label} signature found")
+        notes.append(ParseIssue("vfs.named_but_not", {"suffix": p.suffix.lower(), "label": label}))
     if kind is None:
         leading = zip_leading_bytes(p)
         if leading is not None:
             if embedded_zip:
                 zip_vfs = _open_zip(p, password, notes)
                 if zip_vfs is not None:
-                    zip_vfs.fallback_note = "; ".join(
-                        [f"ZIP archive opened after {leading:,} leading bytes", *notes]
+                    zip_vfs.fallback_note = join_notes(
+                        [ParseIssue("vfs.zip_opened_after", {"leading": leading}), *notes]
                     )
                     return zip_vfs
             else:
-                notes.append(
-                    f"Contains a ZIP archive after {leading:,} leading bytes — "
-                    "right-click → Open in New Window to browse it"
-                )
+                notes.append(ParseIssue("vfs.contains_zip_after", {"leading": leading}))
 
     # A disk image is recognised by its content, never its name -- .bin
     # or no extension at all are as common as .img/.dd. qnxprobe itself
@@ -2107,11 +2114,11 @@ def _open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = Fals
         raw_note = _raw_image_fallback_note(p, exc)
         if raw_note:
             notes.append(raw_note)
-    vfs.fallback_note = "; ".join(notes)
+    vfs.fallback_note = join_notes(notes)
     return vfs
 
 
-def _open_zip(p: Path, password: str, notes: list[str]) -> VFS | None:
+def _open_zip(p: Path, password: str, notes: list[ParseIssue]) -> VFS | None:
     """UFDRVFS for a UFDR's layout, else ZipVFS; None (reason in *notes*)
     when the archive can't be read. Password errors propagate."""
     from crush.core.ufdr import UFDROpenError, is_ufdr_zip
@@ -2120,17 +2127,17 @@ def _open_zip(p: Path, password: str, notes: list[str]) -> VFS | None:
         try:
             return UFDRVFS(p)
         except UFDROpenError as exc:
-            notes.append(f"UFDR layout found, but not opened as UFDR ({exc}); shown as plain ZIP")
+            notes.append(ParseIssue("vfs.ufdr_as_zip", detail=str(exc)))
     try:
         return ZipVFS(p, password=password)
     except (zipfile.BadZipFile, OSError, ValueError, EOFError, NotImplementedError) as exc:
         if isinstance(exc, (PasswordRequiredError, WrongPasswordError)):
             raise
-        notes.append(f"ZIP signature found, but not opened as ZIP — {exc}")
+        notes.append(ParseIssue("vfs.zip_not_opened", detail=str(exc)))
         return None
 
 
-def _open_7z(p: Path, password: str, notes: list[str]) -> VFS | None:
+def _open_7z(p: Path, password: str, notes: list[ParseIssue]) -> VFS | None:
     """SevenZipVFS; None (reason in *notes*) when the archive can't be
     read. Password errors propagate."""
     import py7zr
@@ -2138,15 +2145,15 @@ def _open_7z(p: Path, password: str, notes: list[str]) -> VFS | None:
     try:
         return SevenZipVFS(p, password=password)
     except (py7zr.exceptions.ArchiveError, TypeError) as exc:
-        notes.append(f"7z signature found, but not opened as 7z — {exc}")
+        notes.append(ParseIssue("vfs.7z_not_opened", detail=str(exc)))
         return None
 
 
-def _open_tar(p: Path, what: str, notes: list[str]) -> VFS | None:
+def _open_tar(p: Path, what: ParseIssue, notes: list[ParseIssue]) -> VFS | None:
     try:
         return TarVFS(p)
     except (tarfile.TarError, OSError, EOFError) as exc:
-        notes.append(f"{what}, but not opened as TAR — {exc}")
+        notes.append(ParseIssue("vfs.tar_not_opened", {"what": what}, detail=str(exc)))
         return None
 
 
@@ -2158,7 +2165,7 @@ def _tar_suffix(p: Path) -> str:
 _RAW_IMAGE_SUFFIXES = (".img", ".dd", ".raw", ".e01", ".001")
 
 
-def _raw_image_fallback_note(path: Path, exc: Exception) -> str:
+def _raw_image_fallback_note(path: Path, exc: Exception) -> ParseIssue | None:
     """Why a file that was meant to be a disk image opened as a plain file,
     or "" when nothing suggests it was meant to be one.
 
@@ -2179,8 +2186,8 @@ def _raw_image_fallback_note(path: Path, exc: Exception) -> str:
         or qnxprobe.looks_like_ewf(str(path))  # type: ignore[no-untyped-call]
         or (split_error and is_segment)
     ):
-        return f"Not opened as a disk image — {exc}"
-    return ""
+        return ParseIssue("vfs.not_disk_image", detail=str(exc))
+    return None
 
 
 def is_browsable_source_file(path: str | Path) -> bool:

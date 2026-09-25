@@ -60,6 +60,7 @@ from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
+from crush.core.issues import ParseIssue
 from crush.core.session import Session
 from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFilter
 from crush.ui.fs_panel import FilesystemPanel
@@ -2860,7 +2861,7 @@ class MainWindow(QMainWindow):
                 vol_info = vfs.volume_info(node)
                 if vol_info is not None:
                     fmt_meta["Filesystem"] = vol_info["kind"] or "unknown"
-                    fmt_meta["Status"] = vol_info["note"] or "no reader for this content — showing raw bytes"
+                    fmt_meta["Status"] = vol_info["note"] or ParseIssue("entry.raw_no_reader")
 
             # Cellebrite's own recorded MD5/SHA-256/category for this node,
             # plus an explicit status if its bytes couldn't be located in

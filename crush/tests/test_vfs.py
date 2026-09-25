@@ -252,7 +252,7 @@ def test_named_android_backup_without_magic_opens_as_file_with_note(tmp_path: Pa
 
     vfs = open_vfs(path)
     assert isinstance(vfs, FileVFS)
-    assert vfs.fallback_note == "Named .ab, but no Android backup signature found"
+    assert str(vfs.fallback_note) == "Named .ab, but no Android backup signature found"
 
 
 def test_itunes_backup_vfs(itunes_backup_fixture: Path) -> None:

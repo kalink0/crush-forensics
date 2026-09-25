@@ -638,6 +638,129 @@ MESSAGES: dict[str, str] = {
     "locate.no_range": "No byte range for this cell: {reason}",
     "locate.not_recorded": "the decoder recorded none for it",
     "locate.segb_record_offsets": "the record's offsets could not be read ({detail})",
+    # -- Several notes about one thing ------------------------------------------
+    "common.notes": "{notes}",
+    # -- Password / key rejections (shown above the retry prompt) ----------------
+    "password.zip_required": "ZIP archive is password-protected: {path}",
+    "password.zip_wrong": "Incorrect ZIP archive password",
+    "password.7z_required": "7z archive is password-protected: {path}",
+    "password.7z_wrong": "Incorrect 7z archive password",
+    "password.ab_required": "Android backup is password-protected: {path}",
+    "password.ab_wrong": "Incorrect Android backup password",
+    "password.ab_padding": "Payload padding invalid after decryption (wrong password?)",
+    "password.itunes_required": "iTunes backup is password-protected: {path}",
+    "password.itunes_wrong": "Incorrect backup password",
+    "password.itunes_padding": "Padding invalid after decryption (wrong password?)",
+    "password.itunes_no_class_key": "Backup keybag has no usable class key for class {class_num}",
+    "password.realm_not_hex": "Not a valid hex key: {detail}",
+    "password.realm_key_length": (
+        "Realm encryption key must be {size} bytes ({hex_chars} hex characters) — "
+        "got {got} bytes"
+    ),
+    "password.realm_key_size": "Realm encryption key must be {size} bytes",
+    "password.realm_hmac": (
+        "HMAC mismatch decrypting Realm file (wrong key, or the file is corrupt)"
+    ),
+    "vfs.ab_unsupported_encryption": "Unsupported Android backup encryption: {value}",
+    "vfs.ab_not_backup": "Not an Android backup: {path}",
+    # -- Opening a source (status bar notes) ---------------------------------------
+    "vfs.named_but_not": "Named {suffix}, but no {label} signature found",
+    "vfs.contains_zip_after": (
+        "Contains a ZIP archive after {leading:,} leading bytes — right-click → "
+        "Open in New Window to browse it"
+    ),
+    "vfs.zip_opened_after": "ZIP archive opened after {leading:,} leading bytes",
+    "vfs.ufdr_as_zip": "UFDR layout found, but not opened as UFDR ({detail}); shown as plain ZIP",
+    "vfs.zip_not_opened": "ZIP signature found, but not opened as ZIP — {detail}",
+    "vfs.7z_not_opened": "7z signature found, but not opened as 7z — {detail}",
+    "vfs.tar_signature_found": "TAR signature found",
+    "vfs.compressed_tar_found": "Compressed TAR found",
+    "vfs.named_as": "Named {suffix}",
+    "vfs.tar_not_opened": "{what}, but not opened as TAR — {detail}",
+    "vfs.not_disk_image": "Not opened as a disk image — {detail}",
+    "vfs.atime_platform": (
+        "Crush does not prevent access-time updates on this platform; mount the "
+        "evidence read-only to prevent them"
+    ),
+    "vfs.atime_not_owned": (
+        "{count:,} file(s) are not owned by the current user, so Crush can't read "
+        "them with O_NOATIME: reading them may update their access time (mount the "
+        "evidence read-only to prevent this)"
+    ),
+    # -- Entries in a browsed source (Properties: Entry status) --------------------
+    "entry.duplicate": (
+        "Stored {count} times in this archive under this name; this is occurrence "
+        "{k} of {count} (archive order)"
+    ),
+    "entry.symlink_target": "Symbolic link → {target} (content shown is the target)",
+    "entry.symlink_stored_target": "Symbolic link (content shown is the stored link target)",
+    "entry.symlink_folder": (
+        "Symbolic link → {target} (not followed; content shown is the target)"
+    ),
+    "entry.symlink_unreadable": (
+        "Symbolic link (not followed); its target could not be read: {detail}"
+    ),
+    "entry.symlink_no_target": "Symbolic link (the backup records no target for it)",
+    "entry.symlink_raw": (
+        "Symbolic link — its target/content is not decoded by the filesystem reader"
+    ),
+    "entry.hard_link": "Hard link to {target}",
+    "entry.special_stored": "Special file ({kind}) — no content stored",
+    "entry.special_not_read": "Special file ({kind}) — no content is read",
+    "entry.special_raw": "Special file (mode {mode}) — no content",
+    "entry.unreadable": "Could not be read: {detail}",
+    "entry.folder_unlisted": "Folder could not be listed: {detail}",
+    "entry.no_backup_content": "No content stored in the backup for this entry (fileID {file_id})",
+    "entry.file_key_unreadable": (
+        "Encrypted in the backup, but its file key could not be read ({detail}); "
+        "the content is shown as stored (ciphertext)"
+    ),
+    "entry.raw_depth": (
+        "Not listed: nested deeper than {limit} directories (guard against a "
+        "directory loop in a damaged filesystem)"
+    ),
+    "entry.raw_loop": (
+        "Not listed again: this directory was already reached by another path "
+        "(a directory loop in the filesystem structure)"
+    ),
+    "entry.raw_unlisted": "Directory could not be listed: {detail}",
+    "entry.raw_entry_unreadable": "Entry metadata could not be read: {detail}",
+    "entry.raw_deleted_enum_failed": (
+        "Deleted files could not be enumerated: {detail}"
+    ),
+    "entry.recovered_intact": "recovered (content intact)",
+    "entry.not_recoverable": "not recoverable: {detail}",
+    "entry.raw_no_reader": "no reader for this content — showing raw bytes",
+    # -- UFDR ------------------------------------------------------------------------
+    "ufdr.not_recorded": "(not recorded)",
+    "ufdr.not_located": "not located in container",
+    "ufdr.not_readable": (
+        "Not a readable UFDR container -- if this was exported as multiple parts, "
+        "rejoin them first; segmented UFDR exports aren't supported yet."
+    ),
+    "ufdr.missing_members": "Not a UFDR container -- missing {members}",
+    "ufdr.no_space": (
+        "Not enough space in the temp directory to extract the UFDR's database "
+        "({needed:,} bytes needed, {free:,} available at {location})"
+    ),
+    "ufdr.no_device_schema": "UFDR database has no per-device schema -- unrecognised layout",
+    "ufdr.missing_columns": (
+        "UFDR database's {tag} table is missing expected column(s): {columns}"
+    ),
+    "ufdr.no_table": "UFDR database has no {tag} table in schema {schema}",
+    "ufdr.content_not_located": "Content not located in UFDR container: {path}",
+    "ufdr.path_collision": (
+        "Its path collides with a {other} of the same name; shown under this name instead"
+    ),
+    "ufdr.device_id_mismatch": (
+        "database.json names device {device}, which the database dump doesn't contain; "
+        "the tree shows the device(s) the dump holds: {found}"
+    ),
+    "ufdr.other_directory": "directory",
+    "ufdr.other_file": "file",
+    "ufdr.rows_skipped": (
+        "{count:,} Nodes row(s) with an unreadable Type were left out of the tree"
+    ),
     # -- Timestamp column decoding (cell markers) ------------------------------
     "ts_decode.not_a_number": "not a number",
     "ts_decode.out_of_range": "out of range for this format",
