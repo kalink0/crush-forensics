@@ -16,14 +16,20 @@ Any other named group is stored in the ``extra`` dict of the entry.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from crush.core.issues import ParseIssue
+from crush.core.log_ts import TS_UNPARSED, naive_ts, parse_iso_ts
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import ParseResult
+from crush.parsers.log_parser import timestamp_notes
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Profile dataclass
@@ -98,8 +104,10 @@ class ProfileManager:
             try:
                 with path.open(encoding="utf-8") as fh:
                     profiles.append(CustomFormatProfile.from_dict(json.load(fh)))
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                # A broken profile file is user config, not evidence: skip
+                # it so the others stay usable, but never silently.
+                _logger.warning("Skipping unreadable log format profile %s: %s", path, exc)
         return profiles
 
     @classmethod
@@ -138,22 +146,6 @@ _LEVEL_NORM: dict[str, str] = {
 
 def _normalise_level(raw: str) -> str:
     return _LEVEL_NORM.get(raw.strip().lower(), "UNKNOWN")
-
-
-def _parse_iso_fallback(s: str) -> datetime | None:
-    """Try common ISO-like formats, ignoring timezone info in the string."""
-    s = s.rstrip("Z").replace("T", " ").replace(",", ".")
-    for fmt in (
-        "%Y-%m-%d %H:%M:%S.%f",
-        "%Y-%m-%d %H:%M:%S",
-        "%m/%d/%y %H:%M:%S.%f",
-        "%m/%d/%y %H:%M:%S",
-    ):
-        try:
-            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
 
 
 def _group_events(
@@ -207,10 +199,14 @@ class CustomFormatParser:
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         raw_bytes = vfs.read(node)
+        encoding_issue: ParseIssue | None = None
         try:
             text = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as exc:
             text = raw_bytes.decode("utf-8", errors="replace")
+            encoding_issue = ParseIssue(
+                "log.not_utf8", {"offset": exc.start}, detail=exc.reason,
+            )
 
         lines = text.splitlines(keepends=False)
         entries = self.parse_lines(lines)
@@ -218,10 +214,17 @@ class CustomFormatParser:
         ts_count = sum(1 for e in entries if e["timestamp"] is not None)
         metadata: dict[str, Any] = {
             "File size":              f"{node.size:,} B",
-            "Log format":             f"Custom: {self._profile.name}",
+            "Log format":             ParseIssue(
+                "log.format_custom", {"name": self._profile.name},
+            ),
             "Total entries":          str(len(entries)),
             "Entries with timestamp": str(ts_count),
         }
+        notes = timestamp_notes(entries)
+        if notes:
+            metadata["Timestamp notes"] = notes
+        if encoding_issue is not None:
+            metadata["Encoding"] = encoding_issue
         text_index = " ".join(e["message"] for e in entries[:500])
         return ParseResult(
             viewer_type="log",
@@ -250,6 +253,7 @@ class CustomFormatParser:
 
         no_match: dict[str, Any] = {
             "timestamp": None,
+            "ts_flags":  "",
             "level":     profile.level_default,
             "process":   "",
             "pid":       "",
@@ -269,17 +273,18 @@ class CustomFormatParser:
 
         # -- Timestamp --
         ts: datetime | None = None
+        ts_flags = ""
         ts_str = gd.get("timestamp") or ""
         if ts_str:
             if profile.timestamp_format:
                 try:
-                    ts = datetime.strptime(ts_str, profile.timestamp_format)
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
+                    ts, ts_flags = naive_ts(
+                        datetime.strptime(ts_str, profile.timestamp_format)
+                    )
                 except ValueError:
                     pass
             if ts is None:
-                ts = _parse_iso_fallback(ts_str)
+                ts, ts_flags = parse_iso_ts(ts_str)
 
         # -- Level --
         raw_level = gd.get("level") or ""
@@ -307,6 +312,7 @@ class CustomFormatParser:
 
         return {
             "timestamp": ts,
+            "ts_flags":  ts_flags if ts is not None else TS_UNPARSED if ts_str else "",
             "level":     level,
             "process":   gd.get("process") or "",
             "pid":       gd.get("pid") or "",

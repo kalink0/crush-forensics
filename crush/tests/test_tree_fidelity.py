@@ -76,17 +76,17 @@ def test_tar_shows_every_same_named_member(tmp_path: Path, mode: str) -> None:
     assert (vfs.read(first), vfs.read(second)) == (b"old", b"new!")
     assert (vfs.peek(first, 8), vfs.peek(second, 8)) == (b"old", b"new!")
     assert (first.size, second.size) == (3, 4)
-    assert "occurrence 1 of 2" in first.status and "occurrence 2 of 2" in second.status
+    assert "occurrence 1 of 2" in str(first.status) and "occurrence 2 of 2" in str(second.status)
 
 
 def test_tar_links_and_special_files(tmp_path: Path) -> None:
     vfs = TarVFS(_tar(tmp_path / "t.tar"))
     names = _children(vfs.root())
-    assert names["link"].status.startswith("Symbolic link → /data/secret")
+    assert str(names["link"].status).startswith("Symbolic link → /data/secret")
     assert vfs.read(names["link"]) == b"/data/secret"
-    assert names["hard"].status == "Hard link to dir/.hidden/x.txt"
+    assert str(names["hard"].status) == "Hard link to dir/.hidden/x.txt"
     assert vfs.read(names["hard"]) == b"x"
-    assert names["fifo"].status == "Special file (FIFO) — no content stored"
+    assert str(names["fifo"].status) == "Special file (FIFO) — no content stored"
     assert vfs.read(names["fifo"]) == b""
 
 
@@ -102,7 +102,7 @@ def test_zip_shows_every_same_named_entry_with_its_own_bytes(tmp_path: Path) -> 
     first, second = names["dup.txt"], names["dup.txt (2)"]
     assert (first.size, vfs.read(first)) == (3, b"old")
     assert (second.size, vfs.read(second)) == (4, b"new!")
-    assert "occurrence 2 of 2" in second.status
+    assert "occurrence 2 of 2" in str(second.status)
 
 
 def test_zip_marks_symbolic_links(tmp_path: Path) -> None:
@@ -115,9 +115,9 @@ def test_zip_marks_symbolic_links(tmp_path: Path) -> None:
         zf.writestr(".bashrc", b"a")
     vfs = ZipVFS(path)
     names = _children(vfs.root())
-    assert names["link"].status.startswith("Symbolic link")
+    assert str(names["link"].status).startswith("Symbolic link")
     assert vfs.read(names["link"]) == b"/data/secret"
-    assert names[".bashrc"].status == ""
+    assert str(names[".bashrc"].status) == ""
 
 
 # -- 7z -------------------------------------------------------------------------
@@ -135,7 +135,7 @@ def test_7z_shows_every_same_named_entry_with_its_own_bytes(
     names = _children(vfs.root())
     assert vfs.read(names["dup.txt"]) == b"old"
     assert vfs.read(names["dup.txt (2)"]) == b"new!"
-    assert "occurrence 2 of 2" in names["dup.txt (2)"].status
+    assert "occurrence 2 of 2" in str(names["dup.txt (2)"].status)
 
     prefetched = SevenZipVFS(path)
     assert prefetched.prefetch_all()
@@ -166,7 +166,7 @@ def test_folder_symbolic_links_are_shown_not_followed(tmp_path: Path) -> None:
                          ("broken", "/does/not/exist")):
         node = names[name]
         assert not node.is_dir
-        assert node.status.startswith(f"Symbolic link → {target}")
+        assert str(node.status).startswith(f"Symbolic link → {target}")
         assert vfs.read(node) == target.encode()
 
 
@@ -175,7 +175,7 @@ def test_folder_fifo_is_never_read(tmp_path: Path) -> None:
     os.mkfifo(tmp_path / "pipe")
     vfs = DirectoryVFS(tmp_path)
     node = _children(vfs.root())["pipe"]
-    assert node.status == "Special file (FIFO) — no content is read"
+    assert str(node.status) == "Special file (FIFO) — no content is read"
     assert vfs.read(node) == b""  # a real read would block forever
 
 
@@ -192,7 +192,7 @@ def test_unlistable_folder_does_not_fail_the_source(tmp_path: Path) -> None:
     finally:
         locked.chmod(0o700)
     names = _children(vfs.root())
-    assert names["locked"].status.startswith("Folder could not be listed: ")
+    assert str(names["locked"].status).startswith("Folder could not be listed: ")
     assert vfs.read(names["ok.txt"]) == b"ok"
 
 
@@ -207,7 +207,7 @@ def test_folder_notes_files_it_cannot_protect_from_atime_updates(
     monkeypatch.setattr(os, "geteuid", lambda: os.getuid() + 1)  # not the owner
     monkeypatch.setattr(vfs_module, "_read_only_mount", lambda _p: False)
     vfs = DirectoryVFS(tmp_path)
-    assert vfs.load_note.startswith("2 file(s) are not owned by the current user")
+    assert str(vfs.load_note).startswith("2 file(s) are not owned by the current user")
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="O_NOATIME is Linux-only")
@@ -232,7 +232,7 @@ def test_single_file_not_owned_gets_atime_note(
     monkeypatch.setattr(vfs_module, "_read_only_mount", lambda _p: False)
     vfs = open_vfs(path)
     assert isinstance(vfs, FileVFS)
-    assert "access time" in vfs.load_note
+    assert "access time" in str(vfs.load_note)
 
 
 # -- iTunes backup ----------------------------------------------------------------
@@ -261,9 +261,9 @@ def test_itunes_symbolic_link_and_missing_content(itunes_backup_fixture: Path) -
     vfs = ITunesBackupVFS(itunes_backup_fixture)
     library = _children(_children(vfs.root())["HomeDomain"])["Library"]
     names = _children(library)
-    assert names["link"].status == "Symbolic link → /var/mobile/x (content shown is the target)"
+    assert str(names["link"].status) == "Symbolic link → /var/mobile/x (content shown is the target)"
     assert vfs.read(names["link"]) == b"/var/mobile/x"
-    assert names["gone.txt"].status.startswith("No content stored in the backup")
+    assert str(names["gone.txt"].status).startswith("No content stored in the backup")
 
 
 # -- Disk images (qnxprobe walk) --------------------------------------------------
@@ -307,8 +307,8 @@ def test_raw_walk_keeps_links_and_specials_and_types_devices_right() -> None:
     names = _children(root)
     assert set(names) == {"file", "link", "blockdev", "sock"}
     assert not names["blockdev"].is_dir and not names["sock"].is_dir
-    assert names["link"].status.startswith("Symbolic link")
-    assert names["blockdev"].status.startswith("Special file")
+    assert str(names["link"].status).startswith("Symbolic link")
+    assert str(names["blockdev"].status).startswith("Special file")
     assert read_map["/vol/link"].stored == b""
 
 
@@ -327,4 +327,4 @@ def test_raw_walk_marks_the_depth_guard() -> None:
     node = root
     while node.children:
         node = node.children[0]
-    assert node.status.startswith(f"Not listed: nested deeper than {_MAX_DEPTH} directories")
+    assert str(node.status).startswith(f"Not listed: nested deeper than {_MAX_DEPTH} directories")

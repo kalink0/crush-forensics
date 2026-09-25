@@ -234,7 +234,8 @@ def test_sqlcipher_correct_password_parses_tables(tmp_path: Path) -> None:
         [1, "alice@example.com", "Hello Bob"],
         [2, "bob@example.com", "Hi Alice"],
     ]
-    assert result.metadata["Encrypted"] == "Yes (SQLCipher, password supplied)"
+    assert result.metadata["Encrypted"].code == "sqlite.encrypted_password"
+    assert str(result.metadata["Encrypted"]) == "Yes (SQLCipher, password supplied)"
 
 
 def test_sqlcipher_wal_companion_is_decrypted_and_merged(tmp_path: Path) -> None:
@@ -311,7 +312,8 @@ def test_sqlcipher_raw_key_opens_via_advanced_params(tmp_path: Path) -> None:
     result = parser.parse(node, vfs, password=raw_key_hex, raw_key=True)
 
     assert result.data["messages"]["rows"] == [[1, "secret"]]
-    assert result.metadata["Encrypted"] == "Yes (SQLCipher, raw key supplied)"
+    assert result.metadata["Encrypted"].code == "sqlite.encrypted_raw_key"
+    assert str(result.metadata["Encrypted"]) == "Yes (SQLCipher, raw key supplied)"
 
     # Same raw key, but treated as a passphrase (raw_key=False, the
     # default) must NOT open the file -- proving raw_key actually changes
@@ -602,7 +604,10 @@ def test_realm_schema_extraction_format9_big_blobs(tmp_path: Path) -> None:
     # must be explicitly flagged with the parser's own concrete reason,
     # never silently left at zero rows or a generic "could not be decoded".
     assert result.data["tables"] == []
-    assert result.metadata["Row data"] == (
+    row_data = result.metadata["Row data"]
+    assert row_data.code == "realm.pre_cluster_partial"
+    assert [r.code for r in row_data.params["reasons"]] == ["realm.group_no_table_refs_slot"]
+    assert str(row_data) == (
         "Pre-Cluster layout — Group top array has no table-refs slot (fewer than 2 children)"
     )
 
@@ -674,7 +679,10 @@ def test_realm_streaming_form_resolves_via_footer(
     assert result.data["streaming_form"] == {
         "top_ref": 96, "footer_valid": True,
     }
-    assert "resolved from end-of-file footer" in result.metadata["Streaming form"]
+    assert result.metadata["Streaming form"].code == "realm.streaming_footer_ok"
+    assert str(result.metadata["Streaming form"]) == (
+        "Yes — top ref resolved from end-of-file footer (offset 96)"
+    )
 
 
 def test_realm_streaming_form_corrupt_footer_marked_explicit(
@@ -696,8 +704,10 @@ def test_realm_streaming_form_corrupt_footer_marked_explicit(
 
     assert result.data["schema"] == []
     assert result.data["streaming_form"] == {"top_ref": None, "footer_valid": False}
-    assert "could not be resolved" in result.metadata["Streaming form"]
-    assert result.metadata["Tables found"] == "Unresolved (see Streaming form)"
+    assert result.metadata["Streaming form"].code == "realm.streaming_footer_bad"
+    assert "could not be resolved" in str(result.metadata["Streaming form"])
+    assert result.metadata["Tables found"].code == "realm.tables_unresolved"
+    assert str(result.metadata["Tables found"]) == "Unresolved (see Streaming form)"
 
 
 def test_realm_pre_cluster_mixed_column(tmp_path: Path) -> None:
@@ -1005,7 +1015,7 @@ def test_realm_parser_decrypts_with_correct_key(tmp_path: Path) -> None:
 
     assert result.viewer_type == "realm"
     assert "class_Task" in result.data["schema"]
-    assert result.metadata.get("Encrypted", "").startswith("Yes")
+    assert result.metadata["Encrypted"].code == "realm.encrypted_key_supplied"
 
     from crush.core.passwords import WrongPasswordError
 
@@ -1026,7 +1036,9 @@ def test_extract_table_data_reports_reason_when_table_refs_missing() -> None:
     raw = _array_hdr(0x46, 1) + _pad8((0).to_bytes(4, "little"))
     tables, reason = _extract_table_data(raw, 0, ["class_Foo"], len(raw))
     assert tables == []
-    assert reason == "Group top array has no table-refs slot (fewer than 2 children)"
+    assert reason is not None
+    assert [r.code for r in reason] == ["realm.group_no_table_refs_slot"]
+    assert str(reason[0]) == "Group top array has no table-refs slot (fewer than 2 children)"
 
 
 def test_extract_table_data_flags_estimated_row_count_on_corrupt_key_slot() -> None:
@@ -1879,7 +1891,7 @@ def test_abx_decode_unknown_value_type_reports_error() -> None:
 
     result = decode_abx(data)
 
-    assert any("Unknown ABX value type" in w for w in result.warnings)
+    assert any("Unknown ABX value type" in w.detail for w in result.warnings)
 
 
 def test_abx_decode_invalid_string_pool_reference_reports_error() -> None:
@@ -1893,7 +1905,7 @@ def test_abx_decode_invalid_string_pool_reference_reports_error() -> None:
 
     result = decode_abx(data)
 
-    assert any("Invalid ABX string pool reference" in w for w in result.warnings)
+    assert any("Invalid ABX string pool reference" in w.detail for w in result.warnings)
 
 
 def test_abx_decode_multi_root_wraps_synthetic_root() -> None:
@@ -1911,7 +1923,7 @@ def test_abx_decode_multi_root_wraps_synthetic_root() -> None:
 
     result = decode_abx(data)
 
-    assert any("Multiple root elements" in w for w in result.warnings)
+    assert any(w.code == "abx.multiple_roots" for w in result.warnings)
 
     from lxml import etree
 
@@ -1935,7 +1947,7 @@ def test_abx_decode_sanitizes_illegal_control_chars() -> None:
 
     assert "\\x01" in result.xml
     assert "\x01" not in result.xml
-    assert any("illegal control character" in w.lower() for w in result.warnings)
+    assert any(w.code == "abx.control_chars" for w in result.warnings)
 
     from lxml import etree
 
@@ -1956,7 +1968,7 @@ def test_abx_decode_surfaces_processing_instruction_not_silently() -> None:
     result = decode_abx(data)
 
     assert "mypi data" in result.xml
-    assert any("PROCESSING_INSTRUCTION" in w for w in result.warnings)
+    assert any(w.params.get("token") == "PROCESSING_INSTRUCTION" for w in result.warnings)
 
 
 def test_abx_decode_reports_truncation_scope_on_error() -> None:
@@ -1975,9 +1987,9 @@ def test_abx_decode_reports_truncation_scope_on_error() -> None:
     result = decode_abx(data)
 
     assert any(
-        w.startswith("TRUNCATED:")
-        and f"offset {expected_offset}" in w
-        and f"{expected_remaining} of {len(data)} bytes not decoded" in w
+        str(w).startswith("TRUNCATED:")
+        and f"offset {expected_offset}" in str(w)
+        and f"{expected_remaining} of {len(data)} bytes not decoded" in str(w)
         for w in result.warnings
     )
     assert "ABX-DECODE-TRUNCATED" in result.xml
@@ -2027,7 +2039,7 @@ def test_image_parser_atx_metadata(tmp_path: Path) -> None:
     assert result.metadata["Height"] == 16
     assert result.metadata["Pixel format"] == "ASTC 4x4"
     assert result.metadata["Chunks"] == "HEAD"
-    assert result.metadata["Decode status"] == "ATX metadata parsed; image decode unavailable"
+    assert result.metadata["Decode status"].code == "atx.decode_unavailable"
 
 
 def test_image_parser_atx_image_decode(tmp_path: Path) -> None:
@@ -2044,7 +2056,7 @@ def test_image_parser_atx_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Width"] == 4
     assert result.metadata["Height"] == 4
     assert result.metadata["Pixel format"] == "ASTC 4x4"
-    assert result.metadata["Decode status"] == "Decoded ATX to PNG"
+    assert result.metadata["Decode status"].code == "atx.decoded"
 
 
 def test_image_parser_can_parse_ktx_magic(tmp_path: Path) -> None:
@@ -2071,7 +2083,7 @@ def test_image_parser_ktx_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Width"] == 8
     assert result.metadata["Height"] == 4
     assert result.metadata["Payload"] == "ASTC"
-    assert result.metadata["Decode status"] == "Decoded KTX to PNG"
+    assert result.metadata["Decode status"].code == "ktx.decoded"
 
 
 def test_image_parser_ktx_lzfse_image_decode(tmp_path: Path) -> None:
@@ -2090,7 +2102,7 @@ def test_image_parser_ktx_lzfse_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Format"] == "KTX"
     assert result.metadata["Payload"] == "LZFSE-compressed ASTC"
     assert "Compression_APPLE" in result.metadata["Key/value entries"]
-    assert result.metadata["Decode status"] == "Decoded KTX to PNG"
+    assert result.metadata["Decode status"].code == "ktx.decoded"
 
 
 def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Path) -> None:
@@ -2104,8 +2116,8 @@ def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Pa
 
     assert result.viewer_type == "text"
     assert result.metadata["Format"] == "KTX"
-    assert result.metadata["Pixel format"] == "Unsupported (glInternalFormat 0x881A)"
-    assert result.metadata["Decode status"] == "KTX metadata parsed; image decode unavailable"
+    assert str(result.metadata["Pixel format"]) == "Unsupported (glInternalFormat 0x881A)"
+    assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
 
 
 def _tiny_jpeg() -> bytes:
@@ -2147,7 +2159,7 @@ def test_image_parser_reports_c2pa_manifest_in_metadata(tmp_path: Path) -> None:
     node = next(c for c in vfs.root().children if c.name == "signed.jpg")
     result = ImageParser().parse(node, vfs)
 
-    assert result.metadata["C2PA"] == "Manifest found"
+    assert result.metadata["C2PA"].code == "c2pa.manifest_found"
     assert result.metadata["C2PA Manifest ID"] == "test:manifest"
 
 
@@ -2159,7 +2171,7 @@ def test_image_parser_reports_c2pa_not_present_for_plain_jpeg(tmp_path: Path) ->
     node = next(c for c in vfs.root().children if c.name == "plain.jpg")
     result = ImageParser().parse(node, vfs)
 
-    assert result.metadata["C2PA"] == "Not present"
+    assert result.metadata["C2PA"].code == "c2pa.not_present"
 
 
 def test_ktx_big_endian_decodes_to_the_same_pixels() -> None:
@@ -2187,7 +2199,10 @@ def test_ktx_mislabelled_byte_order_is_refused_not_guessed() -> None:
     result = decode_ktx(bytes(data))
 
     assert result.image is None
-    assert any("unsupported KTX pixel format" in w for w in result.warnings)
+    assert any(
+        w.code == "ktx.decode_failed" and w.params["reason"].code == "ktx.unsupported_pixel_format"
+        for w in result.warnings
+    )
 
 
 def test_ktx_rejects_other_versions() -> None:
@@ -2197,7 +2212,7 @@ def test_ktx_rejects_other_versions() -> None:
 
     assert result.header is None
     assert result.image is None
-    assert result.warnings == ("Unsupported KTX version",)
+    assert [w.code for w in result.warnings] == ["ktx.unsupported_version"]
 
 
 def test_ktx_rejects_atx_container() -> None:
@@ -2206,7 +2221,7 @@ def test_ktx_rejects_atx_container() -> None:
     result = decode_ktx(_make_atx_metadata_bytes())
 
     assert result.header is None
-    assert result.warnings == ("Not a KTX 1.1 file",)
+    assert [w.code for w in result.warnings] == ["ktx.not_ktx"]
 
 
 def test_ktx_truncated_key_value_block_warns_without_raising() -> None:
@@ -2217,7 +2232,7 @@ def test_ktx_truncated_key_value_block_warns_without_raising() -> None:
 
     assert result.header is not None
     assert result.image is None
-    assert any("key/value" in w.lower() for w in result.warnings)
+    assert any(w.code == "ktx.kv_beyond_eof" for w in result.warnings)
 
 # ---------------------------------------------------------------------------
 # HexFallbackParser — format identification via FormatDatabase
@@ -2238,10 +2253,10 @@ def test_hex_fallback_identifies_sqlite_format(tmp_path: Path) -> None:
     assert "Format (identified)" in result.metadata
     assert "SQLite" in result.metadata["Format (identified)"]
     assert "Parser support" in result.metadata
-    assert result.metadata["Parser support"] == "Supported"
+    assert result.metadata["Parser support"].code == "hexfallback.parser_mismatch"
 
 
-def test_hex_fallback_unknown_has_no_format_key(tmp_path: Path) -> None:
+def test_hex_fallback_unknown_says_not_identified(tmp_path: Path) -> None:
     raw = b"\xDE\xAD\xBE\xEF" * 32
     (tmp_path / "random.xyz999").write_bytes(raw)
 
@@ -2253,7 +2268,7 @@ def test_hex_fallback_unknown_has_no_format_key(tmp_path: Path) -> None:
     result = parser.parse(node, vfs)
 
     assert result.viewer_type == "hex"
-    assert "Format (identified)" not in result.metadata
+    assert result.metadata["Format (identified)"].code == "hexfallback.not_identified"
 
 
 # ---------------------------------------------------------------------------
@@ -3036,7 +3051,7 @@ def test_render_proto_payload_shows_undecodable_blobs_as_hex() -> None:
     from crush.parsers.segb_parser import _render_proto_payload
     binary = b"\xde\xad\xbe\xef"
     data = _proto_field(5, 2, _varint(len(binary)) + binary)
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     # field 5 must stay visible — no field silently vanishes from the rendered view.
     assert "5" in result
     assert "4 B" in result
@@ -3049,7 +3064,7 @@ def test_render_proto_payload_double_field_gets_cocoa_hint_not_replaced() -> Non
     from crush.parsers.segb_parser import _render_proto_payload
     # 694656000.0 = 2023-01-06 UTC as a Cocoa timestamp (2001-01-01 epoch + 8040 days).
     data = _proto_field(4, 1, struct.pack("<d", 694_656_000.0))
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     assert f"{694_656_000.0:.6g}" in result  # raw value still present, not replaced
     assert "possible Cocoa timestamp" in result
     assert "2023" in result
@@ -3071,7 +3086,7 @@ def test_render_proto_payload_repeated_fields() -> None:
     """Repeated fields appear in the rendered output."""
     from crush.parsers.segb_parser import _render_proto_payload
     data = _proto_field(3, 0, _varint(1)) + _proto_field(3, 0, _varint(2))
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     assert result  # non-empty
     assert "3" in result
 
@@ -3086,7 +3101,7 @@ def test_render_proto_payload_nested_message_also_shows_raw_bytes() -> None:
     # continuation byte), but grammatically valid protobuf -> {1: 200}.
     inner = _proto_field(1, 0, _varint(200))
     data = _proto_field(5, 2, _varint(len(inner)) + inner)
-    result = _render_proto_payload(data)
+    result, _complete = _render_proto_payload(data)
     assert "{1:200}" in result
     assert f"[raw: {len(inner)} B: {inner.hex()}]" in result
 
@@ -3103,7 +3118,7 @@ def test_create_segb_sqlite_payload_columns() -> None:
         [0, 0, "Current", "2024-01-01", "2024-01-01", 0, 0, True,
          len(raw), (rendered, raw)],
     ]
-    path = _create_segb_sqlite(_COLUMNS_V1, rows)
+    path, _issue = _create_segb_sqlite(_COLUMNS_V1, rows)
     assert path is not None
     conn = sqlite3.connect(str(path))
     cols = [r[1] for r in conn.execute('PRAGMA table_info("SEGB")').fetchall()]
@@ -3223,7 +3238,7 @@ def test_decode_message_skips_simple_group() -> None:
     # field 1 end-group (0x0C), then field 3 varint 7 (0x18 0x07)
     raw = bytes([0x0B, 0x10, 0x63, 0x0C, 0x18, 0x07])
     decoded, warning, _ = _decode_message(raw)
-    assert warning == ""
+    assert warning is None
     entries = decoded["entries"]
     assert len(entries) == 1
     assert entries[0]["field"] == 3
@@ -3242,7 +3257,7 @@ def test_decode_message_skips_nested_group() -> None:
     # field 3 varint 7 (0x18 0x07)
     raw = bytes([0x0B, 0x1B, 0x20, 0x05, 0x1C, 0x0C, 0x18, 0x07])
     decoded, warning, _ = _decode_message(raw)
-    assert warning == ""
+    assert warning is None
     entries = decoded["entries"]
     assert len(entries) == 1
     assert entries[0]["field"] == 3
@@ -3256,7 +3271,7 @@ def test_decode_message_warns_on_truncated_group() -> None:
     # field 1 start-group (0x0B), field 2 varint 99 inside (0x10 0x63), then EOF
     raw = bytes([0x0B, 0x10, 0x63])
     decoded, warning, _ = _decode_message(raw)
-    assert "Truncated" in warning or "truncated" in warning.lower()
+    assert warning is not None and "truncated" in str(warning).lower()
 
 
 def test_decode_message_warns_on_unexpected_end_group() -> None:
@@ -3266,7 +3281,7 @@ def test_decode_message_warns_on_unexpected_end_group() -> None:
     # field 1 end-group (0x0C) at top level — no matching start-group
     raw = bytes([0x0C])
     decoded, warning, _ = _decode_message(raw)
-    assert "end-group" in warning.lower() or "Unexpected" in warning
+    assert warning is not None and warning.code == "protobuf.unexpected_end_group"
 
 
 # ---------------------------------------------------------------------------

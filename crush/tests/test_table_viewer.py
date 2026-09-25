@@ -546,7 +546,7 @@ def test_rollback_journal_default_view_and_toggle(qapp, tmp_path: Path) -> None:
     conn.execute("UPDATE messages SET body = body || '-x' WHERE id > 1")
 
     result = _open_crash_frozen_result(evidence_dir, conn)
-    assert "merged into current view" in result.metadata["Rollback journal"]
+    assert "merged into current view" in str(result.metadata["Rollback journal"])
 
     tv = TableViewer(result.data, source_name="crash.db")
     tv.show()  # .isVisible() below needs the widget actually shown, not just setVisible(True)

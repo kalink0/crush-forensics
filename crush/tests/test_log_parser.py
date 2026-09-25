@@ -7,18 +7,51 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from crush.core.log_ts import epoch_ts, parse_iso_ts
 from crush.core.vfs import DirectoryVFS
 from crush.parsers.log_parser import (
+    _BY_KEY,
     LogParser,
-    _parse_iso,
-    _parse_ctime,
-    _parse_epoch,
-    _try_json_lines,
-    _try_logcat,
-    _try_syslog,
-    _try_generic,
     _group_events,
+    _meets_threshold,
+    score_formats,
 )
+from crush.parsers.log_parser import _parse_ctime as _parse_ctime_flags
+
+
+def _parse_iso(s: str) -> datetime | None:
+    return parse_iso_ts(s)[0]
+
+
+def _parse_ctime(s: str) -> datetime | None:
+    return _parse_ctime_flags(s)[0]
+
+
+def _parse_epoch(s: str) -> datetime | None:
+    return epoch_ts(s)[0]
+
+
+def _try(key: str, lines: list[str]) -> list[dict[str, Any]] | None:
+    """Entries if *lines* reach format *key*'s own detection threshold."""
+    fmt = _BY_KEY[key]
+    scores, total = score_formats(lines)
+    return fmt.parse(lines) if _meets_threshold(fmt, scores, total) else None
+
+
+def _try_json_lines(lines: list[str]) -> list[dict[str, Any]] | None:
+    return _try("jsonl", lines)
+
+
+def _try_logcat(lines: list[str]) -> list[dict[str, Any]] | None:
+    return _try("logcat", lines)
+
+
+def _try_syslog(lines: list[str]) -> list[dict[str, Any]] | None:
+    return _try("syslog", lines)
+
+
+def _try_generic(lines: list[str]) -> list[dict[str, Any]] | None:
+    return _try("generic", lines)
 
 
 # ---------------------------------------------------------------------------
@@ -344,5 +377,5 @@ class TestLogParser:
         root = vfs.root()
         node = next(c for c in root.children if c.name == "test.log")
         result = LogParser().parse(node, vfs)
-        assert "Log format" in result.metadata
-        assert "JSON" in result.metadata["Log format"]
+        assert result.metadata["Log format"].code == "log.format_detected"
+        assert "JSON" in str(result.metadata["Log format"])

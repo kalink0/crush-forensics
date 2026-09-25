@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
+from crush.core.issues import render_value
 from crush.ui import open_url
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
@@ -109,9 +110,9 @@ class PropertiesPanel(QScrollArea):
             note.setStyleSheet("color: gray; font-size: 10px;")
             self._layout.addRow(note)
 
-        # Parser-supplied metadata
+        # Parser-supplied metadata (values may be ParseIssues)
         for key, val in metadata.items():
-            lbl = QLabel(str(val))
+            lbl = QLabel(render_value(val))
             lbl.setWordWrap(True)
             lbl.setTextInteractionFlags(_SELECTABLE)
             self._layout.addRow(f"{key}:", lbl)

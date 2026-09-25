@@ -23,13 +23,19 @@ import struct
 from pathlib import Path
 from typing import Any
 
+from crush.core.issues import ParseIssue
+from crush.core.sqlite_freeblocks import iter_database_pages
 from crush.core.sqlite_wal import PAGE_TYPE_TABLE_LEAF
 
 
-def extract_unallocated_space(page: bytes) -> dict[str, Any] | None:
+def extract_unallocated_space(
+    page: bytes, problems: list[ParseIssue] | None = None, page_num: int = 0,
+) -> dict[str, Any] | None:
     """Return the gap between a table-leaf page's pointer array and its
     cell-content area as ``{"offset", "size", "data"}``, or None if the page
-    isn't a table-leaf page, has no such gap, or the gap is all-zero.
+    isn't a table-leaf page, has no such gap, or the gap is all-zero. A
+    header whose content-area start lies beyond the page is reported in
+    *problems* rather than taken as "no gap".
     """
     if len(page) < 8 or page[0] != PAGE_TYPE_TABLE_LEAF:
         return None
@@ -39,7 +45,13 @@ def extract_unallocated_space(page: bytes) -> dict[str, Any] | None:
     content_start = content_start_raw if content_start_raw != 0 else 65536
     pointer_array_end = 8 + cell_count * 2
 
-    if pointer_array_end >= content_start or content_start > len(page):
+    if content_start > len(page):
+        if problems is not None:
+            problems.append(ParseIssue("unallocated.bad_content_start", {
+                "page": page_num, "start": content_start,
+            }))
+        return None
+    if pointer_array_end >= content_start:
         return None
 
     data = bytes(page[pointer_array_end:content_start])
@@ -50,7 +62,10 @@ def extract_unallocated_space(page: bytes) -> dict[str, Any] | None:
 
 
 def scan_database_unallocated(
-    db_path: Path, page_size: int, wal_pages: dict[int, bytes] | None = None
+    db_path: Path,
+    page_size: int,
+    wal_pages: dict[int, bytes] | None = None,
+    problems: list[ParseIssue] | None = None,
 ) -> list[dict[str, Any]]:
     """Scan every table-leaf page in *db_path* for non-empty unallocated gaps.
 
@@ -62,29 +77,12 @@ def scan_database_unallocated(
     the base file for each page number, same reasoning as in
     scan_database_freeblocks: a page's current gap can exist only in a
     not-yet-checkpointed -wal frame on a live WAL-mode database.
+
+    Pass *problems* to learn why the result may be empty or partial.
     """
-    try:
-        page_count = db_path.stat().st_size // page_size if page_size else 0
-    except OSError:
-        return []
-    if wal_pages:
-        page_count = max(page_count, max(wal_pages, default=0))
-
     results: list[dict[str, Any]] = []
-    try:
-        with open(db_path, "rb") as fh:
-            for page_num in range(1, page_count + 1):
-                if wal_pages and page_num in wal_pages:
-                    page = wal_pages[page_num]
-                else:
-                    fh.seek((page_num - 1) * page_size)
-                    page = fh.read(page_size)
-                if len(page) != page_size:
-                    continue
-                entry = extract_unallocated_space(page)
-                if entry is not None:
-                    results.append({"page": page_num, **entry})
-    except OSError:
-        return results
-
+    for page_num, page in iter_database_pages(db_path, page_size, wal_pages, problems):
+        entry = extract_unallocated_space(page, problems, page_num)
+        if entry is not None:
+            results.append({"page": page_num, **entry})
     return results

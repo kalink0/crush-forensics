@@ -30,6 +30,7 @@ from typing import Any, cast
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import InvalidUnwrap, aes_key_unwrap
 
+from crush.core.issues import ParseIssue
 from crush.core.passwords import WrongPasswordError
 from crush.third_party.ccl_bplist import (
     NSKeyedArchiver_common_objects_convertor,
@@ -121,7 +122,7 @@ def aes_cbc_decrypt_and_unpad(key: bytes, ciphertext: bytes) -> bytes:
 
     pad_len = padded[-1] if padded else 0
     if pad_len < 1 or pad_len > 16 or padded[-pad_len:] != bytes([pad_len]) * pad_len:
-        raise WrongPasswordError("Padding invalid after decryption (wrong password?)")
+        raise WrongPasswordError(ParseIssue("password.itunes_padding"))
     return padded[:-pad_len]
 
 
@@ -141,7 +142,7 @@ def aes_cbc_decrypt_stream(key: bytes, chunks: Iterable[bytes]) -> Iterator[byte
     held += decryptor.finalize()
     pad_len = held[-1] if held else 0
     if pad_len < 1 or pad_len > 16 or held[-pad_len:] != bytes([pad_len]) * pad_len:
-        raise WrongPasswordError("Padding invalid after decryption (wrong password?)")
+        raise WrongPasswordError(ParseIssue("password.itunes_padding"))
     yield held[:-pad_len]
 
 
@@ -204,21 +205,21 @@ class BackupKeyBag:
                 or not (cast(int, entry.get("WRAP", 0)) & _WRAP_PASSCODE)
             ):
                 raise WrongPasswordError(
-                    f"Backup keybag has no usable class key for class {class_num}"
+                    ParseIssue("password.itunes_no_class_key", {"class_num": class_num})
                 )
             try:
                 self._unwrapped_classes[class_num] = aes_key_unwrap(
                     self._passcode_key, cast(bytes, entry["WPKY"])
                 )
             except InvalidUnwrap as exc:
-                raise WrongPasswordError("Incorrect backup password") from exc
+                raise WrongPasswordError(ParseIssue("password.itunes_wrong")) from exc
         return self._unwrapped_classes[class_num]
 
     def _unwrap(self, class_num: int, wrapped_key: bytes) -> bytes:
         try:
             return aes_key_unwrap(self._class_key(class_num), wrapped_key)
         except InvalidUnwrap as exc:
-            raise WrongPasswordError("Incorrect backup password") from exc
+            raise WrongPasswordError(ParseIssue("password.itunes_wrong")) from exc
 
     def unwrap_manifest_key(self, manifest_key_entry: bytes) -> bytes:
         """`ManifestKey` = 4-byte little-endian class number + 40-byte wrapped key."""

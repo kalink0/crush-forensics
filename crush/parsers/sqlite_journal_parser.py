@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from crush.core.cell_locator import RawBytesCellLocator
+from crush.core.issues import ParseIssue
 from crush.core.sqlite_journal import (
     JOURNAL_MAGIC,
     extract_journal_rows,
@@ -48,7 +49,8 @@ class SQLiteJournalParser(AbstractParser):
         # row index (see RawBytesCellLocator/data["rowids"] below), same as
         # table_viewer.py's own companion-mode Rollback Journal tab.
         row_ranges: dict[int, tuple[int, int]] = {}
-        for jr in extract_journal_rows(result):
+        decode_problems: list[ParseIssue] = []
+        for jr in extract_journal_rows(result, decode_problems):
             if jr.kind == "Live cell":
                 value = str(jr.values)
                 for v in jr.values or []:
@@ -83,21 +85,17 @@ class SQLiteJournalParser(AbstractParser):
             "Recovered entries": str(len(rows)),
         }
         if not result.segments:
-            meta["Status"] = result.error or "Not a valid rollback journal"
+            meta["Status"] = result.error or ParseIssue("sqlite_journal.invalid")
         else:
             n_bad = sum(1 for s in result.segments for r in s.records if not r.checksum_valid)
             meta["Status"] = (
-                "Valid / hot — every segment header and page checksum validated"
+                ParseIssue("sqlite_journal.valid_hot")
                 if result.mergeable else
-                f"NOT fully valid — {n_bad} checksum mismatch(es); shown raw, unmerged"
+                ParseIssue("sqlite_journal.not_fully_valid", {"mismatches": n_bad})
             )
-        meta["Note"] = (
-            "This is the journal's own pre-transaction page content, shown standalone "
-            "(no companion database opened alongside it). Open the companion database "
-            "normally instead to see this same inventory in its own 'Rollback Journal' "
-            "tab, with a valid journal's content automatically merged into the "
-            "database's default table view (never applied to any file on disk)."
-        )
+        meta["Note"] = ParseIssue("sqlite_journal.standalone")
+        if decode_problems:
+            meta["Not decoded"] = decode_problems
 
         data: dict[str, Any] = {
             "Journal Records": {

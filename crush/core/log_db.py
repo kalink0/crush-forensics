@@ -19,6 +19,10 @@ entries
     message     TEXT NOT NULL
     raw         TEXT NOT NULL        — original line(s); fetched only on row select
     extra_json  TEXT NOT NULL        — JSON-encoded extra dict
+    ts_flags    TEXT NOT NULL        — crush.core.log_ts TS_* tokens (what the log
+                                       didn't record: zone, year) or ""
+    level_note  TEXT NOT NULL        — keywords the level was guessed from (formats
+                                       without a level field) or "" if recorded
 
 Indexes: ts_unix, level, source_id  — cover all common filter/sort operations.
 """
@@ -147,7 +151,9 @@ CREATE TABLE IF NOT EXISTS entries (
     raw         TEXT    NOT NULL DEFAULT '',
     extra_json  TEXT    NOT NULL DEFAULT '{}',
     subsystem   TEXT    NOT NULL DEFAULT '',
-    category    TEXT    NOT NULL DEFAULT ''
+    category    TEXT    NOT NULL DEFAULT '',
+    ts_flags    TEXT    NOT NULL DEFAULT '',
+    level_note  TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_ts       ON entries(ts_unix);
@@ -160,8 +166,9 @@ CREATE INDEX IF NOT EXISTS idx_cat      ON entries(category);
 
 _INSERT_SQL = """
 INSERT INTO entries
-    (source_id, ts_unix, level, process, pid, message, raw, extra_json, subsystem, category)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (source_id, ts_unix, level, process, pid, message, raw, extra_json, subsystem, category,
+     ts_flags, level_note)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -177,6 +184,27 @@ def _unix_to_ts(unix: float | None) -> datetime | None:
     if unix is None:
         return None
     return datetime.fromtimestamp(unix, tz=timezone.utc)
+
+
+def entry_rows(source_id: int, entries: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    """_INSERT_SQL parameter rows for standard entry dicts."""
+    return [
+        (
+            source_id,
+            _ts_to_unix(e.get("timestamp")),
+            e.get("level", "UNKNOWN"),
+            e.get("process", ""),
+            e.get("pid", ""),
+            e.get("message", ""),
+            e.get("raw", ""),
+            json.dumps(e.get("extra") or {}),
+            (e.get("extra") or {}).get("subsystem", ""),
+            (e.get("extra") or {}).get("category", ""),
+            e.get("ts_flags", ""),
+            e.get("level_note", ""),
+        )
+        for e in entries
+    ]
 
 
 class LogDatabase:
@@ -240,22 +268,7 @@ class LogDatabase:
 
     def insert_batch(self, source_id: int, entries: list[dict[str, Any]]) -> None:
         """Bulk-insert a list of standard entry dicts for *source_id*."""
-        rows = [
-            (
-                source_id,
-                _ts_to_unix(e.get("timestamp")),
-                e.get("level", "UNKNOWN"),
-                e.get("process", ""),
-                e.get("pid", ""),
-                e.get("message", ""),
-                e.get("raw", ""),
-                json.dumps(e.get("extra") or {}),
-                (e.get("extra") or {}).get("subsystem", ""),
-                (e.get("extra") or {}).get("category", ""),
-            )
-            for e in entries
-        ]
-        self._con.executemany(_INSERT_SQL, rows)
+        self._con.executemany(_INSERT_SQL, entry_rows(source_id, entries))
         self._con.commit()
 
     def delete_source(self, source_id: int) -> None:
@@ -318,13 +331,15 @@ class LogDatabase:
         """Fetch entries for specific rowids, returned in *rowids* order.
 
         Returns a list of tuples:
-            (rowid, source_id, ts_unix, level, process, pid, message)
+            (rowid, source_id, ts_unix, level, process, pid, message,
+             subsystem, category, ts_flags, level_note)
         """
         if not rowids:
             return []
         placeholders = ",".join("?" * len(rowids))
         sql = (
-            f"SELECT rowid, source_id, ts_unix, level, process, pid, message, subsystem, category "
+            f"SELECT rowid, source_id, ts_unix, level, process, pid, message, subsystem, category, "
+            f"ts_flags, level_note "
             f"FROM entries WHERE rowid IN ({placeholders})"
         )
         rows_by_id = {

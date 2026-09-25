@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from crush.core import tempdir
+from crush.core.issues import ParseIssue
 from crush.core.segb_offsets import SegbCellLocator
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
@@ -56,7 +57,7 @@ def discover_segb_nodes(root: VFSNode, vfs: VFS) -> list[VFSNode]:
             stack.extend(node.children)
             continue
         try:
-            peek = vfs.read(node)[:64]
+            peek = vfs.peek(node, 64)
         except Exception:
             continue
         if parser.can_parse(node.path, peek):
@@ -108,12 +109,12 @@ class SegbParser(AbstractParser):
                     viewer_type="hex",
                     data=raw,
                     metadata={
-                        "Parse error": "Not a recognized SEGB v1/v2 file",
-                        "Format": "SEGB (unrecognized)",
+                        "Parse error": ParseIssue("segb.unrecognized"),
+                        "Format": ParseIssue("segb.format_unrecognized"),
                         "File size": f"{node.size:,} B",
                     },
                 )
-            version, columns, rows, parse_error = result
+            version, columns, rows, parse_error, partial_payloads = result
             meta: dict[str, Any] = {
                 "Format": "SEGB",
                 "Version": version,
@@ -123,14 +124,21 @@ class SegbParser(AbstractParser):
             stream = _stream_name(node.path)
             if stream is not None:
                 meta["Stream"] = stream
-            if parse_error:
+            if parse_error is not None:
                 meta["Parse warning"] = parse_error
+            meta["Payload rendering"] = ParseIssue("segb.payload_heuristic")
+            if partial_payloads:
+                meta["Payload decoding"] = ParseIssue(
+                    "segb.payload_partial", {"count": partial_payloads},
+                )
             data: dict[str, Any] = {
                 "SEGB": {"columns": columns, "rows": rows, "rowids": list(range(len(rows)))}
             }
-            tmp = _create_segb_sqlite(columns, rows)
+            tmp, sql_issue = _create_segb_sqlite(columns, rows)
             if tmp:
                 data["__db_path"] = str(tmp)
+            if sql_issue is not None:
+                meta["SQL"] = sql_issue
             data["__cell_locator"] = SegbCellLocator(file_bytes=raw, version=version, rows=rows)
             return ParseResult(
                 viewer_type="table",
@@ -148,8 +156,8 @@ class SegbParser(AbstractParser):
                 viewer_type="hex",
                 data=raw_bytes,
                 metadata={
-                    "Parse error": str(exc),
-                    "Format": "SEGB (parse failed)",
+                    "Parse error": ParseIssue("segb.parse_failed", detail=str(exc)),
+                    "Format": ParseIssue("segb.format_parse_failed"),
                     "File size": f"{node.size:,} B",
                 },
             )
@@ -197,8 +205,11 @@ def _proto_to_json(data: bytes) -> str:
         return "{}"
 
 
-def _create_segb_sqlite(columns: list[str], rows: list[list[Any]]) -> Path | None:
-    """Dump SEGB rows into a temp SQLite file for SQL querying. Returns path or None.
+def _create_segb_sqlite(
+    columns: list[str], rows: list[list[Any]],
+) -> tuple[Path | None, ParseIssue | None]:
+    """Dump SEGB rows into a temp SQLite file for SQL querying. Returns
+    (path, None), or (None, why it failed).
 
     The Payload column stores the human-readable rendered text.
     A companion "Payload JSON" column stores the protobuf fields as JSON so
@@ -248,34 +259,37 @@ def _create_segb_sqlite(columns: list[str], rows: list[list[Any]]) -> Path | Non
         )
         conn.commit()
         conn.close()
-        return Path(path_str)
-    except Exception:
-        return None
+        return Path(path_str), None
+    except Exception as exc:
+        return None, ParseIssue("segb.sql_failed", detail=str(exc))
 
 
 def _detect_and_read(
     stream: BytesIO,
-) -> tuple[str, list[str], list[list[Any]], str] | None:
-    """Detect SEGB version and parse; returns (version, columns, rows, error) or None."""
+) -> tuple[str, list[str], list[list[Any]], ParseIssue | None, int] | None:
+    """Detect SEGB version and parse; returns (version, columns, rows, error,
+    number of payloads decoded only partly) or None."""
     if ccl_segb2.stream_matches_segbv2_signature(stream):
         stream.seek(0)
-        columns, rows, error = _read_v2(stream)
-        return "v2", columns, rows, error
+        columns, rows, error, partial = _read_v2(stream)
+        return "v2", columns, rows, error, partial
     stream.seek(0)
     if ccl_segb1.stream_matches_segbv1_signature(stream):
         stream.seek(0)
-        columns, rows, error = _read_v1(stream)
-        return "v1", columns, rows, error
+        columns, rows, error, partial = _read_v1(stream)
+        return "v1", columns, rows, error, partial
     return None
 
 
-def _read_v1(stream: BytesIO) -> tuple[list[str], list[list[Any]], str]:
+def _read_v1(stream: BytesIO) -> tuple[list[str], list[list[Any]], ParseIssue | None, int]:
     rows: list[list[Any]] = []
-    error = ""
+    error: ParseIssue | None = None
+    partial = 0
     try:
         for idx, entry in enumerate(ccl_segb1.read_segb1_stream(stream)):
             try:
-                rendered = _render_proto_payload(entry.data)
+                rendered, complete = _render_proto_payload(entry.data)
+                partial += not complete
                 rows.append([
                     idx,
                     entry.data_start_offset,
@@ -289,20 +303,22 @@ def _read_v1(stream: BytesIO) -> tuple[list[str], list[list[Any]], str]:
                     (rendered, entry.data),
                 ])
             except Exception as exc:
-                error = f"Record {idx} failed: {exc}"
+                error = ParseIssue("segb.record_failed", {"index": idx}, detail=str(exc))
                 break
     except Exception as exc:
-        error = str(exc)
-    return _COLUMNS_V1, rows, error
+        error = ParseIssue("segb.stream_failed", {"count": len(rows)}, detail=str(exc))
+    return _COLUMNS_V1, rows, error, partial
 
 
-def _read_v2(stream: BytesIO) -> tuple[list[str], list[list[Any]], str]:
+def _read_v2(stream: BytesIO) -> tuple[list[str], list[list[Any]], ParseIssue | None, int]:
     rows: list[list[Any]] = []
-    error = ""
+    error: ParseIssue | None = None
+    partial = 0
     try:
         for idx, entry in enumerate(ccl_segb2.read_segb2_stream(stream)):
             try:
-                rendered = _render_proto_payload(entry.data)
+                rendered, complete = _render_proto_payload(entry.data)
+                partial += not complete
                 rows.append([
                     idx,
                     entry.data_start_offset,
@@ -317,11 +333,11 @@ def _read_v2(stream: BytesIO) -> tuple[list[str], list[list[Any]], str]:
                     (rendered, entry.data),
                 ])
             except Exception as exc:
-                error = f"Record {idx} failed: {exc}"
+                error = ParseIssue("segb.record_failed", {"index": idx}, detail=str(exc))
                 break
     except Exception as exc:
-        error = str(exc)
-    return _COLUMNS_V2, rows, error
+        error = ParseIssue("segb.stream_failed", {"count": len(rows)}, detail=str(exc))
+    return _COLUMNS_V2, rows, error, partial
 
 
 def _fmt_ts(ts: object) -> str:
@@ -343,8 +359,15 @@ def _parse_protobuf(data: bytes) -> dict[int, Any]:
     Repeated fields (same field number more than once) are collected into a list.
     Field numbers up to 2^29-1 are accepted (the protobuf spec maximum).
     """
+    return _parse_protobuf_until(data)[0]
+
+
+def _parse_protobuf_until(data: bytes) -> tuple[dict[int, Any], int | None]:
+    """_parse_protobuf, plus the offset where decoding stopped before the
+    end of *data* (None: every byte was decoded)."""
     result: dict[int, Any] = {}
     pos = 0
+    field_start = 0
     while pos < len(data):
         tag, pos = _read_varint(data, pos)
         if tag is None:
@@ -389,7 +412,8 @@ def _parse_protobuf(data: bytes) -> dict[int, Any]:
                 result[field_num] = [existing, val]
         else:
             result[field_num] = val
-    return result
+        field_start = pos
+    return result, (None if field_start >= len(data) else field_start)
 
 
 def _cocoa_hint(val: float) -> str | None:
@@ -433,16 +457,19 @@ def _render_field(field_num: int, val: object, *, nested: bool = False) -> str |
     return f"{field_num}{sep}{val}"
 
 
-def _render_proto_payload(data: bytes) -> str:
-    """Return a compact single-line protobuf representation, or '' if decoding fails."""
+def _render_proto_payload(data: bytes) -> tuple[str, bool]:
+    """(compact single-line protobuf representation, decoded completely).
+    When decoding stops before the payload's end, the text ends with a
+    marker naming the byte offset it stopped at, so a partial rendering
+    never looks complete."""
     try:
-        fields = _parse_protobuf(data)
-        if not fields:
-            return ""
-        parts = [
-            r for fn, fv in sorted(fields.items())
-            if (r := _render_field(fn, fv)) is not None
-        ]
-        return "  |  ".join(parts)
+        fields, stopped_at = _parse_protobuf_until(data)
     except Exception:
-        return ""
+        fields, stopped_at = {}, 0
+    parts = [
+        r for fn, fv in sorted(fields.items())
+        if (r := _render_field(fn, fv)) is not None
+    ]
+    if stopped_at is not None:
+        parts.append(str(ParseIssue("segb.payload_stopped_marker", {"offset": stopped_at})))
+    return "  |  ".join(parts), stopped_at is None

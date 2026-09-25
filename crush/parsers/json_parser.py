@@ -6,8 +6,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+
+# Characters shown on each side of a syntax error's position.
+_EXCERPT_RADIUS = 250
 
 
 class JsonParser(AbstractParser):
@@ -22,28 +26,50 @@ class JsonParser(AbstractParser):
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         raw = vfs.read(node)
+        encoding_issue: ParseIssue | None = None
         try:
             text = raw.decode("utf-8")
-        except Exception:
+        except UnicodeDecodeError as exc:
             text = raw.decode("utf-8", errors="replace")
+            encoding_issue = ParseIssue(
+                "json.not_utf8", params={"offset": exc.start}, detail=exc.reason,
+            )
         try:
             data = json.loads(text)
-            meta = {"File size": f"{node.size:,} B", "Format": "JSON"}
-            return ParseResult(
-                viewer_type="tree_text",
-                data=data,
-                metadata=meta,
-                text_index=_flatten_text(data),
-                viewer_hints={"raw_text": text},
-            )
         except json.JSONDecodeError as exc:
-            data = {"error": str(exc), "raw": text[:500]}
+            # The tree shows a window around the error position, not the
+            # file's start: the start is rarely where the problem is. The
+            # key states exactly which part it is; the whole file stays
+            # reachable via Open as → Text / Hex (see json.syntax_error).
+            start = max(0, exc.pos - _EXCERPT_RADIUS)
+            end = min(len(text), exc.pos + _EXCERPT_RADIUS)
+            data = {
+                "error": str(exc),
+                f"excerpt (chars {start:,}–{end:,} of {len(text):,})": text[start:end],
+            }
+            meta: dict[str, Any] = {
+                "File size": f"{node.size:,} B",
+                "Format": "JSON (parse error)",
+                "Status": ParseIssue("json.syntax_error", detail=str(exc)),
+            }
+            if encoding_issue is not None:
+                meta["Encoding"] = encoding_issue
             return ParseResult(
                 viewer_type="tree",
                 data=data,
-                metadata={"File size": f"{node.size:,} B", "Format": "JSON (parse error)"},
+                metadata=meta,
                 text_index="",
             )
+        meta = {"File size": f"{node.size:,} B", "Format": "JSON"}
+        if encoding_issue is not None:
+            meta["Encoding"] = encoding_issue
+        return ParseResult(
+            viewer_type="tree_text",
+            data=data,
+            metadata=meta,
+            text_index=_flatten_text(data),
+            viewer_hints={"raw_text": text},
+        )
 
 
 def _flatten_text(obj: Any, max_chars: int = 4000) -> str:

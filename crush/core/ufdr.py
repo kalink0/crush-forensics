@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from crush.core import tempdir
+from crush.core.issues import ParseIssue
 from crush.core.vfs_stream import STREAM_THRESHOLD, copy_stream
 
 if TYPE_CHECKING:
@@ -222,26 +223,26 @@ class UFDRHandle:
             self._resolved[node.path] = self._resolve_uncached(self._node_meta.get(node.path))
         info = self._resolved[node.path]
         if info is None:
-            raise UFDRContentNotLocatedError(f"Content not located in UFDR container: {node.path}")
+            raise UFDRContentNotLocatedError(ParseIssue("ufdr.content_not_located", {"path": node.path}))
         return info
 
-    def node_info(self, node: "VFSNode") -> dict[str, str] | None:
+    def node_info(self, node: "VFSNode") -> dict[str, Any] | None:
         """Cellebrite's own recorded hashes/category for *node*, plus an
         explicit status if its bytes couldn't be located -- None for
         directories or nodes with no Nodes-table metadata."""
         meta = self._node_meta.get(node.path)
         if meta is None:
             return None
-        info: dict[str, str] = {
-            "Cellebrite MD5": meta.md5 or "(not recorded)",
-            "Cellebrite SHA-256": meta.sha256 or "(not recorded)",
+        info: dict[str, Any] = {
+            "Cellebrite MD5": meta.md5 or ParseIssue("ufdr.not_recorded"),
+            "Cellebrite SHA-256": meta.sha256 or ParseIssue("ufdr.not_recorded"),
             "Category (Tag)": meta.tag,
             "Carved": "Yes" if meta.is_carved else "No",
         }
         try:
             self.resolve(node)
         except UFDRContentNotLocatedError:
-            info["Content status"] = "not located in container"
+            info["Content status"] = ParseIssue("ufdr.not_located")
         return info
 
 
@@ -291,12 +292,11 @@ def _table_columns(dump: Any, schema: str, tag: str) -> list[str]:
             ]
             missing = _REQUIRED_NODE_COLUMNS - set(columns)
             if missing:
-                raise UFDROpenError(
-                    f"UFDR database's {tag!r} table is missing expected column(s): "
-                    f"{', '.join(sorted(missing))}"
-                )
+                raise UFDROpenError(ParseIssue("ufdr.missing_columns", {
+                    "tag": repr(tag), "columns": ", ".join(sorted(missing)),
+                }))
             return columns
-    raise UFDROpenError(f"UFDR database has no {tag!r} table in schema {schema!r}")
+    raise UFDROpenError(ParseIssue("ufdr.no_table", {"tag": repr(tag), "schema": repr(schema)}))
 
 
 def _row_dict(row: tuple[Any, ...], columns: list[str]) -> dict[str, Any]:
@@ -343,12 +343,14 @@ def _build_device_tree(dump: Any, schema: str, node_meta: dict[str, _NodeMeta], 
     id_to_path: dict[str, str] = {}
     pending: list[dict[str, Any]] = []
     columns = _table_columns(dump, schema, "Nodes")
+    unreadable_type = 0
 
     for row in dump.table_data(schema, "Nodes"):
         d = _row_dict(row, columns)
         try:
             type_ = int(d["Type"])
         except (TypeError, ValueError):
+            unreadable_type += 1
             continue
         if type_ not in _INCLUDED_TYPES:
             continue
@@ -377,9 +379,17 @@ def _build_device_tree(dump: Any, schema: str, node_meta: dict[str, _NodeMeta], 
             # another row's ancestry (or vice versa) -- keep both.
             leaf_path = f"{leaf_path} (file)" if not is_dir else f"{leaf_path} (dir)"
             _logger.warning("UFDR: path collision at %s, kept as %s", abs_path, leaf_path)
+            collision = ParseIssue("ufdr.path_collision", {
+                "other": ParseIssue("ufdr.other_directory" if not is_dir else "ufdr.other_file"),
+            })
+        else:
+            collision = None
         leaf = nodes.get(leaf_path)
         if leaf is None:
-            leaf = VFSNode(name=parts[-1], path=leaf_path, is_dir=is_dir)
+            leaf = VFSNode(name=leaf_path.rsplit("/", 1)[-1] if collision else parts[-1],
+                           path=leaf_path, is_dir=is_dir)
+            if collision is not None:
+                leaf.status = collision
             nodes[parent_path].children.append(leaf)
             nodes[leaf_path] = leaf
 
@@ -411,6 +421,13 @@ def _build_device_tree(dump: Any, schema: str, node_meta: dict[str, _NodeMeta], 
             if not is_dir:
                 _set_leaf_fields(leaf, d, node_meta)
 
+    if unreadable_type:
+        from crush.core.vfs import join_notes
+
+        root.status = join_notes([
+            root.status, ParseIssue("ufdr.rows_skipped", {"count": unreadable_type}),
+        ])
+
     for node in nodes.values():
         node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
 
@@ -424,16 +441,13 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
     try:
         zf = zipfile.ZipFile(p, "r")
     except (zipfile.BadZipFile, OSError) as exc:
-        raise UFDROpenError(
-            "Not a readable UFDR container -- if this was exported as multiple parts, "
-            "rejoin them first; segmented UFDR exports aren't supported yet."
-        ) from exc
+        raise UFDROpenError(ParseIssue("ufdr.not_readable", detail=str(exc))) from exc
 
     try:
         names = set(zf.namelist())
         missing = [m for m in _REQUIRED_MEMBERS if m not in names]
         if missing:
-            raise UFDROpenError(f"Not a UFDR container -- missing {', '.join(missing)}")
+            raise UFDROpenError(ParseIssue("ufdr.missing_members", {"members": ", ".join(missing)}))
 
         try:
             manifest = json.loads(zf.read("DbData/database.json"))
@@ -444,10 +458,9 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
         db_info = zf.getinfo("DbData/database.db")
         space = tempdir.check_space(db_info.file_size)
         if not space.enough_space:
-            raise UFDROpenError(
-                f"Not enough space in the temp directory to extract the UFDR's database "
-                f"({db_info.file_size:,} bytes needed, {space.free:,} available at {space.location})"
-            )
+            raise UFDROpenError(ParseIssue("ufdr.no_space", {
+                "needed": db_info.file_size, "free": space.free, "location": str(space.location),
+            }))
 
         fd, tmp_path_str = tempdir.mkstemp(prefix="crush-ufdr-db-", suffix=".db")
         tmp_path = Path(tmp_path_str)
@@ -461,9 +474,7 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
             try:
                 schemas = _device_schemas(dump)
                 if not schemas:
-                    raise UFDROpenError(
-                        "UFDR database has no per-device schema -- unrecognised layout"
-                    )
+                    raise UFDROpenError(ParseIssue("ufdr.no_device_schema"))
                 if (
                     manifest_device_id
                     and f"device_{manifest_device_id}" not in schemas
@@ -474,8 +485,15 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
                         manifest_device_id,
                         schemas,
                     )
+                    device_mismatch: ParseIssue | None = ParseIssue("ufdr.device_id_mismatch", {
+                        "device": manifest_device_id, "found": ", ".join(schemas),
+                    })
+                else:
+                    device_mismatch = None
 
                 root = VFSNode(name=p.name, path="/", is_dir=True)
+                if device_mismatch is not None:
+                    root.status = device_mismatch
                 node_meta: dict[str, _NodeMeta] = {}
                 if len(schemas) == 1:
                     _build_device_tree(dump, schemas[0], node_meta, root)

@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
+from crush.core.issues import ParseIssue, ParseIssueError, issue_from_exception
+
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
@@ -67,12 +69,13 @@ class AtxHeader:
     pixel_format_b: int
 
     @property
-    def pixel_format(self) -> str:
+    def pixel_format(self) -> str | ParseIssue:
+        pair = {"a": self.pixel_format_a, "b": self.pixel_format_b}
         if (self.pixel_format_a, self.pixel_format_b) == ASTC_4X4_FORMAT:
             return "ASTC 4x4"
         if (self.pixel_format_a, self.pixel_format_b) in INFERRED_ASTC_4X4_FORMATS:
-            return f"Inferred ASTC 4x4 ({self.pixel_format_a}, {self.pixel_format_b})"
-        return f"Unknown ({self.pixel_format_a}, {self.pixel_format_b})"
+            return ParseIssue("atx.pixel_format_inferred_label", pair)
+        return ParseIssue("atx.pixel_format_unknown", pair)
 
 
 @dataclass(frozen=True)
@@ -101,13 +104,19 @@ class DecodedImage:
 
 @dataclass(frozen=True)
 class AtxDecodeResult:
-    """Parsed ATX metadata plus optional decoded RGBA image."""
+    """Parsed ATX metadata plus optional decoded RGBA image.
+
+    *block_order* is set when the macro-tile block order was chosen by the
+    seam-score heuristic (see module docstring); it names both candidates
+    and their scores.
+    """
 
     header: AtxHeader | None
     chunks: tuple[AtxChunk, ...]
     payload: TexturePayload | None
     image: DecodedImage | None
-    warnings: tuple[str, ...]
+    warnings: tuple[ParseIssue, ...]
+    block_order: ParseIssue | None = None
 
 
 class _Reader:
@@ -116,12 +125,12 @@ class _Reader:
 
     def u32(self, offset: int) -> int:
         if offset + 4 > len(self.data):
-            raise ValueError("unexpected end of ATX data")
+            raise ParseIssueError(ParseIssue("atx.unexpected_eof"))
         return int(struct.unpack_from("<I", self.data, offset)[0])
 
     def slice(self, offset: int, size: int) -> bytes:
         if offset + size > len(self.data):
-            raise ValueError("unexpected end of ATX data")
+            raise ParseIssueError(ParseIssue("atx.unexpected_eof"))
         return self.data[offset:offset + size]
 
 
@@ -142,57 +151,58 @@ def decode_atx_file(path: str | Path, decode_image: bool = True) -> AtxDecodeRes
 def decode_atx(data: bytes, decode_image: bool = True) -> AtxDecodeResult:
     """Parse an ATX file and optionally decode supported ASTC 4x4 textures."""
 
-    warnings: list[str] = []
+    warnings: list[ParseIssue] = []
     if not is_atx(data):
-        return AtxDecodeResult(None, tuple(), None, None, ("Not an AAPL ATX container",))
+        return AtxDecodeResult(None, tuple(), None, None, (ParseIssue("atx.not_atx"),))
 
     reader = _Reader(data)
     chunks = tuple(_iter_chunks(reader, warnings))
     header = _parse_header(reader, chunks, warnings)
     payload = _parse_payload(reader, chunks, warnings)
     image = None
+    block_order = None
 
     if decode_image and header and payload:
         try:
-            image = _decode_image(header, payload, warnings)
+            image, block_order = _decode_image(header, payload, warnings)
         except (ImportError, OSError, ValueError, struct.error) as ex:
-            warnings.append(f"ATX image decode failed: {ex}")
+            warnings.append(ParseIssue("atx.decode_failed", {"reason": issue_from_exception(ex)}))
 
-    return AtxDecodeResult(header, chunks, payload, image, tuple(warnings))
+    return AtxDecodeResult(header, chunks, payload, image, tuple(warnings), block_order)
 
 
-def _iter_chunks(reader: _Reader, warnings: list[str]) -> Iterable[AtxChunk]:
+def _iter_chunks(reader: _Reader, warnings: list[ParseIssue]) -> Iterable[AtxChunk]:
     offset = len(AAPL_MAGIC)
     while offset + 8 <= len(reader.data):
         try:
             size = reader.u32(offset)
             tag_bytes = reader.slice(offset + 4, 4)
         except ValueError as ex:
-            warnings.append(str(ex))
+            warnings.append(issue_from_exception(ex))
             return
 
         payload_offset = offset + 8
         end = payload_offset + size
         tag = tag_bytes.decode("ascii", errors="replace")
         if end > len(reader.data):
-            warnings.append(f"Chunk {tag} at offset {offset} extends beyond EOF")
+            warnings.append(ParseIssue("atx.chunk_beyond_eof", {"tag": tag, "offset": offset}))
             return
 
         yield AtxChunk(tag, offset, size, payload_offset)
         offset = end
 
     if offset != len(reader.data):
-        warnings.append(f"{len(reader.data) - offset} trailing byte(s) after last complete chunk")
+        warnings.append(ParseIssue("atx.trailing_bytes", {"count": len(reader.data) - offset}))
 
 
-def _parse_header(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list[str]) -> AtxHeader | None:
+def _parse_header(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list[ParseIssue]) -> AtxHeader | None:
     head = next((chunk for chunk in chunks if chunk.tag == HEAD_TAG.decode("ascii")), None)
     if not head:
-        warnings.append("No HEAD chunk found")
+        warnings.append(ParseIssue("atx.no_head"))
         return None
 
     if head.size < 0x54:
-        warnings.append(f"HEAD chunk too small for documented ATX header: {head.size} bytes")
+        warnings.append(ParseIssue("atx.head_too_small", {"size": head.size}))
         return None
 
     payload = reader.slice(head.payload_offset, head.size)
@@ -210,14 +220,14 @@ def _parse_header(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list[
     )
 
 
-def _parse_payload(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list[str]) -> TexturePayload | None:
+def _parse_payload(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list[ParseIssue]) -> TexturePayload | None:
     payload_chunk = next((chunk for chunk in chunks if chunk.tag in ("astc", "ASTC", "LZFS")), None)
     if not payload_chunk:
-        warnings.append("No astc, ASTC, or LZFS texture payload chunk found")
+        warnings.append(ParseIssue("atx.no_payload"))
         return None
 
     if payload_chunk.size < 4:
-        warnings.append(f"{payload_chunk.tag} chunk is too small to include an inner size")
+        warnings.append(ParseIssue("atx.payload_no_inner_size", {"tag": payload_chunk.tag}))
         return None
 
     declared_size = reader.u32(payload_chunk.payload_offset)
@@ -230,32 +240,41 @@ def _parse_payload(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list
     )
 
 
-def _decode_image(header: AtxHeader, payload: TexturePayload, warnings: list[str]) -> DecodedImage:
+def _decode_image(
+    header: AtxHeader, payload: TexturePayload, warnings: list[ParseIssue],
+) -> tuple[DecodedImage, ParseIssue | None]:
+    dims = {"width": header.width, "height": header.height}
     if header.width <= 0 or header.height <= 0:
-        raise ValueError(f"invalid ATX dimensions: {header.width}x{header.height}")
+        raise ParseIssueError(ParseIssue("atx.invalid_dimensions", dims))
     if header.width * header.height > MAX_IMAGE_PIXELS:
-        raise ValueError(f"ATX image dimensions are too large: {header.width}x{header.height}")
+        raise ParseIssueError(ParseIssue("atx.too_large", dims))
     if header.depth not in (0, 1):
-        warnings.append(f"Unexpected ATX depth {header.depth}; attempting 2D decode")
+        warnings.append(ParseIssue("atx.unexpected_depth", {"depth": header.depth}))
     if header.array_layers not in (0, 1):
-        warnings.append(f"Unexpected ATX array layer count {header.array_layers}; attempting first image decode")
+        warnings.append(ParseIssue("atx.unexpected_layers", {"count": header.array_layers}))
     if header.mipmap_count not in (0, 1):
-        warnings.append(f"Unexpected ATX mipmap count {header.mipmap_count}; attempting first image decode")
+        warnings.append(ParseIssue("atx.unexpected_mipmaps", {"count": header.mipmap_count}))
     pixel_format = (header.pixel_format_a, header.pixel_format_b)
     if pixel_format not in {ASTC_4X4_FORMAT, *INFERRED_ASTC_4X4_FORMATS}:
-        raise ValueError(f"unsupported ATX pixel format {header.pixel_format}")
+        raise ParseIssueError(
+            ParseIssue("atx.unsupported_pixel_format", {"format": header.pixel_format})
+        )
     if pixel_format in INFERRED_ASTC_4X4_FORMATS:
-        warnings.append(f"ATX pixel format {pixel_format} inferred as ASTC 4x4")
+        warnings.append(ParseIssue("atx.pixel_format_inferred", {"format": str(pixel_format)}))
 
+    block_order = None
     if payload.compressed:
         astc_data, padded_width, padded_height = _linear_lzfs_payload(header, payload)
         image = decode_astc_4x4(astc_data, padded_width, padded_height)
     else:
-        image, padded_width, padded_height = _decode_macro_tiled_payload(header, payload)
+        image, padded_width, padded_height, block_order = _decode_macro_tiled_payload(
+            header, payload,
+        )
 
     if (padded_width, padded_height) != (header.width, header.height):
         image = image.crop((0, 0, header.width, header.height))
-    return DecodedImage(header.width, header.height, image.convert("RGBA").tobytes())
+    decoded = DecodedImage(header.width, header.height, image.convert("RGBA").tobytes())
+    return decoded, block_order
 
 
 def _linear_lzfs_payload(header: AtxHeader, payload: TexturePayload) -> tuple[bytes, int, int]:
@@ -266,7 +285,9 @@ def _linear_lzfs_payload(header: AtxHeader, payload: TexturePayload) -> tuple[by
     padded_height = _round_up(header.height, ASTC_BLOCK_HEIGHT)
     expected = _astc_byte_count(padded_width, padded_height)
     if len(astc_data) < expected:
-        raise ValueError(f"LZFS payload decompressed to {len(astc_data)} bytes; expected at least {expected}")
+        raise ParseIssueError(ParseIssue(
+            "atx.lzfs_too_short", {"size": len(astc_data), "expected": expected},
+        ))
     return astc_data[:expected], padded_width, padded_height
 
 
@@ -281,7 +302,9 @@ def _macro_tiled_payload(
     blocks_h = padded_height // ASTC_BLOCK_HEIGHT
     expected = blocks_w * blocks_h * ASTC_BLOCK_BYTES
     if len(payload.data) < expected:
-        raise ValueError(f"ASTC payload is {len(payload.data)} bytes; expected at least {expected}")
+        raise ParseIssueError(ParseIssue(
+            "atx.astc_too_short", {"size": len(payload.data), "expected": expected},
+        ))
 
     linear = bytearray(expected)
     src_offset = 0
@@ -302,7 +325,12 @@ def _macro_tiled_payload(
     return bytes(linear), padded_width, padded_height
 
 
-def _decode_macro_tiled_payload(header: AtxHeader, payload: TexturePayload) -> tuple["PILImage", int, int]:
+def _decode_macro_tiled_payload(
+    header: AtxHeader, payload: TexturePayload,
+) -> tuple["PILImage", int, int, ParseIssue]:
+    """Decode both Morton X/Y orientations and keep the one with the
+    smaller seam score. The returned issue marks the choice as heuristic
+    and names both candidates with their scores."""
     candidates = []
     for swap_morton_xy in (False, True):
         astc_data, padded_width, padded_height = _macro_tiled_payload(
@@ -317,10 +345,17 @@ def _decode_macro_tiled_payload(header: AtxHeader, payload: TexturePayload) -> t
             image,
             padded_width,
             padded_height,
+            ParseIssue("atx.morton_swapped" if swap_morton_xy else "atx.morton_as_stored"),
         ))
 
-    _, image, padded_width, padded_height = min(candidates, key=lambda item: item[0])
-    return image, padded_width, padded_height
+    chosen = min(candidates, key=lambda item: item[0])
+    other = next(c for c in candidates if c is not chosen)
+    score, image, padded_width, padded_height, label = chosen
+    block_order = ParseIssue("atx.block_order_heuristic", {
+        "chosen": label, "chosen_score": score,
+        "other": other[4], "other_score": other[0],
+    })
+    return image, padded_width, padded_height, block_order
 
 
 def decode_astc_4x4(astc_data: bytes, width: int, height: int) -> "PILImage":

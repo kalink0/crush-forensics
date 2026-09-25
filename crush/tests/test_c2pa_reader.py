@@ -12,6 +12,7 @@ from __future__ import annotations
 import struct
 from datetime import datetime, timedelta, timezone
 
+from crush.core.issues import ParseIssue
 from crush.parsers.c2pa_reader import summarize_c2pa
 
 _MANIFEST_STORE_UUID = bytes.fromhex("63327061001100108000" "00AA00389B71")
@@ -92,43 +93,43 @@ _NULL = bytes([0xF6])
 
 def test_no_manifest_in_plain_jpeg() -> None:
     jpeg = b"\xFF\xD8\xFF\xDA\x00\x02\x00"
-    assert summarize_c2pa(jpeg) == {"C2PA": "Not present"}
+    assert summarize_c2pa(jpeg) == {"C2PA": ParseIssue("c2pa.not_present")}
 
 
 def test_unrecognized_container_is_explicitly_marked_not_silently_omitted() -> None:
     unknown = b"NOT_A_KNOWN_IMAGE_FORMAT" + b"\x00" * 20
     result = summarize_c2pa(unknown)
-    assert result["C2PA"].startswith("Not checked")
+    assert result["C2PA"].code == "c2pa.not_checked"
 
 
 def test_bmp_reports_spec_has_no_embedding_defined() -> None:
     bmp = b"BM" + b"\x00" * 20
-    assert summarize_c2pa(bmp)["C2PA"] == "Not defined by the C2PA spec for this format"
+    assert summarize_c2pa(bmp)["C2PA"].code == "c2pa.not_defined"
 
 
 def test_atx_reports_spec_has_no_embedding_defined() -> None:
     from crush.parsers.apple_atx import AAPL_MAGIC
 
     atx = AAPL_MAGIC + b"\x00" * 40
-    assert summarize_c2pa(atx)["C2PA"] == "Not defined by the C2PA spec for this format"
+    assert summarize_c2pa(atx)["C2PA"].code == "c2pa.not_defined"
 
 
 def test_ktx_reports_spec_has_no_embedding_defined() -> None:
     from crush.parsers.apple_ktx import KTX11_MAGIC
 
     ktx = KTX11_MAGIC + b"\x00" * 40
-    assert summarize_c2pa(ktx)["C2PA"] == "Not defined by the C2PA spec for this format"
+    assert summarize_c2pa(ktx)["C2PA"].code == "c2pa.not_defined"
 
 
 def test_manifest_free_gif_reports_not_present() -> None:
     gif = b"GIF89a" + struct.pack("<HH", 1, 1) + bytes([0, 0, 0]) + b"\x3B"
-    assert summarize_c2pa(gif)["C2PA"] == "Not present"
+    assert summarize_c2pa(gif)["C2PA"].code == "c2pa.not_present"
 
 
 def test_manifest_free_webp_reports_not_present() -> None:
     body = b"WEBP" + b"VP8 " + struct.pack("<I", 4) + b"\x00\x00\x00\x00"
     webp = b"RIFF" + struct.pack("<I", len(body)) + body
-    assert summarize_c2pa(webp)["C2PA"] == "Not present"
+    assert summarize_c2pa(webp)["C2PA"].code == "c2pa.not_present"
 
 
 def test_manifest_free_heic_reports_not_present() -> None:
@@ -136,7 +137,7 @@ def test_manifest_free_heic_reports_not_present() -> None:
         return struct.pack(">I", 8 + len(content)) + tbox + content
 
     heic = box(b"ftyp", b"heic" + b"\x00" * 4 + b"heic" + b"mif1")
-    assert summarize_c2pa(heic)["C2PA"] == "Not present"
+    assert summarize_c2pa(heic)["C2PA"].code == "c2pa.not_present"
 
 
 def test_bare_jpeg_xl_codestream_reports_spec_has_no_embedding_defined() -> None:
@@ -144,7 +145,7 @@ def test_bare_jpeg_xl_codestream_reports_spec_has_no_embedding_defined() -> None
     # a bare codestream isn't "checked and found none", it structurally can't
     # have one, same bucket as BMP/ATX/KTX.
     codestream = b"\xFF\x0A" + b"\x00" * 20
-    assert summarize_c2pa(codestream)["C2PA"] == "Not defined by the C2PA spec for this format"
+    assert summarize_c2pa(codestream)["C2PA"].code == "c2pa.not_defined"
 
 
 def test_claim_generator_and_actions_with_digital_source_type() -> None:
@@ -165,7 +166,7 @@ def test_claim_generator_and_actions_with_digital_source_type() -> None:
 
     result = summarize_c2pa(_to_jpeg(manifest_store))
 
-    assert result["C2PA"] == "Manifest found"
+    assert result["C2PA"].code == "c2pa.manifest_found"
     assert result["C2PA Manifest ID"] == "acme:urn:uuid:test"
     assert result["C2PA Generator"] == "acme/1.0"
     assert result["C2PA Actions"] == "c2pa.created"
@@ -253,7 +254,7 @@ def test_multiple_manifests_uses_last_as_active() -> None:
     manifest_store = _superbox(_MANIFEST_STORE_UUID, "c2pa", first + second)
 
     result = summarize_c2pa(_to_jpeg(manifest_store))
-    assert result["C2PA"] == "2 manifest(s) found"
+    assert result["C2PA"] == ParseIssue("c2pa.manifests_found", {"count": 2})
     assert result["C2PA Manifest ID"] == "second-manifest"
     assert result["C2PA Generator"] == "second/1.0"
 
@@ -293,4 +294,4 @@ def test_signature_summarizes_leaf_certificate_without_verifying_trust() -> None
     assert result["C2PA Signature Algorithm"] == "ES256"
     assert result["C2PA Signed By"] == "Test C2PA Signer"
     assert result["C2PA Cert Issuer"] == "Test C2PA Signer"
-    assert result["C2PA Signature"] == "Present (structure parsed, not cryptographically verified)"
+    assert result["C2PA Signature"].code == "c2pa.signature_present"

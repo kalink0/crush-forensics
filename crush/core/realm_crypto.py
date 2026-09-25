@@ -40,6 +40,7 @@ import hmac as _hmac_mod
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from crush.core.issues import ParseIssue
 from crush.core.passwords import WrongPasswordError
 
 KEY_SIZE_BYTES = 64
@@ -74,12 +75,11 @@ def parse_hex_key(text: str) -> bytes:
     try:
         key = bytes.fromhex(cleaned)
     except ValueError as exc:
-        raise WrongPasswordError(f"Not a valid hex key: {exc}") from exc
+        raise WrongPasswordError(ParseIssue("password.realm_not_hex", detail=str(exc))) from exc
     if len(key) != KEY_SIZE_BYTES:
-        raise WrongPasswordError(
-            f"Realm encryption key must be {KEY_SIZE_BYTES} bytes ({KEY_SIZE_BYTES * 2} hex "
-            f"characters) — got {len(key)} bytes"
-        )
+        raise WrongPasswordError(ParseIssue("password.realm_key_length", {
+            "size": KEY_SIZE_BYTES, "hex_chars": KEY_SIZE_BYTES * 2, "got": len(key),
+        }))
     return key
 
 
@@ -94,7 +94,7 @@ def decrypt_realm_file(encrypted: bytes, key: bytes) -> bytes:
     corruption a right key wouldn't produce).
     """
     if len(key) != KEY_SIZE_BYTES:
-        raise WrongPasswordError(f"Realm encryption key must be {KEY_SIZE_BYTES} bytes")
+        raise WrongPasswordError(ParseIssue("password.realm_key_size", {"size": KEY_SIZE_BYTES}))
     aes_key, hmac_key = key[:32], key[32:64]
 
     out = bytearray()
@@ -136,9 +136,7 @@ def decrypt_realm_file(encrypted: bytes, key: bytes) -> bytes:
                     data_pos += _PAGE_SIZE
                     continue
                 else:
-                    raise WrongPasswordError(
-                        "HMAC mismatch decrypting Realm file (wrong key, or the file is corrupt)"
-                    )
+                    raise WrongPasswordError(ParseIssue("password.realm_hmac"))
 
             out += _aes_cbc_decrypt_page(ciphertext, aes_key, use_iv, data_pos)
             data_pos += _PAGE_SIZE

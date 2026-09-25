@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from crush.core import sqlite_journal, tempdir
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -120,7 +121,9 @@ def _connect_sqlcipher(
             try:
                 bytes.fromhex(hex_key)
             except ValueError as exc:
-                raise WrongPasswordError(f"Not a valid hex key: {exc}") from exc
+                raise WrongPasswordError(
+                    ParseIssue("sqlite.invalid_hex_key", detail=str(exc))
+                ) from exc
             conn.execute(f"PRAGMA key = \"x'{hex_key}'\"")
         else:
             escaped = password.replace("'", "''")
@@ -155,9 +158,9 @@ def _connect_sqlcipher(
         try:
             return _try_open(None, params)
         except sqlcipher.DatabaseError as exc:
-            raise WrongPasswordError(
-                f"Incorrect key, or the given parameters don't match this file ({exc})"
-            ) from exc
+            issue = ParseIssue("sqlite.custom_params_rejected", detail=str(exc))
+            _logger.info("%s (SQLCipher: %s)", issue, issue.detail)
+            raise WrongPasswordError(issue) from exc
 
     last_exc: Exception | None = None
     for compat in _CIPHER_COMPATIBILITY_PRESETS:
@@ -166,9 +169,25 @@ def _connect_sqlcipher(
         except sqlcipher.DatabaseError as exc:
             last_exc = exc
             continue
-    raise WrongPasswordError(
-        f"Incorrect password, or an unsupported SQLCipher version/parameters ({last_exc})"
-    )
+    issue = ParseIssue("sqlite.password_rejected", detail=str(last_exc))
+    _logger.info("%s (SQLCipher: %s)", issue, issue.detail)
+    raise WrongPasswordError(issue)
+
+
+def _journal_mode_fact(pragma_value: str | None) -> str | ParseIssue:
+    """What the file itself records about its journal mode.
+
+    The header (bytes 18/19) only stores WAL vs. rollback journal.
+    PRAGMA journal_mode reads that for "wal"; any other value ("delete",
+    "truncate", "persist" …) is the connection's default, not something
+    the file recorded -- so only the WAL/rollback distinction is shown.
+    Works for SQLCipher too, where the raw header bytes are ciphertext.
+    """
+    if pragma_value is None:
+        return "?"
+    if pragma_value.lower() == "wal":
+        return "WAL"
+    return ParseIssue("sqlite.journal_mode_rollback")
 
 
 class SQLiteParser(AbstractParser):
@@ -195,21 +214,23 @@ class SQLiteParser(AbstractParser):
 
         # Copy WAL and SHM companion files if present
         companions: list[str] = []
-        _wal_diag_lines: list[str] = []
+        _wal_diag_lines: list[ParseIssue] = []
+        # Companions that exist but couldn't be read -- without this the
+        # database would silently open without its WAL/journal layer.
+        companion_failures: list[ParseIssue] = []
         for suffix in ("-wal", "-shm"):
             sibling = find_sibling(node, vfs, suffix)
             if sibling is not None:
                 try:
                     sib_bytes = vfs.read(sibling)
                     if not sib_bytes:
-                        msg = (
-                            f"VFS found {sibling.name} (path={sibling.path!r}, "
-                            f"vfs_size={sibling.size} B) but read returned 0 bytes — "
-                            f"ZIP entry may be empty in the archive"
-                        )
-                        _logger.warning(msg)
+                        issue = ParseIssue("sqlite.companion_empty", {
+                            "name": sibling.name, "path": repr(sibling.path),
+                            "size": sibling.size,
+                        })
+                        _logger.warning("%s", issue)
                         if suffix == "-wal":
-                            _wal_diag_lines.append(msg)
+                            _wal_diag_lines.append(issue)
                     else:
                         sib_path = tmp_path + suffix
                         with open(sib_path, "wb") as f:
@@ -217,18 +238,22 @@ class SQLiteParser(AbstractParser):
                         companions.append(sibling.name)
                         _logger.debug("Copied companion file: %s (%d B)", sibling.name, len(sib_bytes))
                         if suffix == "-wal":
-                            _wal_diag_lines.append(
-                                f"Copied {sibling.name} ({len(sib_bytes):,} B) from {sibling.path!r}"
-                            )
+                            _wal_diag_lines.append(ParseIssue("sqlite.companion_copied", {
+                                "name": sibling.name, "size": len(sib_bytes),
+                                "path": repr(sibling.path),
+                            }))
                 except Exception as exc:
-                    msg = f"VFS found {sibling.name} but read raised: {exc}"
-                    _logger.warning(msg)
+                    issue = ParseIssue(
+                        "sqlite.companion_read_failed", {"name": sibling.name}, detail=str(exc),
+                    )
+                    _logger.warning("%s", issue)
+                    companion_failures.append(issue)
                     if suffix == "-wal":
-                        _wal_diag_lines.append(msg)
+                        _wal_diag_lines.append(issue)
             else:
                 if suffix == "-wal":
                     _wal_diag_lines.append(
-                        f"find_sibling returned None for db_node.path={node.path!r}"
+                        ParseIssue("sqlite.companion_not_in_vfs", {"path": repr(node.path)})
                     )
                 # FileVFS: node.path is an absolute filesystem path — check for the
                 # companion directly on disk (find_sibling only searches the VFS tree)
@@ -242,11 +267,16 @@ class SQLiteParser(AbstractParser):
                         companions.append(fs_companion.name)
                         _logger.debug("Loaded filesystem companion: %s", fs_companion.name)
                         if suffix == "-wal":
-                            _wal_diag_lines.append(
-                                f"Loaded filesystem companion {fs_companion.name} ({len(fs_bytes):,} B)"
-                            )
+                            _wal_diag_lines.append(ParseIssue("sqlite.companion_loaded_fs", {
+                                "name": fs_companion.name, "size": len(fs_bytes),
+                            }))
                     except Exception as exc:
-                        _logger.debug("Could not load filesystem companion %s: %s", fs_companion.name, exc)
+                        issue = ParseIssue(
+                            "sqlite.companion_fs_read_failed", {"name": fs_companion.name},
+                            detail=str(exc),
+                        )
+                        _logger.warning("%s", issue)
+                        companion_failures.append(issue)
 
         # Copy a rollback-journal (-journal) companion if present, for
         # provenance/analysis only (crush.core.sqlite_journal + table_viewer's
@@ -270,7 +300,12 @@ class SQLiteParser(AbstractParser):
                 journal_bytes = vfs.read(journal_sibling)
                 journal_name = journal_sibling.name
             except Exception as exc:
-                _logger.warning("VFS found %s but read raised: %s", journal_sibling.name, exc)
+                issue = ParseIssue(
+                    "sqlite.companion_read_failed", {"name": journal_sibling.name},
+                    detail=str(exc),
+                )
+                _logger.warning("%s", issue)
+                companion_failures.append(issue)
         else:
             fs_journal = Path(node.path + "-journal")
             if fs_journal.is_file():
@@ -278,10 +313,15 @@ class SQLiteParser(AbstractParser):
                     journal_bytes = fs_journal.read_bytes()
                     journal_name = fs_journal.name
                 except OSError as exc:
-                    _logger.debug("Could not load filesystem companion %s: %s", fs_journal.name, exc)
+                    issue = ParseIssue(
+                        "sqlite.companion_fs_read_failed", {"name": fs_journal.name},
+                        detail=str(exc),
+                    )
+                    _logger.warning("%s", issue)
+                    companion_failures.append(issue)
 
         recovered_db_path: str | None = None
-        journal_skip_reason: str | None = None
+        journal_skip_reason: ParseIssue | None = None
         if journal_bytes:
             journal_copy_path = tmp_path + "-journal.raw"
             with open(journal_copy_path, "wb") as f:
@@ -310,10 +350,7 @@ class SQLiteParser(AbstractParser):
             wal_flag_set = len(raw) >= 20 and raw[18] == 2 and raw[19] == 2
             if journal_result.mergeable and password is None:
                 if wal_flag_set:
-                    journal_skip_reason = (
-                        "the database's own header shows WAL mode is active, so this "
-                        "-journal predates the switch to WAL and is stale, not \"hot\""
-                    )
+                    journal_skip_reason = ParseIssue("sqlite.journal_stale_wal_mode")
                 else:
                     if Path(tmp_path + "-wal").exists():
                         _logger.debug(
@@ -368,7 +405,7 @@ class SQLiteParser(AbstractParser):
 
             data: dict[str, Any] = {
                 "__db_path": tmp_path,
-                "__wal_diag": " | ".join(_wal_diag_lines) if _wal_diag_lines else "",
+                "__wal_diag": _wal_diag_lines,
             }
             if journal_copy_path:
                 data["__journal_path"] = journal_copy_path
@@ -428,51 +465,55 @@ class SQLiteParser(AbstractParser):
                         "truncated": False,
                     }
 
+            pragma_issue: ParseIssue | None = None
             try:
                 pragma_rows = cursor.execute("PRAGMA page_size").fetchone()
                 page_size = pragma_rows[0] if pragma_rows else "?"
                 wal = cursor.execute("PRAGMA journal_mode").fetchone()
                 encoding = cursor.execute("PRAGMA encoding").fetchone()
-            except Exception:
+            except Exception as exc:
                 page_size, wal, encoding = "?", None, None
+                pragma_issue = ParseIssue("sqlite.pragma_read_failed", detail=str(exc))
 
             meta: dict[str, Any] = {
                 "Tables": str(len(tables)),
                 "Page size": f"{page_size} B",
-                "Journal mode": wal[0] if wal else "?",
+                "Journal mode": _journal_mode_fact(wal[0] if wal else None),
                 "Encoding": encoding[0] if encoding else "?",
                 "File size": f"{node.size:,} B",
             }
+            if pragma_issue is not None:
+                meta["Header values"] = pragma_issue
             if companions:
                 meta["Companion files"] = ", ".join(companions)
+            if companion_failures:
+                meta["Companion files not loaded"] = companion_failures
             if journal_result is not None:
                 n_records = sum(len(s.records) for s in journal_result.segments)
+                counts = {"segments": len(journal_result.segments), "records": n_records}
                 if journal_result.mergeable and journal_skip_reason:
-                    status = (
-                        f"valid/hot, {len(journal_result.segments)} segment(s), "
-                        f"{n_records} page record(s) -- NOT merged, {journal_skip_reason} "
-                        "(see the 'Rollback Journal' tab for the raw, unmerged record "
-                        "inventory)"
+                    status = ParseIssue(
+                        "sqlite.journal_valid_not_merged",
+                        {**counts, "reason": journal_skip_reason},
                     )
                 elif journal_result.mergeable:
-                    status = (
-                        f"valid/hot, {len(journal_result.segments)} segment(s), "
-                        f"{n_records} page record(s) -- merged into current view "
-                        "(see 'Show pre-rollback state' toggle and the "
-                        "'Rollback Journal' tab)"
-                    )
+                    status = ParseIssue("sqlite.journal_merged", counts)
                 else:
-                    reason = journal_result.error or "one or more page checksums did not validate"
-                    status = (
-                        f"NOT merged -- {reason} (see the 'Rollback Journal' tab for "
-                        "the raw, unmerged record inventory)"
-                    )
-                meta["Rollback journal"] = f"present, {len(journal_bytes or b''):,} B, {status}"
+                    status = ParseIssue("sqlite.journal_not_merged", {
+                        "reason": journal_result.error
+                        or ParseIssue("sqlite.journal_checksum_mismatch"),
+                    })
+                meta["Rollback journal"] = ParseIssue("sqlite.journal_present", {
+                    "size": len(journal_bytes or b""), "status": status,
+                })
             if truncated_tables:
-                meta["Row limit"] = f"First {_ROW_LIMIT:,} rows shown for: {', '.join(truncated_tables)}"
+                meta["Row limit"] = ParseIssue("sqlite.row_limit", {
+                    "limit": _ROW_LIMIT, "tables": ", ".join(truncated_tables),
+                })
             if password is not None:
-                key_kind = "raw key" if raw_key else "password"
-                meta["Encrypted"] = f"Yes (SQLCipher, {key_kind} supplied)"
+                meta["Encrypted"] = ParseIssue(
+                    "sqlite.encrypted_raw_key" if raw_key else "sqlite.encrypted_password"
+                )
                 if cipher_params is not None:
                     meta["Cipher parameters"] = (
                         f"custom: page_size={cipher_params.page_size}, "
@@ -488,7 +529,7 @@ class SQLiteParser(AbstractParser):
                 viewer_type="hex",
                 data=raw,
                 metadata={
-                    "Parse error": str(exc),
+                    "Parse error": ParseIssue("sqlite.parse_failed", detail=str(exc)),
                     "Format": "SQLite (parse failed)",
                     "File size": f"{node.size:,} B",
                 },

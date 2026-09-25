@@ -108,7 +108,7 @@ def _make_fake_source_with_unsafe_name() -> tuple[VFSNode, _FakeVFS]:
 
 
 def test_export_node_sanitizes_unsafe_child_names_and_records_renames(
-    qapp, tmp_path, monkeypatch
+    qapp, qtbot, tmp_path, monkeypatch
 ) -> None:
     root, vfs = _make_fake_source_with_unsafe_name()
     dest_dir = tmp_path / "dest"
@@ -120,7 +120,12 @@ def test_export_node_sanitizes_unsafe_child_names_and_records_renames(
     win = MainWindow()
     try:
         win._export_node(root, vfs)
-        win._export_thread.wait(5000)
+        # Not QThread.wait(): the worker's finished -> thread.quit is
+        # queued to this (main) thread, so a blocking wait always ran
+        # into its full timeout. waitUntil keeps processing events.
+        qtbot.waitUntil(
+            lambda: not win._thread_is_running(win._export_thread), timeout=10_000
+        )
         qapp.processEvents()
 
         target_root = dest_dir / root.name
@@ -135,7 +140,7 @@ def test_export_node_sanitizes_unsafe_child_names_and_records_renames(
         win.close()
 
 
-def test_export_multi_nodes_sanitizes_virtual_path_components(qapp, tmp_path, monkeypatch) -> None:
+def test_export_multi_nodes_sanitizes_virtual_path_components(qapp, qtbot, tmp_path, monkeypatch) -> None:
     source_dir = tmp_path / "source"
     source_dir.mkdir()
     unsafe_file = source_dir / "unsafe.txt"
@@ -156,7 +161,12 @@ def test_export_multi_nodes_sanitizes_virtual_path_components(qapp, tmp_path, mo
     try:
         entries = [(node, vfs, 'weird"dir/pipe|name.txt')]
         win._export_multi_nodes(entries, "filter")
-        win._export_thread.wait(5000)
+        # Not QThread.wait(): the worker's finished -> thread.quit is
+        # queued to this (main) thread, so a blocking wait always ran
+        # into its full timeout. waitUntil keeps processing events.
+        qtbot.waitUntil(
+            lambda: not win._thread_is_running(win._export_thread), timeout=10_000
+        )
         qapp.processEvents()
 
         export_roots = list(dest_dir.glob("crush-export-*"))

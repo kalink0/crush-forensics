@@ -360,7 +360,8 @@ class MMKVViewer(QWidget):
             if meta_info["actual_size"] is not None:
                 overview["Recorded data region size"] = f"{meta_info['actual_size']:,} B"
         else:
-            overview["Meta file"] = "not found (.crc companion missing)"
+            # The parser says why: missing, unreadable or too short.
+            overview["Meta file"] = str(self._data.get("meta_status") or "")
         overview["Total entries"] = len(records)
         overview["Live"] = sum(1 for r in records if r["state"] == "Live")
         overview["Superseded"] = sum(1 for r in records if r["state"] == "Superseded")

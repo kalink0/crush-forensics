@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator
 
 from crush.core import tempdir
+from crush.core.log_ts import TS_UNPARSED, naive_ts
 
 if TYPE_CHECKING:
     from crush.core.vfs import VFS, VFSNode
@@ -125,7 +126,12 @@ def _path_basename(path: str) -> str:
 
 
 def _parse_ul_timestamp(s: str) -> datetime | None:
-    """Parse Apple Unified Log timestamp.
+    """_parse_ul_timestamp_flags() without the flags."""
+    return _parse_ul_timestamp_flags(s)[0]
+
+
+def _parse_ul_timestamp_flags(s: str) -> tuple[datetime | None, str]:
+    """Parse Apple Unified Log timestamp -> (UTC datetime, ts_flags).
 
     Handles both ``log show`` space-separated format and the ISO 8601 format
     produced by Mandiant's ``unifiedlog_iterator``:
@@ -134,7 +140,7 @@ def _parse_ul_timestamp(s: str) -> datetime | None:
     """
     s = s.strip()
     if not s:
-        return None
+        return None, ""
     # Normalise ISO 8601 → strptime-compatible:
     #   T  → space
     #   trailing Z → +0000
@@ -153,19 +159,16 @@ def _parse_ul_timestamp(s: str) -> datetime | None:
         "%Y-%m-%d %H:%M:%S",
     ):
         try:
-            dt = datetime.strptime(s, fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
+            return naive_ts(datetime.strptime(s, fmt))
         except ValueError:
             continue
     _log.debug("[UnifiedLog] Unrecognised timestamp format: %r", s)
-    return None
+    return None, TS_UNPARSED
 
 
 def _entry_from_ul_json_obj(obj: dict[str, Any]) -> dict[str, Any]:
     """Convert one Apple Unified Log JSON object to the standard entry dict."""
-    ts = _parse_ul_timestamp(str(obj.get("timestamp", "") or ""))
+    ts, ts_flags = _parse_ul_timestamp_flags(str(obj.get("timestamp", "") or ""))
     level = _normalise_ul_level(str(obj.get("messageType", "") or ""))
 
     proc_path = str(obj.get("processImagePath", "") or obj.get("process", "") or "")
@@ -197,6 +200,7 @@ def _entry_from_ul_json_obj(obj: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "timestamp": ts,
+        "ts_flags":  ts_flags,
         "level":     level,
         "process":   process,
         "pid":       pid,
@@ -338,7 +342,7 @@ def _try_unified_log_text(lines: list[str]) -> list[dict[str, Any]] | None:
             continue
 
         ts_str, thread_id, msg_type, activity_id, pid_str, rest = m.groups()
-        ts = _parse_ul_timestamp(ts_str)
+        ts, ts_flags = _parse_ul_timestamp_flags(ts_str)
         level = _normalise_ul_level(msg_type)
 
         process = ""
@@ -360,6 +364,7 @@ def _try_unified_log_text(lines: list[str]) -> list[dict[str, Any]] | None:
 
         entries.append({
             "timestamp": ts,
+            "ts_flags":  ts_flags,
             "level":     level,
             "process":   process,
             "pid":       pid_str,
@@ -511,11 +516,11 @@ def _entry_from_mandiant_json(obj: dict[str, Any]) -> dict[str, Any]:
     in extra["boot_time_ns"] when available) so it stays visible either way.
     """
     ts_str = str(obj.get("timestamp", "") or "")
-    ts = _parse_ul_timestamp(ts_str) if ts_str else None
+    ts, ts_flags = _parse_ul_timestamp_flags(ts_str)
     boot_relative = ts is not None and ts < _MIN_REAL_TS
     excluded_ts_iso = ts.isoformat() if boot_relative and ts is not None else None
     if boot_relative:
-        ts = None
+        ts, ts_flags = None, ""
 
     log_type = str(obj.get("log_type", "") or "")
     level = _MANDIANT_LEVEL_MAP.get(log_type.lower(), "UNKNOWN")
@@ -582,6 +587,7 @@ def _entry_from_mandiant_json(obj: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "timestamp": ts,
+        "ts_flags":  ts_flags,
         "level":     level,
         "process":   process,
         "pid":       pid,
@@ -642,11 +648,11 @@ def _entry_from_mandiant_csv(row: dict[str, str]) -> dict[str, Any]:
     kept, in extra["excluded_timestamp"], rather than discarded.
     """
     ts_str = row.get("Timestamp", "")
-    ts = _parse_ul_timestamp(ts_str) if ts_str else None
+    ts, ts_flags = _parse_ul_timestamp_flags(ts_str)
     boot_relative = ts is not None and ts < _MIN_REAL_TS
     excluded_ts_iso = ts.isoformat() if boot_relative and ts is not None else None
     if boot_relative:
-        ts = None
+        ts, ts_flags = None, ""
 
     log_type = row.get("Log Type", "")
     level = _MANDIANT_LEVEL_MAP.get(log_type.lower(), "UNKNOWN")
@@ -710,6 +716,7 @@ def _entry_from_mandiant_csv(row: dict[str, str]) -> dict[str, Any]:
 
     return {
         "timestamp": ts,
+        "ts_flags":  ts_flags,
         "level":     level,
         "process":   process,
         "pid":       pid,

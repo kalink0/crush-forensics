@@ -8,10 +8,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.parsers.proto_interp import Interpretation, interpret_fixed32, interpret_fixed64, interpret_varint
 from crush.parsers.proto_wire import read_varint
+
+# Nesting depth up to which a length-delimited payload is tried as a nested
+# message -- the default recursion limit of the official protobuf libraries.
+# Deeper payloads are shown as string/bytes and counted (see depth_limited).
+MAX_DEPTH = 100
 
 
 class ProtobufParser(AbstractParser):
@@ -33,6 +39,10 @@ class ProtobufParser(AbstractParser):
         }
         if warning:
             meta["Parse warning"] = warning
+        if decoded.get("depth_limited"):
+            meta["Nesting"] = ParseIssue("protobuf.depth_limit", {
+                "count": decoded["depth_limited"], "limit": MAX_DEPTH,
+            })
         return ParseResult(
             viewer_type="protobuf",
             data={"raw": raw, "decoded": decoded},
@@ -51,27 +61,26 @@ def _decode_message(
     *,
     depth: int = 0,
     base_offset: int = 0,
-    max_depth: int = 6,
-    max_entries: int = 50_000,
-) -> tuple[dict[str, Any], str, str]:
+    max_depth: int = MAX_DEPTH,
+) -> tuple[dict[str, Any], ParseIssue | None, str]:
     """Decode a protobuf message into a structured dict.
 
-    Returns: (decoded, warning, text_index)
+    Returns: (decoded, warning, text_index). decoded["depth_limited"] counts
+    the length-delimited fields at *max_depth* that were not tried as
+    nested messages.
     """
     entries: list[dict[str, Any]] = []
-    warning = ""
+    warning: ParseIssue | None = None
     text_parts: list[str] = []
+    depth_limited = 0
 
     idx = 0
     try:
         while idx < len(raw):
             entry_start = idx
-            if len(entries) >= max_entries:
-                warning = f"Entry limit reached ({max_entries:,})"
-                break
             key, idx = _read_varint(raw, idx)
             if key is None:
-                warning = "Truncated varint key"
+                warning = ParseIssue("protobuf.truncated_key")
                 break
             key_end = idx
             field_no = key >> 3
@@ -81,7 +90,7 @@ def _decode_message(
                 value_start = idx
                 val, idx = _read_varint(raw, idx)
                 if val is None:
-                    warning = "Truncated varint value"
+                    warning = ParseIssue("protobuf.truncated_varint")
                     break
                 entries.append({
                     "field": field_no,
@@ -95,7 +104,7 @@ def _decode_message(
 
             elif wire_type == 1:  # 64-bit
                 if idx + 8 > len(raw):
-                    warning = "Truncated 64-bit value"
+                    warning = ParseIssue("protobuf.truncated_fixed64")
                     break
                 value_start = idx
                 chunk = raw[idx:idx + 8]
@@ -113,7 +122,7 @@ def _decode_message(
 
             elif wire_type == 5:  # 32-bit
                 if idx + 4 > len(raw):
-                    warning = "Truncated 32-bit value"
+                    warning = ParseIssue("protobuf.truncated_fixed32")
                     break
                 value_start = idx
                 chunk = raw[idx:idx + 4]
@@ -133,10 +142,10 @@ def _decode_message(
                 length_start = idx
                 length, idx = _read_varint(raw, idx)
                 if length is None:
-                    warning = "Truncated length-delimited size"
+                    warning = ParseIssue("protobuf.truncated_length")
                     break
                 if idx + length > len(raw):
-                    warning = "Truncated length-delimited payload"
+                    warning = ParseIssue("protobuf.truncated_payload")
                     break
                 payload_start = idx
                 payload = raw[idx:idx + length]
@@ -154,15 +163,19 @@ def _decode_message(
 
                 if payload:
                     nested_ok = False
-                    if depth < max_depth:
+                    if depth >= max_depth:
+                        depth_limited += 1
+                    else:
                         nested, nested_warn, nested_text = _decode_message(
                             payload,
                             depth=depth + 1,
                             base_offset=base_offset + payload_start,
                             max_depth=max_depth,
-                            max_entries=max_entries,
                         )
-                        if not nested_warn and nested.get("entries"):
+                        # Limit hits below count even when that payload in the
+                        # end isn't taken as a message.
+                        depth_limited += nested.get("depth_limited", 0)
+                        if nested_warn is None and nested.get("entries"):
                             entry["value"] = {"type": "message", "entries": nested["entries"]}
                             if nested_text:
                                 text_parts.append(nested_text)
@@ -196,21 +209,21 @@ def _decode_message(
             elif wire_type == 3:  # start group — deprecated; skip and continue
                 idx, ok = _skip_group(raw, idx, field_no)
                 if not ok:
-                    warning = f"Truncated group field {field_no}"
+                    warning = ParseIssue("protobuf.truncated_group", {"field": field_no})
                     break
 
             elif wire_type == 4:  # end group — unexpected at top level
-                warning = f"Unexpected end-group tag for field {field_no}"
+                warning = ParseIssue("protobuf.unexpected_end_group", {"field": field_no})
                 break
 
             else:
-                warning = f"Unknown wire type: {wire_type}"
+                warning = ParseIssue("protobuf.unknown_wire_type", {"wire_type": wire_type})
                 break
 
     except Exception as exc:  # noqa: BLE001
-        warning = f"Decode error: {exc}"
+        warning = ParseIssue("protobuf.decode_error", detail=str(exc))
 
-    decoded = {"entries": entries}
+    decoded: dict[str, Any] = {"entries": entries, "depth_limited": depth_limited}
     text_index = " ".join(_limit_text(text_parts))
     return decoded, warning, text_index
 

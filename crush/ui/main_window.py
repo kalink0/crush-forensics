@@ -60,6 +60,7 @@ from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
+from crush.core.issues import ParseIssue
 from crush.core.session import Session
 from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFilter
 from crush.ui.fs_panel import FilesystemPanel
@@ -70,7 +71,9 @@ from crush.ui.loading_dialog import LoadingDialog
 class _LoadSourceWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
-    password_required = Signal(bool)  # True = a previously supplied password was wrong
+    # (was_wrong, reason): was_wrong = a previously supplied password was
+    # rejected; reason = why, as the source reported it ("" if none).
+    password_required = Signal(bool, str)
 
     def __init__(
         self,
@@ -113,11 +116,11 @@ class _LoadSourceWorker(QObject):
                 )
             if self._integrity:
                 self._log_source_hash()
-        except WrongPasswordError:
-            self.password_required.emit(True)
+        except WrongPasswordError as exc:
+            self.password_required.emit(True, str(exc))
             return
         except PasswordRequiredError:
-            self.password_required.emit(False)
+            self.password_required.emit(False, "")
             return
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -508,6 +511,12 @@ _WINDOWS_RESERVED_STEMS = {
     *(f"COM{i}" for i in range(10)),
     *(f"LPT{i}" for i in range(10)),
 }
+
+
+def _with_reason(prompt: str, reason: str | None) -> str:
+    """Put a rejected password's reason above the retry prompt -- a key in
+    the wrong format must not read the same as a wrong key."""
+    return f"{reason}\n\n{prompt}" if reason else prompt
 
 
 def _safe_name(name: str) -> tuple[str, bool]:
@@ -1022,7 +1031,8 @@ class MainWindow(QMainWindow):
         if notes:
             for note in notes:
                 self._logger.warning("%s: %s", self._loading_path, note)
-            self._status.showMessage(f"Loaded: {self._loading_path}  — {'; '.join(notes)}")
+            text = "; ".join(str(note) for note in notes)  # notes may be ParseIssues
+            self._status.showMessage(f"Loaded: {self._loading_path}  — {text}")
         else:
             self._status.showMessage(f"Loaded: {self._loading_path}")
         self._add_to_recent_files(self._loading_path)
@@ -1564,12 +1574,16 @@ class MainWindow(QMainWindow):
 
         run_with_busy_dialog(self, "Verifying EWF hash…", _work, _on_done, _on_error)
 
-    def _open_encrypted_sqlite(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
+    def _open_encrypted_sqlite(
+        self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
+    ) -> None:
+        """*wrong_reason* is None on the first prompt, else why the previous
+        key/password was rejected (shown in the retry prompt)."""
         from crush.core.passwords import WrongPasswordError
         from crush.parsers.sqlite_parser import SQLiteParser
         from crush.ui.sqlcipher_dialog import SQLCipherCredentialsDialog
 
-        dialog = SQLCipherCredentialsDialog(self, was_wrong=was_wrong)
+        dialog = SQLCipherCredentialsDialog(self, wrong_reason=wrong_reason)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             self._status.showMessage("Load cancelled: password required")
             return
@@ -1585,8 +1599,8 @@ class MainWindow(QMainWindow):
             result = parser.parse(
                 node, vfs, password=key_text, raw_key=raw_key, cipher_params=cipher_params
             )
-        except WrongPasswordError:
-            self._open_encrypted_sqlite(node, vfs, was_wrong=True)
+        except WrongPasswordError as exc:
+            self._open_encrypted_sqlite(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
             self._status.showMessage(f"SQLCipher decrypt error: {exc}")
@@ -1598,15 +1612,21 @@ class MainWindow(QMainWindow):
         self._props_panel.update_properties(node, result.metadata, vfs)
         self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
 
-    def _open_encrypted_realm(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
+    def _open_encrypted_realm(
+        self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
+    ) -> None:
+        """*wrong_reason* is None on the first prompt, else why the previous
+        key/password was rejected (shown in the retry prompt)."""
+        was_wrong = wrong_reason is not None
         from crush.core.passwords import WrongPasswordError
         from crush.parsers.realm_parser import RealmParser
 
         title = "Incorrect Key" if was_wrong else "Realm Encryption Key"
-        prompt = (
+        prompt = _with_reason(
             "Incorrect key. Please try again (64-byte key as a hex string):"
             if was_wrong
-            else "Enter the 64-byte Realm encryption key as a hex string:"
+            else "Enter the 64-byte Realm encryption key as a hex string:",
+            wrong_reason,
         )
         key_text, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Normal)
         if not ok or not key_text:
@@ -1616,8 +1636,8 @@ class MainWindow(QMainWindow):
         parser = RealmParser()
         try:
             result = parser.parse(node, vfs, password=key_text)
-        except WrongPasswordError:
-            self._open_encrypted_realm(node, vfs, was_wrong=True)
+        except WrongPasswordError as exc:
+            self._open_encrypted_realm(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
             self._status.showMessage(f"Realm decrypt error: {exc}")
@@ -1629,12 +1649,16 @@ class MainWindow(QMainWindow):
         self._props_panel.update_properties(node, result.metadata, vfs)
         self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
 
-    def _open_encrypted_mmkv(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
+    def _open_encrypted_mmkv(
+        self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
+    ) -> None:
+        """*wrong_reason* is None on the first prompt, else why the previous
+        key/password was rejected (shown in the retry prompt)."""
         from crush.core.passwords import WrongPasswordError
         from crush.parsers.mmkv_parser import MMKVParser
         from crush.ui.mmkv_key_dialog import MMKVKeyDialog
 
-        dialog = MMKVKeyDialog(self, was_wrong=was_wrong)
+        dialog = MMKVKeyDialog(self, wrong_reason=wrong_reason)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             self._status.showMessage("Load cancelled: encryption key required")
             return
@@ -1648,8 +1672,8 @@ class MainWindow(QMainWindow):
         parser = MMKVParser()
         try:
             result = parser.parse(node, vfs, password=key_bytes, aes256=dialog.is_aes256())
-        except WrongPasswordError:
-            self._open_encrypted_mmkv(node, vfs, was_wrong=True)
+        except WrongPasswordError as exc:
+            self._open_encrypted_mmkv(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
             self._status.showMessage(f"MMKV decrypt error: {exc}")
@@ -1661,15 +1685,21 @@ class MainWindow(QMainWindow):
         self._props_panel.update_properties(node, result.metadata, vfs)
         self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
 
-    def _open_encrypted_pdf(self, node: VFSNode, vfs: VFS, was_wrong: bool = False) -> None:
+    def _open_encrypted_pdf(
+        self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
+    ) -> None:
+        """*wrong_reason* is None on the first prompt, else why the previous
+        key/password was rejected (shown in the retry prompt)."""
+        was_wrong = wrong_reason is not None
         from crush.core.passwords import WrongPasswordError
         from crush.parsers.pdf_parser import PDFParser
 
         title = "Incorrect Password" if was_wrong else "PDF Password"
-        prompt = (
+        prompt = _with_reason(
             "Incorrect password. Please try again:"
             if was_wrong
-            else "Enter the PDF's password:"
+            else "Enter the PDF's password:",
+            wrong_reason,
         )
         password, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
         if not ok or not password:
@@ -1679,8 +1709,8 @@ class MainWindow(QMainWindow):
         parser = PDFParser()
         try:
             result = parser.parse(node, vfs, password=password)
-        except WrongPasswordError:
-            self._open_encrypted_pdf(node, vfs, was_wrong=True)
+        except WrongPasswordError as exc:
+            self._open_encrypted_pdf(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
             self._status.showMessage(f"PDF decrypt error: {exc}")
@@ -2832,7 +2862,7 @@ class MainWindow(QMainWindow):
                 vol_info = vfs.volume_info(node)
                 if vol_info is not None:
                     fmt_meta["Filesystem"] = vol_info["kind"] or "unknown"
-                    fmt_meta["Status"] = vol_info["note"] or "no reader for this content — showing raw bytes"
+                    fmt_meta["Status"] = vol_info["note"] or ParseIssue("entry.raw_no_reader")
 
             # Cellebrite's own recorded MD5/SHA-256/category for this node,
             # plus an explicit status if its bytes couldn't be located in
@@ -3038,15 +3068,16 @@ class MainWindow(QMainWindow):
                 embedded_zip=embedded_zip,
             )
 
-    def _on_password_required(self, was_wrong: bool) -> None:
+    def _on_password_required(self, was_wrong: bool, reason: str = "") -> None:
         if hasattr(self, "_progress"):
             self._progress.close()
 
         title = "Incorrect Password" if was_wrong else "Password Required"
-        prompt = (
+        prompt = _with_reason(
             "Incorrect password. Please try again:"
             if was_wrong
-            else "This backup is password-protected. Enter the backup password:"
+            else "This backup is password-protected. Enter the backup password:",
+            reason,
         )
         password, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
         if not ok or not password:

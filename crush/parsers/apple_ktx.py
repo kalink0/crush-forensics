@@ -26,6 +26,7 @@ import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from crush.core.issues import ParseIssue, ParseIssueError, issue_from_exception
 from crush.parsers.apple_atx import decode_astc_4x4
 
 if TYPE_CHECKING:
@@ -64,10 +65,10 @@ class KtxHeader:
     little_endian: bool
 
     @property
-    def pixel_format(self) -> str:
+    def pixel_format(self) -> str | ParseIssue:
         if self.gl_internal_format == GL_COMPRESSED_RGBA_ASTC_4X4_KHR:
             return "ASTC 4x4 (GL_COMPRESSED_RGBA_ASTC_4x4_KHR)"
-        return f"Unsupported (glInternalFormat 0x{self.gl_internal_format:04X})"
+        return ParseIssue("ktx.pixel_format_unsupported_label", {"fmt": self.gl_internal_format})
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,7 @@ class KtxDecodeResult:
     key_values: tuple[str, ...]
     payload: KtxPayload | None
     image: DecodedImage | None
-    warnings: tuple[str, ...]
+    warnings: tuple[ParseIssue, ...]
 
 
 def is_ktx(data: bytes) -> bool:
@@ -117,11 +118,11 @@ def parse_ktx(data: bytes) -> KtxDecodeResult:
 def decode_ktx(data: bytes, decode_image: bool = True) -> KtxDecodeResult:
     """Parse a KTX 1.1 file and optionally decode a supported ASTC 4x4 texture."""
 
-    warnings: list[str] = []
+    warnings: list[ParseIssue] = []
     if not is_ktx(data):
         if data[:4] == b"\xabKTX":
-            return KtxDecodeResult(None, (), None, None, ("Unsupported KTX version",))
-        return KtxDecodeResult(None, (), None, None, ("Not a KTX 1.1 file",))
+            return KtxDecodeResult(None, (), None, None, (ParseIssue("ktx.unsupported_version"),))
+        return KtxDecodeResult(None, (), None, None, (ParseIssue("ktx.not_ktx"),))
 
     header = _parse_header(data, warnings)
     if header is None:
@@ -135,14 +136,14 @@ def decode_ktx(data: bytes, decode_image: bool = True) -> KtxDecodeResult:
         try:
             image = _decode_image(header, payload, warnings)
         except (ImportError, OSError, ValueError, struct.error) as ex:
-            warnings.append(f"KTX image decode failed: {ex}")
+            warnings.append(ParseIssue("ktx.decode_failed", {"reason": issue_from_exception(ex)}))
 
     return KtxDecodeResult(header, key_values, payload, image, tuple(warnings))
 
 
-def _parse_header(data: bytes, warnings: list[str]) -> KtxHeader | None:
+def _parse_header(data: bytes, warnings: list[ParseIssue]) -> KtxHeader | None:
     if len(data) < KTX_HEADER_SIZE:
-        warnings.append(f"File is {len(data)} bytes; a KTX header needs {KTX_HEADER_SIZE}")
+        warnings.append(ParseIssue("ktx.header_too_short", {"size": len(data), "needed": KTX_HEADER_SIZE}))
         return None
 
     little_endian = data[12:16] == _LITTLE_ENDIAN_MARKER
@@ -178,12 +179,10 @@ def _parse_header(data: bytes, warnings: list[str]) -> KtxHeader | None:
     )
 
 
-def _parse_key_values(data: bytes, header: KtxHeader, warnings: list[str]) -> tuple[str, ...]:
+def _parse_key_values(data: bytes, header: KtxHeader, warnings: list[ParseIssue]) -> tuple[str, ...]:
     end = KTX_HEADER_SIZE + header.key_value_bytes
     if end > len(data):
-        warnings.append(
-            f"Key/value block claims {header.key_value_bytes} bytes but the file ends first"
-        )
+        warnings.append(ParseIssue("ktx.kv_beyond_eof", {"size": header.key_value_bytes}))
         return ()
 
     block = data[KTX_HEADER_SIZE:end]
@@ -194,7 +193,7 @@ def _parse_key_values(data: bytes, header: KtxHeader, warnings: list[str]) -> tu
         offset += 4
         entry = block[offset:offset + size]
         if len(entry) < size:
-            warnings.append("Key/value entry extends beyond the key/value block")
+            warnings.append(ParseIssue("ktx.kv_entry_overflow"))
             break
         key = entry.split(b"\x00", 1)[0]
         if key:
@@ -204,10 +203,10 @@ def _parse_key_values(data: bytes, header: KtxHeader, warnings: list[str]) -> tu
     return tuple(keys)
 
 
-def _parse_payload(data: bytes, header: KtxHeader, warnings: list[str]) -> KtxPayload | None:
+def _parse_payload(data: bytes, header: KtxHeader, warnings: list[ParseIssue]) -> KtxPayload | None:
     start = KTX_HEADER_SIZE + header.key_value_bytes
     if start + 4 > len(data):
-        warnings.append("No texture payload after the key/value block")
+        warnings.append(ParseIssue("ktx.no_payload"))
         return None
 
     order = "<I" if header.little_endian else ">I"
@@ -221,38 +220,39 @@ def _parse_payload(data: bytes, header: KtxHeader, warnings: list[str]) -> KtxPa
     # Apple's LZFSE variant: imageSize, an "LZFS" marker, the compressed block
     # length, then the LZFSE block itself.
     if body[4:8] != _APPLE_LZFS_MARKER:
-        warnings.append(
-            "Key/value block declares Compression_APPLE but no LZFS marker follows imageSize"
-        )
+        warnings.append(ParseIssue("ktx.no_lzfs_marker"))
         return None
     if body[_LZFSE_PAYLOAD_OFFSET:_LZFSE_PAYLOAD_OFFSET + 3] != _LZFSE_BLOCK_MAGIC_PREFIX:
-        warnings.append("LZFS marker is present but the block that follows is not LZFSE")
+        warnings.append(ParseIssue("ktx.not_lzfse"))
         return None
 
     block_length = struct.unpack_from(order, body, 8)[0]
     block = body[_LZFSE_PAYLOAD_OFFSET:]
     if len(block) < block_length:
-        warnings.append(
-            f"LZFSE block declares {block_length:,} bytes but only {len(block):,} are present"
-        )
+        warnings.append(ParseIssue(
+            "ktx.lzfse_short", {"declared": block_length, "present": len(block)},
+        ))
     return KtxPayload(block[:block_length] if block_length else block, declared_size, True)
 
 
-def _decode_image(header: KtxHeader, payload: KtxPayload, warnings: list[str]) -> DecodedImage:
+def _decode_image(header: KtxHeader, payload: KtxPayload, warnings: list[ParseIssue]) -> DecodedImage:
+    dims = {"width": header.width, "height": header.height}
     if header.gl_internal_format != GL_COMPRESSED_RGBA_ASTC_4X4_KHR:
-        raise ValueError(f"unsupported KTX pixel format {header.pixel_format}")
+        raise ParseIssueError(
+            ParseIssue("ktx.unsupported_pixel_format", {"format": header.pixel_format})
+        )
     if header.width <= 0 or header.height <= 0:
-        raise ValueError(f"invalid KTX dimensions: {header.width}x{header.height}")
+        raise ParseIssueError(ParseIssue("ktx.invalid_dimensions", dims))
     if header.width * header.height > MAX_IMAGE_PIXELS:
-        raise ValueError(f"KTX image dimensions are too large: {header.width}x{header.height}")
+        raise ParseIssueError(ParseIssue("ktx.too_large", dims))
     if header.depth not in (0, 1):
-        warnings.append(f"Unexpected KTX depth {header.depth}; attempting 2D decode")
+        warnings.append(ParseIssue("ktx.unexpected_depth", {"depth": header.depth}))
     if header.array_layers not in (0, 1):
-        warnings.append(f"Unexpected KTX array layer count {header.array_layers}; decoding first")
+        warnings.append(ParseIssue("ktx.unexpected_layers", {"count": header.array_layers}))
     if header.faces not in (0, 1):
-        warnings.append(f"Unexpected KTX face count {header.faces}; decoding first face")
+        warnings.append(ParseIssue("ktx.unexpected_faces", {"count": header.faces}))
     if header.mipmap_count not in (0, 1):
-        warnings.append(f"Unexpected KTX mipmap count {header.mipmap_count}; decoding first level")
+        warnings.append(ParseIssue("ktx.unexpected_mipmaps", {"count": header.mipmap_count}))
 
     astc_data = payload.data
     if payload.compressed:
@@ -261,7 +261,7 @@ def _decode_image(header: KtxHeader, payload: KtxPayload, warnings: list[str]) -
         try:
             astc_data = liblzfse.decompress(astc_data)
         except liblzfse.error as ex:
-            raise ValueError(f"LZFSE decompression failed: {ex}") from ex
+            raise ParseIssueError(ParseIssue("ktx.lzfse_failed", detail=str(ex))) from ex
 
     image = decode_astc_4x4(astc_data, header.width, header.height)
     return DecodedImage(header.width, header.height, image.convert("RGBA").tobytes())

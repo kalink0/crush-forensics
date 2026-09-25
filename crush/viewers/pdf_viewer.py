@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.issues import ParseIssue
 from crush.parsers.pdf_parser import PdfRevision
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.text_viewer import TextView
@@ -34,6 +35,27 @@ from crush.viewers.text_viewer import TextView
 # ~144 DPI (PDF page units are 72/inch) -- sharp enough for on-screen
 # reading without rendering every page at a wasteful resolution.
 _RENDER_SCALE = 2.0
+
+
+def _status_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    label.setStyleSheet("padding: 4px 8px; color: palette(mid);")
+    return label
+
+
+def _text_tab(text: str, status: ParseIssue | None, parent: QWidget) -> QWidget:
+    """Extracted text, with the parser's text status (no text at all,
+    pages that failed) shown above it rather than mixed into the text."""
+    if status is None:
+        return TextView(text, parent)
+    container = QWidget(parent)
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(_status_label(str(status)))
+    layout.addWidget(TextView(text, container), stretch=1)
+    return container
 
 
 def _pil_to_pixmap(img: object) -> QPixmap:
@@ -336,6 +358,11 @@ class _PdfDiffView(QWidget):
             lineterm="", n=2,
         ))
         cursor = self._diff_view.textCursor()
+        note_fmt = QTextCharFormat()
+        note_fmt.setForeground(QColor(128, 128, 128))
+        for idx, rev in ((idx_a, rev_a), (idx_b, rev_b)):
+            if rev.text_status is not None:
+                cursor.insertText(f"Revision {idx + 1}: {rev.text_status}\n", note_fmt)
         if not diff_lines:
             cursor.insertText("No text differences between these revisions.\n")
             return
@@ -352,28 +379,32 @@ class _PdfDiffView(QWidget):
             cursor.insertText(line + "\n", fmt)
 
 
-def _render_pdf_page_pil(data: bytes, password: str | None, page_index: int) -> object | None:
-    """Render one page of a PDF revision slice to a PIL RGB Image, or
-    None if the page doesn't exist / the slice fails to open."""
+def _render_pdf_page_pil(
+    data: bytes, password: str | None, page_index: int,
+) -> tuple[object | None, str | None]:
+    """(PIL RGB image, error) for one page of a PDF revision slice.
+    (None, None): the page doesn't exist in this slice. (None, error):
+    the slice or page could not be opened/rendered."""
     try:
         import pypdfium2 as pdfium
 
         doc = pdfium.PdfDocument(data, password=password)
         if page_index >= len(doc):
-            return None
+            return None, None
         bitmap = doc[page_index].render(scale=_RENDER_SCALE)
-        return bitmap.to_pil().convert("RGB")
-    except Exception:
-        return None
+        return bitmap.to_pil().convert("RGB"), None
+    except Exception as exc:
+        return None, str(exc)
 
 
-def _pdf_page_count(data: bytes, password: str | None) -> int:
+def _pdf_page_count(data: bytes, password: str | None) -> tuple[int, str | None]:
+    """(page count, error); the count is 0 when the slice can't be opened."""
     try:
         import pypdfium2 as pdfium
 
-        return len(pdfium.PdfDocument(data, password=password))
-    except Exception:
-        return 0
+        return len(pdfium.PdfDocument(data, password=password)), None
+    except Exception as exc:
+        return 0, str(exc)
 
 
 class _PdfVisualDiffView(QWidget):
@@ -470,16 +501,24 @@ class _PdfVisualDiffView(QWidget):
         rev_a = self._revisions[idx_a]
         rev_b = self._revisions[idx_b]
 
-        page_count = max(
-            _pdf_page_count(rev_a.data, self._password),
-            _pdf_page_count(rev_b.data, self._password),
-        )
+        count_a, count_err_a = _pdf_page_count(rev_a.data, self._password)
+        count_b, count_err_b = _pdf_page_count(rev_b.data, self._password)
+        page_count = max(count_a, count_b)
         self._page_label.setText(f"Page {self._page + 1} / {max(page_count, 1)}")
         self._prev_btn.setEnabled(self._page > 0)
         self._next_btn.setEnabled(self._page + 1 < page_count)
 
-        img_a = _render_pdf_page_pil(rev_a.data, self._password, self._page)
-        img_b = _render_pdf_page_pil(rev_b.data, self._password, self._page)
+        img_a, err_a = _render_pdf_page_pil(rev_a.data, self._password, self._page)
+        img_b, err_b = _render_pdf_page_pil(rev_b.data, self._password, self._page)
+        errors = [
+            f"Revision {idx + 1} could not be rendered: {err}"
+            for idx, err in ((idx_a, err_a or count_err_a), (idx_b, err_b or count_err_b))
+            if err
+        ]
+        if errors:
+            self._status_label.setText("\n".join(errors))
+            self._image_label.clear()
+            return
         if img_a is None or img_b is None:
             self._status_label.setText(
                 "This page doesn't exist in one of the two selected revisions."
@@ -568,7 +607,7 @@ class _PdfHistoryView(QWidget):
         selector_row.setSpacing(4)
         for i, rev in enumerate(self._revisions):
             label = f"Revision {i + 1}" + (" (current)" if i == len(self._revisions) - 1 else "")
-            if rev.has_javascript or rev.signatures != "None" or rev.attachments:
+            if rev.notable:
                 label += " ⚠"
             btn = QPushButton(label)
             btn.clicked.connect(lambda _checked=False, idx=i: self._select(idx))
@@ -591,17 +630,19 @@ class _PdfHistoryView(QWidget):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        info = QLabel(
-            f"JavaScript: {'Present' if rev.has_javascript else 'Not present'}"
-            f"    ·    Signatures: {rev.signatures}"
-            f"    ·    Attachments: {len(rev.attachments)} file(s)"
-        )
-        info.setStyleSheet("padding: 4px 8px; color: palette(mid);")
-        layout.addWidget(info)
+        if rev.error is not None:
+            info_text = str(rev.error)
+        else:
+            info_text = (
+                f"JavaScript: {rev.javascript}"
+                f"    ·    Signatures: {rev.signatures}"
+                f"    ·    Attachments: {rev.attachments_status}"
+            )
+        layout.addWidget(_status_label(info_text))
 
         tabs = QTabWidget()
         tabs.addTab(_PdfPagesView(rev.data, self._password, tabs), "Pages")
-        tabs.addTab(TextView(rev.text, tabs), "Text")
+        tabs.addTab(_text_tab(rev.text, rev.text_status, tabs), "Text")
         if rev.attachments:
             attachments_view = _PdfAttachmentsView(rev.attachments, tabs)
             attachments_view.open_bytes_requested.connect(self.open_bytes_requested)
@@ -621,6 +662,7 @@ class PDFViewer(QWidget):
         data: bytes,
         parent: QWidget | None = None,
         extracted_text: str = "",
+        text_status: ParseIssue | None = None,
         password: str | None = None,
         attachments: list[tuple[str, bytes]] | None = None,
         revisions: list[PdfRevision] | None = None,
@@ -630,7 +672,7 @@ class PDFViewer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         tabs = QTabWidget()
         tabs.addTab(_PdfPagesView(data, password, self), "Pages")
-        tabs.addTab(TextView(extracted_text, self), "Text")
+        tabs.addTab(_text_tab(extracted_text, text_status, self), "Text")
         if attachments:
             attachments_view = _PdfAttachmentsView(attachments, self)
             attachments_view.open_bytes_requested.connect(self.open_bytes_requested)

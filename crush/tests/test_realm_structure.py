@@ -153,5 +153,5 @@ def test_every_tree_node_has_a_highlight_range() -> None:
 def test_encrypted_or_undetected_header_marks_unresolved_not_empty() -> None:
     garbage = b"\x00" * 64
     tree, ranges = build_realm_structure(garbage)
-    assert tree["File header"] == "Not detected (possibly encrypted or non-standard)"
+    assert str(tree["File header"]) == "Not detected (possibly encrypted or non-standard)"
     assert ranges == {}

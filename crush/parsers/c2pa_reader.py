@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.parsers import jumbf
 from crush.parsers.apple_atx import AAPL_MAGIC
 from crush.parsers.apple_ktx import KTX11_MAGIC
@@ -60,7 +61,7 @@ _COSE_ALGORITHMS = {
 }
 
 
-def summarize_c2pa(raw: bytes) -> dict[str, str]:
+def summarize_c2pa(raw: bytes) -> dict[str, Any]:
     """Return Properties-panel-ready fields. Always includes a "C2PA" status
     field, explicit even when nothing was found or the format isn't checked
     yet -- never silently omitted (a missing row is indistinguishable from
@@ -69,11 +70,11 @@ def summarize_c2pa(raw: bytes) -> dict[str, str]:
     if store is None:
         return {"C2PA": _not_found_status(raw)}
 
-    out: dict[str, str] = {}
+    out: dict[str, Any] = {}
     try:
         _summarize_store(store, out)
-    except Exception:
-        out.setdefault("C2PA", "Manifest found, but could not be parsed")
+    except Exception as exc:
+        out.setdefault("C2PA", ParseIssue("c2pa.parse_failed", detail=str(exc)))
     return out
 
 
@@ -87,10 +88,6 @@ _BMFF_IMAGE_BRANDS = frozenset({
     b"avif", b"avis",
 })
 
-# Formats the C2PA spec defines no embedding mechanism for at all -- not a
-# gap in this reader, the spec (Annex A) simply has no answer for them.
-_NO_SPEC_DEFINED_STATUS = "Not defined by the C2PA spec for this format"
-
 _JXL_BOX_CONTAINER_SIG = bytes.fromhex("0000000c4a584c200d0a870a")  # ISO/IEC 18181-2
 
 
@@ -102,7 +99,7 @@ def _is_webp(raw: bytes) -> bool:
     return len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
 
 
-def _not_found_status(raw: bytes) -> str:
+def _not_found_status(raw: bytes) -> ParseIssue:
     if (
         raw[:2] == b"\xFF\xD8"
         or raw[:8] == b"\x89PNG\r\n\x1a\n"
@@ -112,7 +109,7 @@ def _not_found_status(raw: bytes) -> str:
         or _is_webp(raw)
         or raw[:12] == _JXL_BOX_CONTAINER_SIG
     ):
-        return "Not present"
+        return ParseIssue("c2pa.not_present")
     if (
         raw[:2] == b"BM"
         or raw[:len(AAPL_MAGIC)] == AAPL_MAGIC
@@ -125,8 +122,10 @@ def _not_found_status(raw: bytes) -> str:
         # Bare JPEG XL codestream: the spec explicitly says only the box-form
         # container can carry a manifest, so this isn't "checked and found
         # none" -- no bare-codestream JXL file could ever have one.
-        return _NO_SPEC_DEFINED_STATUS
-    return "Not checked (detection only implemented for common image containers so far)"
+        # Not a gap in this reader: the spec (Annex A) defines no
+        # embedding mechanism for these formats at all.
+        return ParseIssue("c2pa.not_defined")
+    return ParseIssue("c2pa.not_checked")
 
 
 def _extract_manifest_store(raw: bytes) -> bytes | None:
@@ -147,14 +146,14 @@ def _extract_manifest_store(raw: bytes) -> bytes | None:
     return None
 
 
-def _summarize_store(store: bytes, out: dict[str, str]) -> None:
+def _summarize_store(store: bytes, out: dict[str, Any]) -> None:
     root = jumbf.read_box_header(store, 0)
     if root is None or root.box_type != b"jumb":
-        out["C2PA"] = "Manifest found, but could not be parsed"
+        out["C2PA"] = ParseIssue("c2pa.unparseable")
         return
     jumd = jumbf.read_box_header(store, root.content_start)
     if jumd is None:
-        out["C2PA"] = "Manifest found, but could not be parsed"
+        out["C2PA"] = ParseIssue("c2pa.unparseable")
         return
 
     manifests = [
@@ -165,12 +164,12 @@ def _summarize_store(store: bytes, out: dict[str, str]) -> None:
         and jumbf.read_description(store, m.content_start)[0] in _MANIFEST_UUIDS
     ]
     if not manifests:
-        out["C2PA"] = "Manifest Store found, but contains no manifest"
+        out["C2PA"] = ParseIssue("c2pa.store_empty")
         return
 
     out["C2PA"] = (
-        f"{len(manifests)} manifest(s) found" if len(manifests) > 1
-        else "Manifest found"
+        ParseIssue("c2pa.manifests_found", {"count": len(manifests)}) if len(manifests) > 1
+        else ParseIssue("c2pa.manifest_found")
     )
 
     active = manifests[-1]  # C2PA spec: the last manifest is the active one
@@ -199,7 +198,7 @@ def _find_labeled_content(
     return value
 
 
-def _summarize_claim(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, str]) -> None:
+def _summarize_claim(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, Any]) -> None:
     for label in _CLAIM_LABELS:
         claim = _find_labeled_content(store, manifest, label)
         if isinstance(claim, dict):
@@ -228,7 +227,7 @@ def _generator_string(claim: dict[str, Any]) -> str | None:
     return " ".join(parts) or None
 
 
-def _summarize_actions(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, str]) -> None:
+def _summarize_actions(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, Any]) -> None:
     assertions_box = jumbf.find_superbox_by_label(
         store, manifest.content_start, manifest.content_end, _ASSERTIONS_LABEL,
     )
@@ -279,7 +278,7 @@ def _summarize_actions(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, st
         out["C2PA Software Agent(s)"] = ", ".join(agents)
 
 
-def _summarize_ingredients(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, str]) -> None:
+def _summarize_ingredients(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, Any]) -> None:
     """Prior assets this one was derived from (c2pa.ingredient assertions) --
     the provenance chain, not just this manifest's own claims."""
     assertions_box = jumbf.find_superbox_by_label(
@@ -287,7 +286,7 @@ def _summarize_ingredients(store: bytes, manifest: jumbf.JumbfBox, out: dict[str
     )
     if assertions_box is None:
         return
-    titles: list[str] = []
+    titles: list[str | ParseIssue] = []
     for box in jumbf.iter_children(store, assertions_box.content_start, assertions_box.content_end):
         jumd = jumbf.read_box_header(store, box.content_start)
         if jumd is None:
@@ -301,12 +300,15 @@ def _summarize_ingredients(store: bytes, manifest: jumbf.JumbfBox, out: dict[str
         ingredient, _ = cbor_decode(store, content.content_start)
         if isinstance(ingredient, dict):
             title = ingredient.get("title") or ingredient.get("dc:title")
-            titles.append(title if isinstance(title, str) and title else "(untitled)")
+            titles.append(
+                title if isinstance(title, str) and title
+                else ParseIssue("c2pa.ingredient_untitled")
+            )
     if titles:
-        out["C2PA Ingredients"] = ", ".join(titles)
+        out["C2PA Ingredients"] = ", ".join(str(t) for t in titles)
 
 
-def _summarize_signature(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, str]) -> None:
+def _summarize_signature(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, Any]) -> None:
     sig = _find_labeled_content(store, manifest, _SIGNATURE_LABEL)
     if not (isinstance(sig, list) and len(sig) == 4):
         return
@@ -330,14 +332,15 @@ def _summarize_signature(store: bytes, manifest: jumbf.JumbfBox, out: dict[str, 
     if leaf_der is not None:
         _summarize_certificate(leaf_der, out)
 
-    out["C2PA Signature"] = "Present (structure parsed, not cryptographically verified)"
+    out["C2PA Signature"] = ParseIssue("c2pa.signature_present")
 
 
-def _summarize_certificate(der: bytes, out: dict[str, str]) -> None:
+def _summarize_certificate(der: bytes, out: dict[str, Any]) -> None:
     try:
         from cryptography import x509
         cert = x509.load_der_x509_certificate(der)
-    except Exception:
+    except Exception as exc:
+        out["C2PA Signed By"] = ParseIssue("c2pa.cert_unparseable", detail=str(exc))
         return
     def _cn(name: x509.Name, fallback: str) -> str:
         attrs = name.get_attributes_for_oid(x509.NameOID.COMMON_NAME)

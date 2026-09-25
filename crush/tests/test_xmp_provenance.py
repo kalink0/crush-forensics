@@ -3,6 +3,7 @@
 """Tests for IPTC/XMP Digital Source Type detection."""
 from __future__ import annotations
 
+from crush.core.issues import ParseIssue
 from crush.parsers.xmp_provenance import classify_digital_source_type, extract_xmp_provenance
 
 _XMP_PACKET = b"""<x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -44,15 +45,31 @@ def test_extract_xmp_provenance_finds_packet_anywhere_in_file() -> None:
     assert result["XMP Creator Tool"] == "Google Gemini"
     assert result["XMP Credit"] == "Generated with Gemini"
     assert result["XMP Creator(s)"] == "Jane Doe"
+    assert result["XMP"] == ParseIssue("xmp.present")
 
 
-def test_extract_xmp_provenance_empty_without_packet() -> None:
-    assert extract_xmp_provenance(b"\xFF\xD8\xFF\xDA\x00\x02\x00") == {}
+def test_extract_xmp_provenance_says_not_present_without_packet() -> None:
+    assert extract_xmp_provenance(b"\xFF\xD8\xFF\xDA\x00\x02\x00") == {
+        "XMP": ParseIssue("xmp.not_present"),
+    }
 
 
-def test_extract_xmp_provenance_empty_on_malformed_xml() -> None:
-    broken = b"<x:xmpmeta>not valid xml</not closed"
-    assert extract_xmp_provenance(broken) == {}
+def test_extract_xmp_provenance_reports_malformed_xml_with_parser_message() -> None:
+    broken = b"<x:xmpmeta><rdf:RDF>not valid xml</x:xmpmeta>"
+    result = extract_xmp_provenance(broken)
+    assert list(result) == ["XMP"]
+    assert result["XMP"].code == "xmp.parse_failed"
+    assert result["XMP"].detail  # the XML parser's own message, verbatim
+
+
+def test_extract_xmp_provenance_reports_packet_without_closing_tag() -> None:
+    result = extract_xmp_provenance(b"noise<x:xmpmeta>cut off here")
+    assert result == {"XMP": ParseIssue("xmp.unclosed", {"offset": 5})}
+
+
+def test_extract_xmp_provenance_says_when_more_than_one_packet_exists() -> None:
+    result = extract_xmp_provenance(_XMP_PACKET + b"gap" + _XMP_PACKET)
+    assert result["XMP"] == ParseIssue("xmp.present_multiple", {"count": 2})
 
 
 def test_extract_xmp_provenance_ignores_packet_without_relevant_fields() -> None:
@@ -62,4 +79,4 @@ def test_extract_xmp_provenance_ignores_packet_without_relevant_fields() -> None
         b'<rdf:Description/>'
         b'</rdf:RDF></x:xmpmeta>'
     )
-    assert extract_xmp_provenance(packet) == {}
+    assert extract_xmp_provenance(packet) == {"XMP": ParseIssue("xmp.present_no_listed_fields")}

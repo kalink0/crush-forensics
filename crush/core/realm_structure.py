@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.parsers.realm_parser import (
     REALM_HEADER_SIZE,
     REALM_MIN_CLUSTER_FORMAT_VERSION,
@@ -95,7 +96,7 @@ def build_realm_structure(data: bytes) -> tuple[StructureTree, ByteRangesByPath]
 
     header = parse_realm_header(data)
     if header is None:
-        tree["File header"] = "Not detected (possibly encrypted or non-standard)"
+        tree["File header"] = ParseIssue("realm_structure.header_not_detected")
         return tree, ranges
 
     tree["File header"] = {k: str(v) for k, v in header.items()}
@@ -111,7 +112,7 @@ def build_realm_structure(data: bytes) -> tuple[StructureTree, ByteRangesByPath]
         tree["Streaming footer"] = {
             "Resolved top reference": (
                 f"{streaming['top_ref']} (0x{streaming['top_ref']:x})"
-                if streaming["top_ref"] is not None else "unresolved"
+                if streaming["top_ref"] is not None else ParseIssue("realm_structure.ref_unresolved")
             ),
             "Footer valid": streaming["footer_valid"],
         }
@@ -125,12 +126,12 @@ def build_realm_structure(data: bytes) -> tuple[StructureTree, ByteRangesByPath]
         active_format = fmt1 if active_idx == 1 else fmt0
 
     if not active_offset or active_offset <= 0 or active_offset >= file_size:
-        tree["Top array (Group)"] = "Unresolved -- no valid active top reference"
+        tree["Top array (Group)"] = ParseIssue("realm_structure.top_unresolved")
         return tree, ranges
 
     top_hdr = parse_array_header(data, active_offset)
     if top_hdr is None:
-        tree["Top array (Group)"] = f"Unreadable at offset 0x{active_offset:x}"
+        tree["Top array (Group)"] = ParseIssue("realm_structure.top_unreadable", {"offset": active_offset})
         return tree, ranges
 
     top_total = top_hdr["Total array bytes"]
@@ -237,11 +238,11 @@ def _build_table_structure(
     path: tuple[str, ...],
 ) -> Any:
     if table_ref <= 0 or table_ref >= file_size:
-        return "Table reference is invalid or points outside the file"
+        return ParseIssue("realm_structure.table_ref_invalid")
 
     t_hdr = parse_array_header(data, table_ref)
     if t_hdr is None or not t_hdr["has_refs"]:
-        return "Table top array is malformed or unreadable"
+        return ParseIssue("realm_structure.table_top_unreadable")
 
     t_eb = array_elem_bytes(t_hdr)
     t_total = t_hdr["Total array bytes"]
@@ -257,14 +258,14 @@ def _build_table_structure(
         spec_dict: dict[str, Any] = {}
         for i, name in enumerate(col_names):
             spec_dict[name] = describe_column_type(col_info[i]) if i < len(col_info) else "?"
-        result["Spec (columns)"] = spec_dict if spec_dict else "(no columns)"
+        result["Spec (columns)"] = spec_dict if spec_dict else ParseIssue("realm_structure.no_columns")
 
         if t_hdr["Element count (size)"] < 3:
-            result["ClusterTree"] = "Table top array is missing its ClusterTree slot"
+            result["ClusterTree"] = ParseIssue("realm_structure.no_cluster_tree_slot")
         else:
             cluster_root_ref = read_array_ref(data, table_ref + 8, 2, t_eb)
             if cluster_root_ref <= 0 or cluster_root_ref >= file_size:
-                result["ClusterTree"] = "ClusterTree reference is invalid or points outside the file"
+                result["ClusterTree"] = ParseIssue("realm_structure.cluster_tree_ref_invalid")
             else:
                 leaves = walk_cluster_leaves(data, cluster_root_ref, file_size)
                 if not leaves:
@@ -329,7 +330,7 @@ def _build_pre_cluster_table_structure(
 
     spec_columns = extract_pre_cluster_spec(data, spec_ref, file_size)
     if not spec_columns:
-        result["Spec (columns)"] = "(no columns)"
+        result["Spec (columns)"] = ParseIssue("realm_structure.no_columns")
         result["Column B+-Trees"] = "(unavailable)"
         return
 

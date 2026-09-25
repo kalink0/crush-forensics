@@ -25,6 +25,7 @@ from collections.abc import Iterable, Iterator
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from crush.core.issues import ParseIssue
 from crush.core.passwords import WrongPasswordError
 
 _KEY_SIZE_BYTES = 32  # 256-bit keys throughout (user key, master key, checksum)
@@ -67,7 +68,7 @@ def _aes_cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
 def _unpad_pkcs7(data: bytes) -> bytes:
     pad_len = data[-1] if data else 0
     if pad_len < 1 or pad_len > 16 or data[-pad_len:] != bytes([pad_len]) * pad_len:
-        raise WrongPasswordError("Payload padding invalid after decryption (wrong password?)")
+        raise WrongPasswordError(ParseIssue("password.ab_padding"))
     return data[:-pad_len]
 
 
@@ -102,13 +103,13 @@ def unwrap_master_key(
         offset += 1
         checksum = mk_blob[offset:offset + ck_len]
     except (IndexError, ValueError) as exc:
-        raise WrongPasswordError("Incorrect Android backup password") from exc
+        raise WrongPasswordError(ParseIssue("password.ab_wrong")) from exc
 
     use_utf8 = version >= 2
     if _key_checksum(master_key, checksum_salt, rounds, use_utf8) != checksum:
         use_utf8 = not use_utf8
         if _key_checksum(master_key, checksum_salt, rounds, use_utf8) != checksum:
-            raise WrongPasswordError("Incorrect Android backup password")
+            raise WrongPasswordError(ParseIssue("password.ab_wrong"))
     return master_key, master_iv
 
 

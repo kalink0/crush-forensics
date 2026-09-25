@@ -21,6 +21,9 @@ not copied from a third party's possibly-stale or approximated table.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from typing import Any
+
+from crush.core.issues import ParseIssue
 
 _DIGITAL_SOURCE_TYPES: dict[str, str] = {
     "digitalCapture": "Digital capture sampled from real life",
@@ -58,15 +61,20 @@ def classify_digital_source_type(uri_or_code: str) -> str:
 def find_xmp_packet(raw: bytes) -> bytes | None:
     start = raw.find(b"<x:xmpmeta")
     if start != -1:
-        end = raw.find(b"</x:xmpmeta>")
+        end = raw.find(b"</x:xmpmeta>", start)
         if end != -1:
             return raw[start:end + len(b"</x:xmpmeta>")]
     start = raw.find(b"<rdf:RDF")
     if start != -1:
-        end = raw.find(b"</rdf:RDF>")
+        end = raw.find(b"</rdf:RDF>", start)
         if end != -1:
             return raw[start:end + len(b"</rdf:RDF>")]
     return None
+
+
+def _packet_count(raw: bytes) -> int:
+    count = raw.count(b"<x:xmpmeta")
+    return count if count else raw.count(b"<rdf:RDF")
 
 
 def _local_name(tag: str) -> str:
@@ -84,16 +92,23 @@ def _rdf_list_values(el: ET.Element) -> list[str]:
     return values
 
 
-def extract_xmp_provenance(raw: bytes) -> dict[str, str]:
-    """Properties-panel-ready fields from an embedded XMP packet, or {} if
-    there's no packet or it has none of the fields this looks for."""
+def extract_xmp_provenance(raw: bytes) -> dict[str, Any]:
+    """Properties-panel-ready fields from an embedded XMP packet. Always
+    includes an "XMP" status row: not present, present but not parseable
+    (with the XML parser's message), present without any of the fields
+    this looks for, or present (noting how many packets exist when there
+    is more than one -- the fields come from the first)."""
     packet = find_xmp_packet(raw)
     if packet is None:
-        return {}
+        for start_tag in (b"<x:xmpmeta", b"<rdf:RDF"):
+            offset = raw.find(start_tag)
+            if offset != -1:
+                return {"XMP": ParseIssue("xmp.unclosed", {"offset": offset})}
+        return {"XMP": ParseIssue("xmp.not_present")}
     try:
         root = ET.fromstring(packet)
-    except ET.ParseError:
-        return {}
+    except ET.ParseError as exc:
+        return {"XMP": ParseIssue("xmp.parse_failed", detail=str(exc))}
 
     digital_source: str | None = None
     creator_tool: str | None = None
@@ -125,7 +140,7 @@ def extract_xmp_provenance(raw: bytes) -> dict[str, str]:
             if values:
                 rights = values[0]
 
-    out: dict[str, str] = {}
+    out: dict[str, Any] = {}
     if digital_source:
         out["XMP Digital Source Type"] = classify_digital_source_type(digital_source)
     if creator_tool:
@@ -136,4 +151,11 @@ def extract_xmp_provenance(raw: bytes) -> dict[str, str]:
         out["XMP Credit"] = credit
     if rights:
         out["XMP Rights"] = rights
-    return out
+    count = _packet_count(raw)
+    if not out:
+        status = ParseIssue("xmp.present_no_listed_fields")
+    elif count > 1:
+        status = ParseIssue("xmp.present_multiple", {"count": count})
+    else:
+        status = ParseIssue("xmp.present")
+    return {"XMP": status, **out}

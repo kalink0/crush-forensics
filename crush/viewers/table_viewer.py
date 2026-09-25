@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 import csv
+import html
 import re
 import sqlite3
 import zlib
@@ -97,6 +98,7 @@ from crush.core.work_priority import (
     foreground_io,
     release_foreground_io,
 )
+from crush.core.issues import ParseIssue, render_value
 from crush.ui.busy_dialog import run_with_busy_dialog
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
@@ -169,7 +171,7 @@ def _ts_header_tooltip(fmt: str, decoded: int, failed: int) -> str | None:
     )
 
 
-def _ts_cell_tooltip(fmt: str, problem: str) -> str:
+def _ts_cell_tooltip(fmt: str, problem: object) -> str:
     return f"Not decoded as {_ts_suffix(fmt)}: {problem}. Shown as stored."
 
 
@@ -726,6 +728,12 @@ class TableViewer(QWidget):
         self._freeblocks_cache: list[dict] | None = None
         self._unallocated_cache: list[dict] | None = None
         self._page_table_map: dict[int, str] = {}  # page_num → table_name
+        # Why a scan's result may be empty or partial (see _set_source_status).
+        self._freelist_problems: list[Any] = []
+        self._freeblocks_problems: list[Any] = []
+        self._unallocated_problems: list[Any] = []
+        self._page_table_problems: list[Any] = []
+        self._injection_problems: list[Any] = []
         self._structure_table_columns: dict[str, list[str]] = {}
         self._table_interaction_active = False
         self._hex_pane_loaded = False
@@ -968,9 +976,24 @@ class TableViewer(QWidget):
         self._cell_detail_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         cell_detail_layout.addWidget(self._cell_detail_view, stretch=1)
 
+        # Why a generated view (Freelist Recovery, Freeblocks, Unallocated,
+        # WAL history) is empty or partial -- hidden unless a scan reported
+        # something (see _set_source_status).
+        self._source_status = QLabel("")
+        self._source_status.setWordWrap(True)
+        self._source_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._source_status.setStyleSheet("padding: 2px 8px; color: palette(mid);")
+        self._source_status.setVisible(False)
+        table_container = QWidget()
+        table_container_layout = QVBoxLayout(table_container)
+        table_container_layout.setContentsMargins(0, 0, 0, 0)
+        table_container_layout.setSpacing(0)
+        table_container_layout.addWidget(self._source_status)
+        table_container_layout.addWidget(self._table_view, stretch=1)
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._sql_bar)
-        splitter.addWidget(self._table_view)
+        splitter.addWidget(table_container)
         splitter.addWidget(self._structure_tree)
         splitter.addWidget(self._cell_detail_panel)
         splitter.setStretchFactor(0, 0)
@@ -1277,6 +1300,9 @@ class TableViewer(QWidget):
             for r, row_data in enumerate(rows):
                 _append_row(row_data, rowid=rowids[r] if rowids is not None else None)
 
+        # Cells the injected WAL / pre-rollback pages held but that couldn't
+        # be decoded (see parse_table_leaf_page's problems).
+        self._injection_problems = []
         wal_row_count = 0
         if show_wal:
             wal_row_count = self._inject_wal_rows(table_name, columns, _append_row)
@@ -1288,6 +1314,10 @@ class TableViewer(QWidget):
         journal_row_count = 0
         if show_journal:
             journal_row_count = self._inject_journal_rows(table_name, columns, _append_row)
+        if show_wal or show_journal:
+            self._set_source_status(
+                (self._page_table_problems if show_wal else []) + self._injection_problems
+            )
 
         self._resize_and_cap()
         table_meta = self._data.get(table_name, {}) if isinstance(self._data, dict) else {}
@@ -1348,6 +1378,8 @@ class TableViewer(QWidget):
                 btree_offset=btree_offset,
                 overflow_reader=read_page,
                 want_ranges=True,
+                problems=self._injection_problems,
+                page_num=f"{f['page']} (WAL frame {f['frame']})",
             )
             if not parsed:
                 continue
@@ -1441,6 +1473,7 @@ class TableViewer(QWidget):
                     btree_offset = 100 if page_num == 1 else 0
                     parsed = parse_table_leaf_page(
                         page_bytes, page_size=page_size, btree_offset=btree_offset, want_ranges=True,
+                        problems=self._injection_problems, page_num=page_num,
                     )
                     if not parsed:
                         continue
@@ -1708,7 +1741,7 @@ class TableViewer(QWidget):
         conn = self._ensure_raw_db()
         if conn is not None:
             try:
-                self._page_table_map = build_page_table_map(conn, data, page_size)
+                self._page_table_map = self._build_page_table_map(conn, data, page_size)
             except Exception:
                 self._page_table_map = {}
 
@@ -1722,7 +1755,8 @@ class TableViewer(QWidget):
             ["Frame", "Page", "Transaction", "Status", "Table", "Offset (B)", "Content"]
         )
         if not frames:
-            parser_diag = self._data.get("__wal_diag", "") if isinstance(self._data, dict) else ""
+            diag_issues = self._data.get("__wal_diag", []) if isinstance(self._data, dict) else []
+            parser_diag = " | ".join(render_value(i) for i in diag_issues)
             diag = _wal_diag(self._db_path, parser_diag)
             item = QStandardItem(f"No WAL file found or format not recognised — {diag}")
             item.setEditable(False)
@@ -1750,6 +1784,7 @@ class TableViewer(QWidget):
                 for name, cols in self._table_schema_columns(conn).items()
             }
 
+        frame_problems: list[Any] = []
         for f in frames:
             color = _status_color.get(f["status"])
             table_name = self._page_table_map.get(f["page"], "—")
@@ -1764,6 +1799,8 @@ class TableViewer(QWidget):
                     page_size=self._wal_page_size,
                     btree_offset=btree_offset,
                     overflow_reader=_overflow_reader,
+                    problems=frame_problems,
+                    page_num=f"{f['page']} (WAL frame {f['frame']})",
                 )
                 if decoded is None:
                     content_text = "(not a leaf page)"
@@ -1802,7 +1839,7 @@ class TableViewer(QWidget):
             ])
 
         self._resize_and_cap()
-
+        self._set_source_status(self._page_table_problems + frame_problems)
 
         counts = Counter(f["status"] for f in frames)
         parts = [f"{len(frames)} total"]
@@ -1856,7 +1893,9 @@ class TableViewer(QWidget):
             "Unallocated slack":      Qt.GlobalColor.darkGray,
         }
 
-        rows = extract_journal_rows(result)
+        journal_problems: list[Any] = []
+        rows = extract_journal_rows(result, journal_problems)
+        self._set_source_status(journal_problems)
         with self._dynamic_sort_suspended():
             for row in rows:
                 color = _kind_color.get(row.kind)
@@ -1987,7 +2026,7 @@ class TableViewer(QWidget):
         if conn is None or page_size == 0:
             return self._page_table_map
         try:
-            self._page_table_map = build_page_table_map(conn, self._get_wal_data(), page_size)
+            self._page_table_map = self._build_page_table_map(conn, self._get_wal_data(), page_size)
         except Exception:
             pass
         return self._page_table_map
@@ -2001,8 +2040,10 @@ class TableViewer(QWidget):
             self._freelist_cache = ([], [])
             return self._freelist_cache
         wal_pages = self._get_wal_page_overlay()
-        entries = walk_freelist_pages(self._db_path, page_size, wal_pages)
-        carved = carve_freelist_rows(self._db_path, page_size, entries, wal_pages)
+        problems: list[Any] = []
+        entries = walk_freelist_pages(self._db_path, page_size, wal_pages, problems)
+        carved = carve_freelist_rows(self._db_path, page_size, entries, wal_pages, problems)
+        self._freelist_problems = problems
         self._freelist_cache = (entries, carved)
         return self._freelist_cache
 
@@ -2180,10 +2221,12 @@ class TableViewer(QWidget):
         schema_cols: dict[str, list[tuple[str, str]]],
         selected_table: str | None = None,
     ) -> None:
+        problems = self._freelist_problems
         self._reset_source_model()
+        self._set_source_status(problems)
         if not entries:
             self._source_model.setHorizontalHeaderLabels(["Freelist Recovery (generated)"])
-            item = QStandardItem("No freelist pages found")
+            item = QStandardItem("" if problems else "No freelist pages found")
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -2316,7 +2359,7 @@ class TableViewer(QWidget):
         if conn is None or page_size == 0:
             return {}
         try:
-            self._page_table_map = build_page_table_map(conn, self._get_wal_data(), page_size)
+            self._page_table_map = self._build_page_table_map(conn, self._get_wal_data(), page_size)
         except Exception:
             self._page_table_map = {}
         return self._page_table_map
@@ -2329,8 +2372,9 @@ class TableViewer(QWidget):
         if self._db_path is None or page_size == 0:
             self._freeblocks_cache = []
             return self._freeblocks_cache
+        self._freeblocks_problems = []
         self._freeblocks_cache = scan_database_freeblocks(
-            self._db_path, page_size, self._get_wal_page_overlay()
+            self._db_path, page_size, self._get_wal_page_overlay(), self._freeblocks_problems
         )
         return self._freeblocks_cache
 
@@ -2397,9 +2441,11 @@ class TableViewer(QWidget):
         page_table_map: dict[int, str],
         freelist_pages: set[int],
     ) -> None:
+        problems = self._freeblocks_problems + self._page_table_problems
+        self._set_source_status(problems)
         if not freeblocks:
             self._source_model.setHorizontalHeaderLabels(["Freeblocks (generated)"])
-            item = QStandardItem("No freeblocks found")
+            item = QStandardItem("" if problems else "No freeblocks found")
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -2472,8 +2518,9 @@ class TableViewer(QWidget):
         if self._db_path is None or page_size == 0:
             self._unallocated_cache = []
             return self._unallocated_cache
+        self._unallocated_problems = []
         self._unallocated_cache = scan_database_unallocated(
-            self._db_path, page_size, self._get_wal_page_overlay()
+            self._db_path, page_size, self._get_wal_page_overlay(), self._unallocated_problems
         )
         return self._unallocated_cache
 
@@ -2535,9 +2582,11 @@ class TableViewer(QWidget):
         page_table_map: dict[int, str],
         freelist_pages: set[int],
     ) -> None:
+        problems = self._unallocated_problems + self._page_table_problems
+        self._set_source_status(problems)
         if not entries:
             self._source_model.setHorizontalHeaderLabels(["Unallocated Space (generated)"])
-            item = QStandardItem("No non-empty unallocated space found")
+            item = QStandardItem("" if problems else "No non-empty unallocated space found")
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -2807,7 +2856,13 @@ class TableViewer(QWidget):
 
     def _append_structure_node(self, parent: QStandardItem, node: StructureNode) -> None:
         label = QStandardItem(node.label)
-        value = QStandardItem(node.value)
+        value_text = str(node.value)
+        value = QStandardItem(value_text)
+        # The cell is one line, elided at the column edge; the tooltip wraps
+        # the whole value (nothing is cut off, see _display_cell_value).
+        value.setToolTip(
+            f"<p style='white-space: pre-wrap'>{html.escape(value_text)}</p>"
+        )
         kind = QStandardItem(node.kind)
         for item in (label, value, kind):
             item.setEditable(False)
@@ -3497,6 +3552,19 @@ class TableViewer(QWidget):
                 width = max(width, metrics.horizontalAdvance(str(value or "")) + 20)
             self._table_view.setColumnWidth(col, min(width, _MAX_COL_WIDTH))
 
+    def _build_page_table_map(
+        self, conn: sqlite3.Connection, wal_data: bytes | None, page_size: int,
+    ) -> dict[int, str]:
+        """build_page_table_map(), keeping why attribution may be missing."""
+        self._page_table_problems = []
+        return build_page_table_map(conn, wal_data, page_size, self._page_table_problems)
+
+    def _set_source_status(self, problems: list[Any]) -> None:
+        """Show what a scan reported (unreadable file, stopped chains,
+        skipped cells ...) above the table; hidden when there is nothing."""
+        self._source_status.setText("\n".join(str(p) for p in problems))
+        self._source_status.setVisible(bool(problems))
+
     def _reset_source_model(self) -> None:
         """Replace self._source_model with a fresh, empty QStandardItemModel
         instead of calling .clear() on the existing one.
@@ -3511,6 +3579,7 @@ class TableViewer(QWidget):
         deleteLater() avoids that synchronous cost entirely -- the same
         pattern _load_table_from_query() already uses for _query_model.
         """
+        self._set_source_status([])
         old_model = self._source_model
         self._source_model = QStandardItemModel(self)
         self._proxy_model.setSourceModel(self._source_model)
@@ -3678,8 +3747,16 @@ class TableViewer(QWidget):
 
         self._ensure_hex_pane_loaded()
         location = self._cell_locator.locate_cell(table_name, rowid, col_idx)
+        file_label = f"{self._source_name}  ·  {self._cell_locator.label_for(self._hex_file_kind)}"
         if location is None:
             self._hex_viewer.clear_byte_range_highlight()
+            # Say so rather than just leaving nothing highlighted.
+            why = getattr(self._cell_locator, "why_not_located", None)
+            reason = why(table_name, rowid) if why is not None else None
+            note = ParseIssue("locate.no_range", {
+                "reason": reason or ParseIssue("locate.not_recorded"),
+            })
+            self._hex_file_label.setText(f"{file_label}  —  {note}")
             return
 
         if location.file_kind != self._hex_file_kind:
@@ -3689,8 +3766,8 @@ class TableViewer(QWidget):
                 return
             self._hex_viewer.set_data(data)
             self._hex_file_kind = location.file_kind
-            label = self._cell_locator.label_for(location.file_kind)
-            self._hex_file_label.setText(f"{self._source_name}  ·  {label}")
+            file_label = f"{self._source_name}  ·  {self._cell_locator.label_for(location.file_kind)}"
+        self._hex_file_label.setText(file_label)
 
         ranges = list(location.row_ranges)
         if location.column_ranges:

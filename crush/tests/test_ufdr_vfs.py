@@ -274,7 +274,7 @@ def test_content_not_located_raises_and_is_reported(tmp_path: Path) -> None:
 
     info = vfs.node_info(node)
     assert info is not None
-    assert info["Content status"] == "not located in container"
+    assert str(info["Content status"]) == "not located in container"
 
     with pytest.raises(UFDRContentNotLocatedError):
         vfs.read(node)

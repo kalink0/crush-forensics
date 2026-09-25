@@ -168,7 +168,7 @@ def test_missing_crc_file_is_reported_not_hidden(tmp_path: Path) -> None:
     node, vfs = _write_store(tmp_path, payload, crc=None)
     result = MMKVParser().parse(node, vfs)
     assert result.data["meta_info"] is None
-    assert "not found" in result.metadata["Meta file"]
+    assert "not found" in str(result.metadata["Meta file"])
     # Still readable as plaintext — a missing .crc doesn't block parsing.
     assert result.data["records"][0]["decoded"] == "b"
 
@@ -221,7 +221,7 @@ def test_encrypted_store_without_key_reports_encrypted_not_empty(tmp_path: Path)
 
     result = MMKVParser().parse(node, vfs)  # no password
     assert result.viewer_type == "tree"
-    assert result.metadata["Encrypted"] == "yes"
+    assert str(result.metadata["Encrypted"]) == "yes"
     assert "records" not in result.data
 
 
@@ -242,7 +242,7 @@ def test_high_meta_version_false_positive_encrypted_flag_does_not_block_plaintex
     result = MMKVParser().parse(node, vfs)  # no password
     assert result.data["records"][0]["decoded"] == "b"
     assert result.data["records"][1]["decoded"] == "d"
-    assert "false positive" in result.metadata["Encrypted"]
+    assert "false positive" in str(result.metadata["Encrypted"])
 
 
 def test_encrypted_store_with_correct_key_decrypts(tmp_path: Path) -> None:
@@ -257,7 +257,7 @@ def test_encrypted_store_with_correct_key_decrypts(tmp_path: Path) -> None:
 
     result = MMKVParser().parse(node, vfs, password=key)
     assert result.data["records"][0]["decoded"] == "secret"
-    assert result.metadata["Encrypted"] == "yes (decrypted)"
+    assert str(result.metadata["Encrypted"]) == "yes (decrypted)"
 
 
 def test_encrypted_store_with_wrong_key_raises_wrong_password(tmp_path: Path) -> None:
@@ -421,8 +421,8 @@ def test_false_positive_store_reports_plaintext_to_the_viewer_too(tmp_path: Path
 
     meta_info = result.data["meta_info"]
     assert meta_info["encrypted"] is False
-    assert "false positive" in meta_info["encrypted_note"]
-    assert result.metadata["Encrypted"].startswith("no")
+    assert "false positive" in str(meta_info["encrypted_note"])
+    assert str(result.metadata["Encrypted"]).startswith("no")
     e1_start = payload.index(e1)
     assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
 
@@ -436,9 +436,9 @@ def test_key_supplied_for_plaintext_store_is_not_reported_as_decrypted(tmp_path:
     result = MMKVParser().parse(node, vfs, password=b"any key at all")
 
     assert result.data["records"][0]["decoded"] == "hello"
-    assert result.metadata["Encrypted"] != "yes (decrypted)"
-    assert result.metadata["Encrypted"].startswith("no")
-    assert "ignored" in result.metadata["Encrypted"]
+    assert str(result.metadata["Encrypted"]) != "yes (decrypted)"
+    assert str(result.metadata["Encrypted"]).startswith("no")
+    assert "ignored" in str(result.metadata["Encrypted"])
     e1_start = payload.index(e1)
     assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
 
@@ -451,9 +451,9 @@ def test_key_supplied_without_crc_is_reported_as_ignored_not_decrypted(tmp_path:
 
     result = MMKVParser().parse(node, vfs, password=b"any key at all")
 
-    assert result.metadata["Encrypted"].startswith("unverified")
-    assert "ignored" in result.metadata["Encrypted"]
-    assert result.metadata["Encrypted"] != "yes (decrypted)"
+    assert str(result.metadata["Encrypted"]).startswith("unverified")
+    assert "ignored" in str(result.metadata["Encrypted"])
+    assert str(result.metadata["Encrypted"]) != "yes (decrypted)"
 
 
 # ---------------------------------------------------------------------------

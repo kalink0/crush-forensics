@@ -23,6 +23,27 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed the Table Viewer's "Decode column as timestamp" silently doing nothing for numbers stored as text (e.g. `'1713884690406'` in a `TEXT` column) while still showing the format in the column header. Such values are now decoded too, and cells that can't be decoded are marked with the reason instead of looking decoded. Addresses [#104](https://github.com/kalink0/crush-forensics/issues/104).
 
+- Fixed invalid JSON showing only its first 500 characters instead of the part around the error; non-UTF-8 JSON is now flagged.
+- Fixed password and key prompts hiding why the previous attempt was rejected (e.g. a Realm key of the wrong length read as "Incorrect key"); the reason is now shown above the retry prompt.
+- Fixed a SQLite `-wal`/`-shm`/`-journal` companion that exists but can't be read being skipped silently; it's now listed under "Companion files not loaded" with the error.
+- Fixed the Properties panel showing SQLite's default journal mode (e.g. `delete`) as if the file recorded it; it now shows only what the header stores: WAL or rollback journal.
+- Fixed Syslog (RFC 3164) timestamps getting the analysis machine's current year; a missing year (Syslog, logcat) is now shown as `????`.
+- Fixed log timestamps with a UTC offset (e.g. `+02:00`) being dropped, and zone-less times being shown and converted as if they were UTC; they're now marked "(no zone)" and never converted.
+- Fixed Multi-Log Studio's "Copy message" and "Copy selection (TSV)" copying only the first line of a multi-line message plus "[n more lines]"; the full text is copied.
+- Fixed guessed log levels (Syslog, generic and plain-text logs have no level field) looking like recorded ones; they're now shown as "(guessed)" with the keywords found.
+- Fixed Multi-Log Studio's format detection looking only at the first 40 lines and never saying it guessed: all lines are scored, the ⓘ next to a source shows every candidate's score, and **Format → Re-parse … as** overrides it.
+- Fixed EXIF altitudes below sea level being shown as positive; an EXIF rational with denominator 0 (e.g. in GPS coordinates) is now shown as invalid instead of 0.
+- Fixed EXIF entries past the 512th per directory or 8th array value, and PDF `/Info`/XMP values past 200 characters, being dropped without notice.
+- Fixed PDF JavaScript, signature and attachment checks that failed reporting "Not present", "None" or "0 file(s)"; they now say they couldn't be checked, and why.
+- Fixed the image `Format` row showing the file extension; it's now taken from the content.
+- Fixed images, audio/video and PDF revisions that can't be decoded, played or rendered not saying why (Visual Diff said the page doesn't exist).
+- Fixed invalid XML showing only its first 500 characters instead of the part around the error.
+- Fixed MMKV reporting a `.crc` meta file that exists but can't be read, or is too short, as "not found".
+- Fixed SEGB silently leaving out every record after one that couldn't be read, and payloads decoded only partly looking complete.
+- Fixed LevelDB MANIFEST, CURRENT and LOG files that couldn't be read being left out of the Overview without notice.
+- Fixed ABX warnings after the third, LevelDB key ranges past 256 characters, and protobuf messages nested deeper than 6 levels being cut without notice.
+- Fixed Biome stream discovery reading every file in full just to check its first bytes.
+- Fixed Multi-Log Studio hitting database errors in the background when closed while a sort was still running.
 - Fixed ZIP, 7z and TAR (plain, bzip2, xz) archives only opening as browsable trees when named `.zip`/`.7z`/`.tar…`; they're now recognised by content, e.g. a ZIP inside a ZIP named `.bin`, `.apk` or `.docx`, and a renamed UFDR opens as a UFDR.
 - Fixed a file named like an archive or backup (`.zip`, `.7z`, `.ab`, …) that isn't one failing to open; it now opens as a single file and the status bar says why.
 - Fixed TAR archives and Android backups dropping the leading dot of file names (`.bashrc` shown as `bashrc`).
@@ -30,11 +51,18 @@ All notable changes to Crush will be documented in this file.
 - Fixed symbolic links appearing as empty files (TAR, iTunes backups), as ordinary files (ZIP, 7z) or not at all (disk images), and being followed in folders, where a link to a parent folder never finished loading and a broken link stopped the folder from opening; links now show as links with their target and are never followed.
 - Fixed a single folder without read permission stopping a whole folder from opening, and FIFOs in an opened folder blocking reads.
 - Fixed block devices and sockets in disk images being treated as directories.
+- Fixed disk images showing a directory that couldn't be listed as empty, leaving out entries whose metadata couldn't be read, and showing no `$Recovered` folder when deleted files couldn't be enumerated; each now carries an entry status.
+- Fixed encrypted iTunes backups showing a file's ciphertext as its content, without notice, when its file key couldn't be read.
+- Fixed UFDR trees leaving out Nodes rows with an unreadable type, and a path collision or a `database.json` device missing from the dump only being logged; they're now shown as entry statuses.
+- Fixed SQLite Freelist Recovery and Freeblocks showing "No … found" when the file or a page couldn't be read, and a freelist or freeblock chain that stopped early, or cells that couldn't be decoded (also in WAL history and the Rollback Journal), leaving no trace; a status line above the table now says so.
+- Fixed SQLite overflow values larger than 10,000 overflow pages being cut short in WAL Frames, Freelist Recovery and File Structure, and File Structure cutting cell values at 120 characters.
 
 ### Changed
 
 - Opening a folder or single file says once when Crush can't keep the evidence files' access times unchanged (on Linux, files not owned by the current user can't be read with `O_NOATIME`); a disk image's directory-depth loop guard is now marked on the directory it stopped at.
 - A ZIP that follows leading data (self-extracting executable, ZIP appended to an image) is noted in the status bar; **Open in New Window** opens it as a ZIP.
+- Files that fall back to the hex view always say whether their format was identified, and how Crush supports it (Open as, Open in New Window, as a LevelDB folder, Multi-Log Studio) instead of a bare "Supported". SEGB payload rendering is marked as heuristic.
+- Images always show an `EXIF` and `XMP` status row (present, not present, not checked for this format, or why parsing failed), a `Frames` row when only the first of several is shown, and a `Block order` row marking the ATX Morton-orientation choice as a heuristic with both scores. PDFs list pages whose text extraction failed and say why a revision chain stopped early.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.30 (from v1.29). No change in behaviour for Crush: the release adds a faster whole-volume listing (`walk_all()`) that Crush does not use yet.

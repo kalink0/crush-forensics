@@ -18,43 +18,31 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.pil_plugins import ensure_pil_plugins
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 
 
-_exotic_registered = False
-
-
-def _ensure_exotic_formats() -> None:
-    """Register optional Pillow plugins for HEIF/HEIC/AVIF and JPEG XL (once)."""
-    global _exotic_registered
-    if _exotic_registered:
-        return
-    _exotic_registered = True
-    try:
-        import pillow_heif
-        pillow_heif.register_heif_opener()
-    except ImportError:
-        pass
-    try:
-        import pillow_jxl  # type: ignore[import-untyped]  # noqa: F401
-    except ImportError:
-        pass
-
-
-def _pillow_decode(data: bytes) -> QPixmap | None:
-    """Decode image bytes via Pillow and return a QPixmap using raw pixel transfer."""
+def _pillow_decode(data: bytes) -> tuple[QPixmap | None, str]:
+    """Decode image bytes via Pillow and return (QPixmap, "") using raw
+    pixel transfer, or (None, reason) -- Pillow's own message, plus any
+    optional decoder plugin that isn't installed."""
+    missing = ensure_pil_plugins()
     try:
         import PIL.Image as PilImage  # type: ignore[import-untyped]
-        _ensure_exotic_formats()
         img = PilImage.open(io.BytesIO(data))
         img = img.convert("RGBA")
         w, h = img.size
         raw = img.tobytes("raw", "RGBA")
         qimg = QImage(raw, w, h, w * 4, QImage.Format.Format_RGBA8888)
         px = QPixmap.fromImage(qimg)
-        return px if not px.isNull() else None
-    except Exception:
-        return None
+        if not px.isNull():
+            return px, ""
+        reason = "Qt could not convert the decoded pixels"
+    except Exception as exc:
+        reason = str(exc) or type(exc).__name__
+    if missing:
+        reason += f" (optional decoders not installed: {', '.join(missing)})"
+    return None, reason
 
 
 class ImageViewer(QWidget):
@@ -155,13 +143,15 @@ class ImageViewer(QWidget):
 
     def _load(self, data: bytes) -> None:
         loaded = self._pixmap.loadFromData(data)
+        reason = ""
         if not loaded or self._pixmap.isNull():
-            px = _pillow_decode(data)
+            px, reason = _pillow_decode(data)
             if px is not None:
                 self._pixmap = px
                 loaded = True
         if not loaded or self._pixmap.isNull():
-            self._image_label.setText("Unable to decode image.")
+            self._image_label.setText(f"Unable to decode image.\n{reason}")
+            self._image_label.setWordWrap(True)
             return
         self._set_scale(1.0)
         QTimer.singleShot(0, self._fit)

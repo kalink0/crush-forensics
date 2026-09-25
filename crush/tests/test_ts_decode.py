@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from crush.core.issues import ParseIssue
 from crush.core.ts_decode import TS_FORMATS, decode_cell, decode_ts, numeric_value
 
 
@@ -152,9 +153,9 @@ class TestDecodeCell:
 
     @pytest.mark.parametrize("value", ["abc", "12abc", "2024-04-23", "nan"])
     def test_non_numeric_text_is_reported(self, value: str) -> None:
-        assert decode_cell(value, "unix_ms") == (None, "not a number")
+        assert decode_cell(value, "unix_ms") == (None, ParseIssue("ts_decode.not_a_number"))
 
     @pytest.mark.parametrize("value", [1713884690406, "1713884690406", "1e999"])
     def test_out_of_range_is_reported(self, value: object) -> None:
         # ms value read as seconds lands beyond year 9999; 1e999 overflows to inf.
-        assert decode_cell(value, "unix_s") == (None, "out of range for this format")
+        assert decode_cell(value, "unix_s") == (None, ParseIssue("ts_decode.out_of_range"))
