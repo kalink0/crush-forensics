@@ -275,3 +275,27 @@ def test_copy_message_and_tsv_carry_the_full_multiline_message(
     assert tsv.endswith("first line\\n  second line\\n  third line")
     assert "more line" not in tsv
     viewer.close()
+
+
+def test_closing_the_studio_waits_for_every_sort_worker(
+    qapp, tmp_path: Path,  # type: ignore[no-untyped-def]
+) -> None:
+    """Superseded sort workers keep querying the log database; closing the
+    studio must wait for all of them, not just the latest, or one opens the
+    database after it has been closed ("disk I/O error" in the thread)."""
+    from crush.viewers.multi_log_viewer import MultiLogViewer
+
+    (tmp_path / "x.log").write_bytes(b"2024-07-16 18:35:04 hello\n2024-07-16 18:35:05 b\n")
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "x.log")
+    viewer = MultiLogViewer(node, vfs)
+    for w in viewer._workers.values():
+        w.wait(10_000)
+    qapp.processEvents()  # let the load finish on the main thread
+    for _ in range(5):
+        viewer._model._invalidate()
+    started = list(viewer._model._sort_workers)
+    assert len(started) >= 1
+    viewer.close()
+    assert not any(w.isRunning() for w in started)
+    qapp.processEvents()  # late sort results must be dropped, not applied to the closed DB

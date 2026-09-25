@@ -43,6 +43,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed LevelDB MANIFEST, CURRENT and LOG files that couldn't be read being left out of the Overview without notice.
 - Fixed ABX warnings after the third, LevelDB key ranges past 256 characters, and protobuf messages nested deeper than 6 levels being cut without notice.
 - Fixed Biome stream discovery reading every file in full just to check its first bytes.
+- Fixed Multi-Log Studio hitting database errors in the background when closed while a sort was still running.
 
 ### Changed
 

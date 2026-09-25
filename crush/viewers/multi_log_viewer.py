@@ -904,7 +904,10 @@ class MultiLogModel(QAbstractTableModel):
 
         # Background sort state
         self._sort_generation: int = 0
-        self._sort_worker: "_SortWorker | None" = None
+        # Every sort worker still running, not just the latest: a superseded
+        # one keeps querying the database until it finishes, so shutdown has
+        # to wait for all of them before the database goes away.
+        self._sort_workers: set[_SortWorker] = set()
 
     # ------------------------------------------------------------------
     # Source management
@@ -1205,9 +1208,20 @@ class MultiLogModel(QAbstractTableModel):
             self,
         )
         worker.sort_done.connect(self._on_sort_done)
-        self._sort_worker = worker
+        worker.finished.connect(lambda w=worker: self._sort_workers.discard(w))
+        self._sort_workers.add(worker)
         self.sort_started.emit()
         worker.start()
+
+    def shutdown_sorting(self, timeout_ms: int) -> None:
+        """Before the database closes: discard any sort result still on its
+        way (queued results are dropped as stale) and block until every
+        running sort worker has finished (each at most *timeout_ms*), so
+        nothing touches the database after it's closed."""
+        self._sort_generation += 1
+        for worker in list(self._sort_workers):
+            if worker.isRunning():
+                worker.wait(timeout_ms)
 
     def _on_sort_done(self, generation: int, rowids: "_array.array[int]") -> None:
         if generation != self._sort_generation:
@@ -1311,6 +1325,7 @@ class MultiLogViewer(QWidget):
         for w in self._workers.values():
             if w.isRunning():
                 w.wait(10_000)
+        self._model.shutdown_sorting(10_000)
         self._db.close()
         super().closeEvent(event)
 
