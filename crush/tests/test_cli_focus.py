@@ -80,3 +80,24 @@ def test_focus_on_single_file_target_still_opens_it(qapp, sample_folder: Path) -
         assert win._viewer_tabs.tabText(0) == "readme.txt"
     finally:
         win.close()
+
+
+def test_load_note_shows_in_status_bar_and_focus_still_opens(
+    qapp, sample_folder: Path, monkeypatch: pytest.MonkeyPatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """A source's load note is a ParseIssue (e.g. the access-time note every
+    folder gets on macOS). The status bar must render it -- joining it as a
+    str used to raise, which aborted the load handling and --focus."""
+    import crush.core.vfs as vfs_module
+    from crush.core.issues import ParseIssue
+
+    monkeypatch.setattr(
+        vfs_module, "_atime_note", lambda _root, _not_owned: ParseIssue("vfs.atime_platform"),
+    )
+    win = MainWindow()
+    try:
+        _load_and_wait(win, str(sample_folder), "Documents/note.txt")
+        # (an exception in the load handling would also fail the test via pytest-qt)
+        assert win._viewer_tabs.count() == 1
+    finally:
+        win.close()

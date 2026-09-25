@@ -1031,7 +1031,8 @@ class MainWindow(QMainWindow):
         if notes:
             for note in notes:
                 self._logger.warning("%s: %s", self._loading_path, note)
-            self._status.showMessage(f"Loaded: {self._loading_path}  — {'; '.join(notes)}")
+            text = "; ".join(str(note) for note in notes)  # notes may be ParseIssues
+            self._status.showMessage(f"Loaded: {self._loading_path}  — {text}")
         else:
             self._status.showMessage(f"Loaded: {self._loading_path}")
         self._add_to_recent_files(self._loading_path)
