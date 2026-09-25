@@ -23,8 +23,10 @@ from crush.ui import open_url as _open_link
 _ABOUT_HTML = f"""\
 <h2>Crush {crush.display_version()}</h2>
 <p><b>Digital Forensic Analysis Workbench</b> &nbsp;·&nbsp; © {crush.__release_year__} Marco Neumann</p>
-<p>Open-source desktop workbench for digital forensic analysis. Inspect ZIP/TAR acquisitions
-and parse ABX, SQLite, SEGB, PLIST, hex, JSON, XML, and media files — all in one GUI.</p>
+<p>Open-source desktop workbench for digital forensic analysis. Inspect ZIP/TAR/7z/UFDR
+archives, raw disk images/EWF, and iTunes/Android backups. Parse and view ABX, SQLite, SEGB,
+(B)PLIST, REALM, Protobuf, MMKV, Logs, hex, JSON, XML, images, audio/video, PDF, and more —
+all in one GUI.</p>
 <p>Licensed under the <b>Apache License 2.0</b></p>
 <p><a href="https://github.com/kalink0/crush-forensics">
 github.com/kalink0/crush-forensics</a></p>
