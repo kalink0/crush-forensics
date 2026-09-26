@@ -101,7 +101,8 @@ def test_line_endings_dont_make_a_translation_outdated(book) -> None:
     _write(book.directory / "de" / "one.md", "## Eins\n")
     book.stamp("de", "one.md")
     english = book.directory / "en" / "one.md"
-    english.write_bytes(english.read_bytes().replace(b"\n", b"\r\n"))
+    # From the text, not the bytes: on Windows write_text already wrote CRLF.
+    english.write_bytes(english.read_text(encoding="utf-8").replace("\n", "\r\n").encode())
     assert book.status("de")["one.md"] == "current"
 
 
