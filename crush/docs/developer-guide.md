@@ -148,8 +148,18 @@ meta["Status"] = ParseIssue("myformat.bad_header", {"offset": off}, detail=str(e
 - `detail`: the library's own message (json, lxml, sqlite3 …), verbatim. Never shortened,
   never translated. Leave it out of a template only where the library's wording would
   mislead the analyst (comment why); it stays on the issue and gets logged.
-- Add the English template to `MESSAGES` in `issues.py`. A test fails for any code used in
-  the source tree without one.
+- Add the English template to `MESSAGES` in `issues.py`, marked for translation with its code
+  repeated as the third argument. A test fails for any code used in the source tree without
+  a template, and for a template the translation tools can't extract:
+
+  ```python
+  "myformat.bad_header": QT_TRANSLATE_NOOP(
+      "ParseIssue",
+      "Header at offset {offset:,} is not valid: "
+      "{detail}",                       # adjacent literals, no extra ( ) around them
+      "myformat.bad_header",
+  ),
+  ```
 
 `str(issue)` renders the English sentence, so an issue works anywhere a string value did
 (Properties panel, status bar, exports). Keeping the sentence out of the parser lets the UI
@@ -365,6 +375,29 @@ class ParseResult:
 | `"Records"` | `"4,512"` |
 | `"Version"` | `"3"` |
 | `"Error"` | `"Unexpected EOF at offset 0x200"` |
+
+---
+
+## Translatable UI text
+
+The UI is translated with Qt Linguist; English is the source language. Catalogs live in
+`crush/i18n/` and are maintained with `scripts/i18n.py` (`update`, `release`, `pseudo`).
+
+- Wrap UI text in `QCoreApplication.translate("<Context>", "Text")` with an explicit context
+  (usually the class name). Don't use `self.tr()`: in PySide it looks the text up under the
+  runtime class name, so in a subclass the translation is silently not found.
+- Only literal strings are extracted. Put values in placeholders and fill them after
+  translating: `translate("Ctx", "{count:,} rows").format(count=n)`, never an f-string inside
+  `translate()`. A multi-line text is adjacent string literals without extra parentheses.
+- Don't branch on displayed text (`currentText() == "Hex"`); keep a stable value in
+  `itemData`/a constant.
+- Not translated: exports (CSV/JSON/reports), the log, timestamps (ISO/UTC), `detail` texts
+  from libraries, spec terms that are values (PRAGMA values, SQLCipher parameters, log levels).
+- Parsers never produce UI sentences (see `ParseIssue` above); the UI shows an issue with
+  `render(issue, localized=True)`, while `str(issue)` stays English for exports and the log.
+- Check with the pseudo locale: `python scripts/i18n.py pseudo`, then
+  `python -m crush --language pseudo`. Every text still in plain English isn't translatable
+  yet; a missing closing `]` means the text is cut off.
 
 ---
 

@@ -129,6 +129,9 @@ jobs:
             | Copy-Item -Destination "crush\bin\unifiedlog_iterator\unifiedlog_iterator-x86_64-pc-windows-msvc.exe"
           Set-Content -Path "crush\bin\unifiedlog_iterator\VERSION.txt" -Value $env:UL_VERSION -NoNewline
 
+      - name: Compile translations
+        run: python scripts/i18n.py release
+
       - name: Generate icon (Linux → crush_icon_256.png)
         if: runner.os == 'Linux'
         run: rsvg-convert -w 256 -h 256 crush/resources/icons/crush_icon_128.svg -o crush_icon_256.png
@@ -175,6 +178,7 @@ jobs:
             --exclude-module PySide6.QtDataVisualization \
             --exclude-module PySide6.QtCharts \
             --add-data "crush/data/formats.db:data" \
+            --add-data "crush/i18n:crush/i18n" \
             --add-data "crush/resources/icons/crush_icon_128.svg:crush/resources/icons/" \
             --add-data "crush_icon_256.png:crush/resources/icons/" \
             --add-data "crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-unknown-linux-gnu:crush/bin/unifiedlog_iterator/" \
@@ -215,6 +219,7 @@ jobs:
             --exclude-module PySide6.QtDataVisualization \
             --exclude-module PySide6.QtCharts \
             --add-data "crush/data/formats.db:data" \
+            --add-data "crush/i18n:crush/i18n" \
             --add-data "crush/resources/icons/crush_icon_128.svg:crush/resources/icons/" \
             --add-data "crush/bin/unifiedlog_iterator/${MACOS_UL_BINARY}:crush/bin/unifiedlog_iterator/" \
             --add-data "crush/bin/unifiedlog_iterator/VERSION.txt:crush/bin/unifiedlog_iterator/" \
@@ -271,6 +276,7 @@ jobs:
             --exclude-module PySide6.QtDataVisualization `
             --exclude-module PySide6.QtCharts `
             --add-data "crush/data/formats.db;data" `
+            --add-data "crush/i18n;crush/i18n" `
             --add-data "crush/resources/icons/crush_icon_128.svg;crush/resources/icons/" `
             --add-data "crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-pc-windows-msvc.exe;crush/bin/unifiedlog_iterator/" `
             --add-data "crush/bin/unifiedlog_iterator/VERSION.txt;crush/bin/unifiedlog_iterator/" `

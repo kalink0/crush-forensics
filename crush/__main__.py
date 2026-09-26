@@ -1,5 +1,6 @@
 """Entry point."""
 import argparse
+import logging
 import os
 import sys
 
@@ -29,6 +30,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "Path, relative to the root of the single file/folder being opened, "
             "of a file to select and open automatically. Only valid when exactly "
             "one PATH/--open target is given."
+        ),
+    )
+    parser.add_argument(
+        "--language",
+        metavar="CODE",
+        help=(
+            "UI language for this run only (e.g. de, or pseudo for the translation "
+            "test locale); overrides the saved View → Language setting without "
+            "changing it. Loads any compiled translation, also one not yet complete "
+            "enough to be offered in the menu"
         ),
     )
     args = parser.parse_args(argv)
@@ -67,6 +78,8 @@ def main() -> None:
     import crush
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QSettings
+    from crush.ui import i18n
     from crush.ui.main_window import MainWindow
     app = QApplication(sys.argv)
     # The native style on Windows and macOS partially ignores QPalette, causing
@@ -81,8 +94,16 @@ def main() -> None:
     icon_path = _icon_path()
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
+    # Before any widget exists: translated text is read when widgets are built.
+    language = args.language or i18n.saved_language(QSettings("Crush DFIR", "Crush"))
+    language_note = i18n.load_language(app, language)
+    if language_note:
+        print(language_note, file=sys.stderr)
     window = MainWindow()
     window.show()
+    if language_note:
+        logging.getLogger("crush.i18n").warning("%s", language_note)
+        window.statusBar().showMessage(language_note)
     for path in open_paths:
         window._load_source(
             path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path
