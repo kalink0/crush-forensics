@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QWidget
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import ParseResult
 from crush.core.viewer_registry import ViewerRegistry
+from crush.ui.i18n import translate
 
 
 def make_viewer(result: ParseResult, node: VFSNode, vfs: VFS, parent: QWidget) -> QWidget:
@@ -20,5 +21,7 @@ def make_viewer(result: ParseResult, node: VFSNode, vfs: VFS, parent: QWidget) -
         return factory(result, node, vfs, parent)
 
     # Unknown type — show a placeholder
-    placeholder = QLabel(f"No viewer available for type: {vtype!r}")
+    placeholder = QLabel(
+        translate("ViewerFactory", "No viewer available for type: {vtype!r}").format(vtype=vtype)
+    )
     return placeholder

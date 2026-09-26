@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.parsers.sqlite_parser import SQLCipherParams
+from crush.ui.i18n import translate
 
 _DIGEST_CHOICES = ["SHA1", "SHA256", "SHA512"]
 
@@ -43,15 +44,26 @@ class SQLCipherCredentialsDialog(QDialog):
         # attempt was rejected ("" if the source gave no reason).
         was_wrong = wrong_reason is not None
         super().__init__(parent)
-        self.setWindowTitle("Incorrect Key" if was_wrong else "SQLCipher Credentials")
+        self.setWindowTitle(
+            translate("SQLCipherCredentialsDialog", "Incorrect Key")
+            if was_wrong
+            else translate("SQLCipherCredentialsDialog", "SQLCipher Credentials")
+        )
         self._build_ui(wrong_reason)
 
     def _build_ui(self, wrong_reason: str | None) -> None:
         root = QVBoxLayout(self)
 
         if wrong_reason is not None:
-            retry = "Incorrect password/key, or unsupported parameters. Try again:"
-            warn = QLabel(f"{wrong_reason}\n\n{retry}" if wrong_reason else retry)
+            retry = translate(
+                "SQLCipherCredentialsDialog",
+                "Incorrect password/key, or unsupported parameters. Try again:",
+            )
+            warn = QLabel(
+                f"{wrong_reason}\n\n{retry}"  # i18n: keep -- layout of translated parts
+                if wrong_reason
+                else retry
+            )
             warn.setTextFormat(Qt.TextFormat.PlainText)
             warn.setStyleSheet("color: #b33;")
             warn.setWordWrap(True)
@@ -60,21 +72,32 @@ class SQLCipherCredentialsDialog(QDialog):
         form = QFormLayout()
         self._key_edit = QLineEdit()
         self._key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._key_edit.setPlaceholderText("Database password")
-        form.addRow("Password:", self._key_edit)
+        self._key_edit.setPlaceholderText(
+            translate("SQLCipherCredentialsDialog", "Database password")
+        )
+        form.addRow(translate("SQLCipherCredentialsDialog", "Password:"), self._key_edit)
 
-        self._raw_key_cb = QCheckBox("Raw key (64 hex chars / 32 bytes, not a passphrase)")
+        self._raw_key_cb = QCheckBox(
+            translate(
+                "SQLCipherCredentialsDialog", "Raw key (64 hex chars / 32 bytes, not a passphrase)"
+            )
+        )
         self._raw_key_cb.toggled.connect(self._on_raw_key_toggled)
         form.addRow("", self._raw_key_cb)
         root.addLayout(form)
 
         self._advanced_cb = QCheckBox(
-            "Use custom cipher parameters (skip auto-detecting the SQLCipher version)"
+            translate(
+                "SQLCipherCredentialsDialog",
+                "Use custom cipher parameters (skip auto-detecting the SQLCipher version)",
+            )
         )
         self._advanced_cb.toggled.connect(self._on_advanced_toggled)
         root.addWidget(self._advanced_cb)
 
-        self._advanced_group = QGroupBox("Advanced cipher parameters")
+        self._advanced_group = QGroupBox(
+            translate("SQLCipherCredentialsDialog", "Advanced cipher parameters")
+        )
         self._advanced_group.setVisible(False)
         adv_form = QFormLayout(self._advanced_group)
 
@@ -82,32 +105,46 @@ class SQLCipherCredentialsDialog(QDialog):
         self._page_size_combo.setEditable(True)
         self._page_size_combo.addItems(["1024", "4096"])
         self._page_size_combo.setCurrentText("4096")
-        adv_form.addRow("Page size:", self._page_size_combo)
+        adv_form.addRow(
+            translate("SQLCipherCredentialsDialog", "Page size:"), self._page_size_combo
+        )
 
         self._kdf_iter_spin = QSpinBox()
         self._kdf_iter_spin.setRange(1, 10_000_000)
         self._kdf_iter_spin.setValue(256_000)
         self._kdf_iter_spin.setToolTip(
-            "Signal and its forks (Session, Molly) set this to 1 -- their key\n"
-            "is already high-entropy (from the platform keystore), so the\n"
-            "passphrase-stretching KDF is pointless overhead for them."
+            translate(
+                "SQLCipherCredentialsDialog",
+                "Signal and its forks (Session, Molly) set this to 1 -- their key\n"
+                "is already high-entropy (from the platform keystore), so the\n"
+                "passphrase-stretching KDF is pointless overhead for them.",
+            )
         )
-        adv_form.addRow("KDF iterations:", self._kdf_iter_spin)
+        adv_form.addRow(
+            translate("SQLCipherCredentialsDialog", "KDF iterations:"), self._kdf_iter_spin
+        )
 
         self._kdf_algo_combo = QComboBox()
         self._kdf_algo_combo.addItems(_DIGEST_CHOICES)
         self._kdf_algo_combo.setCurrentText("SHA512")
-        adv_form.addRow("KDF algorithm:", self._kdf_algo_combo)
+        adv_form.addRow(
+            translate("SQLCipherCredentialsDialog", "KDF algorithm:"), self._kdf_algo_combo
+        )
 
         self._hmac_algo_combo = QComboBox()
         self._hmac_algo_combo.addItems(_DIGEST_CHOICES)
         self._hmac_algo_combo.setCurrentText("SHA512")
-        adv_form.addRow("HMAC algorithm:", self._hmac_algo_combo)
+        adv_form.addRow(
+            translate("SQLCipherCredentialsDialog", "HMAC algorithm:"), self._hmac_algo_combo
+        )
 
         self._header_size_spin = QSpinBox()
         self._header_size_spin.setRange(0, 4096)
         self._header_size_spin.setValue(0)
-        adv_form.addRow("Plaintext header size:", self._header_size_spin)
+        adv_form.addRow(
+            translate("SQLCipherCredentialsDialog", "Plaintext header size:"),
+            self._header_size_spin,
+        )
 
         root.addWidget(self._advanced_group)
 
@@ -125,7 +162,9 @@ class SQLCipherCredentialsDialog(QDialog):
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         )
         self._key_edit.setPlaceholderText(
-            "Raw key as a hex string" if checked else "Database password"
+            translate("SQLCipherCredentialsDialog", "Raw key as a hex string")
+            if checked
+            else translate("SQLCipherCredentialsDialog", "Database password")
         )
 
     def _on_advanced_toggled(self, checked: bool) -> None:

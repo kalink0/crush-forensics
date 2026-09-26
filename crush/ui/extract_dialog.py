@@ -26,6 +26,7 @@ from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode
 from crush.core.vfs_stream import CopyCancelledError, HashingWriter, copy_stream
 from crush.ui.log_scope import window_log_scope
+from crush.ui.i18n import translate
 
 TEMP_DIR_SETTING = "log_temp_dir"
 
@@ -52,7 +53,9 @@ def apply_saved_temp_dir(settings: QSettings) -> None:
 def choose_temp_directory(parent: QWidget, settings: QSettings) -> bool:
     """Let the user pick a temp directory and persist it; False if cancelled."""
     start = str(tempdir.root())
-    chosen = QFileDialog.getExistingDirectory(parent, "Choose temp directory", start)
+    chosen = QFileDialog.getExistingDirectory(
+        parent, translate("ExtractDialog", "Choose temp directory"), start
+    )
     if not chosen:
         return False
     settings.setValue(TEMP_DIR_SETTING, chosen)
@@ -72,9 +75,12 @@ def confirm_temp_space(parent: QWidget, settings: QSettings, needed: int, what: 
         except OSError as exc:
             QMessageBox.critical(
                 parent,
-                "Temp directory unusable",
-                f"The temp directory {tempdir.root()} cannot be used:\n{exc}\n\n"
-                "Set another one under Tools → Temp Directory…",
+                translate("ExtractDialog", "Temp directory unusable"),
+                translate(
+                    "ExtractDialog",
+                    "The temp directory {path} cannot be used:\n{exc}\n\n"
+                    "Set another one under Tools → Temp Directory…",
+                ).format(path=tempdir.root(), exc=exc),
             )
             return False
 
@@ -83,27 +89,50 @@ def confirm_temp_space(parent: QWidget, settings: QSettings, needed: int, what: 
 
         box = QMessageBox(parent)
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Temp directory")
+        box.setWindowTitle(translate("ExtractDialog", "Temp directory"))
         if not check.enough_space:
             box.setText(
-                f"Not enough free space in the temp directory\n{check.location}\n\n"
-                f"Extracting {what} needs {format_size(check.needed)}, "
-                f"but only {format_size(check.free)} is free."
+                translate(
+                    "ExtractDialog",
+                    "Not enough free space in the temp directory\n{location}\n\n"
+                    "Extracting {what} needs {needed}, "
+                    "but only {free} is free.",
+                ).format(
+                    location=check.location,
+                    what=what,
+                    needed=format_size(check.needed),
+                    free=format_size(check.free),
+                )
             )
             proceed = None
         else:
             avail = (
-                f" ({format_size(check.ram_available)} available)"
+                translate("ExtractDialog", " ({available} available)").format(
+                    available=format_size(check.ram_available)
+                )
                 if check.ram_available is not None
                 else ""
             )
             box.setText(
-                f"The temp directory\n{check.location}\nis RAM-backed (tmpfs), so extracting "
-                f"{what} will use about {format_size(check.needed)} of memory{avail}.\n\n"
-                "A different directory on disk is safer."
+                translate(
+                    "ExtractDialog",
+                    "The temp directory\n{location}\nis RAM-backed (tmpfs), so extracting "
+                    "{what} will use about {needed} of memory{available}.\n\n"
+                    "A different directory on disk is safer.",
+                ).format(
+                    location=check.location,
+                    what=what,
+                    needed=format_size(check.needed),
+                    available=avail,
+                )
             )
-            proceed = box.addButton("Continue anyway", QMessageBox.ButtonRole.DestructiveRole)
-        choose = box.addButton("Choose directory…", QMessageBox.ButtonRole.AcceptRole)
+            proceed = box.addButton(
+                translate("ExtractDialog", "Continue anyway"),
+                QMessageBox.ButtonRole.DestructiveRole,
+            )
+        choose = box.addButton(
+            translate("ExtractDialog", "Choose directory…"), QMessageBox.ButtonRole.AcceptRole
+        )
         cancel = box.addButton(QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(cancel)
         box.exec()
@@ -200,7 +229,9 @@ class _CopyController(QObject):
         self._dialog.setValue(permille)
         if isinstance(done, int) and isinstance(total, int) and total:
             self._dialog.setLabelText(
-                f"Extracting {self._name}\n{format_size(done)} of {format_size(total)}"
+                translate("ExtractDialog", "Extracting {name}\n{done} of {total}").format(
+                    name=self._name, done=format_size(done), total=format_size(total)
+                )
             )
 
     def on_finished(self, result: object) -> None:
@@ -234,7 +265,13 @@ def copy_node_with_progress(
     failure.
     """
     cancel = threading.Event()
-    dialog = QProgressDialog(f"Extracting {node.name}", "Cancel", 0, _PROGRESS_STEPS, parent)
+    dialog = QProgressDialog(
+        translate("ExtractDialog", "Extracting {name}").format(name=node.name),
+        translate("ExtractDialog", "Cancel"),
+        0,
+        _PROGRESS_STEPS,
+        parent,
+    )
     dialog.setWindowTitle(title)
     dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
     dialog.setMinimumDuration(0)

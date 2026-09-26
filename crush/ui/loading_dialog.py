@@ -5,12 +5,13 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
+from crush.ui.i18n import translate
 
 
 class LoadingDialog(QDialog):
     def __init__(self, text: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Loading")
+        self.setWindowTitle(translate("LoadingDialog", "Loading"))
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlags(
             Qt.WindowType.Dialog

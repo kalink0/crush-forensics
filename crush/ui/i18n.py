@@ -58,6 +58,12 @@ MANIFEST_NAME = "languages.json"
 # rejected before it becomes part of a file name.
 _CODE_RE = re.compile(r"^(?:[a-z]{2,3}(?:_[A-Za-z0-9]{2,4})?|pseudo)$")
 
+# translate(<context>, <text>): the call UI code uses for every visible
+# text. lupdate recognises it by this exact name -- import it as
+# `translate`, never under another name, or the texts aren't extracted.
+# Without a loaded translation it returns the English text unchanged.
+translate = QCoreApplication.translate
+
 # Translators kept alive for the application's lifetime (Qt doesn't own them).
 _installed: list[QTranslator] = []
 
@@ -138,7 +144,8 @@ def save_language(settings: QSettings, code: str) -> None:
 
 
 def _qt_translate(context: str, source: str, disambiguation: str) -> str:
-    return QCoreApplication.translate(context, source, disambiguation)
+    # Catalog pass-through: the texts are marked in crush.core.issues.
+    return QCoreApplication.translate(context, source, disambiguation)  # i18n: keep
 
 
 def load_language(

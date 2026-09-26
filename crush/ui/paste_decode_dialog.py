@@ -3,7 +3,7 @@
 """Paste & Decode dialog — paste hex/base64/text and inspect the decoded bytes inline."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -24,14 +24,16 @@ from crush.core.paste_decode import (
 )
 from crush.core.paste_decode import try_decode_input as _try_decode_input
 from crush.viewers.blob_inspector import _BlobPanel
+from crush.ui.i18n import translate
 
-# (display text, stable encoding key) — item text is translatable later,
-# the key passed to try_decode_input() never changes with the UI language.
+# (display text, stable encoding key) — the text is marked for translation
+# and translated when shown; the key passed to try_decode_input() never
+# changes with the UI language.
 _INPUT_ENCODINGS = [
-    ("Auto", ENCODING_AUTO),
-    ("Hex", ENCODING_HEX),
-    ("Base64", ENCODING_BASE64),
-    ("UTF-8 text", ENCODING_UTF8),
+    (QT_TRANSLATE_NOOP("PasteDecodeDialog", "Auto"), ENCODING_AUTO),
+    (QT_TRANSLATE_NOOP("PasteDecodeDialog", "Hex"), ENCODING_HEX),
+    (QT_TRANSLATE_NOOP("PasteDecodeDialog", "Base64"), ENCODING_BASE64),
+    (QT_TRANSLATE_NOOP("PasteDecodeDialog", "UTF-8 text"), ENCODING_UTF8),
 ]
 
 _EMPTY = b""
@@ -43,7 +45,7 @@ class PasteDecodeDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle("Paste & Decode")
+        self.setWindowTitle(translate("PasteDecodeDialog", "Paste & Decode"))
         self.resize(900, 640)
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -57,13 +59,15 @@ class PasteDecodeDialog(QDialog):
         root.setContentsMargins(12, 12, 12, 8)
 
         # --- Input area ---
-        root.addWidget(QLabel("Paste data (hex, base64, or plain text):"))
+        root.addWidget(
+            QLabel(translate("PasteDecodeDialog", "Paste data (hex, base64, or plain text):"))
+        )
 
         self._paste_area = QPlainTextEdit()
         self._paste_area.setPlaceholderText(
-            "62706c6973743030…   (hex)\n"
+            translate("PasteDecodeDialog", "62706c6973743030…   (hex)\n"
             "YnBsaXN0MDA…       (base64)\n"
-            "<?xml version…     (text)"
+            "<?xml version…     (text)")
         )
         self._paste_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self._paste_area.setFixedHeight(80)
@@ -72,14 +76,15 @@ class PasteDecodeDialog(QDialog):
 
         # --- Encoding row + status ---
         enc_row = QHBoxLayout()
-        enc_row.addWidget(QLabel("Input encoding:"))
+        enc_row.addWidget(QLabel(translate("PasteDecodeDialog", "Input encoding:")))
         self._encoding_combo = QComboBox()
         for label, key in _INPUT_ENCODINGS:
-            self._encoding_combo.addItem(label, key)
+            text = translate("PasteDecodeDialog", label)  # i18n: keep -- marked in _INPUT_ENCODINGS
+            self._encoding_combo.addItem(text, key)
         self._encoding_combo.currentIndexChanged.connect(self._decode_and_update)
         enc_row.addWidget(self._encoding_combo)
         enc_row.addSpacing(16)
-        self._status_label = QLabel("Paste data above")
+        self._status_label = QLabel(translate("PasteDecodeDialog", "Paste data above"))
         self._status_label.setStyleSheet("color: gray;")
         enc_row.addWidget(self._status_label)
         enc_row.addStretch()

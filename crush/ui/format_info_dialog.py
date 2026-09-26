@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from crush.core.format_db import FormatMatch
 from crush.core.vfs import VFSNode
+from crush.ui.i18n import translate
 
 
 class FormatInfoDialog(QDialog):
@@ -26,7 +27,7 @@ class FormatInfoDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Format Info")
+        self.setWindowTitle(translate("FormatInfoDialog", "Format Info"))
         self.setMinimumWidth(420)
         self._build_ui(node, fmt)
 
@@ -36,7 +37,7 @@ class FormatInfoDialog(QDialog):
 
         # Header — file name when opened from file tree, format name when from reference
         title = node.name if node is not None else (fmt.name if fmt else "Format Info")
-        header = QLabel(f"<b>{title}</b>")
+        header = QLabel(f"<b>{title}</b>")  # i18n: keep -- markup/layout only
         header.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(header)
 
@@ -45,20 +46,30 @@ class FormatInfoDialog(QDialog):
         form.setSpacing(6)
 
         if fmt:
-            self._add_row(form, "Format", fmt.name)
+            self._add_row(form, translate("FormatInfoDialog", "Format"), fmt.name)
             if fmt.short_name and fmt.short_name != fmt.name:
-                self._add_row(form, "Short name", fmt.short_name)
+                self._add_row(form, translate("FormatInfoDialog", "Short name"), fmt.short_name)
             if fmt.category:
-                self._add_row(form, "Category", fmt.category.capitalize())
+                self._add_row(
+                    form, translate("FormatInfoDialog", "Category"), fmt.category.capitalize()
+                )
             if fmt.platforms:
-                self._add_row(form, "Platforms", fmt.platforms.replace(",", ", "))
+                self._add_row(
+                    form,
+                    translate("FormatInfoDialog", "Platforms"),
+                    fmt.platforms.replace(",", ", "),
+                )
 
-            support = "Supported" if fmt.parser_class else "Not yet supported"
+            support = (
+                translate("FormatInfoDialog", "Supported")
+                if fmt.parser_class
+                else translate("FormatInfoDialog", "Not yet supported")
+            )
             support_lbl = QLabel(support)
             support_lbl.setStyleSheet(
                 "color: green;" if fmt.parser_class else "color: gray;"
             )
-            form.addRow("Analysis:", support_lbl)
+            form.addRow(translate("FormatInfoDialog", "Analysis:"), support_lbl)
 
             if fmt.magic:
                 lines = []
@@ -78,7 +89,7 @@ class FormatInfoDialog(QDialog):
                     Qt.TextInteractionFlag.TextSelectableByMouse
                 )
                 magic_lbl.setStyleSheet("font-family: monospace;")
-                form.addRow("Magic bytes:", magic_lbl)
+                form.addRow(translate("FormatInfoDialog", "Magic bytes:"), magic_lbl)
 
             if fmt.forensic_relevance:
                 relevance = QLabel(fmt.forensic_relevance)
@@ -86,20 +97,31 @@ class FormatInfoDialog(QDialog):
                 relevance.setTextInteractionFlags(
                     Qt.TextInteractionFlag.TextSelectableByMouse
                 )
-                form.addRow("Forensic relevance:", relevance)
+                form.addRow(translate("FormatInfoDialog", "Forensic relevance:"), relevance)
 
             if fmt.links:
                 for label, url in fmt.links:
-                    link_lbl = QLabel(f'<a href="{url}">{label}</a>')
+                    link_lbl = QLabel(
+                        f'<a href="{url}">{label}</a>'  # i18n: keep -- markup/layout only
+                    )
                     link_lbl.linkActivated.connect(_open_link)
                     link_lbl.setTextInteractionFlags(
                         Qt.TextInteractionFlag.TextBrowserInteraction
                     )
-                    form.addRow("Link:", link_lbl)
+                    form.addRow(translate("FormatInfoDialog", "Link:"), link_lbl)
         else:
-            self._add_row(form, "Format", "Unknown")
-            note = QLabel("No match found in the format knowledge base.\n"
-                          "The file may be proprietary, encrypted, or not yet catalogued.")
+            self._add_row(
+                form,
+                translate("FormatInfoDialog", "Format"),
+                translate("FormatInfoDialog", "Unknown"),
+            )
+            note = QLabel(
+                translate(
+                    "FormatInfoDialog",
+                    "No match found in the format knowledge base.\n"
+                    "The file may be proprietary, encrypted, or not yet catalogued.",
+                )
+            )
             note.setWordWrap(True)
             note.setStyleSheet("color: gray;")
             form.addRow("", note)
@@ -114,4 +136,4 @@ class FormatInfoDialog(QDialog):
         lbl = QLabel(value)
         lbl.setWordWrap(True)
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        form.addRow(f"{label}:", lbl)
+        form.addRow(translate("FormatInfoDialog", "{label}:").format(label=label), lbl)

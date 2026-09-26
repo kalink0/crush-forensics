@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from crush.core.vfs import VFS, VFSNode
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 _ROLE_NODE = Qt.ItemDataRole.UserRole + 1
 _ROLE_VFS = Qt.ItemDataRole.UserRole + 2
@@ -154,8 +155,10 @@ class SearchPanel(QWidget):
         sb = QHBoxLayout(scope_bar)
         sb.setContentsMargins(6, 4, 6, 4)
         sb.setSpacing(6)
-        sb.addWidget(QLabel("Scope:"))
-        self._scope_label = QLabel("(none — right-click a folder in the tree)")
+        sb.addWidget(QLabel(translate("SearchPanel", "Scope:")))
+        self._scope_label = QLabel(
+            translate("SearchPanel", "(none — right-click a folder in the tree)")
+        )
         self._scope_label.setWordWrap(False)
         sb.addWidget(self._scope_label, 1)
         layout.addWidget(scope_bar)
@@ -166,41 +169,45 @@ class SearchPanel(QWidget):
         fb.setContentsMargins(6, 4, 6, 4)
         fb.setSpacing(6)
 
-        fb.addWidget(QLabel("Name:"))
+        fb.addWidget(QLabel(translate("SearchPanel", "Name:")))
         self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("* wildcard or regex")
+        self._name_input.setPlaceholderText(translate("SearchPanel", "* wildcard or regex"))
         self._name_input.setClearButtonEnabled(True)
         self._name_input.textChanged.connect(self._debounce.start)
         fb.addWidget(self._name_input, 2)
 
-        fb.addWidget(QLabel("Ext:"))
+        fb.addWidget(QLabel(translate("SearchPanel", "Ext:")))
         self._ext_input = QLineEdit()
-        self._ext_input.setPlaceholderText(".pdf")
+        self._ext_input.setPlaceholderText(".pdf")  # i18n: keep -- file extension example
         self._ext_input.setClearButtonEnabled(True)
         self._ext_input.setFixedWidth(60)
         self._ext_input.textChanged.connect(self._debounce.start)
         fb.addWidget(self._ext_input)
 
-        fb.addWidget(QLabel("Type:"))
+        fb.addWidget(QLabel(translate("SearchPanel", "Type:")))
         self._type_combo = QComboBox()
         # Item text is display-only (translatable later); the filter always
         # branches on the paired data value, which matches _detect_type()'s
         # return values and never changes with the UI language.
+        # Format names are proper names and stay as they are.
         for label, key in [
-            ("All", ""), ("SQLite", "sqlite"), ("Image", "image"), ("Media", "media"),
+            (translate("SearchPanel", "All"), ""), ("SQLite", "sqlite"),
+            (translate("SearchPanel", "Image"), "image"),
+            (translate("SearchPanel", "Media"), "media"),
             ("plist", "plist"), ("JSON", "json"), ("XML", "xml"), ("ABX", "abx"),
-            ("SEGB", "segb"), ("LevelDB", "leveldb"), ("PDF", "pdf"), ("Text", "text"),
+            ("SEGB", "segb"), ("LevelDB", "leveldb"), ("PDF", "pdf"),
+            (translate("SearchPanel", "Text"), "text"),
         ]:
             self._type_combo.addItem(label, key)
         self._type_combo.currentIndexChanged.connect(self._debounce.start)
         fb.addWidget(self._type_combo)
 
-        self._recurse_check = QCheckBox("Recursive")
+        self._recurse_check = QCheckBox(translate("SearchPanel", "Recursive"))
         self._recurse_check.setChecked(True)
         self._recurse_check.toggled.connect(self._debounce.start)
         fb.addWidget(self._recurse_check)
 
-        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn = QPushButton(translate("SearchPanel", "Refresh"))
         self._refresh_btn.clicked.connect(self._run_search)
         fb.addWidget(self._refresh_btn)
 
@@ -214,7 +221,13 @@ class SearchPanel(QWidget):
         # Table
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels(
-            ["Name", "Path", "Extension", "Size", "Modified"]
+            [
+                translate("SearchPanel", "Name"),
+                translate("SearchPanel", "Path"),
+                translate("SearchPanel", "Extension"),
+                translate("SearchPanel", "Size"),
+                translate("SearchPanel", "Modified"),
+            ]
         )
         self._proxy = _SearchProxy(self)
         self._proxy.setSourceModel(self._model)
@@ -324,7 +337,13 @@ class SearchPanel(QWidget):
             self._model.appendRow([name_item, path_item, ext_item, size_item, ts_item])
 
         count = self._model.rowCount()
-        self._status.setText(f"{count:,} file{'s' if count != 1 else ''} found")
+        self._status.setText(
+            (
+                translate("SearchPanel", "{count:,} file found")
+                if count == 1
+                else translate("SearchPanel", "{count:,} files found")
+            ).format(count=count)
+        )
 
     # ------------------------------------------------------------------
     # Interaction

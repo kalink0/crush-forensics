@@ -30,6 +30,7 @@ from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
     "image", "heic", "heif", "avif", "jxl", "atx",
@@ -80,6 +81,17 @@ class _FilterLineEdit(QLineEdit):
             self.completer().complete()
 
 
+def _activity_label(name: str) -> str:
+    """Display text for a background activity. The English name stays the
+    key in FilesystemPanel._activities; only the status text is translated."""
+    labels = {
+        "Loading folders": translate("FilesystemPanel", "Loading folders"),
+        "Type detection": translate("FilesystemPanel", "Type detection"),
+        "Indexing types": translate("FilesystemPanel", "Indexing types"),
+    }
+    return labels.get(name, name)
+
+
 class FilesystemPanel(QWidget):
     """Left-dock panel that displays the VFS as a tree."""
 
@@ -112,11 +124,26 @@ class FilesystemPanel(QWidget):
         self._logger = logging.LoggerAdapter(_logger, {"window_id": window_id})
         self._vfs_list: list[VFS] = []
         self._model = QStandardItemModel()
-        self._model.setHorizontalHeaderLabels(["Name", "Size", "Files", "Total Size", "Type"])
+        self._model.setHorizontalHeaderLabels(
+            [
+                translate("FilesystemPanel", "Name"),
+                translate("FilesystemPanel", "Size"),
+                translate("FilesystemPanel", "Files"),
+                translate("FilesystemPanel", "Total Size"),
+                translate("FilesystemPanel", "Type"),
+            ]
+        )
         self._proxy = _VfsFilterProxy(self)
         self._proxy.setSourceModel(self._model)
         self._search_model = QStandardItemModel()
-        self._search_model.setHorizontalHeaderLabels(["Name", "Path", "Size", "Type"])
+        self._search_model.setHorizontalHeaderLabels(
+            [
+                translate("FilesystemPanel", "Name"),
+                translate("FilesystemPanel", "Path"),
+                translate("FilesystemPanel", "Size"),
+                translate("FilesystemPanel", "Type"),
+            ]
+        )
         self._search_model.setSortRole(_ROLE_SORT)
         self._navigate_after_filter: tuple[VFSNode, VFS] | None = None
         self._search_gen: int = 0
@@ -155,7 +182,7 @@ class FilesystemPanel(QWidget):
         layout.setSpacing(0)
 
         self._filter = _FilterLineEdit()
-        self._filter.setPlaceholderText("Filter… (name:x  type:x)")
+        self._filter.setPlaceholderText(translate("FilesystemPanel", "Filter… (name:x  type:x)"))
         self._filter.setClearButtonEnabled(True)
         self._filter.textChanged.connect(self._on_filter_text_changed)
         self._filter.returnPressed.connect(self._on_filter_return)
@@ -229,7 +256,15 @@ class FilesystemPanel(QWidget):
 
         # Recreate model to avoid slow row-by-row clears on large trees.
         self._model = QStandardItemModel()
-        self._model.setHorizontalHeaderLabels(["Name", "Size", "Files", "Total Size", "Type"])
+        self._model.setHorizontalHeaderLabels(
+            [
+                translate("FilesystemPanel", "Name"),
+                translate("FilesystemPanel", "Size"),
+                translate("FilesystemPanel", "Files"),
+                translate("FilesystemPanel", "Total Size"),
+                translate("FilesystemPanel", "Type"),
+            ]
+        )
         self._proxy.setSourceModel(self._model)
 
         root_node = vfs.root()
@@ -276,7 +311,15 @@ class FilesystemPanel(QWidget):
         self._prescan_gen += 1
 
         self._model = QStandardItemModel()
-        self._model.setHorizontalHeaderLabels(["Name", "Size", "Files", "Total Size", "Type"])
+        self._model.setHorizontalHeaderLabels(
+            [
+                translate("FilesystemPanel", "Name"),
+                translate("FilesystemPanel", "Size"),
+                translate("FilesystemPanel", "Files"),
+                translate("FilesystemPanel", "Total Size"),
+                translate("FilesystemPanel", "Type"),
+            ]
+        )
         self._proxy.setSourceModel(self._model)
 
         for source in self._vfs_list:
@@ -411,7 +454,11 @@ class FilesystemPanel(QWidget):
             # a minimal batch menu instead of the full single-node one,
             # same pattern as the search view's multi-select export menu.
             menu = QMenu(self)
-            send_action = menu.addAction(f"Send {len(selected_entries)} files to Peach")
+            send_action = menu.addAction(
+                translate("FilesystemPanel", "Send {selected_entries_count} files to Peach").format(
+                    selected_entries_count=len(selected_entries)
+                )
+            )
             if menu.exec(global_pos) == send_action:
                 self.send_to_peach_batch_requested.emit(selected_entries)
             return
@@ -444,11 +491,19 @@ class FilesystemPanel(QWidget):
         if len(selected_entries) > 1:
             all_entries = self._collect_result_entries(range(self._search_model.rowCount()))
             menu = QMenu(self)
-            export_sel = menu.addAction(f"Export {len(selected_entries)} selected files…")
+            export_sel = menu.addAction(
+                translate(
+                    "FilesystemPanel", "Export {selected_entries_count} selected files…"
+                ).format(selected_entries_count=len(selected_entries))
+            )
             export_all = None
             if len(all_entries) > len(selected_entries):
                 menu.addSeparator()
-                export_all = menu.addAction(f"Export all {len(all_entries)} results…")
+                export_all = menu.addAction(
+                    translate("FilesystemPanel", "Export all {all_entries_count} results…").format(
+                        all_entries_count=len(all_entries)
+                    )
+                )
             action = menu.exec(global_pos)
             filter_text = self._filter.text().strip()
             if action == export_sel:
@@ -476,25 +531,35 @@ class FilesystemPanel(QWidget):
         from_search: bool = False,
     ) -> None:
         menu = QMenu(self)
-        open_action = menu.addAction("Open")
+        open_action = menu.addAction(translate("FilesystemPanel", "Open"))
         open_in_new_window_action = None
         if not node.is_dir:
-            open_in_new_window_action = menu.addAction("Open in New Window")
-        open_as_menu = menu.addMenu("Open as")
-        open_hex_action = open_as_menu.addAction("Hex")
-        open_text_action = open_as_menu.addAction("Text")
-        open_proto_action = open_as_menu.addAction("Protobuf")
-        open_mmkv_action = open_as_menu.addAction("MMKV")
+            open_in_new_window_action = menu.addAction(
+                translate("FilesystemPanel", "Open in New Window")
+            )
+        open_as_menu = menu.addMenu(translate("FilesystemPanel", "Open as"))
+        open_hex_action = open_as_menu.addAction(translate("FilesystemPanel", "Hex"))
+        open_text_action = open_as_menu.addAction(translate("FilesystemPanel", "Text"))
+        open_proto_action = open_as_menu.addAction(translate("FilesystemPanel", "Protobuf"))
+        open_mmkv_action = open_as_menu.addAction(translate("FilesystemPanel", "MMKV"))
         open_realm_encrypted_action = None
         open_sqlcipher_action = None
         open_pdf_encrypted_action = None
         open_mmkv_encrypted_action = None
         if not node.is_dir:
             open_as_menu.addSeparator()
-            open_realm_encrypted_action = open_as_menu.addAction("Realm DB (Encrypted)…")
-            open_sqlcipher_action = open_as_menu.addAction("SQLite DB (Encrypted)…")
-            open_pdf_encrypted_action = open_as_menu.addAction("PDF (Encrypted)…")
-            open_mmkv_encrypted_action = open_as_menu.addAction("MMKV (Encrypted)…")
+            open_realm_encrypted_action = open_as_menu.addAction(
+                translate("FilesystemPanel", "Realm DB (Encrypted)…")
+            )
+            open_sqlcipher_action = open_as_menu.addAction(
+                translate("FilesystemPanel", "SQLite DB (Encrypted)…")
+            )
+            open_pdf_encrypted_action = open_as_menu.addAction(
+                translate("FilesystemPanel", "PDF (Encrypted)…")
+            )
+            open_mmkv_encrypted_action = open_as_menu.addAction(
+                translate("FilesystemPanel", "MMKV (Encrypted)…")
+            )
         open_logs_folder_action = None
         open_multi_log_action   = None
         add_multi_log_action    = None
@@ -511,45 +576,65 @@ class FilesystemPanel(QWidget):
         send_to_peach_biome_action = None
         run_analyzer_action = None
         if _is_ios_diag:
-            open_ios_diag_action = menu.addAction("Open as Unified Log Archive")
-            add_ios_diag_action  = menu.addAction("Add to Multi-Log Studio as Unified Log Archive")
+            open_ios_diag_action = menu.addAction(
+                translate("FilesystemPanel", "Open as Unified Log Archive")
+            )
+            add_ios_diag_action = menu.addAction(
+                translate("FilesystemPanel", "Add to Multi-Log Studio as Unified Log Archive")
+            )
             menu.addSeparator()
-            export_logarchive_action = menu.addAction("Export as .logarchive…")
+            export_logarchive_action = menu.addAction(
+                translate("FilesystemPanel", "Export as .logarchive…")
+            )
         elif node.is_dir and not _is_logarchive:
-            open_logs_folder_action = menu.addAction("Open Logs in Multi-Log Studio")
-            send_to_peach_folder_action = menu.addAction("Send Logs to Peach…")
-            send_to_peach_biome_action = menu.addAction("Send Biome Streams to Peach…")
-            run_analyzer_action = menu.addAction("Run Analyzer…")
+            open_logs_folder_action = menu.addAction(
+                translate("FilesystemPanel", "Open Logs in Multi-Log Studio")
+            )
+            send_to_peach_folder_action = menu.addAction(
+                translate("FilesystemPanel", "Send Logs to Peach…")
+            )
+            send_to_peach_biome_action = menu.addAction(
+                translate("FilesystemPanel", "Send Biome Streams to Peach…")
+            )
+            run_analyzer_action = menu.addAction(translate("FilesystemPanel", "Run Analyzer…"))
         else:
-            open_multi_log_action = menu.addAction("Open in Multi-Log Studio")
-            add_multi_log_action  = menu.addAction("Add to Multi-Log Studio")
+            open_multi_log_action = menu.addAction(
+                translate("FilesystemPanel", "Open in Multi-Log Studio")
+            )
+            add_multi_log_action = menu.addAction(
+                translate("FilesystemPanel", "Add to Multi-Log Studio")
+            )
         if _is_logarchive or _is_ios_diag or not node.is_dir:
-            send_to_peach_action = menu.addAction("Send to Peach")
+            send_to_peach_action = menu.addAction(translate("FilesystemPanel", "Send to Peach"))
         open_external_default = None
         open_external_choose = None
         if not node.is_dir:
             menu.addSeparator()
-            open_external_default = menu.addAction("Open External (Default)")
-            open_external_choose = menu.addAction("Open External (Choose App…)")
+            open_external_default = menu.addAction(
+                translate("FilesystemPanel", "Open External (Default)")
+            )
+            open_external_choose = menu.addAction(
+                translate("FilesystemPanel", "Open External (Choose App…)")
+            )
         reveal_action = None
         if from_search:
             menu.addSeparator()
-            reveal_action = menu.addAction("Open Containing Folder")
+            reveal_action = menu.addAction(translate("FilesystemPanel", "Open Containing Folder"))
         menu.addSeparator()
-        copy_menu = menu.addMenu("Copy")
-        copy_path_action = copy_menu.addAction("Copy Path")
-        copy_name_action = copy_menu.addAction("Copy File Name")
+        copy_menu = menu.addMenu(translate("FilesystemPanel", "Copy"))
+        copy_path_action = copy_menu.addAction(translate("FilesystemPanel", "Copy Path"))
+        copy_name_action = copy_menu.addAction(translate("FilesystemPanel", "Copy File Name"))
         menu.addSeparator()
-        format_info_action = menu.addAction("Show Format Info")
+        format_info_action = menu.addAction(translate("FilesystemPanel", "Show Format Info"))
         menu.addSeparator()
-        export_action = menu.addAction("Export…")
+        export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
         verify_ewf_action = None
         close_source_action = None
         if node is vfs.root():
             menu.addSeparator()
             if isinstance(vfs, RawImageVFS) and vfs.is_ewf():
-                verify_ewf_action = menu.addAction("Verify EWF Hash…")
-            close_source_action = menu.addAction("Close Source")
+                verify_ewf_action = menu.addAction(translate("FilesystemPanel", "Verify EWF Hash…"))
+            close_source_action = menu.addAction(translate("FilesystemPanel", "Close Source"))
         action = menu.exec(global_pos)
         if action is None:
             return
@@ -1066,8 +1151,10 @@ class FilesystemPanel(QWidget):
         if not self._activities:
             self.background_status.emit("")
             return
-        items = ", ".join(sorted(self._activities))
-        self.background_status.emit(f"Background: {items}")
+        items = ", ".join(sorted(_activity_label(name) for name in self._activities))
+        self.background_status.emit(
+            translate("FilesystemPanel", "Background: {items}").format(items=items)
+        )
 
     def _add_placeholder(self, parent_item: QStandardItem) -> None:
         if parent_item.rowCount() > 0:

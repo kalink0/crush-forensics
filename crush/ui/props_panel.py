@@ -19,6 +19,7 @@ from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
 from crush.core.issues import render_value
 from crush.ui import open_url
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 _SELECTABLE = (
     Qt.TextInteractionFlag.TextSelectableByMouse
@@ -64,7 +65,7 @@ class PropertiesPanel(QScrollArea):
         self._current_vfs = vfs
 
         # File name as header
-        header = QLabel(f"<b>{node.name}</b>")
+        header = QLabel(f"<b>{node.name}</b>")  # i18n: keep -- markup/layout only
         header.setTextInteractionFlags(_SELECTABLE)
         self._layout.addRow(header)
 
@@ -72,7 +73,7 @@ class PropertiesPanel(QScrollArea):
         path_label = QLabel(node.path)
         path_label.setWordWrap(True)
         path_label.setTextInteractionFlags(_SELECTABLE)
-        self._layout.addRow("Path:", path_label)
+        self._layout.addRow(translate("PropertiesPanel", "Path:"), path_label)
 
         # iTunes backups store files flat under a fileID (SHA1) sharded
         # directory layout; the tree above shows the resolved domain/
@@ -84,28 +85,33 @@ class PropertiesPanel(QScrollArea):
                 orig_label = QLabel(original)
                 orig_label.setWordWrap(True)
                 orig_label.setTextInteractionFlags(_SELECTABLE)
-                self._layout.addRow("Backup File ID:", orig_label)
+                self._layout.addRow(translate("PropertiesPanel", "Backup File ID:"), orig_label)
 
         # Fixed position (not after the parser metadata, whose length varies)
         # and only shown once a format was actually identified.
         if vfs is not None and "Format" in metadata:
-            info_btn = QPushButton("Open Format Info…")
+            info_btn = QPushButton(translate("PropertiesPanel", "Open Format Info…"))
             info_btn.clicked.connect(
                 lambda: self.format_info_requested.emit(self._current_node, self._current_vfs)
             )
             self._layout.addRow(info_btn)
 
         # Timestamps (MACB) — always show all four, mark unavailable ones clearly
-        self._add_timestamp("Modified (UTC)", node.modified)
-        self._add_timestamp("Accessed (UTC)", node.accessed)
-        self._add_timestamp("Changed (UTC)", node.changed)
-        self._add_timestamp("Birth (UTC)", node.birth)
+        self._add_timestamp(translate("PropertiesPanel", "Modified (UTC)"), node.modified)
+        self._add_timestamp(translate("PropertiesPanel", "Accessed (UTC)"), node.accessed)
+        self._add_timestamp(translate("PropertiesPanel", "Changed (UTC)"), node.changed)
+        self._add_timestamp(translate("PropertiesPanel", "Birth (UTC)"), node.birth)
 
         has_modified = bool(node.modified)
         has_others = bool(node.accessed or node.changed or node.birth)
         if has_modified and not has_others:
-            note = QLabel("<i>Only mtime is stored in ZIP/TAR archives.<br>"
-                          "Accessed, Changed, and Birth are not available.</i>")
+            note = QLabel(
+                translate(
+                    "PropertiesPanel",
+                    "<i>Only mtime is stored in ZIP/TAR archives.<br>"
+                    "Accessed, Changed, and Birth are not available.</i>",
+                )
+            )
             note.setWordWrap(True)
             note.setStyleSheet("color: gray; font-size: 10px;")
             self._layout.addRow(note)
@@ -115,7 +121,7 @@ class PropertiesPanel(QScrollArea):
             lbl = QLabel(render_value(val))
             lbl.setWordWrap(True)
             lbl.setTextInteractionFlags(_SELECTABLE)
-            self._layout.addRow(f"{key}:", lbl)
+            self._layout.addRow(translate("PropertiesPanel", "{key}:").format(key=key), lbl)
 
     def show_analyzer_result(
         self, result: dict[str, Any], title: str | None = None, relevance: str | None = None
@@ -159,7 +165,10 @@ class PropertiesPanel(QScrollArea):
         analyzer = result.get("analyzer", {})
         run = result.get("run", {})
 
-        header = QLabel(f"<b>{title or analyzer.get('name', analyzer.get('id', 'Analyzer result'))}</b>")
+        name = title or analyzer.get(
+            "name", analyzer.get("id", translate("PropertiesPanel", "Analyzer result"))
+        )
+        header = QLabel(f"<b>{name}</b>")  # i18n: keep -- markup/layout only
         header.setTextInteractionFlags(_SELECTABLE)
         self._layout.addRow(header)
 
@@ -173,12 +182,12 @@ class PropertiesPanel(QScrollArea):
             lbl = QLabel(str(value) if value not in (None, "") else "—")
             lbl.setWordWrap(True)
             lbl.setTextInteractionFlags(_SELECTABLE)
-            self._layout.addRow(f"{label}:", lbl)
+            self._layout.addRow(translate("PropertiesPanel", "{label}:").format(label=label), lbl)
 
-        _row("Module ID", analyzer.get("id"))
+        _row(translate("PropertiesPanel", "Module ID"), analyzer.get("id"))
         tool = f"{analyzer.get('tool', 'crush-analyze')} {analyzer.get('tool_version', '')}".strip()
-        _row("Tool", tool)
-        _row("Module version", analyzer.get("module_version"))
+        _row(translate("PropertiesPanel", "Tool"), tool)
+        _row(translate("PropertiesPanel", "Module version"), analyzer.get("module_version"))
 
         # Which underlying parser this result is based on -- a curated
         # module's *own* version (module_version, above) is LEAPP's own
@@ -188,18 +197,20 @@ class PropertiesPanel(QScrollArea):
         source = analyzer.get("source")
         if source:
             parser_file = source.get("path", "").rsplit("/", 1)[-1] or source.get("path")
-            _row("Parser file", parser_file)
+            _row(translate("PropertiesPanel", "Parser file"), parser_file)
             repo_name = source.get("repo", "").rstrip("/").rsplit("/", 1)[-1]
             commit = source.get("commit", "")
             link_text = f"{repo_name} @ {commit[:8]}" if commit else repo_name
-            link = QLabel(f'<a href="{source.get("url", "")}">{link_text}</a>')
+            link = QLabel(
+                f'<a href="{source.get("url", "")}">{link_text}</a>'  # i18n: keep -- markup only
+            )
             link.linkActivated.connect(open_url)
             link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
             if commit:
                 link.setToolTip(commit)
-            self._layout.addRow("Source:", link)
+            self._layout.addRow(translate("PropertiesPanel", "Source:"), link)
 
-        _row("Input path", run.get("input_path"))
+        _row(translate("PropertiesPanel", "Input path"), run.get("input_path"))
 
         # Every file (relative to input_path) that matched the module's own
         # declared paths glob -- what the data in this result is actually
@@ -215,7 +226,12 @@ class PropertiesPanel(QScrollArea):
             files_lbl.setTextFormat(Qt.TextFormat.PlainText)
             files_lbl.setWordWrap(True)
             files_lbl.setTextInteractionFlags(_SELECTABLE)
-            self._layout.addRow(f"Source files ({len(source_files)}):", files_lbl)
+            self._layout.addRow(
+                translate("PropertiesPanel", "Source files ({source_files_count}):").format(
+                    source_files_count=len(source_files)
+                ),
+                files_lbl,
+            )
 
         _row("Started at", run.get("started_at"))
         _row("Duration", f"{run.get('duration_ms', 0):,} ms")
@@ -227,7 +243,7 @@ class PropertiesPanel(QScrollArea):
             status_lbl.setStyleSheet("color: #b02a37; font-weight: bold;")
         elif status == "partial":
             status_lbl.setStyleSheet("color: #997404; font-weight: bold;")
-        self._layout.addRow("Status:", status_lbl)
+        self._layout.addRow(translate("PropertiesPanel", "Status:"), status_lbl)
 
         warnings = result.get("warnings", [])
         if warnings:
@@ -243,4 +259,4 @@ class PropertiesPanel(QScrollArea):
         lbl.setTextInteractionFlags(_SELECTABLE)
         if not ts_value:
             lbl.setStyleSheet("color: gray;")
-        self._layout.addRow(f"{label}:", lbl)
+        self._layout.addRow(translate("PropertiesPanel", "{label}:").format(label=label), lbl)

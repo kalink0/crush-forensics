@@ -18,7 +18,7 @@ import shutil
 import tempfile
 
 from PySide6.QtCore import (
-    QCoreApplication, QObject, QThread, Qt, Signal, QUrl, QSettings, QTimer,
+    QObject, QThread, Qt, Signal, QUrl, QSettings, QTimer,
 )
 from PySide6.QtGui import (
     QCloseEvent,
@@ -69,6 +69,7 @@ from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFil
 from crush.ui.fs_panel import FilesystemPanel
 from crush.ui.props_panel import PropertiesPanel
 from crush.ui.loading_dialog import LoadingDialog
+from crush.ui.i18n import translate
 
 
 class _LoadSourceWorker(QObject):
@@ -184,7 +185,7 @@ class _DockTitleBar(QWidget):
         label = QLabel(title)
         layout.addWidget(label)
         layout.addStretch()
-        dock_btn = QPushButton("Dock")
+        dock_btn = QPushButton(translate("_DockTitleBar", "Dock"))
         dock_btn.setFixedHeight(20)
         dock_btn.clicked.connect(self._dock_back)
         layout.addWidget(dock_btn)
@@ -227,8 +228,10 @@ class _RecentFileButton(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(12)
-        name = QLabel(f"<b>{p.name}</b>")
-        directory = QLabel(f"<span style='color:gray'>{p.parent}</span>")
+        name = QLabel(f"<b>{p.name}</b>")  # i18n: keep -- markup/layout only
+        directory = QLabel(
+            f"<span style='color:gray'>{p.parent}</span>"  # i18n: keep -- markup/layout only
+        )
         directory.setSizePolicy(directory.sizePolicy().horizontalPolicy(), directory.sizePolicy().verticalPolicy())
         layout.addWidget(name)
         layout.addWidget(directory, stretch=1)
@@ -568,7 +571,7 @@ class MainWindow(QMainWindow):
         self._settings = QSettings("Crush DFIR", "Crush")
         extract_dialog.apply_saved_temp_dir(self._settings)
         self._multi_log_windows: list[QWidget] = []
-        self.setWindowTitle(f"Crush {crush.display_version()}")
+        self.setWindowTitle(f"Crush {crush.display_version()}")  # i18n: keep -- name + version
         self.resize(1280, 800)
         self._build_ui()
         self._setup_logging()
@@ -607,7 +610,7 @@ class MainWindow(QMainWindow):
         self._tab_list_menu.triggered.connect(self._on_tab_list_menu_triggered)
         self._tab_list_button = QToolButton()
         self._tab_list_button.setText("▾")
-        self._tab_list_button.setToolTip("Show open tabs")
+        self._tab_list_button.setToolTip(translate("MainWindow", "Show open tabs"))
         self._tab_list_button.setAutoRaise(True)
         self._tab_list_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._tab_list_button.setMenu(self._tab_list_menu)
@@ -618,7 +621,7 @@ class MainWindow(QMainWindow):
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.setSpacing(12)
 
-        empty_title = QLabel("Open something to begin")
+        empty_title = QLabel(translate("MainWindow", "Open something to begin"))
         empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_font = empty_title.font()
         title_font.setPointSize(title_font.pointSize() + 6)
@@ -626,15 +629,15 @@ class MainWindow(QMainWindow):
         empty_title.setFont(title_font)
         empty_layout.addWidget(empty_title)
 
-        empty_subtitle = QLabel("Choose a file, archive, or folder.")
+        empty_subtitle = QLabel(translate("MainWindow", "Choose a file, archive, or folder."))
         empty_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_subtitle)
 
         button_row = QHBoxLayout()
-        open_file_button = QPushButton("Open File…")
+        open_file_button = QPushButton(translate("MainWindow", "Open File…"))
         open_file_button.clicked.connect(self._open_file)
         button_row.addWidget(open_file_button)
-        open_folder_button = QPushButton("Open Folder…")
+        open_folder_button = QPushButton(translate("MainWindow", "Open Folder…"))
         open_folder_button.clicked.connect(self._open_folder)
         button_row.addWidget(open_folder_button)
         empty_layout.addLayout(button_row)
@@ -666,7 +669,7 @@ class MainWindow(QMainWindow):
         self._fs_panel.format_info_requested.connect(self._show_format_info)
         self._fs_panel.open_in_new_window_requested.connect(self._open_in_new_window)
         self._fs_panel.send_to_peach_batch_requested.connect(self._send_to_peach_batch)
-        self._fs_dock = QDockWidget("Filesystem", self)
+        self._fs_dock = QDockWidget(translate("MainWindow", "Filesystem"), self)
         self._fs_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._fs_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -684,7 +687,7 @@ class MainWindow(QMainWindow):
         # Right dock: properties panel
         self._props_panel = PropertiesPanel(self)
         self._props_panel.format_info_requested.connect(self._show_format_info)
-        self._props_dock = QDockWidget("Properties", self)
+        self._props_dock = QDockWidget(translate("MainWindow", "Properties"), self)
         self._props_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._props_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -702,7 +705,7 @@ class MainWindow(QMainWindow):
         # Bottom dock: log panel
         self._log_view = QTextEdit()
         self._log_view.setReadOnly(True)
-        self._log_dock = QDockWidget("Log", self)
+        self._log_dock = QDockWidget(translate("MainWindow", "Log"), self)
         self._log_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._log_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -720,7 +723,11 @@ class MainWindow(QMainWindow):
         # Status bar
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        self._status.showMessage(f"Crush {crush.display_version()} — ready")
+        self._status.showMessage(
+            translate("MainWindow", "Crush {version} — ready").format(
+                version=crush.display_version()
+            )
+        )
         self._spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
         self._spinner_idx = 0
         self._spinner_label = QLabel("")
@@ -733,24 +740,26 @@ class MainWindow(QMainWindow):
         self._spinner_timer.setInterval(100)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
 
-        self._integrity_label = _ClickableStatusLabel(" \u2696 INTEGRITY ")
+        self._integrity_label = _ClickableStatusLabel(translate("MainWindow", " \u2696 INTEGRITY "))
         self._integrity_label.setStyleSheet(
             "color: white; background-color: #c87000; font-weight: bold;"
             " padding: 1px 4px; border-radius: 3px;"
         )
-        self._integrity_label.setToolTip("Integrity mode active \u2014 files are hashed on open")
+        self._integrity_label.setToolTip(
+            translate("MainWindow", "Integrity mode active \u2014 files are hashed on open")
+        )
         self._integrity_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._integrity_label.clicked.connect(self._toggle_integrity_mode)
         self._integrity_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._integrity_label.customContextMenuRequested.connect(self._show_integrity_menu)
         self._integrity_label.setVisible(False)
         self._status.addPermanentWidget(self._integrity_label)
-        self._no_integrity_label = _ClickableStatusLabel(" NO INTEGRITY ")
+        self._no_integrity_label = _ClickableStatusLabel(translate("MainWindow", " NO INTEGRITY "))
         self._no_integrity_label.setStyleSheet(
             "color: white; background-color: #6b6b6b; font-weight: bold;"
             " padding: 1px 4px; border-radius: 3px;"
         )
-        self._no_integrity_label.setToolTip("Integrity mode is off")
+        self._no_integrity_label.setToolTip(translate("MainWindow", "Integrity mode is off"))
         self._no_integrity_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._no_integrity_label.clicked.connect(self._toggle_integrity_mode)
         self._no_integrity_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -758,8 +767,10 @@ class MainWindow(QMainWindow):
         self._no_integrity_label.setVisible(True)
         self._status.addPermanentWidget(self._no_integrity_label)
 
-        self._rainbow_snapshot_btn = QPushButton("⏸  Snapshot")
-        self._rainbow_snapshot_btn.setToolTip("Pause rainbow and save this colour as a custom theme")
+        self._rainbow_snapshot_btn = QPushButton(translate("MainWindow", "⏸  Snapshot"))
+        self._rainbow_snapshot_btn.setToolTip(
+            translate("MainWindow", "Pause rainbow and save this colour as a custom theme")
+        )
         self._rainbow_snapshot_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._rainbow_snapshot_btn.setVisible(False)
         self._rainbow_snapshot_btn.clicked.connect(self._snapshot_rainbow)
@@ -768,7 +779,7 @@ class MainWindow(QMainWindow):
         self._america_show_btn = QPushButton("")
         self._america_show_btn.setMinimumWidth(150)
         self._america_show_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._america_show_btn.setToolTip("Replay the U-S-A theme show")
+        self._america_show_btn.setToolTip(translate("MainWindow", "Replay the U-S-A theme show"))
         self._america_show_btn.setVisible(False)
         self._america_show_btn.clicked.connect(self._replay_america_show)
         self._status.addPermanentWidget(self._america_show_btn)
@@ -778,69 +789,93 @@ class MainWindow(QMainWindow):
     def _build_menus(self) -> None:
         menu = self.menuBar()
 
-        file_menu = menu.addMenu("File")
-        new_window_action = file_menu.addAction("New Window", self._new_window)
+        file_menu = menu.addMenu(translate("MainWindow", "File"))
+        new_window_action = file_menu.addAction(
+            translate("MainWindow", "New Window"), self._new_window
+        )
         new_window_action.setShortcut("Ctrl+N")
         file_menu.addSeparator()
-        file_menu.addAction("Open file…", self._open_file)
-        file_menu.addAction("Open folder…", self._open_folder)
+        file_menu.addAction(translate("MainWindow", "Open file…"), self._open_file)
+        file_menu.addAction(translate("MainWindow", "Open folder…"), self._open_folder)
         file_menu.addSeparator()
-        self._recent_menu = file_menu.addMenu("Open Recent")
+        self._recent_menu = file_menu.addMenu(translate("MainWindow", "Open Recent"))
         self._rebuild_recent_menu()
         file_menu.addSeparator()
-        self._close_window_action = file_menu.addAction("Close Window", self.close)
+        self._close_window_action = file_menu.addAction(
+            translate("MainWindow", "Close Window"), self.close
+        )
         self._close_window_action.setShortcut("Ctrl+W")
-        exit_action = file_menu.addAction("Exit", QApplication.quit)
+        exit_action = file_menu.addAction(translate("MainWindow", "Exit"), QApplication.quit)
         exit_action.setShortcut("Ctrl+Q")
 
-        view_menu = menu.addMenu("View")
+        view_menu = menu.addMenu(translate("MainWindow", "View"))
         view_menu.addAction(self._fs_dock.toggleViewAction())
         view_menu.addAction(self._props_dock.toggleViewAction())
         view_menu.addAction(self._log_dock.toggleViewAction())
         view_menu.addSeparator()
-        view_menu.addAction("Dock Filesystem Panel", lambda: self._dock_to_default(self._fs_dock))
-        view_menu.addAction("Dock Properties Panel", lambda: self._dock_to_default(self._props_dock))
-        view_menu.addAction("Dock Log Panel", lambda: self._dock_to_default(self._log_dock))
-        view_menu.addAction("Reset Panel Layout", self._reset_panel_layout)
-        self._always_hex_action = QAction("Always show Hex tab", self, checkable=True)
+        view_menu.addAction(
+            translate("MainWindow", "Dock Filesystem Panel"),
+            lambda: self._dock_to_default(self._fs_dock),
+        )
+        view_menu.addAction(
+            translate("MainWindow", "Dock Properties Panel"),
+            lambda: self._dock_to_default(self._props_dock),
+        )
+        view_menu.addAction(
+            translate("MainWindow", "Dock Log Panel"), lambda: self._dock_to_default(self._log_dock)
+        )
+        view_menu.addAction(translate("MainWindow", "Reset Panel Layout"), self._reset_panel_layout)
+        self._always_hex_action = QAction(
+            translate("MainWindow", "Always show Hex tab"), self, checkable=True
+        )
         self._always_hex_action.toggled.connect(self._set_always_hex)
         view_menu.addAction(self._always_hex_action)
-        view_menu.addAction("Close all tabs", self._close_all_tabs)
+        view_menu.addAction(translate("MainWindow", "Close all tabs"), self._close_all_tabs)
         view_menu.addSeparator()
-        theme_menu = view_menu.addMenu("Theme")
-        theme_menu.addAction("System default", self._set_theme_system)
-        theme_menu.addAction("Light", self._set_theme_light)
-        theme_menu.addAction("Dark", self._set_theme_dark)
-        theme_menu.addAction("Geek", self._set_theme_geek)
-        theme_menu.addAction("Purple", self._set_theme_purple)
-        theme_menu.addAction("Ocean", self._set_theme_ocean)
-        theme_menu.addAction("Rainbow", self._set_theme_rainbow)
-        theme_menu.addAction("'Merica", self._set_theme_america)
+        theme_menu = view_menu.addMenu(translate("MainWindow", "Theme"))
+        theme_menu.addAction(translate("MainWindow", "System default"), self._set_theme_system)
+        theme_menu.addAction(translate("MainWindow", "Light"), self._set_theme_light)
+        theme_menu.addAction(translate("MainWindow", "Dark"), self._set_theme_dark)
+        theme_menu.addAction(translate("MainWindow", "Geek"), self._set_theme_geek)
+        theme_menu.addAction(translate("MainWindow", "Purple"), self._set_theme_purple)
+        theme_menu.addAction(translate("MainWindow", "Ocean"), self._set_theme_ocean)
+        theme_menu.addAction(translate("MainWindow", "Rainbow"), self._set_theme_rainbow)
+        theme_menu.addAction(translate("MainWindow", "'Merica"), self._set_theme_america)
         theme_menu.addSeparator()
         self._custom_theme_action = theme_menu.addAction("", self._set_theme_custom)
         self._custom_theme_action.setVisible(False)
         self._build_language_menu(view_menu)
 
-        tools_menu = menu.addMenu("Tools")
-        tools_menu.addAction("Paste & Decode…", self._paste_decode)
-        tools_menu.addAction("Value Inspector…", self._open_value_inspector)
+        tools_menu = menu.addMenu(translate("MainWindow", "Tools"))
+        tools_menu.addAction(translate("MainWindow", "Paste & Decode…"), self._paste_decode)
+        tools_menu.addAction(
+            translate("MainWindow", "Value Inspector…"), self._open_value_inspector
+        )
         tools_menu.addSeparator()
-        tools_menu.addAction("Export log…", self._export_log)
+        tools_menu.addAction(translate("MainWindow", "Export log…"), self._export_log)
         tools_menu.addSeparator()
-        self._integrity_mode_action = QAction("Integrity Mode", self, checkable=True)
-        self._integrity_mode_action.setToolTip("Hash every file on open and write hash to log")
+        self._integrity_mode_action = QAction(
+            translate("MainWindow", "Integrity Mode"), self, checkable=True
+        )
+        self._integrity_mode_action.setToolTip(
+            translate("MainWindow", "Hash every file on open and write hash to log")
+        )
         self._integrity_mode_action.toggled.connect(self._set_integrity_mode)
         tools_menu.addAction(self._integrity_mode_action)
-        tools_menu.addAction("Indexing Threads…", self._set_prescan_workers)
-        tools_menu.addAction("Temp Directory…", self._set_temp_dir)
-        peach_menu = tools_menu.addMenu("Peach")
-        peach_menu.addAction("Open Peach", self._open_peach_standalone)
-        peach_menu.addAction("Binary Path…", self._set_peach_binary_path)
+        tools_menu.addAction(
+            translate("MainWindow", "Indexing Threads…"), self._set_prescan_workers
+        )
+        tools_menu.addAction(translate("MainWindow", "Temp Directory…"), self._set_temp_dir)
+        peach_menu = tools_menu.addMenu(translate("MainWindow", "Peach"))
+        peach_menu.addAction(translate("MainWindow", "Open Peach"), self._open_peach_standalone)
+        peach_menu.addAction(translate("MainWindow", "Binary Path…"), self._set_peach_binary_path)
 
-        help_menu = menu.addMenu("Help")
-        help_menu.addAction("Format Reference…", self._show_format_reference)
+        help_menu = menu.addMenu(translate("MainWindow", "Help"))
+        help_menu.addAction(
+            translate("MainWindow", "Format Reference…"), self._show_format_reference
+        )
         help_menu.addSeparator()
-        help_menu.addAction("About Crush", self._about)
+        help_menu.addAction(translate("MainWindow", "About Crush"), self._about)
 
     def _build_language_menu(self, view_menu: QMenu) -> None:
         """View → Language: English plus every language complete enough to
@@ -851,9 +886,7 @@ class MainWindow(QMainWindow):
                  if lang.offered or lang.code == saved]
         if not codes:
             return
-        language_menu = view_menu.addMenu(
-            QCoreApplication.translate("MainWindow", "Language")
-        )
+        language_menu = view_menu.addMenu(translate("MainWindow", "Language"))
         group = QActionGroup(language_menu)
         for code in [i18n.SOURCE_LANGUAGE, *codes]:
             action = QAction(i18n.display_name(code), language_menu, checkable=True)
@@ -869,10 +902,8 @@ class MainWindow(QMainWindow):
         self._logger.info("UI language set to %s (applies after restart)", code)
         QMessageBox.information(
             self,
-            QCoreApplication.translate("MainWindow", "Language"),
-            QCoreApplication.translate(
-                "MainWindow", "The new language applies after Crush is restarted."
-            ),
+            translate("MainWindow", "Language"),
+            translate("MainWindow", "The new language applies after Crush is restarted."),
         )
 
     def _new_window(self) -> None:
@@ -894,13 +925,17 @@ class MainWindow(QMainWindow):
     def _open_in_new_window(self, node: VFSNode, vfs: VFS) -> None:
         if isinstance(vfs, DirectoryVFS):
             self._hash_node_if_integrity(node, vfs)
-        path = self._materialize_node_for_external(node, vfs, title="Open in New Window")
+        path = self._materialize_node_for_external(
+            node, vfs, title=translate("MainWindow", "Open in New Window")
+        )
         if path is None:
             if not self._materialize_cancelled:
                 QMessageBox.warning(
                     self,
-                    "Open in New Window",
-                    f"Unable to materialize {node.name!r} for a new window.",
+                    translate("MainWindow", "Open in New Window"),
+                    translate(
+                        "MainWindow", "Unable to materialize {name!r} for a new window."
+                    ).format(name=node.name),
                 )
             return
         window = MainWindow()
@@ -926,12 +961,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _open_folder(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Open folder")
+        path = QFileDialog.getExistingDirectory(self, translate("MainWindow", "Open folder"))
         if path:
             self._load_source(path)
 
     def _open_file(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Open file", "", "All files (*)")
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            translate("MainWindow", "Open file"),
+            "",
+            translate("MainWindow", "All files") + " (*)",  # i18n: keep -- file filter pattern
+        )
         for path in paths:
             self._load_source(path, open_after_load=True, append_to_tree=True)
 
@@ -953,7 +993,7 @@ class MainWindow(QMainWindow):
                 (path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path,
                  embedded_zip)
             )
-            self._status.showMessage("Queued source for loading…")
+            self._status.showMessage(translate("MainWindow", "Queued source for loading…"))
             self._logger.debug("Load queued: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
             return
 
@@ -966,8 +1006,8 @@ class MainWindow(QMainWindow):
         self._append_to_tree = append_to_tree
         self._pending_focus_path = focus_path
         self._tree_build_started = time.monotonic()
-        self._status.showMessage(f"Loading: {path}")
-        self._progress = LoadingDialog("Loading source…", self)
+        self._status.showMessage(translate("MainWindow", "Loading: {path}").format(path=path))
+        self._progress = LoadingDialog(translate("MainWindow", "Loading source…"), self)
         self._progress.show()
 
         self._load_thread = QThread(self)
@@ -990,7 +1030,7 @@ class MainWindow(QMainWindow):
     def _on_load_finished(self, vfs: VFS) -> None:
         self._logger.debug("Load worker finished; preparing tree build")
         if hasattr(self, "_progress"):
-            self._progress.set_text("Building tree…")
+            self._progress.set_text(translate("MainWindow", "Building tree…"))
         if getattr(self, "_open_after_load", False) and not vfs.root().is_dir:
             self._pending_open = (vfs.root(), vfs)
         if getattr(self, "_tree_loaded_connected", False):
@@ -1017,7 +1057,9 @@ class MainWindow(QMainWindow):
         self._logger.debug("Load worker failed: %s", message)
         if hasattr(self, "_progress"):
             self._progress.close()
-        self._status.showMessage(f"Error loading source: {message}")
+        self._status.showMessage(
+            translate("MainWindow", "Error loading source: {message}").format(message=message)
+        )
         self._logger.error("Load error: %s", message)
 
         path = getattr(self, "_loading_path", None)
@@ -1025,11 +1067,13 @@ class MainWindow(QMainWindow):
 
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Critical)
-        box.setWindowTitle("Load error")
+        box.setWindowTitle(translate("MainWindow", "Load error"))
         box.setText(message)
         box.addButton(QMessageBox.StandardButton.Ok)
         hex_button = (
-            box.addButton("Open as Hex", QMessageBox.ButtonRole.ActionRole) if offer_hex else None
+            box.addButton(translate("MainWindow", "Open as Hex"), QMessageBox.ButtonRole.ActionRole)
+            if offer_hex
+            else None
         )
         box.exec()
         if hex_button is not None and box.clickedButton() is hex_button:
@@ -1039,11 +1083,19 @@ class MainWindow(QMainWindow):
         try:
             data = Path(path).read_bytes()
         except Exception as exc:
-            QMessageBox.warning(self, "Open as Hex", f"Could not read {path!r}: {exc}")
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Open as Hex"),
+                translate("MainWindow", "Could not read {path!r}: {exc}").format(
+                    path=path, exc=exc
+                ),
+            )
             return
         from crush.viewers.hex_viewer import HexViewer
         viewer = HexViewer(data, self)
-        idx = self._viewer_tabs.addTab(viewer, f"{Path(path).name} [Hex]")
+        idx = self._viewer_tabs.addTab(
+            viewer, translate("MainWindow", "{name} [Hex]").format(name=Path(path).name)
+        )
         self._viewer_tabs.setCurrentIndex(idx)
         self._show_viewer_tabs()
 
@@ -1069,9 +1121,17 @@ class MainWindow(QMainWindow):
             for note in notes:
                 self._logger.warning("%s: %s", self._loading_path, note)
             text = "; ".join(str(note) for note in notes)  # notes may be ParseIssues
-            self._status.showMessage(f"Loaded: {self._loading_path}  — {text}")
+            self._status.showMessage(
+                translate("MainWindow", "Loaded: {loading_path}  — {text}").format(
+                    loading_path=self._loading_path, text=text
+                )
+            )
         else:
-            self._status.showMessage(f"Loaded: {self._loading_path}")
+            self._status.showMessage(
+                translate("MainWindow", "Loaded: {loading_path}").format(
+                    loading_path=self._loading_path
+                )
+            )
         self._add_to_recent_files(self._loading_path)
         if hasattr(self, "_tree_build_started"):
             elapsed = time.monotonic() - self._tree_build_started
@@ -1100,15 +1160,27 @@ class MainWindow(QMainWindow):
             if not root.is_dir:
                 # Not an error worth blocking on -- the single-file case below
                 # already opens it unconditionally; --focus just didn't apply.
-                msg = f"--focus ignored: {self._loading_path!r} is a single file, not a folder/archive"
-                self._status.showMessage(msg)
-                self._logger.warning(msg)
+                self._status.showMessage(
+                    translate(
+                        "MainWindow",
+                        "--focus ignored: {path!r} is a single file, not a folder/archive",
+                    ).format(path=self._loading_path)
+                )
+                self._logger.warning(
+                    "--focus ignored: %r is a single file, not a folder/archive",
+                    self._loading_path,
+                )
             else:
                 target = resolve_relative_path(root, focus_path)
                 if target is None:
-                    msg = f"--focus: {focus_path!r} not found in {self._loading_path!r}"
-                    self._status.showMessage(msg)
-                    self._logger.warning(msg)
+                    self._status.showMessage(
+                        translate("MainWindow", "--focus: {focus!r} not found in {path!r}").format(
+                            focus=focus_path, path=self._loading_path
+                        )
+                    )
+                    self._logger.warning(
+                        "--focus: %r not found in %r", focus_path, self._loading_path
+                    )
                 else:
                     self._fs_panel._navigate_to_node(target, vfs)
                     self._open_node(target, vfs)
@@ -1124,7 +1196,9 @@ class MainWindow(QMainWindow):
             self._on_tree_loaded()
 
     def _export_node(self, node: VFSNode, vfs: VFS) -> None:
-        dest_dir = QFileDialog.getExistingDirectory(self, "Export to folder")
+        dest_dir = QFileDialog.getExistingDirectory(
+            self, translate("MainWindow", "Export to folder")
+        )
         if not dest_dir:
             return
 
@@ -1133,8 +1207,10 @@ class MainWindow(QMainWindow):
         if target_root.exists():
             reply = QMessageBox.question(
                 self,
-                "Overwrite?",
-                f"{target_root} already exists. Overwrite?",
+                translate("MainWindow", "Overwrite?"),
+                translate("MainWindow", "{target_root} already exists. Overwrite?").format(
+                    target_root=target_root
+                ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -1142,13 +1218,19 @@ class MainWindow(QMainWindow):
                 return
 
         if self._thread_is_running(getattr(self, "_export_thread", None)):
-            QMessageBox.information(self, "Export", "An export is already running.")
+            QMessageBox.information(
+                self,
+                translate("MainWindow", "Export"),
+                translate("MainWindow", "An export is already running."),
+            )
             return
 
-        self._status.showMessage("Exporting…")
+        self._status.showMessage(translate("MainWindow", "Exporting…"))
         self._logger.info("Export requested: %s -> %s", node.path, dest_dir)
-        self._export_progress = QProgressDialog("Exporting…", None, 0, 0, self)
-        self._export_progress.setWindowTitle("Export")
+        self._export_progress = QProgressDialog(
+            translate("MainWindow", "Exporting…"), None, 0, 0, self
+        )
+        self._export_progress.setWindowTitle(translate("MainWindow", "Export"))
         self._export_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._export_progress.setCancelButton(None)
         self._export_progress.setMinimumDuration(0)
@@ -1171,19 +1253,28 @@ class MainWindow(QMainWindow):
     def _export_multi_nodes(self, entries: list, filter_text: str) -> None:
         if not entries:
             return
-        dest_dir = QFileDialog.getExistingDirectory(self, "Export filtered results to folder")
+        dest_dir = QFileDialog.getExistingDirectory(
+            self, translate("MainWindow", "Export filtered results to folder")
+        )
         if not dest_dir:
             return
         if self._thread_is_running(getattr(self, "_export_thread", None)):
-            QMessageBox.information(self, "Export", "An export is already running.")
+            QMessageBox.information(
+                self,
+                translate("MainWindow", "Export"),
+                translate("MainWindow", "An export is already running."),
+            )
             return
         n = len(entries)
-        self._status.showMessage(f"Exporting {n} file{'s' if n != 1 else ''}…")
+        exporting = (
+            translate("MainWindow", "Exporting {n} file…")
+            if n == 1
+            else translate("MainWindow", "Exporting {n} files…")
+        ).format(n=n)
+        self._status.showMessage(exporting)
         self._logger.info("Multi-export: %d files, filter=%r -> %s", n, filter_text, dest_dir)
-        self._export_progress = QProgressDialog(
-            f"Exporting {n} file{'s' if n != 1 else ''}…", None, 0, 0, self
-        )
-        self._export_progress.setWindowTitle("Export filtered results")
+        self._export_progress = QProgressDialog(exporting, None, 0, 0, self)
+        self._export_progress.setWindowTitle(translate("MainWindow", "Export filtered results"))
         self._export_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._export_progress.setCancelButton(None)
         self._export_progress.setMinimumDuration(0)
@@ -1206,12 +1297,12 @@ class MainWindow(QMainWindow):
     def _on_export_finished(self, dest: str) -> None:
         if hasattr(self, "_export_progress"):
             self._export_progress.close()
-        self._status.showMessage(f"Exported to: {dest}")
+        self._status.showMessage(translate("MainWindow", "Exported to: {dest}").format(dest=dest))
         self._logger.info("Exported to: %s", dest)
         choice = QMessageBox.question(
             self,
-            "Export complete",
-            f"Export finished:\n{dest}\n\nOpen location?",
+            translate("MainWindow", "Export complete"),
+            translate("MainWindow", "Export finished:\n{dest}\n\nOpen location?").format(dest=dest),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -1223,17 +1314,25 @@ class MainWindow(QMainWindow):
     def _on_export_failed(self, message: str) -> None:
         if hasattr(self, "_export_progress"):
             self._export_progress.close()
-        self._status.showMessage(f"Export failed: {message}")
+        self._status.showMessage(
+            translate("MainWindow", "Export failed: {message}").format(message=message)
+        )
         self._logger.error("Export failed: %s", message)
-        QMessageBox.critical(self, "Export failed", message)
+        QMessageBox.critical(self, translate("MainWindow", "Export failed"), message)
 
     def _export_logarchive_node(self, node: VFSNode, vfs: VFS) -> None:
-        dest_dir = QFileDialog.getExistingDirectory(self, "Save .logarchive to folder")
+        dest_dir = QFileDialog.getExistingDirectory(
+            self, translate("MainWindow", "Save .logarchive to folder")
+        )
         if not dest_dir:
             return
 
         if self._thread_is_running(getattr(self, "_logarchive_thread", None)):
-            QMessageBox.information(self, "Export", "An export is already running.")
+            QMessageBox.information(
+                self,
+                translate("MainWindow", "Export"),
+                translate("MainWindow", "An export is already running."),
+            )
             return
 
         safe_base, changed = _safe_name(node.name)
@@ -1247,18 +1346,22 @@ class MainWindow(QMainWindow):
         if dest_path.exists():
             reply = QMessageBox.question(
                 self,
-                "Overwrite?",
-                f"{dest_path} already exists. Overwrite?",
+                translate("MainWindow", "Overwrite?"),
+                translate("MainWindow", "{dest_path} already exists. Overwrite?").format(
+                    dest_path=dest_path
+                ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        self._status.showMessage("Building .logarchive…")
+        self._status.showMessage(translate("MainWindow", "Building .logarchive…"))
         self._logger.info("Export logarchive: %s -> %s", node.path, dest_path)
-        self._logarchive_progress = QProgressDialog("Building .logarchive…", None, 0, 0, self)
-        self._logarchive_progress.setWindowTitle("Export .logarchive")
+        self._logarchive_progress = QProgressDialog(
+            translate("MainWindow", "Building .logarchive…"), None, 0, 0, self
+        )
+        self._logarchive_progress.setWindowTitle(translate("MainWindow", "Export .logarchive"))
         self._logarchive_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._logarchive_progress.setCancelButton(None)
         self._logarchive_progress.setMinimumDuration(0)
@@ -1280,12 +1383,14 @@ class MainWindow(QMainWindow):
     def _on_logarchive_finished(self, dest: str) -> None:
         if hasattr(self, "_logarchive_progress"):
             self._logarchive_progress.close()
-        self._status.showMessage(f"Saved: {dest}")
+        self._status.showMessage(translate("MainWindow", "Saved: {dest}").format(dest=dest))
         self._logger.info("Logarchive exported to: %s", dest)
         choice = QMessageBox.question(
             self,
-            "Export complete",
-            f".logarchive saved:\n{dest}\n\nOpen location?",
+            translate("MainWindow", "Export complete"),
+            translate("MainWindow", ".logarchive saved:\n{dest}\n\nOpen location?").format(
+                dest=dest
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -1295,9 +1400,11 @@ class MainWindow(QMainWindow):
     def _on_logarchive_failed(self, message: str) -> None:
         if hasattr(self, "_logarchive_progress"):
             self._logarchive_progress.close()
-        self._status.showMessage(f"Export failed: {message}")
+        self._status.showMessage(
+            translate("MainWindow", "Export failed: {message}").format(message=message)
+        )
         self._logger.error("Logarchive export failed: %s", message)
-        QMessageBox.critical(self, "Export failed", message)
+        QMessageBox.critical(self, translate("MainWindow", "Export failed"), message)
 
     def _guard_large_open(self, node: VFSNode, vfs: VFS) -> bool:
         """False when the file should not be loaded here: too big to load
@@ -1335,7 +1442,9 @@ class MainWindow(QMainWindow):
 
         parser = ParserRegistry.best(node, vfs)
         if parser is None:
-            self._status.showMessage(f"No parser found for {node.name}")
+            self._status.showMessage(
+                translate("MainWindow", "No parser found for {name}").format(name=node.name)
+            )
             return
 
         try:
@@ -1343,7 +1452,11 @@ class MainWindow(QMainWindow):
                 # Plain byte read: safe off the UI thread. Other parsers hand
                 # back thread-bound state (sqlite handles, Qt objects) and
                 # stay on the UI thread.
-                result = busy_call(self, f"Loading {node.name}…", lambda: parser.parse(node, vfs))
+                result = busy_call(
+                    self,
+                    translate("MainWindow", "Loading {name}…").format(name=node.name),
+                    lambda: parser.parse(node, vfs),
+                )
             else:
                 result = parser.parse(node, vfs)
             result = self._enrich_with_format_info(parser, node, vfs, result)
@@ -1356,10 +1469,10 @@ class MainWindow(QMainWindow):
                 # hint is invisible unless the user happens to be looking at
                 # the Properties panel -- surface it in the status bar too.
                 self._status.showMessage(
-                    f"{node.path}  [{parser.DISPLAY_NAME} — {possibly_encrypted}]"
+                    f"{node.path}  [{parser.DISPLAY_NAME} — {possibly_encrypted}]"  # i18n: keep -- markup/layout only
                 )
             else:
-                message = f"{node.path}  [{parser.DISPLAY_NAME}]"
+                message = f"{node.path}  [{parser.DISPLAY_NAME}]"  # i18n: keep -- markup/layout only
                 fallback_note = getattr(vfs, "fallback_note", "")
                 if fallback_note:
                     message += f"  — {fallback_note}"
@@ -1371,8 +1484,8 @@ class MainWindow(QMainWindow):
                         message += f"  — {hint}"
                 self._status.showMessage(message)
         except Exception as exc:
-            self._status.showMessage(f"Parse error: {exc}")
-            QMessageBox.warning(self, "Parse error", str(exc))
+            self._status.showMessage(translate("MainWindow", "Parse error: {exc}").format(exc=exc))
+            QMessageBox.warning(self, translate("MainWindow", "Parse error"), str(exc))
 
     # Modes that load the whole file into memory. "default" is absent on
     # purpose: it ends in _open_node(), which asks itself.
@@ -1393,7 +1506,11 @@ class MainWindow(QMainWindow):
             from crush.parsers.base import ParseResult
             hex_bytes = self._read_hex_bytes(vfs, node)
             if hex_bytes is None:
-                QMessageBox.warning(self, "Hex view", "Unable to load hex view.")
+                QMessageBox.warning(
+                    self,
+                    translate("MainWindow", "Hex view"),
+                    translate("MainWindow", "Unable to load hex view."),
+                )
                 return
             result = ParseResult(viewer_type="hex", data=hex_bytes)
             result = self._enrich_with_format_info(None, node, vfs, result)
@@ -1419,17 +1536,29 @@ class MainWindow(QMainWindow):
         if mode == "multi_log":
             self._hash_node_if_integrity(node, vfs)
             self._open_multi_log_window(node, vfs)
-            self._status.showMessage(f"{node.path}  [Multi-Log Studio — loading…]")
+            self._status.showMessage(
+                translate("MainWindow", "{path}  [Multi-Log Studio — loading…]").format(
+                    path=node.path
+                )
+            )
             return
         if mode == "multi_log_add":
             self._hash_node_if_integrity(node, vfs)
             viewer = self._find_multi_log_viewer()
             if viewer is not None:
                 viewer.add_source(node, vfs)
-                self._status.showMessage(f"Added to Multi-Log Studio: {node.path}")
+                self._status.showMessage(
+                    translate("MainWindow", "Added to Multi-Log Studio: {path}").format(
+                        path=node.path
+                    )
+                )
             else:
                 self._open_multi_log_window(node, vfs)
-                self._status.showMessage(f"{node.path}  [Multi-Log Studio — loading…]")
+                self._status.showMessage(
+                    translate("MainWindow", "{path}  [Multi-Log Studio — loading…]").format(
+                        path=node.path
+                    )
+                )
             return
         if mode == "multi_log_folder":
             from crush.viewers.multi_log_viewer import (
@@ -1440,8 +1569,10 @@ class MainWindow(QMainWindow):
             if not found:
                 QMessageBox.information(
                     self,
-                    "Multi-Log Studio",
-                    f"No log files found in '{node.name}'.",
+                    translate("MainWindow", "Multi-Log Studio"),
+                    translate("MainWindow", "No log files found in '{name}'.").format(
+                        name=node.name
+                    ),
                 )
                 return
             dlg = FolderDiscoveryDialog(node.name, found, self)
@@ -1459,7 +1590,9 @@ class MainWindow(QMainWindow):
             for n in remaining:
                 viewer.add_source(n, vfs)
             self._status.showMessage(
-                f"{node.path}  [Multi-Log Studio — loading {len(selected)} file(s)…]"
+                translate(
+                    "MainWindow", "{path}  [Multi-Log Studio — loading {selected_count} file(s)…]"
+                ).format(path=node.path, selected_count=len(selected))
             )
             return
         if mode == "send_to_peach_folder":
@@ -1470,10 +1603,16 @@ class MainWindow(QMainWindow):
             found = _discover_log_nodes(node, vfs)
             if not found:
                 QMessageBox.information(
-                    self, "Send to Peach", f"No log files found in '{node.name}'."
+                    self,
+                    translate("MainWindow", "Send to Peach"),
+                    translate("MainWindow", "No log files found in '{name}'.").format(
+                        name=node.name
+                    ),
                 )
                 return
-            dlg = FolderDiscoveryDialog(node.name, found, self, title="Send Logs to Peach")
+            dlg = FolderDiscoveryDialog(
+                node.name, found, self, title=translate("MainWindow", "Send Logs to Peach")
+            )
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
             selected = dlg.selected_nodes()
@@ -1495,10 +1634,16 @@ class MainWindow(QMainWindow):
             found = discover_segb_nodes(node, vfs)
             if not found:
                 QMessageBox.information(
-                    self, "Send Biome Streams to Peach", f"No SEGB files found in '{node.name}'."
+                    self,
+                    translate("MainWindow", "Send Biome Streams to Peach"),
+                    translate("MainWindow", "No SEGB files found in '{name}'.").format(
+                        name=node.name
+                    ),
                 )
                 return
-            dlg = FolderDiscoveryDialog(node.name, found, self, title="Send Biome Streams to Peach")
+            dlg = FolderDiscoveryDialog(
+                node.name, found, self, title=translate("MainWindow", "Send Biome Streams to Peach")
+            )
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
             selected = dlg.selected_nodes()
@@ -1517,11 +1662,13 @@ class MainWindow(QMainWindow):
                 self._show_result(node, result, vfs)
                 self._props_panel.update_properties(node, result.metadata, vfs)
                 self._status.showMessage(
-                    f"{node.path}  [{parser.DISPLAY_NAME}]"
+                    f"{node.path}  [{parser.DISPLAY_NAME}]"  # i18n: keep -- markup/layout only
                 )
             except Exception as exc:
-                self._status.showMessage(f"Protobuf parse error: {exc}")
-                QMessageBox.warning(self, "Protobuf parse error", str(exc))
+                self._status.showMessage(
+                    translate("MainWindow", "Protobuf parse error: {exc}").format(exc=exc)
+                )
+                QMessageBox.warning(self, translate("MainWindow", "Protobuf parse error"), str(exc))
             return
         if mode == "mmkv":
             self._hash_node_if_integrity(node, vfs)
@@ -1532,10 +1679,14 @@ class MainWindow(QMainWindow):
                 result = self._enrich_with_format_info(parser, node, vfs, result)
                 self._show_result(node, result, vfs)
                 self._props_panel.update_properties(node, result.metadata, vfs)
-                self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME}]")
+                self._status.showMessage(
+                    f"{node.path}  [{parser.DISPLAY_NAME}]"  # i18n: keep -- markup/layout only
+                )
             except Exception as exc:
-                self._status.showMessage(f"MMKV parse error: {exc}")
-                QMessageBox.warning(self, "MMKV parse error", str(exc))
+                self._status.showMessage(
+                    translate("MainWindow", "MMKV parse error: {exc}").format(exc=exc)
+                )
+                QMessageBox.warning(self, translate("MainWindow", "MMKV parse error"), str(exc))
             return
         if mode == "mmkv_encrypted":
             self._hash_node_if_integrity(node, vfs)
@@ -1580,36 +1731,61 @@ class MainWindow(QMainWindow):
                 # result look like a silent success — say plainly that
                 # there was nothing to compare against.
                 QMessageBox.information(
-                    self, "Verify EWF Hash",
-                    "This acquisition recorded no hash to verify against.",
+                    self, translate("MainWindow", "Verify EWF Hash"),
+                    translate("MainWindow", "This acquisition recorded no hash to verify against."),
                 )
-                self._status.showMessage(f"{node.path}  [EWF verify: no stored hash]")
+                self._status.showMessage(
+                    translate("MainWindow", "{path}  [EWF verify: no stored hash]").format(
+                        path=node.path
+                    )
+                )
                 return
             lines = [f"{name}: {digest}" for name, digest in sorted(stored.items())]
             if match:
                 QMessageBox.information(
-                    self, "Verify EWF Hash",
-                    "MATCH — the acquisition's own recorded hash matches its data:\n\n"
+                    self, translate("MainWindow", "Verify EWF Hash"),
+                    translate(
+                        "MainWindow",
+                        "MATCH — the acquisition's own recorded hash matches its data:",
+                    )
+                    + "\n\n"
                     + "\n".join(lines),
                 )
-                self._status.showMessage(f"{node.path}  [EWF verify: MATCH]")
+                self._status.showMessage(
+                    translate("MainWindow", "{path}  [EWF verify: MATCH]").format(path=node.path)
+                )
             else:
                 mismatches = [
-                    f"{name}: stored {stored.get(name)} != computed {computed.get(name)}"
+                    translate(
+                        "MainWindow", "{name}: stored {stored} != computed {computed}"
+                    ).format(name=name, stored=stored.get(name), computed=computed.get(name))
                     for name in stored
                     if stored.get(name) != computed.get(name)
                 ]
                 QMessageBox.warning(
-                    self, "Verify EWF Hash",
-                    "MISMATCH — the acquisition's data does not match its own recorded "
-                    "hash:\n\n" + "\n".join(mismatches),
+                    self, translate("MainWindow", "Verify EWF Hash"),
+                    translate(
+                        "MainWindow",
+                        "MISMATCH — the acquisition's data does not match its own recorded "
+                        "hash:",
+                    )
+                    + "\n\n"
+                    + "\n".join(mismatches),
                 )
-                self._status.showMessage(f"{node.path}  [EWF verify: MISMATCH]")
+                self._status.showMessage(
+                    translate("MainWindow", "{path}  [EWF verify: MISMATCH]").format(path=node.path)
+                )
 
         def _on_error(message: str) -> None:
-            QMessageBox.warning(self, "Verify EWF Hash", f"Could not verify: {message}")
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Verify EWF Hash"),
+                translate("MainWindow", "Could not verify: {message}").format(message=message),
+            )
 
-        run_with_busy_dialog(self, "Verifying EWF hash…", _work, _on_done, _on_error)
+        run_with_busy_dialog(
+            self, translate("MainWindow", "Verifying EWF hash…"), _work, _on_done, _on_error
+        )
 
     def _open_encrypted_sqlite(
         self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
@@ -1622,11 +1798,11 @@ class MainWindow(QMainWindow):
 
         dialog = SQLCipherCredentialsDialog(self, wrong_reason=wrong_reason)
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            self._status.showMessage("Load cancelled: password required")
+            self._status.showMessage(translate("MainWindow", "Load cancelled: password required"))
             return
         key_text = dialog.key_text()
         if not key_text:
-            self._status.showMessage("Load cancelled: password required")
+            self._status.showMessage(translate("MainWindow", "Load cancelled: password required"))
             return
         raw_key = dialog.is_raw_key()
         cipher_params = dialog.cipher_params()
@@ -1640,14 +1816,20 @@ class MainWindow(QMainWindow):
             self._open_encrypted_sqlite(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
-            self._status.showMessage(f"SQLCipher decrypt error: {exc}")
-            QMessageBox.warning(self, "SQLCipher decrypt error", str(exc))
+            self._status.showMessage(
+                translate("MainWindow", "SQLCipher decrypt error: {exc}").format(exc=exc)
+            )
+            QMessageBox.warning(self, translate("MainWindow", "SQLCipher decrypt error"), str(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
         self._show_result(node, result, vfs)
         self._props_panel.update_properties(node, result.metadata, vfs)
-        self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
+        self._status.showMessage(
+            translate("MainWindow", "{path}  [{DISPLAY_NAME} — decrypted]").format(
+                path=node.path, DISPLAY_NAME=parser.DISPLAY_NAME
+            )
+        )
 
     def _open_encrypted_realm(
         self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
@@ -1660,14 +1842,18 @@ class MainWindow(QMainWindow):
 
         title = "Incorrect Key" if was_wrong else "Realm Encryption Key"
         prompt = _with_reason(
-            "Incorrect key. Please try again (64-byte key as a hex string):"
+            translate(
+                "MainWindow", "Incorrect key. Please try again (64-byte key as a hex string):"
+            )
             if was_wrong
-            else "Enter the 64-byte Realm encryption key as a hex string:",
+            else translate("MainWindow", "Enter the 64-byte Realm encryption key as a hex string:"),
             wrong_reason,
         )
         key_text, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Normal)
         if not ok or not key_text:
-            self._status.showMessage("Load cancelled: encryption key required")
+            self._status.showMessage(
+                translate("MainWindow", "Load cancelled: encryption key required")
+            )
             return
 
         parser = RealmParser()
@@ -1677,14 +1863,20 @@ class MainWindow(QMainWindow):
             self._open_encrypted_realm(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
-            self._status.showMessage(f"Realm decrypt error: {exc}")
-            QMessageBox.warning(self, "Realm decrypt error", str(exc))
+            self._status.showMessage(
+                translate("MainWindow", "Realm decrypt error: {exc}").format(exc=exc)
+            )
+            QMessageBox.warning(self, translate("MainWindow", "Realm decrypt error"), str(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
         self._show_result(node, result, vfs)
         self._props_panel.update_properties(node, result.metadata, vfs)
-        self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
+        self._status.showMessage(
+            translate("MainWindow", "{path}  [{DISPLAY_NAME} — decrypted]").format(
+                path=node.path, DISPLAY_NAME=parser.DISPLAY_NAME
+            )
+        )
 
     def _open_encrypted_mmkv(
         self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
@@ -1697,13 +1889,21 @@ class MainWindow(QMainWindow):
 
         dialog = MMKVKeyDialog(self, wrong_reason=wrong_reason)
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            self._status.showMessage("Load cancelled: encryption key required")
+            self._status.showMessage(
+                translate("MainWindow", "Load cancelled: encryption key required")
+            )
             return
         key_bytes = dialog.key_bytes()
         if key_bytes is None:
-            self._status.showMessage("Load cancelled: encryption key required")
+            self._status.showMessage(
+                translate("MainWindow", "Load cancelled: encryption key required")
+            )
             if dialog.is_hex():
-                QMessageBox.warning(self, "MMKV decrypt error", "Not a valid hex string.")
+                QMessageBox.warning(
+                    self,
+                    translate("MainWindow", "MMKV decrypt error"),
+                    translate("MainWindow", "Not a valid hex string."),
+                )
             return
 
         parser = MMKVParser()
@@ -1713,14 +1913,20 @@ class MainWindow(QMainWindow):
             self._open_encrypted_mmkv(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
-            self._status.showMessage(f"MMKV decrypt error: {exc}")
-            QMessageBox.warning(self, "MMKV decrypt error", str(exc))
+            self._status.showMessage(
+                translate("MainWindow", "MMKV decrypt error: {exc}").format(exc=exc)
+            )
+            QMessageBox.warning(self, translate("MainWindow", "MMKV decrypt error"), str(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
         self._show_result(node, result, vfs)
         self._props_panel.update_properties(node, result.metadata, vfs)
-        self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
+        self._status.showMessage(
+            translate("MainWindow", "{path}  [{DISPLAY_NAME} — decrypted]").format(
+                path=node.path, DISPLAY_NAME=parser.DISPLAY_NAME
+            )
+        )
 
     def _open_encrypted_pdf(
         self, node: VFSNode, vfs: VFS, wrong_reason: str | None = None,
@@ -1733,14 +1939,14 @@ class MainWindow(QMainWindow):
 
         title = "Incorrect Password" if was_wrong else "PDF Password"
         prompt = _with_reason(
-            "Incorrect password. Please try again:"
+            translate("MainWindow", "Incorrect password. Please try again:")
             if was_wrong
-            else "Enter the PDF's password:",
+            else translate("MainWindow", "Enter the PDF's password:"),
             wrong_reason,
         )
         password, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
         if not ok or not password:
-            self._status.showMessage("Load cancelled: password required")
+            self._status.showMessage(translate("MainWindow", "Load cancelled: password required"))
             return
 
         parser = PDFParser()
@@ -1750,14 +1956,20 @@ class MainWindow(QMainWindow):
             self._open_encrypted_pdf(node, vfs, wrong_reason=str(exc))
             return
         except Exception as exc:
-            self._status.showMessage(f"PDF decrypt error: {exc}")
-            QMessageBox.warning(self, "PDF decrypt error", str(exc))
+            self._status.showMessage(
+                translate("MainWindow", "PDF decrypt error: {exc}").format(exc=exc)
+            )
+            QMessageBox.warning(self, translate("MainWindow", "PDF decrypt error"), str(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
         self._show_result(node, result, vfs)
         self._props_panel.update_properties(node, result.metadata, vfs)
-        self._status.showMessage(f"{node.path}  [{parser.DISPLAY_NAME} — decrypted]")
+        self._status.showMessage(
+            translate("MainWindow", "{path}  [{DISPLAY_NAME} — decrypted]").format(
+                path=node.path, DISPLAY_NAME=parser.DISPLAY_NAME
+            )
+        )
 
     def _open_multi_log_window(self, node: VFSNode, vfs: VFS) -> QWidget:
         """Open *node* in a new, standalone Multi-Log Studio window.
@@ -1769,7 +1981,9 @@ class MainWindow(QMainWindow):
         from crush.viewers.multi_log_viewer import MultiLogViewer
         viewer = MultiLogViewer(node, vfs, parent=None, window_id=self._window_id)
         viewer.setWindowFlags(Qt.WindowType.Window)
-        viewer.setWindowTitle(f"Multi-Log Studio — {node.name}")
+        viewer.setWindowTitle(
+            translate("MainWindow", "Multi-Log Studio — {name}").format(name=node.name)
+        )
         viewer.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._log_dock.show()
         # Size to 80 % of the available screen area, capped at 1400 × 850.
@@ -1805,14 +2019,22 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.information(
                     self,
-                    "Open External",
-                    "Opening directories from archives is not supported yet.",
+                    translate("MainWindow", "Open External"),
+                    translate(
+                        "MainWindow", "Opening directories from archives is not supported yet."
+                    ),
                 )
             return
-        path = self._materialize_node_for_external(node, vfs, title="Open External")
+        path = self._materialize_node_for_external(
+            node, vfs, title=translate("MainWindow", "Open External")
+        )
         if path is None:
             if not self._materialize_cancelled:
-                QMessageBox.warning(self, "Open External", "Unable to materialize file.")
+                QMessageBox.warning(
+                    self,
+                    translate("MainWindow", "Open External"),
+                    translate("MainWindow", "Unable to materialize file."),
+                )
             return
         if mode == "choose":
             self._open_external_with_app(path)
@@ -1875,7 +2097,11 @@ class MainWindow(QMainWindow):
                 result.metadata["Display format"] = self._display_format_label(result)
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
-            self._status.showMessage(f"Opened artifact: {filename_hint}  [Hex]")
+            self._status.showMessage(
+                translate("MainWindow", "Opened artifact: {filename_hint}  [Hex]").format(
+                    filename_hint=filename_hint
+                )
+            )
             return
         if parser_display_name == "__text__":
             from crush.parsers.base import ParseResult
@@ -1897,7 +2123,11 @@ class MainWindow(QMainWindow):
                 result.metadata["Display format"] = self._display_format_label(result)
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
-            self._status.showMessage(f"Opened artifact: {filename_hint}  [Text]")
+            self._status.showMessage(
+                translate("MainWindow", "Opened artifact: {filename_hint}  [Text]").format(
+                    filename_hint=filename_hint
+                )
+            )
             return
 
         vfs = BytesVFS(data, name=filename_hint)
@@ -1914,7 +2144,13 @@ class MainWindow(QMainWindow):
             ) or ParserRegistry.best(node, vfs)
 
         if parser is None:
-            QMessageBox.warning(self, "No parser found", f"No parser could handle this data as {filename_hint!r}.")
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "No parser found"),
+                translate(
+                    "MainWindow", "No parser could handle this data as {filename_hint!r}."
+                ).format(filename_hint=filename_hint),
+            )
             return
         try:
             result = parser.parse(node, vfs)
@@ -1925,10 +2161,14 @@ class MainWindow(QMainWindow):
                 result.metadata["Display format"] = self._display_format_label(result)
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
-            self._status.showMessage(f"Opened pasted data  [{parser.DISPLAY_NAME}]")
+            self._status.showMessage(
+                translate("MainWindow", "Opened pasted data  [{DISPLAY_NAME}]").format(
+                    DISPLAY_NAME=parser.DISPLAY_NAME
+                )
+            )
         except Exception as exc:
-            self._status.showMessage(f"Parse error: {exc}")
-            QMessageBox.warning(self, "Parse error", str(exc))
+            self._status.showMessage(translate("MainWindow", "Parse error: {exc}").format(exc=exc))
+            QMessageBox.warning(self, translate("MainWindow", "Parse error"), str(exc))
 
     def _open_bytes_as_artifact(
         self, data: bytes, name: str, source_path: str = ""
@@ -1955,10 +2195,16 @@ class MainWindow(QMainWindow):
             result = parser.parse(node, vfs)
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
-            self._status.showMessage(f"Opened artifact: {name}  [{parser.DISPLAY_NAME}]")
+            self._status.showMessage(
+                translate("MainWindow", "Opened artifact: {name}  [{DISPLAY_NAME}]").format(
+                    name=name, DISPLAY_NAME=parser.DISPLAY_NAME
+                )
+            )
         except Exception as exc:
-            self._status.showMessage(f"Artifact parse error: {exc}")
-            QMessageBox.warning(self, "Parse error", str(exc))
+            self._status.showMessage(
+                translate("MainWindow", "Artifact parse error: {exc}").format(exc=exc)
+            )
+            QMessageBox.warning(self, translate("MainWindow", "Parse error"), str(exc))
 
     def _open_table_as_tab(self, title: str, viewer_data: dict) -> None:
         """Open an already-resolved table (e.g. from the Realm Views tab) as
@@ -1981,12 +2227,14 @@ class MainWindow(QMainWindow):
             viewer_type="table", data=data, viewer_hints={"show_db_tabs": False}
         )
         self._show_result(node, result, vfs)
-        self._status.showMessage(f"Opened view: {title}")
+        self._status.showMessage(
+            translate("MainWindow", "Opened view: {title}").format(title=title)
+        )
 
     _materialize_cancelled = False
 
     def _materialize_node_for_external(
-        self, node: VFSNode, vfs: VFS, *, title: str = "Extracting file"
+        self, node: VFSNode, vfs: VFS, *, title: str | None = None
     ) -> Path | None:
         """Copy *node* to a real file in the temp directory, with a space
         check first and a cancellable progress dialog while it copies.
@@ -2018,7 +2266,7 @@ class MainWindow(QMainWindow):
                 vfs,
                 node,
                 tmp_path,
-                title=title,
+                title=title or translate("MainWindow", "Extracting file"),
                 want_hash=self.session.integrity_mode,
                 window_id=self._window_id,
             )
@@ -2228,7 +2476,11 @@ class MainWindow(QMainWindow):
         """
         resolved = self._resolve_peach_source(node, vfs)
         if resolved is None:
-            QMessageBox.warning(self, "Send to Peach", "Unable to materialize source for Peach.")
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Send to Peach"),
+                translate("MainWindow", "Unable to materialize source for Peach."),
+            )
             return
         source_path, cleanup_dir = resolved
 
@@ -2241,9 +2493,11 @@ class MainWindow(QMainWindow):
                 cleanup_dirs=[cleanup_dir] if cleanup_dir else [],
                 override_path=override,
             )
-            self._status.showMessage(f"Sent to Peach: {node.path}")
+            self._status.showMessage(
+                translate("MainWindow", "Sent to Peach: {path}").format(path=node.path)
+            )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
-            QMessageBox.warning(self, "Send to Peach", str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), str(exc))
 
     # Curated allowlist of crush-analyze module ids Crush's own UI exposes.
     # crush-analyze's manifest can offer more than this (e.g. the two
@@ -2342,10 +2596,20 @@ class MainWindow(QMainWindow):
             self._run_analyzer_pick_and_run(node, vfs, modules)
 
         def _list_error(message: str) -> None:
-            QMessageBox.warning(self, "Run Analyzer", f"Could not list analyzer modules:\n{message}")
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Run Analyzer"),
+                translate("MainWindow", "Could not list analyzer modules:\n{message}").format(
+                    message=message
+                ),
+            )
 
         run_with_busy_dialog(
-            self, "Loading analyzer modules…", list_analyzer_modules, _list_done, _list_error
+            self,
+            translate("MainWindow", "Loading analyzer modules…"),
+            list_analyzer_modules,
+            _list_done,
+            _list_error,
         )
 
     def _open_analyzer_result_tab(self, node: VFSNode, result: dict, module_id: str) -> None:
@@ -2366,7 +2630,11 @@ class MainWindow(QMainWindow):
         self._show_viewer_tabs()
         self._props_panel.show_analyzer_result(result, title, relevance)
         status = result.get("status", "ok")
-        self._status.showMessage(f"{node.path}  [Analyzer: {title} — {status}]")
+        self._status.showMessage(
+            translate("MainWindow", "{path}  [Analyzer: {title} — {status}]").format(
+                path=node.path, title=title, status=status
+            )
+        )
 
     def _run_analyzer_pick_and_run(
         self, node: VFSNode, vfs: VFS, modules: list[dict]
@@ -2375,7 +2643,11 @@ class MainWindow(QMainWindow):
 
         curated = [m for m in modules if m["id"] in self._ANALYZER_MODULE_ALLOWLIST]
         if not curated:
-            QMessageBox.information(self, "Run Analyzer", "No analyzer modules are available.")
+            QMessageBox.information(
+                self,
+                translate("MainWindow", "Run Analyzer"),
+                translate("MainWindow", "No analyzer modules are available."),
+            )
             return
 
         labels = [
@@ -2384,7 +2656,12 @@ class MainWindow(QMainWindow):
         ]
 
         label, ok = QInputDialog.getItem(
-            self, "Run Analyzer", "Module:", labels, 0, editable=False
+            self,
+            translate("MainWindow", "Run Analyzer"),
+            translate("MainWindow", "Module:"),
+            labels,
+            0,
+            editable=False,
         )
         if not ok:
             return
@@ -2401,7 +2678,9 @@ class MainWindow(QMainWindow):
             from crush.core.analyzer_launcher import run_analyzer
             resolved = self._materialize_matching_files_for_external(node, vfs, filename_patterns)
             if resolved is None:
-                raise RuntimeError("Unable to materialize source for the analyzer.")
+                raise RuntimeError(
+                    translate("MainWindow", "Unable to materialize source for the analyzer.")
+                )
             source_path, cleanup_dir = resolved
             try:
                 return run_analyzer(source_path, module_id=module_id)
@@ -2413,9 +2692,19 @@ class MainWindow(QMainWindow):
             self._open_analyzer_result_tab(node, result, module_id)
 
         def _on_error(message: str) -> None:
-            QMessageBox.warning(self, "Run Analyzer", f"Analyzer failed:\n{message}")
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Run Analyzer"),
+                translate("MainWindow", "Analyzer failed:\n{message}").format(message=message),
+            )
 
-        run_with_busy_dialog(self, f"Running {label}…", _work, _on_done, _on_error)
+        run_with_busy_dialog(
+            self,
+            translate("MainWindow", "Running {label}…").format(label=label),
+            _work,
+            _on_done,
+            _on_error,
+        )
 
     def _send_to_peach_batch(self, items: list[tuple[VFSNode, VFS]]) -> None:
         """Hand off multiple log sources to peach in a single spawn (multiple
@@ -2445,8 +2734,11 @@ class MainWindow(QMainWindow):
 
         if not sources:
             QMessageBox.warning(
-                self, "Send to Peach",
-                "Unable to materialize any of the selected sources for Peach.",
+                self,
+                translate("MainWindow", "Send to Peach"),
+                translate(
+                    "MainWindow", "Unable to materialize any of the selected sources for Peach."
+                ),
             )
             return
 
@@ -2457,18 +2749,23 @@ class MainWindow(QMainWindow):
                 cleanup_dirs=cleanup_dirs,
                 override_path=override,
             )
-            msg = f"Sent {len(sources)} source(s) to Peach"
+            msg = translate("MainWindow", "Sent {count} source(s) to Peach").format(
+                count=len(sources)
+            )
             if failed:
-                msg += f"  ({len(failed)} skipped)"
+                msg += translate("MainWindow", "  ({count} skipped)").format(count=len(failed))
             self._status.showMessage(msg)
             if failed:
                 QMessageBox.warning(
-                    self, "Send to Peach",
-                    "Some sources could not be materialized and were skipped:\n"
+                    self, translate("MainWindow", "Send to Peach"),
+                    translate(
+                        "MainWindow", "Some sources could not be materialized and were skipped:"
+                    )
+                    + "\n"
                     + "\n".join(failed),
                 )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
-            QMessageBox.warning(self, "Send to Peach", str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), str(exc))
 
     def _send_biome_to_peach(
         self, root: VFSNode, vfs: VFS, selected: list[VFSNode]
@@ -2511,8 +2808,11 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             shutil.rmtree(tmp_root, ignore_errors=True)
             QMessageBox.warning(
-                self, "Send Biome Streams to Peach",
-                f"Unable to materialize files for Peach: {exc}",
+                self,
+                translate("MainWindow", "Send Biome Streams to Peach"),
+                translate("MainWindow", "Unable to materialize files for Peach: {exc}").format(
+                    exc=exc
+                ),
             )
             return
 
@@ -2522,20 +2822,27 @@ class MainWindow(QMainWindow):
         try:
             launch_peach([streams_dir], cleanup_dirs=[tmp_root], override_path=override)
             self._status.showMessage(
-                f"Sent {len(selected)} Biome file(s) to Peach: {root.path}"
+                translate(
+                    "MainWindow", "Sent {selected_count} Biome file(s) to Peach: {path}"
+                ).format(selected_count=len(selected), path=root.path)
             )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
-            QMessageBox.warning(self, "Send Biome Streams to Peach", str(exc))
+            QMessageBox.warning(
+                self, translate("MainWindow", "Send Biome Streams to Peach"), str(exc)
+            )
 
     def _set_temp_dir(self) -> None:
         current = self._settings.value(extract_dialog.TEMP_DIR_SETTING, "", type=str)
         text, ok = QInputDialog.getText(
             self,
-            "Temp Directory",
-            "Directory for temporary files: extracted archive members, database "
-            "copies, log conversion, ... Point this at a disk with plenty of free "
-            "space — the OS default (often /tmp) may be RAM-backed.\n"
-            "Leave blank to use the OS default:",
+            translate("MainWindow", "Temp Directory"),
+            translate(
+                "MainWindow",
+                "Directory for temporary files: extracted archive members, database "
+                "copies, log conversion, ... Point this at a disk with plenty of free "
+                "space — the OS default (often /tmp) may be RAM-backed.\n"
+                "Leave blank to use the OS default:",
+            ),
             QLineEdit.EchoMode.Normal,
             current,
         )
@@ -2547,9 +2854,9 @@ class MainWindow(QMainWindow):
         current = self._settings.value("peach_binary_path", "", type=str)
         text, ok = QInputDialog.getText(
             self,
-            "Peach Binary Path",
-            "Path to a peach-forensics executable to use instead of the "
-            "version bundled with Crush (leave blank to use the bundled one):",
+            translate("MainWindow", "Peach Binary Path"),
+            translate("MainWindow", "Path to a peach-forensics executable to use instead of the "
+            "version bundled with Crush (leave blank to use the bundled one):"),
             QLineEdit.EchoMode.Normal,
             current,
         )
@@ -2564,17 +2871,19 @@ class MainWindow(QMainWindow):
         override = self._settings.value("peach_binary_path", "", type=str)
         try:
             launch_peach([], override_path=override)
-            self._status.showMessage("Opened Peach")
+            self._status.showMessage(translate("MainWindow", "Opened Peach"))
         except (FileNotFoundError, RuntimeError) as exc:
-            QMessageBox.warning(self, "Open Peach", str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Open Peach"), str(exc))
 
     def _open_local_file(self, path: str | Path) -> None:
         from crush.ui import open_url
         open_url(QUrl.fromLocalFile(str(path)).toString())
 
     def _open_external_with_app(self, path: Path) -> None:
-        title = "Choose application"
-        app_path, _ = QFileDialog.getOpenFileName(self, title, "", "Applications (*)")
+        title = translate("MainWindow", "Choose application")
+        app_path, _ = QFileDialog.getOpenFileName(
+            self, title, "", translate("MainWindow", "Applications") + " (*)"
+        )
         if not app_path:
             return
         try:
@@ -2585,7 +2894,7 @@ class MainWindow(QMainWindow):
             else:
                 subprocess.Popen([app_path, str(path)])
         except Exception as exc:
-            QMessageBox.warning(self, "Open External", str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Open External"), str(exc))
 
     def _on_node_selected(self, node: VFSNode, vfs: VFS) -> None:
         metadata: dict[str, str] = {
@@ -2611,7 +2920,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        banner = QLabel(f"\U0001F512 This file appears to be encrypted. {hint}")
+        banner = QLabel(
+            translate("MainWindow", "🔒 This file appears to be encrypted. {hint}").format(
+                hint=hint
+            )
+        )
         banner.setWordWrap(True)
         banner.setStyleSheet(
             "color: white; background-color: #c87000; font-weight: bold;"
@@ -2647,13 +2960,16 @@ class MainWindow(QMainWindow):
             if hex_bytes is not None:
                 from crush.viewers.hex_viewer import HexViewer
                 tabbed = QTabWidget()
-                tabbed.addTab(base_view, "View")
-                tabbed.addTab(HexViewer(hex_bytes, tabbed), "Hex")
+                tabbed.addTab(base_view, translate("MainWindow", "View"))
+                tabbed.addTab(HexViewer(hex_bytes, tabbed), translate("MainWindow", "Hex"))
                 widget = tabbed
             else:
                 tabbed = QTabWidget()
-                tabbed.addTab(base_view, "View")
-                tabbed.addTab(QLabel("Unable to load hex view."), "Hex")
+                tabbed.addTab(base_view, translate("MainWindow", "View"))
+                tabbed.addTab(
+                    QLabel(translate("MainWindow", "Unable to load hex view.")),
+                    translate("MainWindow", "Hex"),
+                )
                 widget = tabbed
 
         existing_idx = -1
@@ -2771,10 +3087,10 @@ class MainWindow(QMainWindow):
         if index < 0:
             return
         menu = QMenu(self)
-        close_action = menu.addAction("Close")
-        close_others_action = menu.addAction("Close Others")
+        close_action = menu.addAction(translate("MainWindow", "Close"))
+        close_others_action = menu.addAction(translate("MainWindow", "Close Others"))
         close_others_action.setEnabled(self._viewer_tabs.count() > 1)
-        close_all_action = menu.addAction("Close All")
+        close_all_action = menu.addAction(translate("MainWindow", "Close All"))
         action = menu.exec(tab_bar.mapToGlobal(pos))  # type: ignore[arg-type]
         if action == close_action:
             self._close_tab(index)
@@ -2821,7 +3137,11 @@ class MainWindow(QMainWindow):
         self.session.remove_source(vfs)
         self._update_window_title()
         name = vfs.root().name
-        self._status.showMessage(f"Closed source: {name} ({closed_tabs} tabs closed)")
+        self._status.showMessage(
+            translate("MainWindow", "Closed source: {name} ({closed_tabs} tabs closed)").format(
+                name=name, closed_tabs=closed_tabs
+            )
+        )
         if not self.session.sources:
             self._show_empty_view()
 
@@ -2837,7 +3157,7 @@ class MainWindow(QMainWindow):
         recent: list[str] = self._settings.value("recent_files", [], type=list)
         if not recent:
             return
-        header = QLabel("Recently opened: ")
+        header = QLabel(translate("MainWindow", "Recently opened: "))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._recent_on_welcome.addWidget(header)
         container = QWidget()
@@ -2867,11 +3187,19 @@ class MainWindow(QMainWindow):
         source_name = sources[-1].root().name
         origin = getattr(self, "_source_origin", "")
         if origin and len(sources) == 1:
-            self.setWindowTitle(f"{source_name}  [from {origin}] — {app_title}")
+            self.setWindowTitle(
+                translate("MainWindow", "{source_name}  [from {origin}] — {app_title}").format(
+                    source_name=source_name, origin=origin, app_title=app_title
+                )
+            )
         elif len(sources) == 1:
-            self.setWindowTitle(f"{source_name} — {app_title}")
+            self.setWindowTitle(
+                f"{source_name} — {app_title}"  # i18n: keep -- markup/layout only
+            )
         else:
-            self.setWindowTitle(f"{source_name} (+{len(sources) - 1}) — {app_title}")
+            self.setWindowTitle(
+                f"{source_name} (+{len(sources) - 1}) — {app_title}"  # i18n: keep -- layout only
+            )
 
     def _enrich_with_format_info(self, parser: object, node: VFSNode, vfs: VFS, result: object) -> object:
         """Prepend format knowledge-base metadata to a ParseResult without overriding parser data."""
@@ -2962,7 +3290,9 @@ class MainWindow(QMainWindow):
                 self._props_dock.show()
                 self._props_dock.raise_()
         except Exception as exc:
-            self._status.showMessage(f"Format info error: {exc}")
+            self._status.showMessage(
+                translate("MainWindow", "Format info error: {exc}").format(exc=exc)
+            )
 
     def _show_format_reference(self) -> None:
         from crush.ui.format_reference import FormatReferenceDialog
@@ -2992,7 +3322,7 @@ class MainWindow(QMainWindow):
             self._load_source(path, open_after_load=True, append_to_tree=True)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self._status.showMessage("Closing…")
+        self._status.showMessage(translate("MainWindow", "Closing…"))
         if hasattr(self, "_logger"):
             self._logger.info("Closing application")
 
@@ -3111,14 +3441,16 @@ class MainWindow(QMainWindow):
 
         title = "Incorrect Password" if was_wrong else "Password Required"
         prompt = _with_reason(
-            "Incorrect password. Please try again:"
+            translate("MainWindow", "Incorrect password. Please try again:")
             if was_wrong
-            else "This backup is password-protected. Enter the backup password:",
+            else translate(
+                "MainWindow", "This backup is password-protected. Enter the backup password:"
+            ),
             reason,
         )
         password, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
         if not ok or not password:
-            self._status.showMessage("Load cancelled: password required")
+            self._status.showMessage(translate("MainWindow", "Load cancelled: password required"))
             return
 
         self._load_source(
@@ -3142,10 +3474,13 @@ class MainWindow(QMainWindow):
 
         answer = QMessageBox.question(
             self,
-            "iTunes Backup Detected",
-            "An iTunes backup structure was detected inside this ZIP file.\n\n"
-            "Open it as an iTunes backup (reconstructed filesystem tree)?\n"
-            "Choosing \"No\" opens the file as a regular ZIP archive instead.",
+            translate("MainWindow", "iTunes Backup Detected"),
+            translate(
+                "MainWindow",
+                "An iTunes backup structure was detected inside this ZIP file.\n\n"
+                "Open it as an iTunes backup (reconstructed filesystem tree)?\n"
+                'Choosing "No" opens the file as a regular ZIP archive instead.',
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         return prefix if answer == QMessageBox.StandardButton.Yes else None
@@ -3204,26 +3539,35 @@ class MainWindow(QMainWindow):
         )
         self._raw_logger.addHandler(self._file_handler)
         self._log_path = path
-        self._status.showMessage(f"Logging to: {path}")
+        self._status.showMessage(translate("MainWindow", "Logging to: {path}").format(path=path))
 
     def _export_log(self) -> None:
         if not hasattr(self, "_log_path"):
-            QMessageBox.information(self, "Export log", "No log file yet.")
+            QMessageBox.information(
+                self,
+                translate("MainWindow", "Export log"),
+                translate("MainWindow", "No log file yet."),
+            )
             return
         suggested = self._log_path.name
         dest_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export log",
+            translate("MainWindow", "Export log"),
             suggested,
-            "Log files (*.log);;All files (*)",
+            translate("MainWindow", "Log files")
+            + " (*.log);;"  # i18n: keep -- file filter pattern
+            + translate("MainWindow", "All files")
+            + " (*)",  # i18n: keep -- file filter pattern
         )
         if not dest_path:
             return
         try:
             shutil.copy2(self._log_path, dest_path)
-            self._status.showMessage(f"Log exported to: {dest_path}")
+            self._status.showMessage(
+                translate("MainWindow", "Log exported to: {dest_path}").format(dest_path=dest_path)
+            )
         except Exception as exc:
-            QMessageBox.critical(self, "Export log failed", str(exc))
+            QMessageBox.critical(self, translate("MainWindow", "Export log failed"), str(exc))
 
     _LOG_COLORS = {
         "ERROR":    "#e74c3c",
@@ -3471,13 +3815,14 @@ class MainWindow(QMainWindow):
             self._logger.info("Always show hex tab: %s", enabled)
 
     def _integrity_mode_description(self) -> str:
-        return (
+        return translate(
+            "MainWindow",
             "Integrity mode does the following:\n"
             "- Records SHA-256 hashes when files are opened or exported.\n"
             "- Hashes ZIP/TAR/file sources on open (folders are not hashed).\n"
             "- Writes those hashes to the log.\n"
             "- Creates a crush-export-hashes.txt file next to exported data.\n"
-            "- You can turn it off for faster opening of large ZIP/TAR sources and faster browsing."
+            "- You can turn it off for faster opening of large ZIP/TAR sources and faster browsing.",
         )
 
     def _show_integrity_menu(self, pos: object) -> None:
@@ -3485,13 +3830,15 @@ class MainWindow(QMainWindow):
         if sender is None or not hasattr(sender, "mapToGlobal"):
             return
         menu = QMenu(self)
-        toggle_action = menu.addAction("Toggle Integrity Mode")
-        info_action = menu.addAction("What is Integrity Mode?")
+        toggle_action = menu.addAction(translate("MainWindow", "Toggle Integrity Mode"))
+        info_action = menu.addAction(translate("MainWindow", "What is Integrity Mode?"))
         action = menu.exec(sender.mapToGlobal(pos))  # type: ignore[arg-type]
         if action == toggle_action:
             self._toggle_integrity_mode()
         elif action == info_action:
-            QMessageBox.information(self, "Integrity Mode", self._integrity_mode_description())
+            QMessageBox.information(
+                self, translate("MainWindow", "Integrity Mode"), self._integrity_mode_description()
+            )
 
     def _toggle_integrity_mode(self) -> None:
         self._integrity_mode_action.setChecked(not self._integrity_mode_action.isChecked())
@@ -3521,7 +3868,9 @@ class MainWindow(QMainWindow):
 
         try:
             if node.size > _BUSY_BYTES:
-                digest, total = busy_call(self, f"Hashing {node.name}…", _hash)
+                digest, total = busy_call(
+                    self, translate("MainWindow", "Hashing {name}…").format(name=node.name), _hash
+                )
             else:
                 digest, total = _hash()
             self._logger.info("INTEGRITY sha256=%s  size=%d  path=%s", digest, total, node.path)
@@ -3535,7 +3884,14 @@ class MainWindow(QMainWindow):
 
         try:
             if node.size > _BUSY_BYTES:
-                return cast(bytes, busy_call(self, f"Loading {node.name}…", _read))
+                return cast(
+                    bytes,
+                    busy_call(
+                        self,
+                        translate("MainWindow", "Loading {name}…").format(name=node.name),
+                        _read,
+                    ),
+                )
             return _read()
         except Exception as exc:
             if hasattr(self, "_logger"):
@@ -3649,7 +4005,7 @@ class MainWindow(QMainWindow):
         self._recent_menu.clear()
         recent: list[str] = self._settings.value("recent_files", [], type=list)
         if not recent:
-            empty = self._recent_menu.addAction("(empty)")
+            empty = self._recent_menu.addAction(translate("MainWindow", "(empty)"))
             empty.setEnabled(False)
         else:
             for path in recent:
@@ -3657,7 +4013,9 @@ class MainWindow(QMainWindow):
                 action.setToolTip(path)
                 action.triggered.connect(lambda checked=False, p=path: self._load_source(p))
             self._recent_menu.addSeparator()
-            self._recent_menu.addAction("Clear Recent", self._clear_recent_files)
+            self._recent_menu.addAction(
+                translate("MainWindow", "Clear Recent"), self._clear_recent_files
+            )
 
     def _clear_recent_files(self) -> None:
         self._settings.setValue("recent_files", [])
@@ -3669,8 +4027,11 @@ class MainWindow(QMainWindow):
         current = self._settings.value("prescan_workers", default, type=int)
         value, ok = QInputDialog.getInt(
             self,
-            "Indexing Threads",
-            f"Number of parallel threads for file type indexing\n(CPU cores: {_os.cpu_count() or '?'}):",
+            translate("MainWindow", "Indexing Threads"),
+            translate(
+                "MainWindow",
+                "Number of parallel threads for file type indexing\n(CPU cores: {cores}):",
+            ).format(cores=_os.cpu_count() or "?"),
             current,
             1,
             64,
@@ -3911,7 +4272,9 @@ class MainWindow(QMainWindow):
         if self._america_intro_step < 9:
             letter, color, text_color = chant[self._america_intro_step % len(chant)]
             self._set_palette_everywhere(self._america_show_palette(letter))
-            self._america_show_btn.setText(f" ★ ★ ★   {letter}   ★ ★ ★ ")
+            self._america_show_btn.setText(
+                f" ★ ★ ★   {letter}   ★ ★ ★ "  # i18n: keep -- markup/layout only
+            )
             self._america_show_btn.setStyleSheet(
                 f"color: {text_color}; background-color: {color.name()};"
                 " font-weight: bold; padding: 2px 8px; border-radius: 3px;"
@@ -3920,7 +4283,7 @@ class MainWindow(QMainWindow):
             return
 
         if self._america_intro_step == 9:
-            self._america_show_btn.setText(" ★  'MERICA  ★ ")
+            self._america_show_btn.setText(translate("MainWindow", " ★  'MERICA  ★ "))
             self._america_show_btn.setStyleSheet(
                 "color: white; background-color: #233f88;"
                 " font-weight: bold; padding: 2px 8px; border-radius: 3px;"
@@ -3930,7 +4293,7 @@ class MainWindow(QMainWindow):
             self._set_palette_everywhere(self._america_palette(0.0))
             return
         elif self._america_intro_step == 10:
-            self._america_show_btn.setText(" ★  Replay Show  ★ ")
+            self._america_show_btn.setText(translate("MainWindow", " ★  Replay Show  ★ "))
             self._america_show_btn.setStyleSheet(
                 "color: white; background-color: #233f88;"
                 " font-weight: bold; padding: 2px 8px; border-radius: 3px;"
@@ -4019,7 +4382,10 @@ class MainWindow(QMainWindow):
         self._stop_animated_themes()
         hue = getattr(self, "_rainbow_hue", 0.0)
         name, ok = QInputDialog.getText(
-            self, "Save Custom Theme", "Name for your theme:", text="My Theme"
+            self,
+            translate("MainWindow", "Save Custom Theme"),
+            translate("MainWindow", "Name for your theme:"),
+            text=translate("MainWindow", "My Theme"),
         )
         if ok and name.strip():
             name = name.strip()
@@ -4056,7 +4422,8 @@ _BUSY_BYTES = 8 * 1024 * 1024
 # so for such members the name is the only hint there is.
 _DISK_IMAGE_SUFFIXES = (".e01", ".img", ".dd", ".raw", ".001")
 
-_BROWSE_HINT = "right-click → Open in New Window to browse its contents"
+def _browse_hint() -> str:
+    return translate("MainWindow", "right-click → Open in New Window to browse its contents")
 
 
 def _is_zip_file(path: str) -> bool:
@@ -4088,21 +4455,22 @@ def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_disk_image: bool) -> 
     if node.is_dir or isinstance(vfs, FileVFS):
         return ""
     if _peeked_archive_kind(node, vfs) is not None:
-        return _BROWSE_HINT
+        return _browse_hint()
     if isinstance(vfs, DirectoryVFS):
         from crush.core.vfs import is_browsable_source_file, zip_leading_bytes
 
         leading = zip_leading_bytes(node.path)
         if leading is not None:
-            return (
-                f"contains a ZIP archive after {leading:,} leading bytes — "
-                "right-click → Open in New Window to browse it"
-            )
+            return translate(
+                "MainWindow",
+                "contains a ZIP archive after {leading:,} leading bytes — "
+                "right-click → Open in New Window to browse it",
+            ).format(leading=leading)
         if probe_disk_image and is_browsable_source_file(node.path):
-            return _BROWSE_HINT
+            return _browse_hint()
         return ""
     if node.name.lower().endswith(_DISK_IMAGE_SUFFIXES):
-        return _BROWSE_HINT
+        return _browse_hint()
     return ""
 
 
