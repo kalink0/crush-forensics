@@ -14,6 +14,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed the BLOB Inspector silently cutting its hex view at 200,000 bytes and decoded text at 500,000 characters; the hex view now pages through the whole blob.
 - Fixed a raw disk image opening only as hex unless named `.img`/`.dd`/`.raw` (e.g. `.bin` or no extension): images are now recognised by partition table or filesystem, whatever they're called. A file named or signed as an image that still can't be opened as one now says why in the status bar instead of silently falling back to hex.
 - Fixed opening any file that isn't an archive reading it whole into memory until its first newline byte (the Android-backup check), which for a disk image starting with zeros could take several GB of RAM.
 - Fixed "Open as Hex" (and the Hex tab) silently showing only the first 256 KB of every file while the status line reported that cut size as the file's total; the whole file is now loaded.

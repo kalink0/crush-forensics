@@ -42,11 +42,9 @@ from crush.parsers.protobuf_schema import (
     load_descriptor_set,
 )
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.viewers.hex_viewer import HexViewer
 
-# Column layout of bytes_to_hexview output, e.g. "0000000a: 48 65 6c  Hel"
-_BLOB_HEX_START = 10
-_BLOB_HEX_END = 57
-_BLOB_ASCII_START = 59
+_HEX_VIEW = "Hex view"
 
 _PROTOBUF_INTERP_SKIP = {"uint64", "uint32"}
 
@@ -255,7 +253,7 @@ def _render_protobuf(entries: list, indent: int = 0) -> str:
 
 
 class _BlobViewerEdit(QPlainTextEdit):
-    """QPlainTextEdit with a hex-aware context menu."""
+    """QPlainTextEdit with a Copy All context-menu entry."""
 
     def __init__(self, panel: "_BlobPanel") -> None:
         super().__init__()
@@ -263,15 +261,6 @@ class _BlobViewerEdit(QPlainTextEdit):
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = self.createStandardContextMenu()
-        cursor = self.textCursor()
-        if cursor.hasSelection() and self._panel._is_hex_mode():
-            menu.addSeparator()
-            menu.addAction("Copy Selected Hex").triggered.connect(
-                self._panel._copy_selected_hex
-            )
-            menu.addAction("Copy Selected ASCII").triggered.connect(
-                self._panel._copy_selected_ascii
-            )
         menu.addSeparator()
         menu.addAction("Copy All").triggered.connect(self._panel._copy_all)
         menu.exec(event.globalPos())
@@ -342,7 +331,10 @@ class _BlobPanel(QWidget):
         self._steps: list[_StepRow] = []
         self._cached_results: dict[str, str] = {}
         self._cached_image_data: bytes | None = None
-        self._hex_mode = False
+        # The data the interpretations are computed from (after the pipeline
+        # steps) -- shown complete in the paged Hex Viewer page.
+        self._current_data = b""
+        self._hex_view_data: bytes | None = None
         self._schema_pool = None
         self._schema_message: str | None = None
         self._build_panel()
@@ -450,6 +442,11 @@ class _BlobPanel(QWidget):
         self._img_scroll.setWidget(self._img_label)
         self._stack.addWidget(self._img_scroll)
 
+        # "Hex view": the paged Hex Viewer, so the whole blob is shown
+        # however large it is (a text dump of it would freeze the dialog).
+        self._hex_view = HexViewer(b"", self)
+        self._stack.addWidget(self._hex_view)
+
         content_col.addWidget(self._stack, stretch=1)
 
         copy_row = QHBoxLayout()
@@ -550,7 +547,6 @@ class _BlobPanel(QWidget):
                 self._format_list.blockSignals(False)
                 self._viewer.setPlainText(f"[step {i + 1}: {fmt!r} failed]")
                 self._stack.setCurrentIndex(0)
-                self._hex_mode = False
                 self._copy_btn.setEnabled(False)
                 self._schema_toolbar.setVisible(False)
                 return
@@ -562,6 +558,8 @@ class _BlobPanel(QWidget):
     def _populate_format_list(self, data: bytes) -> None:
         self._cached_results = {}
         self._cached_image_data = None
+        self._current_data = data
+        self._hex_view_data = None
 
         confident: list[str] = []
         uncertain: list[str] = []
@@ -605,7 +603,6 @@ class _BlobPanel(QWidget):
                 self._cached_results[label] = f"[schema decode failed: {exc}]"
                 failed.append(label)
 
-        self._cached_results["Hex view"] = bytes_to_hexview(data, max_bytes=200_000)
 
         prev = self._format_list.currentItem()
         prev_name: str | None = prev.data(Qt.ItemDataRole.UserRole) if prev else None
@@ -621,8 +618,8 @@ class _BlobPanel(QWidget):
             s.setForeground(muted)
             self._format_list.addItem(s)
 
-        hex_item = QListWidgetItem("Hex view")
-        hex_item.setData(Qt.ItemDataRole.UserRole, "Hex view")
+        hex_item = QListWidgetItem(_HEX_VIEW)
+        hex_item.setData(Qt.ItemDataRole.UserRole, _HEX_VIEW)
         self._format_list.addItem(hex_item)
 
         if confident:
@@ -650,7 +647,8 @@ class _BlobPanel(QWidget):
 
         to_select: str
         prev_still_valid = prev_name is not None and (
-            prev_name in self._cached_results
+            prev_name == _HEX_VIEW
+            or prev_name in self._cached_results
             or (prev_name == "Image" and self._cached_image_data is not None)
         )
         if prev_still_valid:
@@ -660,7 +658,7 @@ class _BlobPanel(QWidget):
         elif self._cached_image_data is not None:
             to_select = "Image"
         else:
-            to_select = next((k for k in _AUTO_ORDER if k in self._cached_results and k not in _PERMISSIVE), "Hex view")
+            to_select = next((k for k in _AUTO_ORDER if k in self._cached_results and k not in _PERMISSIVE), _HEX_VIEW)
 
         for i in range(self._format_list.count()):
             item = self._format_list.item(i)
@@ -696,12 +694,18 @@ class _BlobPanel(QWidget):
                 self._viewer.setPlainText("[not recognised as image]")
             return
 
-        self._stack.setCurrentIndex(0)
-        self._hex_mode = name == "Hex view"
+        if name == _HEX_VIEW:
+            if self._hex_view_data is not self._current_data:
+                self._hex_view.set_data(self._current_data)
+                self._hex_view_data = self._current_data
+            self._stack.setCurrentIndex(2)
+            self._copy_btn.setEnabled(True)
+            return
 
+        self._stack.setCurrentIndex(0)
         if name in self._cached_results:
             self._copy_btn.setEnabled(True)
-            self._viewer.setPlainText(self._cached_results[name][:500_000])
+            self._viewer.setPlainText(self._cached_results[name])
         else:
             self._copy_btn.setEnabled(False)
             self._viewer.setPlainText(f"[{name}: not recognised]")
@@ -719,36 +723,15 @@ class _BlobPanel(QWidget):
             self._copy_btn.setEnabled(True)
             self._viewer.setPlainText("[not a recognised image format]")
 
-    def _is_hex_mode(self) -> bool:
-        return self._hex_mode
-
     def _copy_current(self) -> None:
+        if self._stack.currentIndex() == 2:
+            # The whole blob as a text hex dump, built only when asked for.
+            QApplication.clipboard().setText(bytes_to_hexview(self._current_data))
+            return
         QApplication.clipboard().setText(self._viewer.toPlainText())
 
     def _copy_all(self) -> None:
         QApplication.clipboard().setText(self._viewer.toPlainText())
-
-    def _copy_selected_hex(self) -> None:
-        cursor = self._viewer.textCursor()
-        if not cursor.hasSelection():
-            return
-        tokens: list[str] = []
-        for line in cursor.selectedText().split(" "):
-            hex_section = line[_BLOB_HEX_START:_BLOB_HEX_END]
-            for part in hex_section.split():
-                if len(part) == 2 and all(c in "0123456789ABCDEFabcdef" for c in part):
-                    tokens.append(part.upper())
-        QApplication.clipboard().setText(" ".join(tokens))
-
-    def _copy_selected_ascii(self) -> None:
-        cursor = self._viewer.textCursor()
-        if not cursor.hasSelection():
-            return
-        parts: list[str] = []
-        for line in cursor.selectedText().split(" "):
-            if len(line) > _BLOB_ASCII_START:
-                parts.append(line[_BLOB_ASCII_START:])
-        QApplication.clipboard().setText("".join(parts))
 
 
 class BlobInspector(QDialog):
