@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
+from crush.core.issues import ParseIssue, render
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_item
 
@@ -264,6 +265,13 @@ class TreeViewer(QWidget):
         else:
             key_item = QStandardItem(str(key))
             val_item = QStandardItem(str(obj))
+            if isinstance(obj, ParseIssue):
+                # A parser's note (e.g. in the Realm File Structure tree):
+                # shown in the UI language, copied in English.
+                shown = render(obj, localized=True)
+                val_item.setText(shown)
+                if shown != str(obj):
+                    val_item.setData(str(obj), EXPORT_TEXT_ROLE)
             type_item = QStandardItem(type_name)
             key_item.setData(_ObjRef(obj), _USER_ROLE)
             self._apply_byte_range_metadata(key_item, node_path)

@@ -13,6 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
+from crush.core.issues import ParseIssue, render_value
 from crush.ui.i18n import translate
 
 # A generated view (Summary, DB Info, WAL Frames, Freelist Recovery, ...)
@@ -31,10 +32,36 @@ def gen_text(english: str) -> str:
     return translate("GeneratedView", english)  # i18n: keep -- marked where written
 
 
+class Localized:
+    """A text already built in both forms: (English original, display)."""
+
+    __slots__ = ("english", "display")
+
+    def __init__(self, english: str, display: str) -> None:
+        self.english = english
+        self.display = display
+
+    def pair(self) -> tuple[str, str]:
+        return self.english, self.display
+
+
+def _param_pair(value: object) -> tuple[object, object]:
+    """(English, display) form of one Gen param: a nested Gen / Localized,
+    or a ParseIssue (or list of them) rendered English vs. translated."""
+    if isinstance(value, (Gen, Localized)):
+        return value.pair()
+    if isinstance(value, ParseIssue) or (
+        isinstance(value, (list, tuple)) and any(isinstance(v, ParseIssue) for v in value)
+    ):
+        return render_value(value), render_value(value, localized=True)
+    return value, value
+
+
 class Gen:
     """Crush's own words in a generated view (not file data): a marked
     English template plus its params. A param may itself be a Gen (e.g. a
-    status value inside a label); it's translated for display too."""
+    status value inside a label), a Localized pair or a ParseIssue; each is
+    shown translated and exported in English."""
 
     __slots__ = ("template", "params")
 
@@ -45,12 +72,9 @@ class Gen:
     def pair(self) -> tuple[str, str]:
         """(English original, display text). A translation whose
         placeholders don't fit falls back to English."""
-        english_params = {
-            k: v.pair()[0] if isinstance(v, Gen) else v for k, v in self.params.items()
-        }
-        display_params = {
-            k: v.pair()[1] if isinstance(v, Gen) else v for k, v in self.params.items()
-        }
+        pairs = {k: _param_pair(v) for k, v in self.params.items()}
+        english_params = {k: english for k, (english, _display) in pairs.items()}
+        display_params = {k: display for k, (_english, display) in pairs.items()}
         english = self.template.format(**english_params) if self.params else self.template
         display = gen_text(self.template)
         if self.params:

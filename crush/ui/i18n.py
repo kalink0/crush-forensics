@@ -90,6 +90,19 @@ class Language:
         return self.code != PSEUDO_LANGUAGE and self.completeness >= COMPLETENESS_THRESHOLD
 
 
+def exception_text(exc: BaseException) -> str:
+    """An exception's message for display: the ParseIssue it carries
+    (ParseIssueError.issue, or a WrongPasswordError(ParseIssue(...)) etc.)
+    rendered in the UI language, else the plain exception text. The log
+    keeps str(exc) -- English."""
+    issue = getattr(exc, "issue", None)
+    if issue is None and exc.args and isinstance(exc.args[0], issues.ParseIssue):
+        issue = exc.args[0]
+    if isinstance(issue, issues.ParseIssue):
+        return issues.render(issue, localized=True)
+    return str(exc)
+
+
 def available_languages(directory: Path | None = None) -> list[Language]:
     """The compiled translations, as recorded in languages.json.
 

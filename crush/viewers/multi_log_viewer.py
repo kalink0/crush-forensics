@@ -1830,7 +1830,9 @@ class MultiLogViewer(QWidget):
     def _on_error(self, source_id: int, message: str) -> None:
         self._stop_status_anim()
         src_name = self._model.source_name(source_id) or "?"
-        self._source_meta[source_id] = (f"Error: {message}", {})
+        self._source_meta[source_id] = (
+            translate("MultiLogViewer", "Error: {message}").format(message=message), {}
+        )
         self._refresh_fmt_label()
         self._logger.error("[Multi-Log] Error loading %s: %s", src_name, message)
         if all(not w.isRunning() for w in self._workers.values()):
@@ -1844,7 +1846,14 @@ class MultiLogViewer(QWidget):
         parts = []
         for sid, (fmt, metadata) in sorted(self._source_meta.items()):
             name = html.escape(self._model.source_name(sid) or "?")
-            part = f"{name}: {html.escape(fmt)}"
+            # fmt is the English form (it also goes to the log); show the
+            # parser's own format issue in the UI language where there is one.
+            shown = (
+                render_value(metadata["Log format"], localized=True)
+                if "Log format" in metadata
+                else fmt
+            )
+            part = f"{name}: {html.escape(shown)}"
             if metadata:
                 part += f' <a href="{sid}">ⓘ</a>'
             parts.append(part)
@@ -1856,7 +1865,10 @@ class MultiLogViewer(QWidget):
     def _source_details(self, source_id: int) -> str:
         fmt, metadata = self._source_meta.get(source_id, ("", {}))
         lines = [self._model.source_name(source_id) or "?"]
-        lines += [f"{key}: {render_value(val)}" for key, val in metadata.items()]
+        lines += [
+            f"{translate('MetadataLabel', key)}: {render_value(val, localized=True)}"  # i18n: keep -- labels marked in crush.core.metadata_labels
+            for key, val in metadata.items()
+        ]
         return "\n".join(lines) if metadata else f"{lines[0]}: {fmt}"
 
     def _show_source_details(self, link: str) -> None:

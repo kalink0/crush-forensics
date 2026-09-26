@@ -407,7 +407,15 @@ The UI is translated with Qt Linguist; English is the source language. Catalogs 
 - Not translated: exports (CSV/JSON/reports), the log, timestamps (ISO/UTC), `detail` texts
   from libraries, spec terms that are values (PRAGMA values, SQLCipher parameters, log levels).
 - Parsers never produce UI sentences (see `ParseIssue` above); the UI shows an issue with
-  `render(issue, localized=True)`, while `str(issue)` stays English for exports and the log.
+  `render(issue, localized=True)` (an exception carrying one: `i18n.exception_text(exc)`),
+  while `str(issue)` stays English for exports and the log.
+- A metadata key (`meta["Records"]`) is an English label and stays English in code and
+  lookups; add every new key to `crush/core/metadata_labels.py` (a test fails otherwise) —
+  the Properties panel shows it translated. Field names a file format's spec defines (PDF
+  document-info keys, XMP, media tags) are not listed and stay as they are.
+- Crush's own words inside a data view (headers, status values, notes) go through
+  `crush/viewers/generated_text.py` (`Gen`, `set_headers`, ...): shown translated, while CSV
+  export and copy write the English original. File data is never translated.
 - Check with the pseudo locale: `python scripts/i18n.py pseudo`, then
   `python -m crush --language pseudo`. Every text still in plain English isn't translatable
   yet; a missing closing `]` means the text is cut off.

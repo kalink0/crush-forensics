@@ -63,7 +63,7 @@ from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog, i18n
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
-from crush.core.issues import ParseIssue
+from crush.core.issues import ParseIssue, render_value
 from crush.core.session import Session
 from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFilter
 from crush.ui.fs_panel import FilesystemPanel
@@ -74,7 +74,7 @@ from crush.ui.i18n import translate
 
 class _LoadSourceWorker(QObject):
     finished = Signal(object)
-    failed = Signal(str)
+    failed = Signal(str, str)  # (English for the log, shown in the UI language)
     # (was_wrong, reason): was_wrong = a previously supplied password was
     # rejected; reason = why, as the source reported it ("" if none).
     password_required = Signal(bool, str)
@@ -121,13 +121,13 @@ class _LoadSourceWorker(QObject):
             if self._integrity:
                 self._log_source_hash()
         except WrongPasswordError as exc:
-            self.password_required.emit(True, str(exc))
+            self.password_required.emit(True, i18n.exception_text(exc))
             return
         except PasswordRequiredError:
             self.password_required.emit(False, "")
             return
         except Exception as exc:
-            self.failed.emit(str(exc))
+            self.failed.emit(str(exc), i18n.exception_text(exc))
             return
         self.finished.emit(vfs)
 
@@ -261,7 +261,7 @@ class _ClickableStatusLabel(QLabel):
 
 class _ExportWorker(QObject):
     finished = Signal(str)
-    failed = Signal(str)
+    failed = Signal(str, str)  # (English for the log, shown in the UI language)
 
     def __init__(
         self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None
@@ -296,7 +296,7 @@ class _ExportWorker(QObject):
             self._write_hashes_file(target_root)
             self._write_renames_file(target_root)
         except Exception as exc:
-            self.failed.emit(str(exc))
+            self.failed.emit(str(exc), i18n.exception_text(exc))
             return
         self.finished.emit(str(target_root))
 
@@ -371,7 +371,7 @@ class _ExportWorker(QObject):
 
 class _ExportLogarchiveWorker(QObject):
     finished = Signal(str)
-    failed = Signal(str)
+    failed = Signal(str, str)  # (English for the log, shown in the UI language)
 
     def __init__(self, vfs: VFS, node: VFSNode, dest_path: str, window_id: str | None = None) -> None:
         super().__init__()
@@ -396,14 +396,14 @@ class _ExportLogarchiveWorker(QObject):
                     shutil.rmtree(self._dest_path)
                 shutil.copytree(str(tmp_path), str(self._dest_path))
         except Exception as exc:
-            self.failed.emit(str(exc))
+            self.failed.emit(str(exc), i18n.exception_text(exc))
             return
         self.finished.emit(str(self._dest_path))
 
 
 class _ExportMultiWorker(QObject):
     finished = Signal(str)
-    failed = Signal(str)
+    failed = Signal(str, str)  # (English for the log, shown in the UI language)
 
     def __init__(
         self,
@@ -450,7 +450,7 @@ class _ExportMultiWorker(QObject):
             self._write_hashes_file(export_root, stamp)
             self._write_renames_file(export_root)
         except Exception as exc:
-            self.failed.emit(str(exc))
+            self.failed.emit(str(exc), i18n.exception_text(exc))
             return
         self.finished.emit(str(export_root))
 
@@ -1053,12 +1053,12 @@ class MainWindow(QMainWindow):
         self._update_window_title()
         QTimer.singleShot(0, self._ensure_tree_loaded)
 
-    def _on_load_failed(self, message: str) -> None:
+    def _on_load_failed(self, message: str, shown: str) -> None:
         self._logger.debug("Load worker failed: %s", message)
         if hasattr(self, "_progress"):
             self._progress.close()
         self._status.showMessage(
-            translate("MainWindow", "Error loading source: {message}").format(message=message)
+            translate("MainWindow", "Error loading source: {message}").format(message=shown)
         )
         self._logger.error("Load error: %s", message)
 
@@ -1068,7 +1068,7 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Critical)
         box.setWindowTitle(translate("MainWindow", "Load error"))
-        box.setText(message)
+        box.setText(shown)
         box.addButton(QMessageBox.StandardButton.Ok)
         hex_button = (
             box.addButton(translate("MainWindow", "Open as Hex"), QMessageBox.ButtonRole.ActionRole)
@@ -1120,7 +1120,7 @@ class MainWindow(QMainWindow):
         if notes:
             for note in notes:
                 self._logger.warning("%s: %s", self._loading_path, note)
-            text = "; ".join(str(note) for note in notes)  # notes may be ParseIssues
+            text = "; ".join(render_value(note, localized=True) for note in notes)
             self._status.showMessage(
                 translate("MainWindow", "Loaded: {loading_path}  — {text}").format(
                     loading_path=self._loading_path, text=text
@@ -1311,14 +1311,14 @@ class MainWindow(QMainWindow):
             open_path = target.parent if target.is_file() else target
             self._open_local_file(open_path)
 
-    def _on_export_failed(self, message: str) -> None:
+    def _on_export_failed(self, message: str, shown: str) -> None:
         if hasattr(self, "_export_progress"):
             self._export_progress.close()
         self._status.showMessage(
-            translate("MainWindow", "Export failed: {message}").format(message=message)
+            translate("MainWindow", "Export failed: {message}").format(message=shown)
         )
         self._logger.error("Export failed: %s", message)
-        QMessageBox.critical(self, translate("MainWindow", "Export failed"), message)
+        QMessageBox.critical(self, translate("MainWindow", "Export failed"), shown)
 
     def _export_logarchive_node(self, node: VFSNode, vfs: VFS) -> None:
         dest_dir = QFileDialog.getExistingDirectory(
@@ -1397,14 +1397,14 @@ class MainWindow(QMainWindow):
         if choice == QMessageBox.StandardButton.Yes:
             self._open_local_file(Path(dest).parent)
 
-    def _on_logarchive_failed(self, message: str) -> None:
+    def _on_logarchive_failed(self, message: str, shown: str) -> None:
         if hasattr(self, "_logarchive_progress"):
             self._logarchive_progress.close()
         self._status.showMessage(
-            translate("MainWindow", "Export failed: {message}").format(message=message)
+            translate("MainWindow", "Export failed: {message}").format(message=shown)
         )
         self._logger.error("Logarchive export failed: %s", message)
-        QMessageBox.critical(self, translate("MainWindow", "Export failed"), message)
+        QMessageBox.critical(self, translate("MainWindow", "Export failed"), shown)
 
     def _guard_large_open(self, node: VFSNode, vfs: VFS) -> bool:
         """False when the file should not be loaded here: too big to load
@@ -1475,7 +1475,7 @@ class MainWindow(QMainWindow):
                 message = f"{node.path}  [{parser.DISPLAY_NAME}]"  # i18n: keep -- markup/layout only
                 fallback_note = getattr(vfs, "fallback_note", "")
                 if fallback_note:
-                    message += f"  — {fallback_note}"
+                    message += f"  — {render_value(fallback_note, localized=True)}"  # i18n: keep -- layout
                 else:
                     hint = _open_as_source_hint(
                         node, vfs, probe_disk_image=isinstance(parser, HexFallbackParser),
@@ -1484,8 +1484,8 @@ class MainWindow(QMainWindow):
                         message += f"  — {hint}"
                 self._status.showMessage(message)
         except Exception as exc:
-            self._status.showMessage(translate("MainWindow", "Parse error: {exc}").format(exc=exc))
-            QMessageBox.warning(self, translate("MainWindow", "Parse error"), str(exc))
+            self._status.showMessage(translate("MainWindow", "Parse error: {exc}").format(exc=i18n.exception_text(exc)))
+            QMessageBox.warning(self, translate("MainWindow", "Parse error"), i18n.exception_text(exc))
 
     # Modes that load the whole file into memory. "default" is absent on
     # purpose: it ends in _open_node(), which asks itself.
@@ -1668,7 +1668,7 @@ class MainWindow(QMainWindow):
                 self._status.showMessage(
                     translate("MainWindow", "Protobuf parse error: {exc}").format(exc=exc)
                 )
-                QMessageBox.warning(self, translate("MainWindow", "Protobuf parse error"), str(exc))
+                QMessageBox.warning(self, translate("MainWindow", "Protobuf parse error"), i18n.exception_text(exc))
             return
         if mode == "mmkv":
             self._hash_node_if_integrity(node, vfs)
@@ -1686,7 +1686,7 @@ class MainWindow(QMainWindow):
                 self._status.showMessage(
                     translate("MainWindow", "MMKV parse error: {exc}").format(exc=exc)
                 )
-                QMessageBox.warning(self, translate("MainWindow", "MMKV parse error"), str(exc))
+                QMessageBox.warning(self, translate("MainWindow", "MMKV parse error"), i18n.exception_text(exc))
             return
         if mode == "mmkv_encrypted":
             self._hash_node_if_integrity(node, vfs)
@@ -1813,13 +1813,13 @@ class MainWindow(QMainWindow):
                 node, vfs, password=key_text, raw_key=raw_key, cipher_params=cipher_params
             )
         except WrongPasswordError as exc:
-            self._open_encrypted_sqlite(node, vfs, wrong_reason=str(exc))
+            self._open_encrypted_sqlite(node, vfs, wrong_reason=i18n.exception_text(exc))
             return
         except Exception as exc:
             self._status.showMessage(
                 translate("MainWindow", "SQLCipher decrypt error: {exc}").format(exc=exc)
             )
-            QMessageBox.warning(self, translate("MainWindow", "SQLCipher decrypt error"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "SQLCipher decrypt error"), i18n.exception_text(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
@@ -1860,13 +1860,13 @@ class MainWindow(QMainWindow):
         try:
             result = parser.parse(node, vfs, password=key_text)
         except WrongPasswordError as exc:
-            self._open_encrypted_realm(node, vfs, wrong_reason=str(exc))
+            self._open_encrypted_realm(node, vfs, wrong_reason=i18n.exception_text(exc))
             return
         except Exception as exc:
             self._status.showMessage(
                 translate("MainWindow", "Realm decrypt error: {exc}").format(exc=exc)
             )
-            QMessageBox.warning(self, translate("MainWindow", "Realm decrypt error"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Realm decrypt error"), i18n.exception_text(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
@@ -1910,13 +1910,13 @@ class MainWindow(QMainWindow):
         try:
             result = parser.parse(node, vfs, password=key_bytes, aes256=dialog.is_aes256())
         except WrongPasswordError as exc:
-            self._open_encrypted_mmkv(node, vfs, wrong_reason=str(exc))
+            self._open_encrypted_mmkv(node, vfs, wrong_reason=i18n.exception_text(exc))
             return
         except Exception as exc:
             self._status.showMessage(
                 translate("MainWindow", "MMKV decrypt error: {exc}").format(exc=exc)
             )
-            QMessageBox.warning(self, translate("MainWindow", "MMKV decrypt error"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "MMKV decrypt error"), i18n.exception_text(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
@@ -1953,13 +1953,13 @@ class MainWindow(QMainWindow):
         try:
             result = parser.parse(node, vfs, password=password)
         except WrongPasswordError as exc:
-            self._open_encrypted_pdf(node, vfs, wrong_reason=str(exc))
+            self._open_encrypted_pdf(node, vfs, wrong_reason=i18n.exception_text(exc))
             return
         except Exception as exc:
             self._status.showMessage(
                 translate("MainWindow", "PDF decrypt error: {exc}").format(exc=exc)
             )
-            QMessageBox.warning(self, translate("MainWindow", "PDF decrypt error"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "PDF decrypt error"), i18n.exception_text(exc))
             return
 
         result = self._enrich_with_format_info(parser, node, vfs, result)
@@ -2167,8 +2167,8 @@ class MainWindow(QMainWindow):
                 )
             )
         except Exception as exc:
-            self._status.showMessage(translate("MainWindow", "Parse error: {exc}").format(exc=exc))
-            QMessageBox.warning(self, translate("MainWindow", "Parse error"), str(exc))
+            self._status.showMessage(translate("MainWindow", "Parse error: {exc}").format(exc=i18n.exception_text(exc)))
+            QMessageBox.warning(self, translate("MainWindow", "Parse error"), i18n.exception_text(exc))
 
     def _open_bytes_as_artifact(
         self, data: bytes, name: str, source_path: str = ""
@@ -2204,7 +2204,7 @@ class MainWindow(QMainWindow):
             self._status.showMessage(
                 translate("MainWindow", "Artifact parse error: {exc}").format(exc=exc)
             )
-            QMessageBox.warning(self, translate("MainWindow", "Parse error"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Parse error"), i18n.exception_text(exc))
 
     def _open_table_as_tab(self, title: str, viewer_data: dict) -> None:
         """Open an already-resolved table (e.g. from the Realm Views tab) as
@@ -2497,7 +2497,7 @@ class MainWindow(QMainWindow):
                 translate("MainWindow", "Sent to Peach: {path}").format(path=node.path)
             )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
-            QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), i18n.exception_text(exc))
 
     # Curated allowlist of crush-analyze module ids Crush's own UI exposes.
     # crush-analyze's manifest can offer more than this (e.g. the two
@@ -2765,7 +2765,7 @@ class MainWindow(QMainWindow):
                     + "\n".join(failed),
                 )
         except (FileNotFoundError, RuntimeError, OSError) as exc:
-            QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), i18n.exception_text(exc))
 
     def _send_biome_to_peach(
         self, root: VFSNode, vfs: VFS, selected: list[VFSNode]
@@ -2873,7 +2873,7 @@ class MainWindow(QMainWindow):
             launch_peach([], override_path=override)
             self._status.showMessage(translate("MainWindow", "Opened Peach"))
         except (FileNotFoundError, RuntimeError) as exc:
-            QMessageBox.warning(self, translate("MainWindow", "Open Peach"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Open Peach"), i18n.exception_text(exc))
 
     def _open_local_file(self, path: str | Path) -> None:
         from crush.ui import open_url
@@ -2894,7 +2894,7 @@ class MainWindow(QMainWindow):
             else:
                 subprocess.Popen([app_path, str(path)])
         except Exception as exc:
-            QMessageBox.warning(self, translate("MainWindow", "Open External"), str(exc))
+            QMessageBox.warning(self, translate("MainWindow", "Open External"), i18n.exception_text(exc))
 
     def _on_node_selected(self, node: VFSNode, vfs: VFS) -> None:
         metadata: dict[str, str] = {
@@ -3019,27 +3019,29 @@ class MainWindow(QMainWindow):
         self._refresh_tab_labels()
 
     def _display_format_label(self, result: ParseResult) -> str:
+        """Properties-panel text for how the file is shown (UI language;
+        format names stay as they are)."""
         if result.viewer_type == "hex":
-            return "Hex"
+            return translate("MainWindow", "Hex")
         if result.viewer_type == "text":
-            return "Text"
+            return translate("MainWindow", "Text")
         if result.viewer_type == "multi_log":
             return "Multi-Log"
         if result.viewer_type == "protobuf":
-            return "Protobuf (schema-less)"
+            return translate("MainWindow", "Protobuf (schema-less)")
         if result.metadata.get("Format"):
-            return str(result.metadata["Format"])
+            return render_value(result.metadata["Format"], localized=True)
         labels = {
             "abx": "Android Binary XML (ABX)",
-            "image": "Image",
+            "image": translate("MainWindow", "Image"),
             "leveldb": "LevelDB",
-            "log": "Log",
-            "media": "Media",
+            "log": translate("MainWindow", "Log"),
+            "media": translate("MainWindow", "Media"),
             "pdf": "PDF",
             "realm": "Realm Database",
-            "table": "Table",
-            "tree": "Tree",
-            "tree_text": "Tree/Text",
+            "table": translate("MainWindow", "Table"),
+            "tree": translate("MainWindow", "Tree"),
+            "tree_text": translate("MainWindow", "Tree/Text"),
         }
         return labels.get(result.viewer_type, result.viewer_type)
 
@@ -3285,7 +3287,11 @@ class MainWindow(QMainWindow):
                     meta["Platforms"] = fmt.platforms.replace(",", ", ")
                 if fmt.forensic_relevance:
                     meta["Forensic relevance"] = fmt.forensic_relevance
-                meta["Parser support"] = "Supported" if fmt.parser_class else "Not yet supported"
+                meta["Parser support"] = (
+                    translate("MainWindow", "Supported")
+                    if fmt.parser_class
+                    else translate("MainWindow", "Not yet supported")
+                )
                 self._props_panel.update_properties(node, meta, vfs)
                 self._props_dock.show()
                 self._props_dock.raise_()

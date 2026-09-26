@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crush.core.issues import ParseIssue
+from crush.core.issues import ParseIssue, render
 from crush.parsers.pdf_parser import PdfRevision
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.text_viewer import TextView
@@ -54,7 +54,7 @@ def _text_tab(text: str, status: ParseIssue | None, parent: QWidget) -> QWidget:
     container = QWidget(parent)
     layout = QVBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(_status_label(str(status)))
+    layout.addWidget(_status_label(render(status, localized=True)))
     layout.addWidget(TextView(text, container), stretch=1)
     return container
 

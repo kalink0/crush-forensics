@@ -116,12 +116,17 @@ class PropertiesPanel(QScrollArea):
             note.setStyleSheet("color: gray; font-size: 10px;")
             self._layout.addRow(note)
 
-        # Parser-supplied metadata (values may be ParseIssues)
+        # Parser-supplied metadata: the key is an English label (marked in
+        # crush.core.metadata_labels), a value may be a ParseIssue -- both
+        # are shown in the UI language.
         for key, val in metadata.items():
-            lbl = QLabel(render_value(val))
+            lbl = QLabel(render_value(val, localized=True))
             lbl.setWordWrap(True)
             lbl.setTextInteractionFlags(_SELECTABLE)
-            self._layout.addRow(translate("PropertiesPanel", "{key}:").format(key=key), lbl)
+            shown_key = translate("MetadataLabel", key)  # i18n: keep -- marked in metadata_labels
+            self._layout.addRow(
+                translate("PropertiesPanel", "{key}:").format(key=shown_key), lbl
+            )
 
     def show_analyzer_result(
         self, result: dict[str, Any], title: str | None = None, relevance: str | None = None

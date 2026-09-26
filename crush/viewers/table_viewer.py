@@ -108,6 +108,7 @@ from crush.ui.i18n import translate
 from crush.viewers.generated_text import (
     EXPORT_TEXT_ROLE as _EXPORT_TEXT_ROLE,
     Gen as _Gen,
+    Localized as _Localized,
     export_cell_text as _export_cell_text,
     export_header_text as _export_header_text,
     gen_item as _gen_item,
@@ -208,7 +209,7 @@ def _ts_header_tooltip(fmt: str, decoded: int, failed: int) -> str | None:
 
 def _ts_cell_tooltip(fmt: str, problem: object) -> str:
     return translate("TableViewer", "Not decoded as {format}: {problem}. Shown as stored.").format(
-        format=_ts_suffix(fmt), problem=problem
+        format=_ts_suffix(fmt), problem=render_value(problem, localized=True)
     )
 
 
@@ -377,7 +378,7 @@ def _cap_columns(view: QTableView) -> None:
             header.resizeSection(col, _MAX_COL_WIDTH)
 
 
-def _wal_diag(db_path: "str | None", parser_diag: str = "") -> _Gen:
+def _wal_diag(db_path: "str | None", parser_diag: "_Localized | None" = None) -> _Gen:
     """A short diagnostic explaining why WAL parsing failed."""
     if db_path is None:
         return _Gen(QT_TRANSLATE_NOOP("GeneratedView", "db_path is None"))
@@ -2037,7 +2038,14 @@ class TableViewer(QWidget):
         )
         if not frames:
             diag_issues = self._data.get("__wal_diag", []) if isinstance(self._data, dict) else []
-            parser_diag = " | ".join(render_value(i) for i in diag_issues)
+            parser_diag = (
+                _Localized(
+                    " | ".join(render_value(i) for i in diag_issues),
+                    " | ".join(render_value(i, localized=True) for i in diag_issues),
+                )
+                if diag_issues
+                else None
+            )
             diag = _wal_diag(self._db_path, parser_diag)
             item = _gen_item(
                 _Gen(
@@ -3343,7 +3351,8 @@ class TableViewer(QWidget):
 
     def _append_structure_node(self, parent: QStandardItem, node: StructureNode) -> None:
         label = QStandardItem(node.label)
-        value_text = str(node.value)
+        # A value can be a ParseIssue (unreadable page etc.): UI language.
+        value_text = render_value(node.value, localized=True)
         value = QStandardItem(value_text)
         # The cell is one line, elided at the column edge; the tooltip wraps
         # the whole value (nothing is cut off, see _display_cell_value).
@@ -3553,9 +3562,10 @@ class TableViewer(QWidget):
                     )
                 )
             elif journal_result.error:
-                # A ParseIssue: rendered English here, switched to its own
-                # translated rendering with the other issue display sites.
-                merged_desc = str(journal_result.error)
+                # The parser's ParseIssue: shown translated, exported English.
+                merged_desc = _Gen(
+                    "{error}", error=journal_result.error  # i18n: keep -- layout only
+                )
             else:
                 merged_desc = _Gen(
                     QT_TRANSLATE_NOOP(
@@ -4208,7 +4218,7 @@ class TableViewer(QWidget):
     def _set_source_status(self, problems: list[Any]) -> None:
         """Show what a scan reported (unreadable file, stopped chains,
         skipped cells ...) above the table; hidden when there is nothing."""
-        self._source_status.setText("\n".join(str(p) for p in problems))
+        self._source_status.setText("\n".join(render_value(p, localized=True) for p in problems))
         self._source_status.setVisible(bool(problems))
 
     def _reset_source_model(self) -> None:
