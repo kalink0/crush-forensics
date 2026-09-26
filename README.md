@@ -73,7 +73,7 @@ Every release runs the suite fresh on its own commit and attaches the result: �
 
 ## Documentation
 
-→ [User Handbook](crush/docs/handbook.md)
+→ [Feature Reference](crush/docs/feature-reference.md)
 → [Format Support & Parser Limitations](crush/docs/format-support.md)
 
 ## Blog & Deep Dives

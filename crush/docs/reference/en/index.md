@@ -1,4 +1,4 @@
-# Crush — User Handbook
+# Crush — Feature Reference
 
 - [What is Crush?](what-is-crush.md)
 - [Opening Evidence](opening-evidence.md)

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The user handbook's section files (crush/docs/handbook/) and
-scripts/handbook.py: the generated single page, links in every language,
+"""The Feature Reference's section files (crush/docs/reference/) and
+scripts/reference.py: the generated single page, links in every language,
 and which translated sections are outdated."""
 from __future__ import annotations
 
@@ -14,33 +14,33 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_script():
-    spec = importlib.util.spec_from_file_location("handbook_script", ROOT / "scripts" / "handbook.py")
+    spec = importlib.util.spec_from_file_location("reference_script", ROOT / "scripts" / "reference.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-hb = _load_script()
+ref = _load_script()
 
 
-# -- The real handbook ----------------------------------------------------------------
+# -- The real reference ---------------------------------------------------------------
 
-def test_generated_handbook_is_up_to_date() -> None:
-    assert hb.OUTPUT.read_text(encoding="utf-8") == hb.Handbook().build(), (
-        "crush/docs/handbook.md is out of date -- edit the section files in "
-        "crush/docs/handbook/en/, then run: python scripts/handbook.py build"
+def test_generated_reference_is_up_to_date() -> None:
+    assert ref.OUTPUT.read_text(encoding="utf-8") == ref.Reference().build(), (
+        "crush/docs/feature-reference.md is out of date -- edit the section files in "
+        "crush/docs/reference/en/, then run: python scripts/reference.py build"
     )
 
 
-def test_handbook_links_and_files() -> None:
-    assert hb.Handbook().check() == []
+def test_reference_links_and_files() -> None:
+    assert ref.Reference().check() == []
 
 
 def test_every_section_starts_with_its_heading() -> None:
-    handbook = hb.Handbook()
-    for name in handbook.sections():
-        first = handbook.english(name).split("\n", 1)[0]
+    reference = ref.Reference()
+    for name in reference.sections():
+        first = reference.english(name).split("\n", 1)[0]
         assert first.startswith(("## ", "### ")), name
 
 
@@ -53,15 +53,15 @@ def test_every_section_starts_with_its_heading() -> None:
     ("Übersicht der Viewer", "übersicht-der-viewer"),
 ])
 def test_anchor_like_github(heading: str, anchor: str) -> None:
-    assert hb.base_anchor(heading) == anchor
+    assert ref.base_anchor(heading) == anchor
 
 
 def test_repeated_heading_gets_suffix_and_code_blocks_are_skipped() -> None:
     text = "## A\n### Known limitations\n```\n# not a heading\n```\n## B\n### Known limitations\n"
-    assert hb.anchors(text) == ["a", "known-limitations", "b", "known-limitations-1"]
+    assert ref.anchors(text) == ["a", "known-limitations", "b", "known-limitations-1"]
 
 
-# -- A handbook with a translation ------------------------------------------------
+# -- A reference with a translation -----------------------------------------------
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,15 +71,15 @@ def _write(path: Path, text: str) -> None:
 @pytest.fixture
 def book(tmp_path: Path):
     en = tmp_path / "en"
-    _write(en / "index.md", "# Handbook\n\n- [One](one.md)\n- [Two](two.md)\n")
+    _write(en / "index.md", "# Reference\n\n- [One](one.md)\n- [Two](two.md)\n")
     _write(en / "one.md", "## One\n\nSee [the details](two.md#details).\n\n")
     _write(en / "two.md", "## Two\n\n### Details\n\nBack to [one](one.md).\n")
-    return hb.Handbook(tmp_path)
+    return ref.Reference(tmp_path)
 
 
 def test_build_turns_file_links_into_anchors(book) -> None:
     assert book.build() == (
-        hb.GENERATED_NOTE + "# Handbook\n\n"
+        ref.GENERATED_NOTE + "# Reference\n\n"
         "## One\n\nSee [the details](#details).\n\n"
         "## Two\n\n### Details\n\nBack to [one](#one).\n"
     )
@@ -126,7 +126,7 @@ def test_check_follows_translated_headings(book) -> None:
 def test_check_reports_unlisted_orphaned_and_broken(book) -> None:
     _write(book.directory / "en" / "three.md", "## Three\n")
     _write(book.directory / "de" / "gone.md", "## Weg\n")
-    _write(book.directory / "de" / "index.md", "# Handbuch\n\n- [Zwei](two.md)\n- [Eins](one.md)\n")
+    _write(book.directory / "de" / "index.md", "# Referenz\n\n- [Zwei](two.md)\n- [Eins](one.md)\n")
     _write(book.directory / "en" / "two.md", "## Two\n\n### Details\n\n[x](#nowhere) [y](four.md)\n")
     problems = book.check()
     assert "en/three.md is not listed in en/index.md" in problems
@@ -136,7 +136,7 @@ def test_check_reports_unlisted_orphaned_and_broken(book) -> None:
     assert "en/two.md:5: four.md -- no such section file" in problems
 
 
-def test_real_handbook_splits_back_to_the_same_page(tmp_path: Path) -> None:
-    """The committed handbook round-trips through a copy (build is pure)."""
-    shutil.copytree(hb.HANDBOOK_DIR, tmp_path / "handbook")
-    assert hb.Handbook(tmp_path / "handbook").build() == hb.Handbook().build()
+def test_real_reference_splits_back_to_the_same_page(tmp_path: Path) -> None:
+    """The committed reference round-trips through a copy (build is pure)."""
+    shutil.copytree(ref.REFERENCE_DIR, tmp_path / "reference")
+    assert ref.Reference(tmp_path / "reference").build() == ref.Reference().build()
