@@ -416,9 +416,30 @@ The UI is translated with Qt Linguist; English is the source language. Catalogs 
 - Crush's own words inside a data view (headers, status values, notes) go through
   `crush/viewers/generated_text.py` (`Gen`, `set_headers`, ...): shown translated, while CSV
   export and copy write the English original. File data is never translated.
+- Format knowledge in `crush/data/build_formats_db.py` (forensic relevance, magic-byte
+  descriptions) is written as `QT_TRANSLATE_NOOP("FormatKnowledge", text, <format name>)`;
+  formats.db itself stays English. Such a text reaches the UI as a `CatalogText`
+  (`fmt.relevance_text()`), which `str()` keeps English and the UI shows translated — or in
+  the English original, if the analyst chose that.
 - Check with the pseudo locale: `python scripts/i18n.py pseudo`, then
   `python -m crush --language pseudo`. Every text still in plain English isn't translatable
   yet; a missing closing `]` means the text is cut off.
+
+## The user handbook
+
+The handbook is kept as one file per section in `crush/docs/handbook/en/` (an H2, or one
+viewer under "Viewer Tabs"); `en/index.md` holds the title and the section order. Edit
+the handbook there, then run `python scripts/handbook.py build`: it regenerates
+`crush/docs/handbook.md`, the single searchable page the README links to (a test fails
+while it is out of date). Link to another section as `other-section.md` or
+`other-section.md#heading`; build turns these into anchors on the single page.
+`python scripts/handbook.py check` checks every link, in every language.
+
+Translations go in `crush/docs/handbook/<lang>/` with the same file names.
+`python scripts/handbook.py stamp <lang> <file>` records which English version a
+translated file is from; `status <lang>` then lists the sections whose English has
+changed since. The handbook doesn't count towards the 90 % a language needs to be offered
+under View → Language — that is the application's catalog alone.
 
 ---
 
