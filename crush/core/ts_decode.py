@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
-from crush.core.issues import ParseIssue
+from crush.core.issues import QT_TRANSLATE_NOOP, ParseIssue
 
 _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -16,13 +16,36 @@ _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _NUMBER_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 # (internal_key, menu_label, header_suffix)
+# The menu label is marked for translation (the UI shows it via
+# translate("TimestampFormat", label)); the header suffix is a short format
+# ID and stays as it is.
 TS_FORMATS: list[tuple[str, str, str]] = [
-    ("unix_s",  "Unix — seconds since 1970-01-01",            "unix s"),
-    ("unix_ms", "Unix — milliseconds since 1970-01-01",        "unix ms"),
-    ("unix_us", "Unix — microseconds since 1970-01-01",        "unix µs"),
-    ("mac_abs", "Mac Absolute Time — seconds since 2001-01-01", "mac abs"),
-    ("win_ft",  "Windows FILETIME — 100 ns since 1601-01-01",   "win ft"),
-    ("chrome",  "Chrome / WebKit — µs since 1601-01-01",        "webkit"),
+    ("unix_s", QT_TRANSLATE_NOOP("TimestampFormat", "Unix — seconds since 1970-01-01"), "unix s"),
+    (
+        "unix_ms",
+        QT_TRANSLATE_NOOP("TimestampFormat", "Unix — milliseconds since 1970-01-01"),
+        "unix ms",
+    ),
+    (
+        "unix_us",
+        QT_TRANSLATE_NOOP("TimestampFormat", "Unix — microseconds since 1970-01-01"),
+        "unix µs",
+    ),
+    (
+        "mac_abs",
+        QT_TRANSLATE_NOOP("TimestampFormat", "Mac Absolute Time — seconds since 2001-01-01"),
+        "mac abs",
+    ),
+    (
+        "win_ft",
+        QT_TRANSLATE_NOOP("TimestampFormat", "Windows FILETIME — 100 ns since 1601-01-01"),
+        "win ft",
+    ),
+    (
+        "chrome",
+        QT_TRANSLATE_NOOP("TimestampFormat", "Chrome / WebKit — µs since 1601-01-01"),
+        "webkit",
+    ),
 ]
 
 _MAC_EPOCH_OFFSET = 978_307_200     # seconds from Unix epoch to 2001-01-01

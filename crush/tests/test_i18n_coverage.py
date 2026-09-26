@@ -42,6 +42,7 @@ CONVERTED: list[str] = [
     "ui/sqlcipher_dialog.py",
     "ui/viewer_factory.py",
     "ui/wheel_scroll.py",
+    "viewers/table_viewer.py",
 ]
 
 # Qt calls (functions, constructors, methods) whose string arguments are
@@ -61,6 +62,8 @@ UI_CALLS = {
     # Crush's own helpers that show the text they're given.
     "FolderDiscoveryDialog", "LoadingDialog", "_with_reason", "busy_call",
     "run_with_busy_dialog", "set_text",
+    # Generated-view texts (table_viewer): marked QT_TRANSLATE_NOOP at the call.
+    "_Gen", "_gens",
 }
 KEEP_MARKER = "# i18n: keep"
 # Also logger methods -- the log stays English. Counted only on QMessageBox.
@@ -152,7 +155,8 @@ def _translate_calls(path: Path) -> set[tuple[str, str]]:
     found = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if (
-            isinstance(node, ast.Call) and _call_name(node) == "translate"
+            isinstance(node, ast.Call)
+            and _call_name(node) in ("translate", "QT_TRANSLATE_NOOP")
             and len(node.args) >= 2
             and all(isinstance(a, ast.Constant) and isinstance(a.value, str)
                     for a in node.args[:2])
@@ -161,7 +165,7 @@ def _translate_calls(path: Path) -> set[tuple[str, str]]:
     return found
 
 
-def test_lupdate_extracts_every_translate_call(tmp_path: Path) -> None:
+def test_lupdate_extracts_every_marked_text(tmp_path: Path) -> None:
     """lupdate silently skips a text it can't parse (e.g. adjacent string
     literals inside extra parentheses); the AST check above can't see that."""
     here = Path(sys.executable).parent

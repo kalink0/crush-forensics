@@ -17,6 +17,8 @@ from collections import Counter
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QT_TRANSLATE_NOOP,
+    QAbstractItemModel,
     QAbstractTableModel,
     QModelIndex,
     QObject,
@@ -103,6 +105,7 @@ from crush.ui.busy_dialog import run_with_busy_dialog
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
 from crush.viewers.hex_viewer import HexViewer
+from crush.ui.i18n import translate
 
 
 _MAX_COL_WIDTH = 400
@@ -146,33 +149,151 @@ _WAL_COLUMN_RANGES_ROLE = Qt.ItemDataRole.UserRole + 25
 _TS_ORIGINAL_TEXT_ROLE = Qt.ItemDataRole.UserRole + 26
 _TS_ORIGINAL_FG_ROLE = Qt.ItemDataRole.UserRole + 27  # False = no foreground was set
 _TS_UNDECODED_COLOR = QColor("#cc8800")
+# A generated view (Summary, DB Info, WAL Frames, Freelist Recovery, ...)
+# shows Crush's own words -- headers, view names, explanations, status
+# values -- in the UI language. CSV export and copy always write the English
+# original, so the same analysis exports identically whatever language each
+# analyst's UI is in: it's kept in this role wherever the display differs.
+# File data never carries it (it's shown and exported as it is).
+_EXPORT_TEXT_ROLE = Qt.ItemDataRole.UserRole + 28
+
+# Values a generated view gets from crush.core at runtime (so they can't be
+# marked where they're written). Marked here, translated by their English
+# text via _gen_text(); anything not listed is shown as it is.
+_GENERATED_VALUES = (
+    # sqlite_wal frame status
+    QT_TRANSLATE_NOOP("GeneratedView", "Active"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Superseded"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Uncommitted"),
+    QT_TRANSLATE_NOOP("GeneratedView", "WAL slack"),
+    # sqlite_journal row kind
+    QT_TRANSLATE_NOOP("GeneratedView", "Live cell"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Freeblock (deleted)"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Unallocated slack"),
+)
+
+
+def _gen_text(english: str) -> str:
+    """Display text for Crush's own words in a generated view. *english*
+    is marked QT_TRANSLATE_NOOP("GeneratedView", ...) where it's written (or
+    listed in _GENERATED_VALUES); unmarked text comes back unchanged."""
+    return translate("GeneratedView", english)  # i18n: keep -- marked where written
+
+
+class _Gen:
+    """Crush's own words in a generated view (not file data): a marked
+    English template plus its params. A param may itself be a _Gen (e.g. a
+    status value inside a label); it's translated for display too."""
+
+    __slots__ = ("template", "params")
+
+    def __init__(self, template: str, **params: object) -> None:
+        self.template = template
+        self.params = params
+
+    def pair(self) -> tuple[str, str]:
+        """(English original, display text). A translation whose
+        placeholders don't fit falls back to English."""
+        english_params = {
+            k: v.pair()[0] if isinstance(v, _Gen) else v for k, v in self.params.items()
+        }
+        display_params = {
+            k: v.pair()[1] if isinstance(v, _Gen) else v for k, v in self.params.items()
+        }
+        english = self.template.format(**english_params) if self.params else self.template
+        display = _gen_text(self.template)
+        if self.params:
+            try:
+                display = display.format(**display_params)
+            except (KeyError, IndexError, ValueError):
+                display = english
+        return english, display
+
+
+def _mark_generated(item: QStandardItem, text: _Gen) -> QStandardItem:
+    """Show *text* on *item* in the UI language, the English original kept
+    for export."""
+    english, display = text.pair()
+    item.setText(display)
+    if display != english:
+        item.setData(english, _EXPORT_TEXT_ROLE)
+    return item
+
+
+def _gen_item(text: _Gen) -> QStandardItem:
+    return _mark_generated(QStandardItem(), text)
+
+
+def _set_headers(model: QStandardItemModel, labels: list[str | _Gen]) -> None:
+    """Horizontal headers: a _Gen label (Crush's own word) is translated for
+    display with its English original kept for export; a plain str (a real
+    column name from the file) is shown as it is."""
+    pairs = [label.pair() if isinstance(label, _Gen) else (label, label) for label in labels]
+    model.setHorizontalHeaderLabels([display for _english, display in pairs])
+    for col, (english, display) in enumerate(pairs):
+        if display != english:
+            model.setHeaderData(col, Qt.Orientation.Horizontal, english, _EXPORT_TEXT_ROLE)
+
+
+def _gens(*labels: str) -> list[str | _Gen]:
+    """_Gen for each (marked) label -- a header row of Crush's own words."""
+    return [_Gen(label) for label in labels]
+
+
+def _export_cell_text(model: QAbstractItemModel, index: QModelIndex) -> str:
+    """What CSV export and copy write for a cell: the English original of a
+    generated-view text, else the displayed text (file data)."""
+    original = model.data(index, _EXPORT_TEXT_ROLE)
+    if original is not None:
+        return str(original)
+    shown = model.data(index)
+    return "" if shown is None else str(shown)
+
+
+def _export_header_text(model: QAbstractItemModel, col: int) -> str:
+    original = model.headerData(col, Qt.Orientation.Horizontal, _EXPORT_TEXT_ROLE)
+    if original is not None:
+        return str(original)
+    shown = model.headerData(col, Qt.Orientation.Horizontal)
+    return "" if shown is None else str(shown)
 
 
 def _ts_suffix(fmt: str) -> str:
     return next(s for key, _, s in _TS_FORMATS if key == fmt)
 
 
-def _ts_header_text(base: str, fmt: str, decoded: int, failed: int) -> str:
-    """Header label for a column decoded as *fmt*. When nothing in the column
-    decoded, say so in the header itself rather than showing a suffix that
-    looks like a working decode."""
+def _ts_header_pair(
+    base_english: str, base_display: str, fmt: str, decoded: int, failed: int
+) -> tuple[str, str]:
+    """(English original, display) header label for a column decoded as
+    *fmt*. When nothing in the column decoded, say so in the header itself
+    rather than showing a suffix that looks like a working decode."""
     suffix = _ts_suffix(fmt)
     if decoded == 0 and failed > 0:
-        return f"{base} [{suffix}: none decodable]"
-    return f"{base} [{suffix}]"
+        template = QT_TRANSLATE_NOOP("GeneratedView", "{base} [{suffix}: none decodable]")
+        english = template.format(base=base_english, suffix=suffix)
+        try:
+            display = _gen_text(template).format(base=base_display, suffix=suffix)
+        except (KeyError, IndexError, ValueError):
+            display = english
+        return english, display
+    return f"{base_english} [{suffix}]", f"{base_display} [{suffix}]"
 
 
 def _ts_header_tooltip(fmt: str, decoded: int, failed: int) -> str | None:
     if not failed:
         return None
-    return (
-        f"{failed:,} of {decoded + failed:,} values could not be decoded as "
-        f"{_ts_suffix(fmt)} and are shown as stored (orange) -- hover a cell for the reason."
-    )
+    return translate(
+        "TableViewer",
+        "{failed:,} of {total:,} values could not be decoded as "
+        "{format} and are shown as stored (orange) -- hover a cell for the reason.",
+    ).format(failed=failed, total=decoded + failed, format=_ts_suffix(fmt))
 
 
 def _ts_cell_tooltip(fmt: str, problem: object) -> str:
-    return f"Not decoded as {_ts_suffix(fmt)}: {problem}. Shown as stored."
+    return translate("TableViewer", "Not decoded as {format}: {problem}. Shown as stored.").format(
+        format=_ts_suffix(fmt), problem=problem
+    )
 
 
 def _valid_structure_range(value: object) -> bool:
@@ -204,6 +325,15 @@ def _virtual_path_component(value: object, fallback: str) -> str:
     return text or fallback
 
 
+
+def _rows_label(total: int) -> str:
+    """"(1 row)" / "(12,345 rows)" for the row-count label."""
+    return (
+        translate("TableViewer", "({total:,} row)")
+        if total == 1
+        else translate("TableViewer", "({total:,} rows)")
+    ).format(total=total)
+
 class _QueryResultModel(QAbstractTableModel):
     """Virtual SQL result model that creates cell values only when requested."""
 
@@ -234,16 +364,28 @@ class _QueryResultModel(QAbstractTableModel):
     ) -> Any:
         if orientation != Qt.Orientation.Horizontal:
             return None
-        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+        if role not in (
+            Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole, _EXPORT_TEXT_ROLE
+        ):
             return None
         header = self._headers[section]
+        # Column 0 is Crush's "Row"; the others are the query's column names.
+        english, display = (
+            _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Row")).pair()
+            if section == 0
+            else (header, header)
+        )
         fmt = self._ts_formats.get(section)
-        if fmt is None:
-            return header if role == Qt.ItemDataRole.DisplayRole else None
-        decoded, failed = self._ts_stats.get(section, (0, 0))
-        if role == Qt.ItemDataRole.ToolTipRole:
-            return _ts_header_tooltip(fmt, decoded, failed)
-        return _ts_header_text(header, fmt, decoded, failed)
+        if fmt is not None:
+            decoded, failed = self._ts_stats.get(section, (0, 0))
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return _ts_header_tooltip(fmt, decoded, failed)
+            english, display = _ts_header_pair(english, display, fmt, decoded, failed)
+        elif role == Qt.ItemDataRole.ToolTipRole:
+            return None
+        if role == _EXPORT_TEXT_ROLE:
+            return english if english != display else None
+        return display
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
@@ -319,25 +461,42 @@ def _cap_columns(view: QTableView) -> None:
             header.resizeSection(col, _MAX_COL_WIDTH)
 
 
-def _wal_diag(db_path: "str | None", parser_diag: str = "") -> str:
-    """Return a short diagnostic string explaining why WAL parsing failed."""
+def _wal_diag(db_path: "str | None", parser_diag: str = "") -> _Gen:
+    """A short diagnostic explaining why WAL parsing failed."""
     if db_path is None:
-        return "db_path is None"
+        return _Gen(QT_TRANSLATE_NOOP("GeneratedView", "db_path is None"))
     wal_path = Path(str(db_path) + "-wal")
     if not wal_path.exists():
-        suffix = f" (parser: {parser_diag})" if parser_diag else ""
-        return f"WAL file not found at temp path{suffix}"
+        if parser_diag:
+            return _Gen(
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView", "WAL file not found at temp path (parser: {diag})"
+                ),
+                diag=parser_diag,
+            )
+        return _Gen(QT_TRANSLATE_NOOP("GeneratedView", "WAL file not found at temp path"))
     size = wal_path.stat().st_size
     if size < 32:
-        suffix = f" — parser: {parser_diag}" if parser_diag else ""
-        return f"WAL too small ({size} B){suffix}"
+        if parser_diag:
+            return _Gen(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL too small ({size} B) — parser: {diag}"),
+                size=size,
+                diag=parser_diag,
+            )
+        return _Gen(QT_TRANSLATE_NOOP("GeneratedView", "WAL too small ({size} B)"), size=size)
     try:
         magic = struct.unpack_from(">I", wal_path.read_bytes(), 0)[0]
     except Exception as exc:
-        return f"read error: {exc}"
+        return _Gen(QT_TRANSLATE_NOOP("GeneratedView", "read error: {error}"), error=exc)
     if magic not in _WAL_MAGIC:
-        return f"invalid magic 0x{magic:08x}"
-    return f"WAL ok (size={size} B, magic=0x{magic:08x}) — frames list empty"
+        return _Gen(QT_TRANSLATE_NOOP("GeneratedView", "invalid magic 0x{magic:08x}"), magic=magic)
+    return _Gen(
+        QT_TRANSLATE_NOOP(
+            "GeneratedView", "WAL ok (size={size} B, magic=0x{magic:08x}) — frames list empty"
+        ),
+        size=size,
+        magic=magic,
+    )
 
 
 def _format_wal_frame_content(rows: list[tuple[int, list[Any]]], col_names: list[str]) -> str:
@@ -598,32 +757,90 @@ _WAL_MAGIC = (0x377F0682, 0x377F0683)
 # kind values: "int" | "bool" | "enum" | "str"
 _PRAGMA_CATALOG: list[tuple[str, str, str, dict[int, str] | None, str]] = [
     # File format
-    ("application_id",     "Application ID",           "int",  None,
-     "32-bit magic number identifying the application that created this database"),
-    ("user_version",       "User version",             "int",  None,
-     "Application-defined schema version number"),
-    ("schema_version",     "Schema version",           "int",  None,
-     "Internal counter incremented on every schema change"),
-    ("encoding",           "Encoding",                 "str",  None,
-     "Text encoding for all string data in this database"),
-    ("page_size",          "Page size (B)",            "int",  None,
-     "Size of each B-tree page; fixed at database creation time"),
-    ("page_count",         "Page count",               "int",  None,
-     "Total allocated pages; multiply by page_size to get expected file size"),
-    ("freelist_count",     "Free pages",               "int",  None,
-     "Unallocated pages that may contain deleted data — forensically significant. "
-     "See the 'Freelist Recovery' tab to carve any leftover rows"),
+    (
+        "application_id",
+        QT_TRANSLATE_NOOP("GeneratedView", "Application ID"),
+        "int",
+        None,
+        QT_TRANSLATE_NOOP(
+            "GeneratedView",
+            "32-bit magic number identifying the application that created this database",
+        ),
+    ),
+    (
+        "user_version",
+        QT_TRANSLATE_NOOP("GeneratedView", "User version"),
+        "int",
+        None,
+        QT_TRANSLATE_NOOP("GeneratedView", "Application-defined schema version number"),
+    ),
+    (
+        "schema_version",
+        QT_TRANSLATE_NOOP("GeneratedView", "Schema version"),
+        "int",
+        None,
+        QT_TRANSLATE_NOOP("GeneratedView", "Internal counter incremented on every schema change"),
+    ),
+    (
+        "encoding",
+        QT_TRANSLATE_NOOP("GeneratedView", "Encoding"),
+        "str",
+        None,
+        QT_TRANSLATE_NOOP("GeneratedView", "Text encoding for all string data in this database"),
+    ),
+    (
+        "page_size",
+        QT_TRANSLATE_NOOP("GeneratedView", "Page size (B)"),
+        "int",
+        None,
+        QT_TRANSLATE_NOOP(
+            "GeneratedView", "Size of each B-tree page; fixed at database creation time"
+        ),
+    ),
+    (
+        "page_count",
+        QT_TRANSLATE_NOOP("GeneratedView", "Page count"),
+        "int",
+        None,
+        QT_TRANSLATE_NOOP(
+            "GeneratedView",
+            "Total allocated pages; multiply by page_size to get expected file size",
+        ),
+    ),
+    (
+        "freelist_count",
+        QT_TRANSLATE_NOOP("GeneratedView", "Free pages"),
+        "int",
+        None,
+        QT_TRANSLATE_NOOP(
+            "GeneratedView",
+            "Unallocated pages that may contain deleted data — forensically significant. "
+            "See the 'Freelist Recovery' tab to carve any leftover rows",
+        ),
+    ),
     # Journal / safety
-    ("journal_mode",       "Journal mode",             "str",  None,
-     "Rollback journal strategy (delete / wal / truncate / persist / memory / off). "
-     "Only the WAL/non-WAL distinction is stored in the file header — that part is "
-     "reliable; any other value is this connection's default, not necessarily what "
-     "was active historically (though the specific non-WAL sub-mode has no effect "
-     "on recoverable data, only on journal file cleanup)"),
+    (
+        "journal_mode",
+        QT_TRANSLATE_NOOP("GeneratedView", "Journal mode"),
+        "str",
+        None,
+        QT_TRANSLATE_NOOP(
+            "GeneratedView",
+            "Rollback journal strategy (delete / wal / truncate / persist / memory / off). "
+            "Only the WAL/non-WAL distinction is stored in the file header — that part is "
+            "reliable; any other value is this connection's default, not necessarily what "
+            "was active historically (though the specific non-WAL sub-mode has no effect "
+            "on recoverable data, only on journal file cleanup)",
+        ),
+    ),
     # Vacuum / storage
-    ("auto_vacuum",        "Auto vacuum",              "enum",
-     {0: "NONE", 1: "FULL", 2: "INCREMENTAL"},
-     "Automatic reclamation of free pages after DELETE"),
+    (
+        "auto_vacuum",
+        QT_TRANSLATE_NOOP("GeneratedView", "Auto vacuum"),
+        "enum",
+        {0: "NONE", 1: "FULL", 2: "INCREMENTAL"},
+        QT_TRANSLATE_NOOP("GeneratedView", "Automatic reclamation of free pages after DELETE"),
+    ),
 ]
 
 
@@ -704,15 +921,22 @@ class TableViewer(QWidget):
             )
         else:
             self._cell_locator = None
-        self._summary_label = "Summary (generated)"
-        self._db_structure_label = "DB Structure (generated)"
-        self._file_structure_label = "File Structure (generated)"
-        self._db_info_label = "DB Info (generated)"
-        self._wal_label = "WAL Frames (generated)"
-        self._journal_label = "Rollback Journal (generated)"
-        self._freelist_label = "Freelist Recovery (generated)"
-        self._freeblocks_label = "Freeblocks (generated)"
-        self._unallocated_label = "Unallocated Space (generated)"
+        # The generated views' names: the English name is the key (item data
+        # in the table combo, used by every check below); only the combo
+        # shows it translated -- see _add_generated_view()/_current_table().
+        self._summary_label = QT_TRANSLATE_NOOP("GeneratedView", "Summary (generated)")
+        self._db_structure_label = QT_TRANSLATE_NOOP("GeneratedView", "DB Structure (generated)")
+        self._file_structure_label = QT_TRANSLATE_NOOP(
+            "GeneratedView", "File Structure (generated)"
+        )
+        self._db_info_label = QT_TRANSLATE_NOOP("GeneratedView", "DB Info (generated)")
+        self._wal_label = QT_TRANSLATE_NOOP("GeneratedView", "WAL Frames (generated)")
+        self._journal_label = QT_TRANSLATE_NOOP("GeneratedView", "Rollback Journal (generated)")
+        self._freelist_label = QT_TRANSLATE_NOOP("GeneratedView", "Freelist Recovery (generated)")
+        self._freeblocks_label = QT_TRANSLATE_NOOP("GeneratedView", "Freeblocks (generated)")
+        self._unallocated_label = QT_TRANSLATE_NOOP(
+            "GeneratedView", "Unallocated Space (generated)"
+        )
         self._journal_result_cache: JournalParseResult | None = None
         self._journal_result_loaded = False
         self._wal_frames_cache: list[dict] | None = None
@@ -745,17 +969,17 @@ class TableViewer(QWidget):
             if self._db_path:
                 self._table_combo.clear()
                 if show_db_tabs:
-                    self._table_combo.addItem(self._summary_label)
-                    self._table_combo.addItem(self._db_structure_label)
-                    self._table_combo.addItem(self._file_structure_label)
-                    self._table_combo.addItem(self._db_info_label)
+                    self._add_generated_view(self._summary_label)
+                    self._add_generated_view(self._db_structure_label)
+                    self._add_generated_view(self._file_structure_label)
+                    self._add_generated_view(self._db_info_label)
                     if self._db_path and Path(str(self._db_path) + "-wal").exists():
-                        self._table_combo.addItem(self._wal_label)
+                        self._add_generated_view(self._wal_label)
                     if self._journal_path is not None:
-                        self._table_combo.addItem(self._journal_label)
-                    self._table_combo.addItem(self._freelist_label)
-                    self._table_combo.addItem(self._freeblocks_label)
-                    self._table_combo.addItem(self._unallocated_label)
+                        self._add_generated_view(self._journal_label)
+                    self._add_generated_view(self._freelist_label)
+                    self._add_generated_view(self._freeblocks_label)
+                    self._add_generated_view(self._unallocated_label)
                 self._table_combo.addItems(table_names)
                 if show_db_tabs:
                     conn = self._ensure_db()
@@ -792,56 +1016,58 @@ class TableViewer(QWidget):
         toolbar_layout.setContentsMargins(8, 4, 8, 4)
         toolbar_layout.setSpacing(8)
 
-        toolbar_layout.addWidget(QLabel("Table:"))
+        toolbar_layout.addWidget(QLabel(translate("TableViewer", "Table:")))
 
         self._table_combo = QComboBox()
         self._table_combo.addItems([k for k in self._data.keys() if not k.startswith("__")])
-        self._table_combo.currentTextChanged.connect(self._load_table)
+        self._table_combo.currentIndexChanged.connect(
+            lambda _index: self._load_table(self._current_table())
+        )
         toolbar_layout.addWidget(self._table_combo)
 
         self._row_count_label = QLabel("")
         toolbar_layout.addWidget(self._row_count_label)
 
-        self._wal_toggle = QCheckBox("Show WAL history")
+        self._wal_toggle = QCheckBox(translate("TableViewer", "Show WAL history"))
         self._wal_toggle.setVisible(False)
         self._wal_toggle.stateChanged.connect(self._on_wal_toggle)
         toolbar_layout.addWidget(self._wal_toggle)
 
-        self._journal_toggle = QCheckBox("Show pre-rollback state")
+        self._journal_toggle = QCheckBox(translate("TableViewer", "Show pre-rollback state"))
         self._journal_toggle.setVisible(False)
         self._journal_toggle.stateChanged.connect(self._on_journal_toggle)
         toolbar_layout.addWidget(self._journal_toggle)
 
-        self._prev_ref_toggle = QCheckBox("Show diff to prev ref")
+        self._prev_ref_toggle = QCheckBox(translate("TableViewer", "Show diff to prev ref"))
         self._prev_ref_toggle.setVisible(False)
         self._prev_ref_toggle.stateChanged.connect(self._on_prev_ref_toggle)
         toolbar_layout.addWidget(self._prev_ref_toggle)
 
-        self._freelist_table_filter_label = QLabel("View as:")
+        self._freelist_table_filter_label = QLabel(translate("TableViewer", "View as:"))
         self._freelist_table_filter_label.setVisible(False)
         toolbar_layout.addWidget(self._freelist_table_filter_label)
 
         self._freelist_table_filter = QComboBox()
         self._freelist_table_filter.setVisible(False)
         self._freelist_table_filter.setMinimumWidth(160)
-        self._freelist_table_filter.currentTextChanged.connect(
+        self._freelist_table_filter.currentIndexChanged.connect(
             self._on_freelist_table_filter_changed
         )
         toolbar_layout.addWidget(self._freelist_table_filter)
 
         toolbar_layout.addStretch()
 
-        search_label = QLabel("Search:")
+        search_label = QLabel(translate("TableViewer", "Search:"))
         toolbar_layout.addWidget(search_label)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter rows…")
+        self._search.setPlaceholderText(translate("TableViewer", "Filter rows…"))
         self._search.setClearButtonEnabled(True)
         self._search.setFixedWidth(200)
         self._search.textChanged.connect(self._apply_filter)
         toolbar_layout.addWidget(self._search)
 
-        self._hex_toggle_btn = QPushButton("Show Hex")
+        self._hex_toggle_btn = QPushButton(translate("TableViewer", "Show Hex"))
         self._hex_toggle_btn.clicked.connect(self._toggle_hex_pane)
         toolbar_layout.addWidget(self._hex_toggle_btn)
 
@@ -857,10 +1083,10 @@ class TableViewer(QWidget):
         sql_layout = QHBoxLayout(sql_row)
         sql_layout.setContentsMargins(0, 0, 0, 0)
         sql_layout.setSpacing(8)
-        sql_layout.addWidget(QLabel("SQL:"))
+        sql_layout.addWidget(QLabel(translate("TableViewer", "SQL:")))
         self._sql_input = _SqlEditor()
         self._sql_input.run_requested.connect(self._run_sql)
-        self._sql_input.setPlaceholderText("SELECT * FROM table LIMIT 100;")
+        self._sql_input.setPlaceholderText("SELECT * FROM table LIMIT 100;")  # i18n: keep -- SQL
         line_h = self._sql_input.fontMetrics().lineSpacing()
         self._sql_input.setMinimumHeight(line_h * 6 + 8)
         self._sql_highlighter = _SqlHighlighter(self._sql_input.document())
@@ -870,14 +1096,19 @@ class TableViewer(QWidget):
         run_controls_layout = QVBoxLayout(run_controls)
         run_controls_layout.setContentsMargins(0, 0, 0, 0)
         run_controls_layout.setSpacing(4)
-        self._run_sql_btn = QPushButton("Run")
-        self._run_sql_btn.setToolTip("Run query (F5 or Command+Enter / Ctrl+Enter)")
+        self._run_sql_btn = QPushButton(translate("TableViewer", "Run"))
+        self._run_sql_btn.setToolTip(
+            translate("TableViewer", "Run query (F5 or Command+Enter / Ctrl+Enter)")
+        )
         self._run_sql_btn.clicked.connect(self._run_sql)
         run_controls_layout.addWidget(self._run_sql_btn)
-        self._auto_limit = QCheckBox("Auto limit")
+        self._auto_limit = QCheckBox(translate("TableViewer", "Auto limit"))
         self._auto_limit.setChecked(True)
         self._auto_limit.setToolTip(
-            f"Cap query results at {_QUERY_ROW_LIMIT:,} rows. Turn off to fetch every row."
+            translate(
+                "TableViewer",
+                "Cap query results at {_QUERY_ROW_LIMIT:,} rows. Turn off to fetch every row.",
+            ).format(_QUERY_ROW_LIMIT=_QUERY_ROW_LIMIT)
         )
         run_controls_layout.addWidget(self._auto_limit)
         run_controls_layout.addStretch()
@@ -887,7 +1118,7 @@ class TableViewer(QWidget):
         export_controls_layout = QVBoxLayout(export_controls)
         export_controls_layout.setContentsMargins(0, 0, 0, 0)
         export_controls_layout.setSpacing(4)
-        self._export_btn = QPushButton("Export CSV…")
+        self._export_btn = QPushButton(translate("TableViewer", "Export CSV…"))
         self._export_btn.clicked.connect(self._export_csv)
         export_controls_layout.addWidget(self._export_btn)
         export_controls_layout.addStretch()
@@ -944,7 +1175,14 @@ class TableViewer(QWidget):
 
         # Cell detail panel — shown below the table, updates on selection
         self._structure_model = QStandardItemModel(self)
-        self._structure_model.setHorizontalHeaderLabels(["Structure", "Value", "Type"])
+        _set_headers(
+            self._structure_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Structure"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Value"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+            ),
+        )
         self._structure_tree = QTreeView()
         self._structure_tree.setModel(self._structure_model)
         self._structure_tree.setAlternatingRowColors(True)
@@ -964,7 +1202,7 @@ class TableViewer(QWidget):
         cell_detail_layout = QVBoxLayout(self._cell_detail_panel)
         cell_detail_layout.setContentsMargins(4, 2, 4, 2)
         cell_detail_layout.setSpacing(2)
-        self._cell_detail_label = QLabel("—  No cell selected")
+        self._cell_detail_label = QLabel(translate("TableViewer", "—  No cell selected"))
         self._cell_detail_label.setStyleSheet("color: gray; font-size: 11px;")
         cell_detail_layout.addWidget(self._cell_detail_label)
         self._cell_detail_view = QPlainTextEdit()
@@ -1032,6 +1270,15 @@ class TableViewer(QWidget):
             self._on_current_cell_changed
         )
 
+    def _add_generated_view(self, name: str) -> None:
+        self._table_combo.addItem(_gen_text(name), name)
+
+    def _current_table(self) -> str:
+        """The selected table's name, or a generated view's English name
+        (whatever the combo shows in the UI language)."""
+        key = self._table_combo.currentData()
+        return key if isinstance(key, str) else self._table_combo.currentText()
+
     def _load_table(self, table_name: str) -> None:
         """Populate the model with the selected table's data.
 
@@ -1047,7 +1294,7 @@ class TableViewer(QWidget):
         # Switching tables must not leave the previous table's last-selected
         # cell visible in the detail box below — nothing is selected in the
         # freshly loaded table yet, so the box should say so too (#73).
-        self._cell_detail_label.setText("—  No cell selected")
+        self._cell_detail_label.setText(translate("TableViewer", "—  No cell selected"))
         self._cell_detail_view.setPlainText("")
 
         # Same bug class: the status line below the SQL box is tab-specific
@@ -1182,13 +1429,22 @@ class TableViewer(QWidget):
         show_prev_ref = has_prev_ref and self._prev_ref_toggle.isChecked()
         show_journal = has_journal and self._journal_toggle.isChecked()
         show_source_col = show_wal or show_prev_ref or show_journal
-        source_col_name = (
-            "WAL Source" if show_wal else "Journal Source" if show_journal else "Source"
+        source_col_name = _Gen(
+            QT_TRANSLATE_NOOP("GeneratedView", "WAL Source")
+            if show_wal
+            else QT_TRANSLATE_NOOP("GeneratedView", "Journal Source")
+            if show_journal
+            else QT_TRANSLATE_NOOP("GeneratedView", "Source")
         )
-        headers = ["Row"] + columns + ([source_col_name] if show_source_col else [])
-        self._source_model.setHorizontalHeaderLabels(headers)
+        # "Row" and the source column are Crush's; the others are the
+        # table's own column names (file data, never translated).
+        headers: list[str | _Gen] = [_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Row"))]
+        headers += columns
+        if show_source_col:
+            headers.append(source_col_name)
+        _set_headers(self._source_model, headers)
 
-        def _append_row(row_data: list[Any], source_label: str | None = None,
+        def _append_row(row_data: list[Any], source_label: _Gen | None = None,
                         row_color: object = None, rowid: int | None = None,
                         wal_byte_range: tuple[int, int] | None = None,
                         wal_row_ranges: list[tuple[int, int]] | None = None,
@@ -1249,9 +1505,10 @@ class TableViewer(QWidget):
                     cell = QStandardItem(str(val) if val else "[]")
                     cell.setForeground(Qt.GlobalColor.gray if not val else QColor("#8844cc"))
                     cell.setToolTip(
-                        f"List/Set column — {len(val)} item(s). Stored as JSON text in "
-                        "SQL exports; query with json_each(...) or use the matching "
-                        "\"v_<table>\" view for already-resolved link names."
+                        translate(
+                            "TableViewer",
+                            'List/Set column — {val_count} item(s). Stored as JSON text in SQL exports; query with json_each(...) or use the matching "v_<table>" view for already-resolved link names.',
+                        ).format(val_count=len(val))
                     )
                     cell.setData(val, Qt.ItemDataRole.UserRole)
                 elif isinstance(val, dict):
@@ -1259,8 +1516,10 @@ class TableViewer(QWidget):
                     cell = QStandardItem(str(val) if val else "{}")
                     cell.setForeground(Qt.GlobalColor.gray if not val else QColor("#2a9d8f"))
                     cell.setToolTip(
-                        f"Dictionary column — {len(val)} entrie(s). Stored as JSON text in "
-                        "SQL exports; query with json_each(..., 'value')."
+                        translate(
+                            "TableViewer",
+                            "Dictionary column — {val_count} entrie(s). Stored as JSON text in SQL exports; query with json_each(..., 'value').",
+                        ).format(val_count=len(val))
                     )
                     cell.setData(val, Qt.ItemDataRole.UserRole)
                 else:
@@ -1275,7 +1534,7 @@ class TableViewer(QWidget):
                 cell.setEditable(False)
                 items.append(cell)
             if show_source_col:
-                src = QStandardItem(source_label or "")
+                src = _gen_item(source_label) if source_label else QStandardItem("")
                 src.setEditable(False)
                 if row_color:
                     src.setForeground(row_color)
@@ -1293,7 +1552,12 @@ class TableViewer(QWidget):
                 objkey = active_obj_keys[r] if r < len(active_obj_keys) else None
                 rowid = rowids[r] if rowids is not None else None
                 if objkey is not None and objkey not in prev_obj_keys_set:
-                    _append_row(row_data, "added", _added_color, rowid=rowid)
+                    _append_row(
+                        row_data,
+                        _Gen(QT_TRANSLATE_NOOP("GeneratedView", "added")),
+                        _added_color,
+                        rowid=rowid,
+                    )
                 else:
                     _append_row(row_data, rowid=rowid)
         else:
@@ -1323,15 +1587,24 @@ class TableViewer(QWidget):
         table_meta = self._data.get(table_name, {}) if isinstance(self._data, dict) else {}
         was_truncated = isinstance(table_meta, dict) and table_meta.get("truncated", False)
         total = len(rows)
-        row_word = "row" if total == 1 else "rows"
-        label = f"(first {total:,} {row_word} — use SQL to load more)" if was_truncated \
-            else f"({total:,} {row_word})"
+        if was_truncated:
+            label = (
+                translate("TableViewer", "(first {total:,} row — use SQL to load more)")
+                if total == 1
+                else translate("TableViewer", "(first {total:,} rows — use SQL to load more)")
+            ).format(total=total)
+        else:
+            label = _rows_label(total)
         if wal_row_count:
-            label += f"  +{wal_row_count} from WAL"
+            label += translate("TableViewer", "  +{count} from WAL").format(count=wal_row_count)
         if prev_ref_count:
-            label += f"  +{prev_ref_count} from prev ref"
+            label += translate("TableViewer", "  +{count} from prev ref").format(
+                count=prev_ref_count
+            )
         if journal_row_count:
-            label += f"  +{journal_row_count} from pre-rollback state"
+            label += translate("TableViewer", "  +{count} from pre-rollback state").format(
+                count=journal_row_count
+            )
         self._row_count_label.setText(label)
 
     def _inject_wal_rows(
@@ -1385,7 +1658,11 @@ class TableViewer(QWidget):
                 continue
 
             color = _status_color.get(f["status"])
-            label = f"WAL {f['status']} (frame {f['frame']})"
+            label = _Gen(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL {status} (frame {frame})"),
+                status=_Gen(f["status"]),
+                frame=f["frame"],
+            )
             n_cols = len(columns)
             byte_range = (f["offset"], f["offset"] + 24 + self._wal_page_size)
             for _rowid, values, layout in parsed:
@@ -1485,7 +1762,9 @@ class TableViewer(QWidget):
                         cell_start, cell_end = layout.page_local_range
                         row_ranges = [(page_file_offset + cell_start, page_file_offset + cell_end)]
                         append_row(  # type: ignore[operator]
-                            padded, "As found (pre-rollback)", QColor("#cc8800"),
+                            padded,
+                            _Gen(QT_TRANSLATE_NOOP("GeneratedView", "As found (pre-rollback)")),
+                            QColor("#cc8800"),
                             wal_byte_range=byte_range,
                             wal_row_ranges=row_ranges,
                             wal_column_ranges=None,
@@ -1499,7 +1778,7 @@ class TableViewer(QWidget):
 
     def _on_wal_toggle(self, _state: int) -> None:
         """Re-load the current table when the WAL history toggle changes."""
-        current = self._table_combo.currentText()
+        current = self._current_table()
         if current and current not in (
             self._summary_label,
             self._db_structure_label,
@@ -1515,7 +1794,7 @@ class TableViewer(QWidget):
 
     def _on_journal_toggle(self, _state: int) -> None:
         """Re-load the current table when the pre-rollback-state toggle changes."""
-        current = self._table_combo.currentText()
+        current = self._current_table()
         if current and current not in (
             self._summary_label,
             self._db_structure_label,
@@ -1531,7 +1810,7 @@ class TableViewer(QWidget):
 
     def _on_prev_ref_toggle(self, _state: int) -> None:
         """Re-load the current table when the prev-ref diff toggle changes."""
-        current = self._table_combo.currentText()
+        current = self._current_table()
         if current and current not in (
             self._summary_label,
             self._db_structure_label,
@@ -1588,12 +1867,18 @@ class TableViewer(QWidget):
         for key, prev_row in prev_by_key.items():
             padded_prev = (prev_row + [None] * n_cols)[:n_cols]
             if key not in active_by_key:
-                append_row(padded_prev, "deleted", del_color)  # type: ignore[operator]
+                append_row(  # type: ignore[operator]
+                    padded_prev, _Gen(QT_TRANSLATE_NOOP("GeneratedView", "deleted")), del_color
+                )
                 injected += 1
             else:
                 padded_active = (active_by_key[key] + [None] * n_cols)[:n_cols]
                 if padded_prev != padded_active:
-                    append_row(padded_prev, "prev version", mod_color)  # type: ignore[operator]
+                    append_row(  # type: ignore[operator]
+                        padded_prev,
+                        _Gen(QT_TRANSLATE_NOOP("GeneratedView", "prev version")),
+                        mod_color,
+                    )
                     injected += 1
 
         return injected
@@ -1621,7 +1906,14 @@ class TableViewer(QWidget):
             return
 
         self._reset_source_model()
-        self._source_model.setHorizontalHeaderLabels(["Name (generated)", "Type", "Rows"])
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Name (generated)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Rows"),
+            ),
+        )
         self._sql_status.setStyleSheet("")
 
         for name, obj_type in rows_tv:
@@ -1633,9 +1925,14 @@ class TableViewer(QWidget):
             name_item.setEditable(False)
             type_item = QStandardItem(obj_type)
             type_item.setEditable(False)
-            row_word = "row" if count == 1 else "rows"
-            count_text = f"{count:,} {row_word}" if isinstance(count, int) else "?"
-            count_item = QStandardItem(count_text)
+            if isinstance(count, int):
+                count_item = _gen_item(
+                    _Gen(QT_TRANSLATE_NOOP("GeneratedView", "{count:,} row"), count=count)
+                    if count == 1
+                    else _Gen(QT_TRANSLATE_NOOP("GeneratedView", "{count:,} rows"), count=count)
+                )
+            else:
+                count_item = QStandardItem("?")
             count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             count_item.setEditable(False)
             if isinstance(count, int):
@@ -1647,14 +1944,33 @@ class TableViewer(QWidget):
         def _c(key: str) -> int:
             return counts.get(key, 0)
 
+        def _count(n: int, one: str, many: str) -> str:
+            return (one if n == 1 else many).format(count=n)
+
         parts = [
-            f"{_c('table')} table{'s' if _c('table') != 1 else ''}",
-            f"{_c('view')} view{'s' if _c('view') != 1 else ''}",
-            f"{_c('index')} index{'es' if _c('index') != 1 else ''}",
-            f"{_c('trigger')} trigger{'s' if _c('trigger') != 1 else ''}",
+            _count(
+                _c("table"),
+                translate("TableViewer", "{count} table"),
+                translate("TableViewer", "{count} tables"),
+            ),
+            _count(
+                _c("view"),
+                translate("TableViewer", "{count} view"),
+                translate("TableViewer", "{count} views"),
+            ),
+            _count(
+                _c("index"),
+                translate("TableViewer", "{count} index"),
+                translate("TableViewer", "{count} indexes"),
+            ),
+            _count(
+                _c("trigger"),
+                translate("TableViewer", "{count} trigger"),
+                translate("TableViewer", "{count} triggers"),
+            ),
         ]
         summary = ", ".join(parts)
-        self._row_count_label.setText(f"({summary})")
+        self._row_count_label.setText(f"({summary})")  # i18n: keep -- layout
         self._sql_status.setText(summary)
         self._refresh_sql_completions()
 
@@ -1675,7 +1991,14 @@ class TableViewer(QWidget):
             return
 
         self._reset_source_model()
-        self._source_model.setHorizontalHeaderLabels(["Name (generated)", "Type", "Info"])
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Name (generated)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Info"),
+            ),
+        )
         self._sql_status.setStyleSheet("")
 
         for name, obj_type, tbl_name, sql in objects:
@@ -1684,6 +2007,7 @@ class TableViewer(QWidget):
             type_item = QStandardItem(obj_type)
             type_item.setEditable(False)
 
+            info_text: str | _Gen
             if obj_type == "table":
                 try:
                     cols = cursor.execute(f"PRAGMA table_info([{name}])").fetchall()
@@ -1696,8 +2020,16 @@ class TableViewer(QWidget):
             elif obj_type == "index":
                 try:
                     idx_rows = cursor.execute(f"PRAGMA index_info([{name}])").fetchall()
-                    cols = ", ".join(r[2] for r in idx_rows if r[2]) or "(expression)"
-                    info_text = f"ON {tbl_name} ({cols})"
+                    cols = ", ".join(r[2] for r in idx_rows if r[2])
+                    if cols:
+                        info_text = f"ON {tbl_name} ({cols})"
+                    else:
+                        # SQL keeps its keyword; only Crush's placeholder is translated.
+                        info_text = _Gen(
+                            "ON {table} ({columns})",  # i18n: keep -- SQL, not translated
+                            table=tbl_name,
+                            columns=_Gen(QT_TRANSLATE_NOOP("GeneratedView", "(expression)")),
+                        )
                 except Exception:
                     info_text = f"ON {tbl_name}"
             elif obj_type == "trigger":
@@ -1706,14 +2038,21 @@ class TableViewer(QWidget):
             else:
                 info_text = ""
 
-            info_item = QStandardItem(info_text)
+            info_item = (
+                _gen_item(info_text) if isinstance(info_text, _Gen) else QStandardItem(info_text)
+            )
             info_item.setEditable(False)
             self._source_model.appendRow([name_item, type_item, info_item])
 
         self._resize_and_cap()
         total = self._source_model.rowCount()
-        word = "object" if total == 1 else "objects"
-        self._row_count_label.setText(f"({total} schema {word})")
+        self._row_count_label.setText(
+            (
+                translate("TableViewer", "({total} schema object)")
+                if total == 1
+                else translate("TableViewer", "({total} schema objects)")
+            ).format(total=total)
+        )
         self._sql_status.setText("")
 
     def _get_wal_frames(self) -> list[dict] | None:
@@ -1751,14 +2090,30 @@ class TableViewer(QWidget):
         """Show full WAL frame inventory."""
         frames = self._get_wal_frames()
         self._reset_source_model()
-        self._source_model.setHorizontalHeaderLabels(
-            ["Frame", "Page", "Transaction", "Status", "Table", "Offset (B)", "Content"]
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Frame"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Transaction"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Status"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Table"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Offset (B)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Content"),
+            ),
         )
         if not frames:
             diag_issues = self._data.get("__wal_diag", []) if isinstance(self._data, dict) else []
             parser_diag = " | ".join(render_value(i) for i in diag_issues)
             diag = _wal_diag(self._db_path, parser_diag)
-            item = QStandardItem(f"No WAL file found or format not recognised — {diag}")
+            item = _gen_item(
+                _Gen(
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView", "No WAL file found or format not recognised — {diag}"
+                    ),
+                    diag=diag,
+                )
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -1789,7 +2144,7 @@ class TableViewer(QWidget):
             color = _status_color.get(f["status"])
             table_name = self._page_table_map.get(f["page"], "—")
 
-            content_text = "—"
+            content_text: str | _Gen = "—"
             if f["salt_ok"] and wal_data is not None and self._wal_page_size:
                 page_start = f["offset"] + 24
                 page_bytes = wal_data[page_start: page_start + self._wal_page_size]
@@ -1803,16 +2158,18 @@ class TableViewer(QWidget):
                     page_num=f"{f['page']} (WAL frame {f['frame']})",
                 )
                 if decoded is None:
-                    content_text = "(not a leaf page)"
+                    content_text = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "(not a leaf page)"))
                 elif not decoded:
-                    content_text = "(empty leaf page)"
+                    content_text = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "(empty leaf page)"))
                 else:
                     content_text = _format_wal_frame_content(
                         decoded, schema_col_names.get(table_name, [])
                     )
 
-            def _item(text: str, sort_val: object = None, _c: object = color) -> QStandardItem:
-                it = QStandardItem(text)
+            def _item(
+                text: str | _Gen, sort_val: object = None, _c: object = color
+            ) -> QStandardItem:
+                it = _gen_item(text) if isinstance(text, _Gen) else QStandardItem(text)
                 it.setEditable(False)
                 if sort_val is not None:
                     it.setData(sort_val, Qt.ItemDataRole.UserRole)
@@ -1832,7 +2189,7 @@ class TableViewer(QWidget):
                 frame_item,
                 _item(str(f["page"]),                    f["page"]),
                 _item(str(f["tx"]) if f["tx"] else "—",  f["tx"] or 0),
-                _item(f["status"]),
+                _item(_Gen(f["status"])),
                 _item(table_name),
                 _item(str(f["offset"]),                  f["offset"]),
                 _item(content_text),
@@ -1842,15 +2199,15 @@ class TableViewer(QWidget):
         self._set_source_status(self._page_table_problems + frame_problems)
 
         counts = Counter(f["status"] for f in frames)
-        parts = [f"{len(frames)} total"]
+        parts = [translate("TableViewer", "{count} total").format(count=len(frames))]
         for status in ("Active", "Superseded", "Uncommitted", "WAL slack"):
             n = counts.get(status, 0)
             if n:
-                parts.append(f"{n} {status.lower()}")
-        self._row_count_label.setText(f"({', '.join(parts)})")
+                parts.append(f"{n} {_gen_text(status).lower()}")  # i18n: keep -- layout
+        self._row_count_label.setText(f"({', '.join(parts)})")  # i18n: keep -- layout
         self._sql_status.setText(
-            "Double-click a row to open the raw page in the hex viewer — "
-            "click a Content cell to see the full decoded value below"
+            translate("TableViewer", "Double-click a row to open the raw page in the hex viewer — "
+            "click a Content cell to see the full decoded value below")
         )
 
     def _load_journal_records(self) -> None:
@@ -1866,19 +2223,41 @@ class TableViewer(QWidget):
         requires full validation.
         """
         self._reset_source_model()
-        self._source_model.setHorizontalHeaderLabels(
-            ["Segment", "Record", "Page", "Table", "Kind", "RowID", "Value", "Checksum", "Offset (B)"]
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Segment"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Record"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Table"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Kind"),
+                QT_TRANSLATE_NOOP("GeneratedView", "RowID"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Value"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Checksum"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Offset (B)"),
+            ),
         )
         result = self._get_journal_result()
         if result is None or self._journal_path is None:
-            item = QStandardItem("No -journal companion found or it could not be read")
+            item = _gen_item(
+                _Gen(
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView", "No -journal companion found or it could not be read"
+                    )
+                )
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
             return
         if not result.segments:
-            item = QStandardItem(
-                f"Journal present but not a valid rollback journal -- {result.error}"
+            item = _gen_item(
+                _Gen(
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView", "Journal present but not a valid rollback journal -- {error}"
+                    ),
+                    error=result.error,
+                )
             )
             item.setEditable(False)
             self._source_model.appendRow([item])
@@ -1901,10 +2280,14 @@ class TableViewer(QWidget):
                 color = _kind_color.get(row.kind)
                 table_name = self._page_table_map.get(row.page_num, "—")
 
+                value_text: str | _Gen
                 if row.kind == "Live cell":
                     value_text = str(row.values)
                 elif row.raw is not None and not any(row.raw):
-                    value_text = f"(all zero — {len(row.raw)} B)"
+                    value_text = _Gen(
+                        QT_TRANSLATE_NOOP("GeneratedView", "(all zero — {size} B)"),
+                        size=len(row.raw),
+                    )
                 elif row.raw is not None:
                     value_text = row.raw.decode("utf-8", errors="replace")
                 else:
@@ -1917,8 +2300,10 @@ class TableViewer(QWidget):
                     _STRUCTURE_BYTE_RANGE_ROLE,
                 )
 
-                def _item(text: str, sort_val: object = None, _c: object = color) -> QStandardItem:
-                    it = QStandardItem(text)
+                def _item(
+                    text: str | _Gen, sort_val: object = None, _c: object = color
+                ) -> QStandardItem:
+                    it = _gen_item(text) if isinstance(text, _Gen) else QStandardItem(text)
                     it.setEditable(False)
                     if sort_val is not None:
                         it.setData(sort_val, Qt.ItemDataRole.UserRole)
@@ -1935,33 +2320,44 @@ class TableViewer(QWidget):
                     _item(str(row.record_index),               row.record_index),
                     _item(str(row.page_num),                   row.page_num),
                     _item(table_name),
-                    _item(row.kind),
+                    _item(_Gen(row.kind)),
                     _item(str(row.rowid) if row.rowid is not None else "—",
                           row.rowid if row.rowid is not None else 0),
                     _item(value_text),
-                    _item("valid" if row.checksum_valid else "MISMATCH"),
+                    _item(
+                        _Gen(QT_TRANSLATE_NOOP("GeneratedView", "valid"))
+                        if row.checksum_valid
+                        else _Gen(QT_TRANSLATE_NOOP("GeneratedView", "MISMATCH"))
+                    ),
                     _item(str(row.file_offset),                 row.file_offset),
                 ])
 
         self._resize_and_cap()
         kind_counts = Counter(r.kind for r in rows)
         n_bad = sum(1 for r in rows if not r.checksum_valid)
-        parts = [f"{len(rows)} total"]
+        parts = [translate("TableViewer", "{count} total").format(count=len(rows))]
         for kind in ("Live cell", "Freeblock (deleted)", "Unallocated slack"):
             n = kind_counts.get(kind, 0)
             if n:
-                parts.append(f"{n} {kind.lower()}")
+                parts.append(f"{n} {_gen_text(kind).lower()}")  # i18n: keep -- layout
         if n_bad:
-            parts.append(f"{n_bad} checksum mismatch")
-        self._row_count_label.setText(f"({', '.join(parts)})")
+            parts.append(
+                translate("TableViewer", "{count} checksum mismatch").format(count=n_bad)
+            )
+        self._row_count_label.setText(f"({', '.join(parts)})")  # i18n: keep -- layout
         merged_note = (
-            "already merged into the current view above"
-            if result.mergeable else
-            f"NOT merged into the current view -- {result.error or 'checksum validation failed'}"
+            translate("TableViewer", "already merged into the current view above")
+            if result.mergeable
+            else translate("TableViewer", "NOT merged into the current view -- {reason}").format(
+                reason=result.error
+                or translate("TableViewer", "checksum validation failed")
+            )
         )
         self._sql_status.setText(
-            f"Every entry's own bytes are in this -journal file ({merged_note}). "
-            "Double-click a row to open its exact bytes in the hex viewer."
+            translate(
+                "TableViewer",
+                "Every entry's own bytes are in this -journal file ({merged_note}). Double-click a row to open its exact bytes in the hex viewer.",
+            ).format(merged_note=merged_note)
         )
 
     def _get_wal_data(self) -> bytes | None:
@@ -2106,8 +2502,15 @@ class TableViewer(QWidget):
         page_size = self._get_page_size()
 
         if conn is None or self._db_path is None or page_size == 0:
-            self._source_model.setHorizontalHeaderLabels(["Freelist Recovery (generated)"])
-            item = QStandardItem("Database file or page size unavailable")
+            _set_headers(
+                self._source_model,
+                _gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Freelist Recovery (generated)"),
+                ),
+            )
+            item = _gen_item(
+                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Database file or page size unavailable"))
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -2133,9 +2536,15 @@ class TableViewer(QWidget):
 
         def _on_error(message: str) -> None:
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText(f"Error scanning freelist pages: {message}")
+            self._sql_status.setText(
+                translate("TableViewer", "Error scanning freelist pages: {message}").format(
+                    message=message
+                )
+            )
 
-        run_with_busy_dialog(self, "Scanning freelist pages…", _work, _on_done, _on_error)
+        run_with_busy_dialog(
+            self, translate("TableViewer", "Scanning freelist pages…"), _work, _on_done, _on_error
+        )
 
     def _render_freelist_recovery(
         self,
@@ -2148,7 +2557,7 @@ class TableViewer(QWidget):
         self._freelist_render_state = (entries, carved, schema_cols)
         self._refresh_freelist_table_filter_options(carved, schema_cols)
         self._populate_freelist_recovery_table(
-            entries, carved, schema_cols, self._freelist_table_filter.currentText()
+            entries, carved, schema_cols, self._freelist_table_filter.currentData()
         )
 
     def _refresh_freelist_table_filter_options(
@@ -2164,12 +2573,16 @@ class TableViewer(QWidget):
                 candidate_tables.update(full)
                 candidate_tables.update(count_only)
 
-        previous = self._freelist_table_filter.currentText()
+        # Item data is the table name (None = all tables); the text is only
+        # the display, so a table that happens to be called like the
+        # "all tables" entry can't be confused with it.
+        previous = self._freelist_table_filter.currentData()
         self._freelist_table_filter.blockSignals(True)
         self._freelist_table_filter.clear()
-        self._freelist_table_filter.addItem(self._FREELIST_FILTER_ALL)
-        self._freelist_table_filter.addItems(sorted(candidate_tables))
-        idx = self._freelist_table_filter.findText(previous)
+        self._freelist_table_filter.addItem(translate("TableViewer", "(all tables)"), None)
+        for name in sorted(candidate_tables):
+            self._freelist_table_filter.addItem(name, name)
+        idx = self._freelist_table_filter.findData(previous) if previous is not None else 0
         self._freelist_table_filter.setCurrentIndex(idx if idx >= 0 else 0)
         self._freelist_table_filter.blockSignals(False)
 
@@ -2177,14 +2590,14 @@ class TableViewer(QWidget):
         self._freelist_table_filter.setVisible(visible)
         self._freelist_table_filter_label.setVisible(visible)
 
-    def _on_freelist_table_filter_changed(self, _text: str) -> None:
+    def _on_freelist_table_filter_changed(self, _index: object) -> None:
         if self._freelist_render_state is None:
             return
-        self._cell_detail_label.setText("—  No cell selected")
+        self._cell_detail_label.setText(translate("TableViewer", "—  No cell selected"))
         self._cell_detail_view.setPlainText("")
         entries, carved, schema_cols = self._freelist_render_state
         self._populate_freelist_recovery_table(
-            entries, carved, schema_cols, self._freelist_table_filter.currentText()
+            entries, carved, schema_cols, self._freelist_table_filter.currentData()
         )
 
     @staticmethod
@@ -2203,8 +2616,6 @@ class TableViewer(QWidget):
             else:
                 count_only.append(name)
         return sorted(full), sorted(count_only)
-
-    _FREELIST_FILTER_ALL = "(all tables)"
 
     @staticmethod
     def _freelist_cell_text(v: Any) -> str:
@@ -2225,33 +2636,56 @@ class TableViewer(QWidget):
         self._reset_source_model()
         self._set_source_status(problems)
         if not entries:
-            self._source_model.setHorizontalHeaderLabels(["Freelist Recovery (generated)"])
-            item = QStandardItem("" if problems else "No freelist pages found")
+            _set_headers(
+                self._source_model,
+                _gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Freelist Recovery (generated)"),
+                ),
+            )
+            item = (
+                QStandardItem("")
+                if problems
+                else _gen_item(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "No freelist pages found")))
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
             return
 
-        pivot_table = selected_table if selected_table not in (
-            None, self._FREELIST_FILTER_ALL
-        ) else None
+        pivot_table = selected_table or None
         pivot_cols = schema_cols.get(pivot_table, []) if pivot_table else []
 
+        # The pivoted table's own column names are file data; the rest is Crush's.
+        headers: list[str | _Gen]
         if pivot_table:
-            headers = ["Page", "Kind", "RowID", "Match"] + [name for name, _aff in pivot_cols]
+            headers = _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Kind"),
+                QT_TRANSLATE_NOOP("GeneratedView", "RowID"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Match"),
+            )
+            headers += [name for name, _aff in pivot_cols]
         else:
             max_cols = max(
                 (len(values) for c in carved for _rowid, values in c["rows"]), default=0
             )
-            headers = ["Page", "Kind", "RowID", "Candidate Tables"] + [
-                f"col{i}" for i in range(max_cols)
+            headers = _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Kind"),
+                QT_TRANSLATE_NOOP("GeneratedView", "RowID"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Candidate Tables"),
+            )
+            headers += [
+                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "col{index}"), index=i)
+                for i in range(max_cols)
             ]
-        self._source_model.setHorizontalHeaderLabels(headers)
+        _set_headers(self._source_model, headers)
 
-        cand_tooltip = (
+        cand_tooltip = translate(
+            "TableViewer",
             "✓ = column count and value types both match (higher confidence). "
             "Others match column count only — value types don't rule them out, "
-            "but don't confirm them either."
+            "but don't confirm them either.",
         )
         total_rows = 0
         with self._dynamic_sort_suspended():
@@ -2262,10 +2696,14 @@ class TableViewer(QWidget):
 
                     if pivot_table:
                         if pivot_table in full:
-                            match_item = QStandardItem("✓ types match")
+                            match_item = _gen_item(
+                                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "✓ types match"))
+                            )
                             match_item.setForeground(QColor("#2a9d8f"))
                         elif pivot_table in count_only:
-                            match_item = QStandardItem("count only")
+                            match_item = _gen_item(
+                                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "count only"))
+                            )
                             match_item.setForeground(Qt.GlobalColor.gray)
                         else:
                             continue  # row isn't a candidate for the pivoted table at all
@@ -2315,35 +2753,46 @@ class TableViewer(QWidget):
         n_pages_with_data = len({c["page"] for c in carved})
         if pivot_table:
             self._row_count_label.setText(
-                f"({total_rows} rows carved matching '{pivot_table}')"
+                translate(
+                    "TableViewer", "({total_rows} rows carved matching '{pivot_table}')"
+                ).format(total_rows=total_rows, pivot_table=pivot_table)
             )
             self._sql_status.setText(
-                f"Showing carved rows candidate for table '{pivot_table}', columns mapped "
-                "to its real names — this is still a candidate match, not a confirmed "
-                "recovery. ✓ rows also match on value types (higher confidence); 'count "
-                "only' rows match column count alone. Double-click a row to open the raw "
-                "page in the hex viewer."
+                translate(
+                    "TableViewer",
+                    "Showing carved rows candidate for table '{pivot_table}', columns mapped to its real names — this is still a candidate match, not a confirmed recovery. ✓ rows also match on value types (higher confidence); 'count only' rows match column count alone. Double-click a row to open the raw page in the hex viewer.",
+                ).format(pivot_table=pivot_table)
             )
         else:
             self._row_count_label.setText(
-                f"({len(entries)} freelist pages, {n_pages_with_data} with recoverable data, "
-                f"{total_rows} rows carved)"
+                translate(
+                    "TableViewer",
+                    "({entries_count} freelist pages, {n_pages_with_data} with recoverable data, {total_rows} rows carved)",
+                ).format(
+                    entries_count=len(entries),
+                    n_pages_with_data=n_pages_with_data,
+                    total_rows=total_rows,
+                )
             )
             if total_rows == 0:
                 self._sql_status.setText(
-                    f"{len(entries)} freed page(s) found, but none still carry leftover "
-                    "cell data — not a parsing failure. Either a later allocation already "
-                    "overwrote them, or secure_delete was enabled at write time."
+                    translate(
+                        "TableViewer",
+                        "{entries_count} freed page(s) found, but none still carry leftover cell data — not a parsing failure. Either a later allocation already overwrote them, or secure_delete was enabled at write time.",
+                    ).format(entries_count=len(entries))
                 )
             else:
                 self._sql_status.setText(
-                    "Candidate tables are a heuristic match — the source table cannot be "
-                    "determined with certainty from a freed page. ✓-marked candidates match on "
-                    "both column count and value types (higher confidence); unmarked candidates "
-                    "match column count only. Values spilling onto overflow "
-                    "pages are reconstructed when those pages are still on the freelist "
-                    "unmodified; otherwise shown as '<OVERFLOW>'. Double-click a row to open the "
-                    "raw page in the hex viewer."
+                    translate(
+                        "TableViewer",
+                        "Candidate tables are a heuristic match — the source table cannot be "
+                        "determined with certainty from a freed page. ✓-marked candidates match on "
+                        "both column count and value types (higher confidence); unmarked candidates "
+                        "match column count only. Values spilling onto overflow "
+                        "pages are reconstructed when those pages are still on the freelist "
+                        "unmodified; otherwise shown as '<OVERFLOW>'. Double-click a row to open the "
+                        "raw page in the hex viewer.",
+                    )
                 )
 
     def _get_page_table_map(self) -> dict[int, str]:
@@ -2393,8 +2842,15 @@ class TableViewer(QWidget):
         page_size = self._get_page_size()
 
         if conn is None or self._db_path is None or page_size == 0:
-            self._source_model.setHorizontalHeaderLabels(["Freeblocks (generated)"])
-            item = QStandardItem("Database file or page size unavailable")
+            _set_headers(
+                self._source_model,
+                _gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Freeblocks (generated)"),
+                ),
+            )
+            item = _gen_item(
+                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Database file or page size unavailable"))
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -2431,9 +2887,15 @@ class TableViewer(QWidget):
 
         def _on_error(message: str) -> None:
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText(f"Error scanning freeblocks: {message}")
+            self._sql_status.setText(
+                translate("TableViewer", "Error scanning freeblocks: {message}").format(
+                    message=message
+                )
+            )
 
-        run_with_busy_dialog(self, "Scanning for freeblocks…", _work, _on_done, _on_error)
+        run_with_busy_dialog(
+            self, translate("TableViewer", "Scanning for freeblocks…"), _work, _on_done, _on_error
+        )
 
     def _populate_freeblocks_table(
         self,
@@ -2444,15 +2906,31 @@ class TableViewer(QWidget):
         problems = self._freeblocks_problems + self._page_table_problems
         self._set_source_status(problems)
         if not freeblocks:
-            self._source_model.setHorizontalHeaderLabels(["Freeblocks (generated)"])
-            item = QStandardItem("" if problems else "No freeblocks found")
+            _set_headers(
+                self._source_model,
+                _gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Freeblocks (generated)"),
+                ),
+            )
+            item = (
+                QStandardItem("")
+                if problems
+                else _gen_item(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "No freeblocks found")))
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
             return
 
-        self._source_model.setHorizontalHeaderLabels(
-            ["Page", "Table", "Offset (B)", "Size (B)", "Data"]
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Table"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Offset (B)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Size (B)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Data"),
+            ),
         )
 
         page_size = self._get_page_size()
@@ -2461,13 +2939,16 @@ class TableViewer(QWidget):
         with self._dynamic_sort_suspended():
             for fb in freeblocks:
                 page = fb["page"]
+                # A table name (file data) or Crush's "Freelist".
+                origin: str | _Gen
                 if page in page_table_map:
                     origin = page_table_map[page]
                 elif page in freelist_pages:
-                    origin = "Freelist"
+                    origin = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Freelist"))
                 else:
                     origin = "—"
                 raw = fb["data"]
+                text: str | _Gen
                 if not raw:
                     text = ""
                 elif not any(raw):
@@ -2478,7 +2959,9 @@ class TableViewer(QWidget):
                     # itself a legitimate, forensically meaningful result:
                     # e.g. secure_delete was on, or the space was never
                     # written to before being linked into the freeblock).
-                    text = f"(all zero — {len(raw)} B)"
+                    text = _Gen(
+                        QT_TRANSLATE_NOOP("GeneratedView", "(all zero — {size} B)"), size=len(raw)
+                    )
                 else:
                     text = raw.decode("utf-8", errors="replace")
 
@@ -2492,22 +2975,29 @@ class TableViewer(QWidget):
                     )
                 items = [
                     page_item,
-                    QStandardItem(origin),
+                    _gen_item(origin) if isinstance(origin, _Gen) else QStandardItem(origin),
                     QStandardItem(str(fb["offset"])),
                     QStandardItem(str(fb["size"])),
-                    QStandardItem(text),
+                    _gen_item(text) if isinstance(text, _Gen) else QStandardItem(text),
                 ]
                 for it in items:
                     it.setEditable(False)
                 self._source_model.appendRow(items)
 
         self._resize_and_cap()
-        self._row_count_label.setText(f"({len(freeblocks)} freeblocks)")
+        self._row_count_label.setText(
+            translate("TableViewer", "({freeblocks_count} freeblocks)").format(
+                freeblocks_count=len(freeblocks)
+            )
+        )
         self._sql_status.setText(
-            "Raw leftover bytes from deleted cells still linked in each page's freeblock "
-            "list — not decoded into columns, since the freeblock's own header overwrites "
-            "the start of the original cell. Double-click a row to open the raw page in "
-            "the hex viewer."
+            translate(
+                "TableViewer",
+                "Raw leftover bytes from deleted cells still linked in each page's freeblock "
+                "list — not decoded into columns, since the freeblock's own header overwrites "
+                "the start of the original cell. Double-click a row to open the raw page in "
+                "the hex viewer.",
+            )
         )
 
     def _get_unallocated_data(self) -> list[dict]:
@@ -2540,8 +3030,15 @@ class TableViewer(QWidget):
         page_size = self._get_page_size()
 
         if conn is None or self._db_path is None or page_size == 0:
-            self._source_model.setHorizontalHeaderLabels(["Unallocated Space (generated)"])
-            item = QStandardItem("Database file or page size unavailable")
+            _set_headers(
+                self._source_model,
+                _gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Unallocated Space (generated)"),
+                ),
+            )
+            item = _gen_item(
+                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Database file or page size unavailable"))
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
@@ -2572,9 +3069,19 @@ class TableViewer(QWidget):
 
         def _on_error(message: str) -> None:
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText(f"Error scanning unallocated space: {message}")
+            self._sql_status.setText(
+                translate("TableViewer", "Error scanning unallocated space: {message}").format(
+                    message=message
+                )
+            )
 
-        run_with_busy_dialog(self, "Scanning unallocated space…", _work, _on_done, _on_error)
+        run_with_busy_dialog(
+            self,
+            translate("TableViewer", "Scanning unallocated space…"),
+            _work,
+            _on_done,
+            _on_error,
+        )
 
     def _populate_unallocated_table(
         self,
@@ -2585,15 +3092,33 @@ class TableViewer(QWidget):
         problems = self._unallocated_problems + self._page_table_problems
         self._set_source_status(problems)
         if not entries:
-            self._source_model.setHorizontalHeaderLabels(["Unallocated Space (generated)"])
-            item = QStandardItem("" if problems else "No non-empty unallocated space found")
+            _set_headers(
+                self._source_model,
+                _gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Unallocated Space (generated)"),
+                ),
+            )
+            item = (
+                QStandardItem("")
+                if problems
+                else _gen_item(
+                    _Gen(QT_TRANSLATE_NOOP("GeneratedView", "No non-empty unallocated space found"))
+                )
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
             return
 
-        self._source_model.setHorizontalHeaderLabels(
-            ["Page", "Table", "Offset (B)", "Size (B)", "Data"]
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Table"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Offset (B)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Size (B)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Data"),
+            ),
         )
 
         page_size = self._get_page_size()
@@ -2602,10 +3127,12 @@ class TableViewer(QWidget):
         with self._dynamic_sort_suspended():
             for entry in entries:
                 page = entry["page"]
+                # A table name (file data) or Crush's "Freelist".
+                origin: str | _Gen
                 if page in page_table_map:
                     origin = page_table_map[page]
                 elif page in freelist_pages:
-                    origin = "Freelist"
+                    origin = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Freelist"))
                 else:
                     origin = "—"
                 text = entry["data"].decode("utf-8", errors="replace")
@@ -2623,7 +3150,7 @@ class TableViewer(QWidget):
                     )
                 items = [
                     page_item,
-                    QStandardItem(origin),
+                    _gen_item(origin) if isinstance(origin, _Gen) else QStandardItem(origin),
                     QStandardItem(str(entry["offset"])),
                     QStandardItem(str(entry["size"])),
                     QStandardItem(text),
@@ -2633,17 +3160,24 @@ class TableViewer(QWidget):
                 self._source_model.appendRow(items)
 
         self._resize_and_cap()
-        self._row_count_label.setText(f"({len(entries)} pages with non-empty unallocated space)")
+        self._row_count_label.setText(
+            translate(
+                "TableViewer", "({entries_count} pages with non-empty unallocated space)"
+            ).format(entries_count=len(entries))
+        )
         self._sql_status.setText(
-            "Raw bytes only, not verified as recoverable row content — SQLite doesn't "
-            "guarantee anything meaningful survives here, unlike Freeblocks. Often noise "
-            "(stale pointer values) or empty. Double-click a row to open the raw page in "
-            "the hex viewer."
+            translate(
+                "TableViewer",
+                "Raw bytes only, not verified as recoverable row content — SQLite doesn't "
+                "guarantee anything meaningful survives here, unlike Freeblocks. Often noise "
+                "(stale pointer values) or empty. Double-click a row to open the raw page in "
+                "the hex viewer.",
+            )
         )
 
     def _on_table_double_clicked(self, index: object) -> None:
         """Double-click handler: navigate to table from summary, open WAL page in hex viewer, or inspect bytes cell."""
-        current = self._table_combo.currentText()
+        current = self._current_table()
 
         if self._query_results_active:
             model_index = self._proxy_model.index(index.row(), index.column())  # type: ignore[union-attr]
@@ -2797,12 +3331,22 @@ class TableViewer(QWidget):
         self._sql_status.setStyleSheet("")
         self._sql_status.setText("")
         self._structure_model.removeRows(0, self._structure_model.rowCount())
-        self._structure_model.setHorizontalHeaderLabels(["Structure", "Value", "Type"])
+        _set_headers(
+            self._structure_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Structure"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Value"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+            ),
+        )
 
         if self._db_path is None:
             self._append_structure_node(
                 self._structure_model.invisibleRootItem(),
-                StructureNode("SQLite file", "database file unavailable"),
+                StructureNode(
+                    "SQLite file",
+                    translate("GeneratedView", "database file unavailable"),
+                ),
             )
             return
 
@@ -2810,7 +3354,7 @@ class TableViewer(QWidget):
         if page_size == 0:
             self._append_structure_node(
                 self._structure_model.invisibleRootItem(),
-                StructureNode("SQLite file", "page size unavailable"),
+                StructureNode("SQLite file", translate("GeneratedView", "page size unavailable")),
             )
             return
 
@@ -2829,7 +3373,12 @@ class TableViewer(QWidget):
         except Exception as exc:
             self._append_structure_node(
                 self._structure_model.invisibleRootItem(),
-                StructureNode("SQLite file", f"structure parse failed: {exc}"),
+                StructureNode(
+                    "SQLite file",
+                    translate("GeneratedView", "structure parse failed: {error}").format(
+                        error=exc
+                    ),
+                ),
             )
             return
 
@@ -2843,12 +3392,17 @@ class TableViewer(QWidget):
         self._structure_tree.expandToDepth(0)
         pages = next((n for n in nodes if n.label == "Pages"), None)
         page_count = len(pages.children) if pages is not None else 0
-        self._row_count_label.setText(f"({page_count:,} pages)")
+        self._row_count_label.setText(
+            translate("TableViewer", "({page_count:,} pages)").format(page_count=page_count)
+        )
         self._sql_status.setText(
-            "Select a structure item to highlight its bytes; click the hex pane to "
-            "select the deepest matching header, page, cell, freeblock, or unallocated entry. "
-            "Pages load their cell/column detail on first expand. To find specific content, "
-            "query the table itself (SQL) and use Locate in Hex, or search in the hex pane."
+            translate(
+                "TableViewer",
+                "Select a structure item to highlight its bytes; click the hex pane to "
+                "select the deepest matching header, page, cell, freeblock, or unallocated entry. "
+                "Pages load their cell/column detail on first expand. To find specific content, "
+                "query the table itself (SQL) and use Locate in Hex, or search in the hex pane.",
+            )
         )
         if self._hex_panel.isVisible():
             self._ensure_hex_pane_loaded()
@@ -2861,7 +3415,7 @@ class TableViewer(QWidget):
         # The cell is one line, elided at the column edge; the tooltip wraps
         # the whole value (nothing is cut off, see _display_cell_value).
         value.setToolTip(
-            f"<p style='white-space: pre-wrap'>{html.escape(value_text)}</p>"
+            f"<p style='white-space: pre-wrap'>{html.escape(value_text)}</p>"  # i18n: keep -- markup
         )
         kind = QStandardItem(node.kind)
         for item in (label, value, kind):
@@ -2879,7 +3433,7 @@ class TableViewer(QWidget):
             self._append_structure_node(label, child)
         if node.lazy_page is not None:
             label.setData(node.lazy_page, _STRUCTURE_LAZY_PAGE_ROLE)
-            placeholder = QStandardItem("Loading…")
+            placeholder = QStandardItem(translate("GeneratedView", "Loading…"))
             placeholder.setEditable(False)
             placeholder.setSelectable(False)
             label.appendRow([placeholder, QStandardItem(""), QStandardItem("")])
@@ -2913,7 +3467,9 @@ class TableViewer(QWidget):
                 self._get_wal_data(),
             )
         except Exception as exc:
-            self._append_structure_node(item, StructureNode("Error", f"{exc}"))
+            self._append_structure_node(
+                item, StructureNode(translate("GeneratedView", "Error"), f"{exc}")
+            )
             return True
         for node in detail_nodes:
             self._append_structure_node(item, node)
@@ -2926,7 +3482,14 @@ class TableViewer(QWidget):
             return
         cursor = conn.cursor()
         self._reset_source_model()
-        self._source_model.setHorizontalHeaderLabels(["Setting (generated)", "Value", "Description"])
+        _set_headers(
+            self._source_model,
+            _gens(
+                QT_TRANSLATE_NOOP("GeneratedView", "Setting (generated)"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Value"),
+                QT_TRANSLATE_NOOP("GeneratedView", "Description"),
+            ),
+        )
 
         # WAL summary block (if present)
         frames = self._get_wal_frames()
@@ -2935,11 +3498,11 @@ class TableViewer(QWidget):
             counts = Counter(f["status"] for f in frames)
 
             def _wal_row(label: str, value: str, desc: str, color: object = None) -> None:
-                s = QStandardItem(label)
+                s = _gen_item(_Gen(label))
                 s.setEditable(False)
                 v = QStandardItem(value)
                 v.setEditable(False)
-                d = QStandardItem(desc)
+                d = _gen_item(_Gen(desc))
                 d.setForeground(Qt.GlobalColor.gray)
                 d.setEditable(False)
                 if color is not None:
@@ -2949,21 +3512,53 @@ class TableViewer(QWidget):
 
             wal_path = Path(str(self._db_path) + "-wal")
             wal_size = wal_path.stat().st_size if wal_path.exists() else 0
-            _wal_row("WAL file size (B)",    f"{wal_size:,}",                  "Size of the -wal companion file on disk")
-            _wal_row("WAL total frames",     str(len(frames)),                 "Total frames found in WAL file")
-            _wal_row("WAL active frames",    str(counts.get("Active", 0)),     "Frames currently read by SQLite (newest per page)")
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL file size (B)"),
+                f"{wal_size:,}",
+                QT_TRANSLATE_NOOP("GeneratedView", "Size of the -wal companion file on disk"),
+            )
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL total frames"),
+                str(len(frames)),
+                QT_TRANSLATE_NOOP("GeneratedView", "Total frames found in WAL file"),
+            )
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL active frames"),
+                str(counts.get("Active", 0)),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView", "Frames currently read by SQLite (newest per page)"
+                ),
+            )
             n_sup = counts.get("Superseded", 0)
-            _wal_row("WAL superseded frames", str(n_sup),
-                     "Older versions of pages — may contain overwritten or deleted data",
-                     QColor("#cc8800") if n_sup else None)
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL superseded frames"),
+                str(n_sup),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "Older versions of pages — may contain overwritten or deleted data",
+                ),
+                QColor("#cc8800") if n_sup else None,
+            )
             n_unc = counts.get("Uncommitted", 0)
-            _wal_row("WAL uncommitted frames", str(n_unc),
-                     "Frames beyond the last commit marker — captured mid-transaction",
-                     QColor("#4488ff") if n_unc else None)
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL uncommitted frames"),
+                str(n_unc),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "Frames beyond the last commit marker — captured mid-transaction",
+                ),
+                QColor("#4488ff") if n_unc else None,
+            )
             n_slack = counts.get("WAL slack", 0)
-            _wal_row("WAL slack frames",     str(n_slack),
-                     "Salt-mismatch frames from a previous WAL cycle — reused WAL space",
-                     Qt.GlobalColor.darkGray if n_slack else None)
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL slack frames"),
+                str(n_slack),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "Salt-mismatch frames from a previous WAL cycle — reused WAL space",
+                ),
+                Qt.GlobalColor.darkGray if n_slack else None,
+            )
 
             # Visual separator
             sep = QStandardItem("─" * 30)
@@ -2975,12 +3570,14 @@ class TableViewer(QWidget):
         journal_result = self._get_journal_result()
         if journal_result is not None and self._journal_path is not None:
 
-            def _journal_row(label: str, value: str, desc: str, color: object = None) -> None:
-                s = QStandardItem(label)
+            def _journal_row(
+                label: str, value: str | _Gen, desc: str | _Gen, color: object = None
+            ) -> None:
+                s = _gen_item(_Gen(label))
                 s.setEditable(False)
-                v = QStandardItem(value)
+                v = _gen_item(value) if isinstance(value, _Gen) else QStandardItem(value)
                 v.setEditable(False)
-                d = QStandardItem(desc)
+                d = _gen_item(desc if isinstance(desc, _Gen) else _Gen(desc))
                 d.setForeground(Qt.GlobalColor.gray)
                 d.setEditable(False)
                 if color is not None:
@@ -2993,28 +3590,64 @@ class TableViewer(QWidget):
             n_bad = sum(
                 1 for s in journal_result.segments for r in s.records if not r.checksum_valid
             )
-            _journal_row("Journal file size (B)", f"{journal_size:,}",
-                         "Size of the -journal companion file on disk")
-            _journal_row("Journal segments", str(len(journal_result.segments)),
-                         "Header+records groups (SQLite starts a new one on each mid-transaction sync)")
-            _journal_row("Journal page records", str(n_records),
-                         "Pre-transaction page images captured in this journal")
             _journal_row(
-                "Journal merged into current view",
-                "Yes" if journal_result.mergeable else "No",
-                (
-                    "Every segment's header and page checksum validated — the table grid, "
-                    "SQL bar, and PRAGMAs above already reflect the post-rollback state"
-                    if journal_result.mergeable else
-                    (journal_result.error or "One or more page checksums did not validate — "
-                     "see the 'Rollback Journal' tab for the raw, unmerged record inventory")
+                QT_TRANSLATE_NOOP("GeneratedView", "Journal file size (B)"),
+                f"{journal_size:,}",
+                QT_TRANSLATE_NOOP("GeneratedView", "Size of the -journal companion file on disk"),
+            )
+            _journal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "Journal segments"),
+                str(len(journal_result.segments)),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "Header+records groups (SQLite starts a new one on each mid-transaction sync)",
                 ),
+            )
+            _journal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "Journal page records"),
+                str(n_records),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView", "Pre-transaction page images captured in this journal"
+                ),
+            )
+            merged_desc: str | _Gen
+            if journal_result.mergeable:
+                merged_desc = _Gen(
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView",
+                        "Every segment's header and page checksum validated — the table grid, "
+                        "SQL bar, and PRAGMAs above already reflect the post-rollback state",
+                    )
+                )
+            elif journal_result.error:
+                # A ParseIssue: rendered English here, switched to its own
+                # translated rendering with the other issue display sites.
+                merged_desc = str(journal_result.error)
+            else:
+                merged_desc = _Gen(
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView",
+                        "One or more page checksums did not validate — "
+                        "see the 'Rollback Journal' tab for the raw, unmerged record inventory",
+                    )
+                )
+            _journal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "Journal merged into current view"),
+                _Gen(QT_TRANSLATE_NOOP("GeneratedView", "Yes"))
+                if journal_result.mergeable
+                else _Gen(QT_TRANSLATE_NOOP("GeneratedView", "No")),
+                merged_desc,
                 QColor("#228833") if journal_result.mergeable else QColor("#cc4444"),
             )
             if n_bad:
-                _journal_row("Journal checksum mismatches", str(n_bad),
-                             "Page records that failed checksum validation — not merged",
-                             QColor("#cc4444"))
+                _journal_row(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Journal checksum mismatches"),
+                    str(n_bad),
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView", "Page records that failed checksum validation — not merged"
+                    ),
+                    QColor("#cc4444"),
+                )
 
             sep2 = QStandardItem("─" * 30)
             sep2.setForeground(Qt.GlobalColor.gray)
@@ -3046,27 +3679,39 @@ class TableViewer(QWidget):
             else:
                 display = str(raw)
 
-            setting_item = QStandardItem(label)
+            setting_item = _gen_item(_Gen(label))
             setting_item.setEditable(False)
             value_item = QStandardItem(display)
             value_item.setEditable(False)
-            desc_item = QStandardItem(description)
+            desc_item = _gen_item(_Gen(description))
             desc_item.setForeground(Qt.GlobalColor.gray)
             desc_item.setEditable(False)
             self._source_model.appendRow([setting_item, value_item, desc_item])
 
-        hint_item = QStandardItem("Integrity check")
+        hint_item = _gen_item(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Integrity check")))
         hint_item.setEditable(False)
-        hint_value = QStandardItem("→ run in SQL bar: PRAGMA integrity_check")
+        hint_value = _gen_item(
+            _Gen(QT_TRANSLATE_NOOP("GeneratedView", "→ run in SQL bar: PRAGMA integrity_check"))
+        )
         hint_value.setForeground(Qt.GlobalColor.gray)
         hint_value.setEditable(False)
-        hint_desc = QStandardItem("Scans database for corruption (can be slow on large files)")
+        hint_desc = _gen_item(
+            _Gen(
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView", "Scans database for corruption (can be slow on large files)"
+                )
+            )
+        )
         hint_desc.setForeground(Qt.GlobalColor.gray)
         hint_desc.setEditable(False)
         self._source_model.appendRow([hint_item, hint_value, hint_desc])
 
         self._resize_and_cap()
-        self._row_count_label.setText(f"({len(_PRAGMA_CATALOG)} settings)")
+        self._row_count_label.setText(
+            translate("TableViewer", "({_PRAGMA_CATALOG_count} settings)").format(
+                _PRAGMA_CATALOG_count=len(_PRAGMA_CATALOG)
+            )
+        )
         self._sql_input.setPlainText("PRAGMA integrity_check;")
         self._sql_status.setText("")
 
@@ -3078,17 +3723,20 @@ class TableViewer(QWidget):
         # lazy loading exists to avoid). Filter rows by table content: use
         # SQL on the table itself, then "Locate in Hex" / a Hex-pane search
         # to jump to the physical bytes from there.
-        if self._table_combo.currentText() == self._file_structure_label:
+        if self._current_table() == self._file_structure_label:
             return
         self._proxy_model.setFilterFixedString(text)
         visible = self._proxy_model.rowCount()
         source = self._proxy_model.sourceModel()
         total = source.rowCount() if source is not None else 0
         if text:
-            self._row_count_label.setText(f"({visible:,} of {total:,} rows)")
+            self._row_count_label.setText(
+                translate("TableViewer", "({visible:,} of {total:,} rows)").format(
+                    visible=visible, total=total
+                )
+            )
         else:
-            word = "row" if total == 1 else "rows"
-            self._row_count_label.setText(f"({total:,} {word})")
+            self._row_count_label.setText(_rows_label(total))
 
     def _ensure_db(self) -> sqlite3.Connection | None:
         # A valid/hot rollback journal's reconstructed "current" image (see
@@ -3102,7 +3750,7 @@ class TableViewer(QWidget):
         # disk regardless of this redirect.
         open_path = self._recovered_db_path or self._db_path
         if not open_path or not open_path.exists():
-            self._sql_status.setText("Database file missing")
+            self._sql_status.setText(translate("TableViewer", "Database file missing"))
             return None
         if self._db_conn is None:
             self._db_conn = sqlite3.connect(
@@ -3160,13 +3808,15 @@ class TableViewer(QWidget):
         sql = selected if selected else self._sql_input.toPlainText().strip()
         if not sql:
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText("Enter a SELECT or PRAGMA query")
+            self._sql_status.setText(translate("TableViewer", "Enter a SELECT or PRAGMA query"))
             self._sql_status.setToolTip("")
             return
         lowered = sql.lstrip().lower()
         if not (lowered.startswith("select") or lowered.startswith("with") or lowered.startswith("pragma")):
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText("Only SELECT and PRAGMA queries are allowed")
+            self._sql_status.setText(
+                translate("TableViewer", "Only SELECT and PRAGMA queries are allowed")
+            )
             self._sql_status.setToolTip("")
             return
         conn = self._ensure_db()
@@ -3192,7 +3842,11 @@ class TableViewer(QWidget):
         except sqlite3.Error as exc:
             elapsed = time.perf_counter() - started
             self._sql_status.setStyleSheet("color: red;")
-            self._sql_status.setText(f"{exc} (failed after {elapsed:.2f} s)")
+            self._sql_status.setText(
+                translate("TableViewer", "{exc} (failed after {elapsed:.2f} s)").format(
+                    exc=exc, elapsed=elapsed
+                )
+            )
             self._sql_status.setToolTip("")
             return
 
@@ -3211,28 +3865,48 @@ class TableViewer(QWidget):
         elapsed = time.perf_counter() - started
 
         self._sql_status.setStyleSheet("")
-        word = "row" if len(rows) == 1 else "rows"
-        status = f"{len(rows):,} {word} returned in {elapsed:.2f} s"
-        timing_details = (
-            f"Index wait: {priority_wait_elapsed:.2f} s\n"
-            f"Execute: {execute_elapsed:.2f} s\n"
-            f"Fetch: {fetch_elapsed:.2f} s wall / {fetch_cpu_elapsed:.2f} s CPU\n"
-            f"Rows: {prepare_elapsed:.2f} s\n"
-            f"Model: {model_elapsed:.2f} s\n"
-            f"Column sizing: {resize_elapsed:.2f} s\n"
-            f"Total: {elapsed:.2f} s"
+        if was_truncated:
+            status = (
+                translate("TableViewer", "First {count:,} row returned in {elapsed:.2f} s")
+                if len(rows) == 1
+                else translate("TableViewer", "First {count:,} rows returned in {elapsed:.2f} s")
+            ).format(count=len(rows), elapsed=elapsed)
+        else:
+            status = (
+                translate("TableViewer", "{count:,} row returned in {elapsed:.2f} s")
+                if len(rows) == 1
+                else translate("TableViewer", "{count:,} rows returned in {elapsed:.2f} s")
+            ).format(count=len(rows), elapsed=elapsed)
+        timing_details = translate(
+            "TableViewer",
+            "Index wait: {wait:.2f} s\n"
+            "Execute: {execute:.2f} s\n"
+            "Fetch: {fetch:.2f} s wall / {fetch_cpu:.2f} s CPU\n"
+            "Rows: {prepare:.2f} s\n"
+            "Model: {model:.2f} s\n"
+            "Column sizing: {resize:.2f} s\n"
+            "Total: {total:.2f} s",
+        ).format(
+            wait=priority_wait_elapsed,
+            execute=execute_elapsed,
+            fetch=fetch_elapsed,
+            fetch_cpu=fetch_cpu_elapsed,
+            prepare=prepare_elapsed,
+            model=model_elapsed,
+            resize=resize_elapsed,
+            total=elapsed,
         )
         if was_truncated:
-            status = f"First {status}"
-            timing_details += (
-                f"\n\nAuto limit capped the result at {_QUERY_ROW_LIMIT:,} rows. "
-                "Add filters or turn off Auto limit to fetch more."
-            )
+            timing_details += "\n\n" + translate(
+                "TableViewer",
+                "Auto limit capped the result at {limit:,} rows. "
+                "Add filters or turn off Auto limit to fetch more.",
+            ).format(limit=_QUERY_ROW_LIMIT)
         self._sql_status.setText(status)
         self._sql_status.setToolTip(timing_details)
 
     def _load_table_from_query(self, table: dict[str, Any]) -> tuple[float, float]:
-        self._cell_detail_label.setText("—  No cell selected")
+        self._cell_detail_label.setText(translate("TableViewer", "—  No cell selected"))
         self._cell_detail_view.setPlainText("")
         self._col_ts_formats.clear()
         columns: list[str] = table["columns"]
@@ -3252,20 +3926,31 @@ class TableViewer(QWidget):
         resize_started = time.perf_counter()
         self._resize_and_cap()
         resize_elapsed = time.perf_counter() - resize_started
-        row_word = "row" if len(rows) == 1 else "rows"
-        prefix = "first " if table.get("truncated", False) else ""
-        self._row_count_label.setText(f"({prefix}{len(rows):,} {row_word})")
+        if table.get("truncated", False):
+            label = (
+                translate("TableViewer", "(first {total:,} row)")
+                if len(rows) == 1
+                else translate("TableViewer", "(first {total:,} rows)")
+            ).format(total=len(rows))
+        else:
+            label = _rows_label(len(rows))
+        self._row_count_label.setText(label)
         return model_elapsed, resize_elapsed
 
     def _export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            translate("TableViewer", "Export CSV"),
+            "",
+            "CSV (*.csv)",  # i18n: keep -- file filter
+        )
         if not path:
             return
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 headers = [
-                    self._proxy_model.headerData(i, Qt.Orientation.Horizontal)
+                    _export_header_text(self._proxy_model, i)
                     for i in range(self._proxy_model.columnCount())
                 ]
                 writer.writerow(headers)
@@ -3273,9 +3958,9 @@ class TableViewer(QWidget):
                     row_values: list[str] = []
                     for col in range(self._proxy_model.columnCount()):
                         idx = self._proxy_model.index(row, col)
-                        row_values.append(self._proxy_model.data(idx) or "")
+                        row_values.append(_export_cell_text(self._proxy_model, idx))
                     writer.writerow(row_values)
-            self._sql_status.setText(f"Exported: {path}")
+            self._sql_status.setText(translate("TableViewer", "Exported: {path}").format(path=path))
         except Exception as exc:
             self._sql_status.setText(str(exc))
 
@@ -3288,17 +3973,17 @@ class TableViewer(QWidget):
         except OverflowError:
             blob = None
         menu = QMenu(self)
-        copy_cell = menu.addAction("Copy cell")
-        copy_row = menu.addAction("Copy row (TSV)")
-        copy_sel = menu.addAction("Copy selection (TSV)")
-        blob_preview = menu.addAction("Inspect Cell…")
-        blob_hex = menu.addAction("Open in Hex")
-        blob_export = menu.addAction("Export…")
-        open_tab_menu = menu.addMenu("Open as new tab")
-        open_tab_auto = open_tab_menu.addAction("Auto-detect")
-        open_tab_hex = open_tab_menu.addAction("Hex")
-        open_tab_text = open_tab_menu.addAction("Text")
-        open_tab_proto = open_tab_menu.addAction("Protobuf")
+        copy_cell = menu.addAction(translate("TableViewer", "Copy cell"))
+        copy_row = menu.addAction(translate("TableViewer", "Copy row (TSV)"))
+        copy_sel = menu.addAction(translate("TableViewer", "Copy selection (TSV)"))
+        blob_preview = menu.addAction(translate("TableViewer", "Inspect Cell…"))
+        blob_hex = menu.addAction(translate("TableViewer", "Open in Hex"))
+        blob_export = menu.addAction(translate("TableViewer", "Export…"))
+        open_tab_menu = menu.addMenu(translate("TableViewer", "Open as new tab"))
+        open_tab_auto = open_tab_menu.addAction(translate("TableViewer", "Auto-detect"))
+        open_tab_hex = open_tab_menu.addAction(translate("TableViewer", "Hex"))
+        open_tab_text = open_tab_menu.addAction(translate("TableViewer", "Text"))
+        open_tab_proto = open_tab_menu.addAction(translate("TableViewer", "Protobuf"))
         blob_bytes = _coerce_blob(blob)
         display_val = self._table_view.model().data(index, Qt.ItemDataRole.DisplayRole)
         display_str = str(display_val) if display_val is not None else ""
@@ -3320,7 +4005,9 @@ class TableViewer(QWidget):
             if blob_bytes is not None:
                 QApplication.clipboard().setText(blob_bytes.hex())
             else:
-                QApplication.clipboard().setText(str(self._table_view.model().data(index)))
+                QApplication.clipboard().setText(
+                    _export_cell_text(self._table_view.model(), index)
+                )
         elif action == copy_row:
             self._copy_rows([index.row()])
         elif action == copy_sel:
@@ -3384,7 +4071,7 @@ class TableViewer(QWidget):
         elif self._query_results_active:
             table_name = "query"
         else:
-            table_name = self._table_combo.currentText()
+            table_name = self._current_table()
         table = _virtual_path_component(table_name, "table")
         column_text = str(col_header)
         column = _virtual_path_component(column_text, "column")
@@ -3400,7 +4087,7 @@ class TableViewer(QWidget):
         if query_text:
             metadata["Source query"] = query_text
         else:
-            metadata["Source table"] = self._table_combo.currentText()
+            metadata["Source table"] = self._current_table()
         return path, metadata
 
     def _on_header_context_menu(self, pos: object) -> None:
@@ -3410,17 +4097,19 @@ class TableViewer(QWidget):
             return
 
         menu = QMenu(self)
-        ts_submenu = menu.addMenu("Decode column as timestamp")
+        ts_submenu = menu.addMenu(translate("TableViewer", "Decode column as timestamp"))
         fmt_actions: dict[object, str] = {}
         active = self._col_ts_formats.get(col)
         for key, label, _ in _TS_FORMATS:
-            act = ts_submenu.addAction(label)
+            act = ts_submenu.addAction(
+                translate("TimestampFormat", label)  # i18n: keep -- marked in ts_decode
+            )
             act.setCheckable(True)
             act.setChecked(active == key)
             fmt_actions[act] = key
 
         menu.addSeparator()
-        clear_act = menu.addAction("Clear timestamp format")
+        clear_act = menu.addAction(translate("TableViewer", "Clear timestamp format"))
         clear_act.setEnabled(col in self._col_ts_formats)
 
         chosen = menu.exec(header.mapToGlobal(pos))
@@ -3465,10 +4154,23 @@ class TableViewer(QWidget):
                 failed_count += 1
         h_item = self._source_model.horizontalHeaderItem(col)
         if h_item is not None:
+            # The undecorated label is kept (display in UserRole, its English
+            # original in _TS_ORIGINAL_TEXT_ROLE) so a re-decode or "Clear"
+            # restores it exactly.
             base = h_item.data(Qt.ItemDataRole.UserRole) or h_item.text()
+            base_english = (
+                h_item.data(_TS_ORIGINAL_TEXT_ROLE) or h_item.data(_EXPORT_TEXT_ROLE) or base
+            )
             h_item.setData(base, Qt.ItemDataRole.UserRole)
-            h_item.setText(_ts_header_text(str(base), fmt, decoded_count, failed_count))
-            h_item.setData(_ts_header_tooltip(fmt, decoded_count, failed_count), Qt.ItemDataRole.ToolTipRole)
+            h_item.setData(base_english, _TS_ORIGINAL_TEXT_ROLE)
+            english, display = _ts_header_pair(
+                str(base_english), str(base), fmt, decoded_count, failed_count
+            )
+            h_item.setText(display)
+            h_item.setData(english if english != display else None, _EXPORT_TEXT_ROLE)
+            h_item.setData(
+                _ts_header_tooltip(fmt, decoded_count, failed_count), Qt.ItemDataRole.ToolTipRole
+            )
 
     @staticmethod
     def _reset_ts_cell(item: QStandardItem) -> None:
@@ -3496,8 +4198,13 @@ class TableViewer(QWidget):
         h_item = self._source_model.horizontalHeaderItem(col)
         if h_item is not None:
             base = h_item.data(Qt.ItemDataRole.UserRole)
+            base_english = h_item.data(_TS_ORIGINAL_TEXT_ROLE)
             if base:
                 h_item.setText(str(base))
+                h_item.setData(
+                    base_english if base_english and base_english != base else None,
+                    _EXPORT_TEXT_ROLE,
+                )
             h_item.setData(None, Qt.ItemDataRole.ToolTipRole)
 
     def _copy_rows(self, rows: list[int]) -> None:
@@ -3506,14 +4213,16 @@ class TableViewer(QWidget):
             values = []
             for col in range(self._proxy_model.columnCount()):
                 idx = self._proxy_model.index(row, col)
-                values.append(str(self._proxy_model.data(idx) or ""))
+                values.append(_export_cell_text(self._proxy_model, idx))
             lines.append("\t".join(values))
         QApplication.clipboard().setText("\n".join(lines))
 
     def _open_blob_hex(self, blob: bytes) -> None:
         from crush.viewers.hex_viewer import HexViewer
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"BLOB Hex ({len(blob):,} B)")
+        dialog.setWindowTitle(
+            translate("TableViewer", "BLOB Hex ({blob_count:,} B)").format(blob_count=len(blob))
+        )
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(8, 8, 8, 8)
         viewer = HexViewer(blob, dialog)
@@ -3523,13 +4232,17 @@ class TableViewer(QWidget):
         dialog.show()
 
     def _export_blob(self, blob: bytes) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export BLOB", "", "All files (*)")
+        path, _ = QFileDialog.getSaveFileName(self, translate("TableViewer", "Export BLOB"), "",
+            translate("TableViewer", "All files") + " (*)",  # i18n: keep -- file filter pattern
+        )
         if not path:
             return
         try:
             with open(path, "wb") as f:
                 f.write(blob)
-            self._sql_status.setText(f"BLOB exported: {path}")
+            self._sql_status.setText(
+                translate("TableViewer", "BLOB exported: {path}").format(path=path)
+            )
         except Exception as exc:
             self._sql_status.setText(str(exc))
 
@@ -3620,7 +4333,7 @@ class TableViewer(QWidget):
 
     def _on_current_cell_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if not current.isValid():
-            self._cell_detail_label.setText("—  No cell selected")
+            self._cell_detail_label.setText(translate("TableViewer", "—  No cell selected"))
             self._cell_detail_view.setPlainText("")
             if not self._syncing_hex_selection:
                 self._sync_hex_pane(None)
@@ -3629,7 +4342,11 @@ class TableViewer(QWidget):
         col = current.column()
         col_name = self._proxy_model.headerData(col, Qt.Orientation.Horizontal) or ""
         row_num = current.row() + 1
-        self._cell_detail_label.setText(f"Row {row_num}  ·  {col_name}")
+        self._cell_detail_label.setText(
+            translate("TableViewer", "Row {row_num}  ·  {col_name}").format(
+                row_num=row_num, col_name=col_name
+            )
+        )
 
         display_val = self._proxy_model.data(current, Qt.ItemDataRole.DisplayRole)
         blob = self._proxy_model.data(current, Qt.ItemDataRole.UserRole)
@@ -3664,10 +4381,14 @@ class TableViewer(QWidget):
     def _toggle_hex_pane(self) -> None:
         visible = not self._hex_panel.isVisible()
         self._hex_panel.setVisible(visible)
-        self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
+        self._hex_toggle_btn.setText(
+            translate("TableViewer", "Hide Hex")
+            if visible
+            else translate("TableViewer", "Show Hex")
+        )
         if visible:
             self._ensure_hex_pane_loaded()
-            if self._table_combo.currentText() == self._file_structure_label:
+            if self._current_table() == self._file_structure_label:
                 self._sync_structure_hex_pane(self._structure_tree.currentIndex())
             else:
                 self._sync_hex_pane(self._table_view.currentIndex())
@@ -3681,7 +4402,9 @@ class TableViewer(QWidget):
             return
         self._hex_viewer.set_data(data)
         self._hex_file_kind = file_kind
-        self._hex_file_label.setText(f"{self._source_name}  ·  {self._cell_locator.label_for(file_kind)}")
+        self._hex_file_label.setText(
+            f"{self._source_name}  ·  {self._cell_locator.label_for(file_kind)}"  # i18n: keep -- layout
+        )
         self._hex_pane_loaded = True
 
     def _sync_hex_pane(self, current: QModelIndex | None) -> None:
@@ -3692,7 +4415,7 @@ class TableViewer(QWidget):
         if not self._hex_panel.isVisible():
             return
 
-        table_name = self._table_combo.currentText()
+        table_name = self._current_table()
         if table_name in (self._wal_label, self._journal_label):
             self._sync_wal_hex_pane(current)
             return
@@ -3756,7 +4479,11 @@ class TableViewer(QWidget):
             note = ParseIssue("locate.no_range", {
                 "reason": reason or ParseIssue("locate.not_recorded"),
             })
-            self._hex_file_label.setText(f"{file_label}  —  {note}")
+            self._hex_file_label.setText(
+                translate("TableViewer", "{file_label}  —  {note}").format(
+                    file_label=file_label, note=note
+                )
+            )
             return
 
         if location.file_kind != self._hex_file_kind:
@@ -3830,7 +4557,11 @@ class TableViewer(QWidget):
                 return
             self._hex_viewer.set_data(data)
             self._hex_file_kind = str(file_kind)
-            self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
+            self._hex_file_label.setText(
+                translate("TableViewer", "{source_name}  ·  {suffix}").format(
+                    source_name=self._source_name, suffix=suffix
+                )
+            )
         self._hex_viewer.highlight_byte_ranges(ranges)
 
     def _structure_item_from_index(self, index: QModelIndex) -> QStandardItem | None:
@@ -3843,7 +4574,7 @@ class TableViewer(QWidget):
     def _on_structure_current_changed(
         self, current: QModelIndex, _previous: QModelIndex
     ) -> None:
-        if self._table_combo.currentText() != self._file_structure_label:
+        if self._current_table() != self._file_structure_label:
             return
         self._sync_structure_hex_pane(current)
 
@@ -3876,7 +4607,11 @@ class TableViewer(QWidget):
                 return
             self._hex_viewer.set_data(data)
             self._hex_file_kind = str(file_kind)
-            self._hex_file_label.setText(f"{self._source_name}  ·  {suffix}")
+            self._hex_file_label.setText(
+                translate("TableViewer", "{source_name}  ·  {suffix}").format(
+                    source_name=self._source_name, suffix=suffix
+                )
+            )
         self._hex_viewer.highlight_byte_ranges(ranges)
 
     def _on_hex_offset_focused(self, offset: int) -> None:
@@ -3887,7 +4622,7 @@ class TableViewer(QWidget):
         wrong selection)."""
         if self._hex_file_kind is None or self._cell_locator is None:
             return
-        table_name = self._table_combo.currentText()
+        table_name = self._current_table()
         if table_name == self._file_structure_label:
             self._select_structure_item_for_offset(offset)
             return
