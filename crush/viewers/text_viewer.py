@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from crush.core.encodings import detect_encoding as _detect_encoding
 from crush.core.formatters import pretty_json
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 
 class _LineNumberArea(QWidget):
@@ -139,7 +140,7 @@ class TextView(QWidget):
             self._encoding_label.setText(enc)
         else:
             text = str(data)
-            self._encoding_label.setText("str")
+            self._encoding_label.setText("str")  # i18n: keep -- Python str input, no encoding
 
         # Pretty-print JSON if possible
         if text.lstrip().startswith(("{", "[")):
@@ -161,15 +162,23 @@ class TextView(QWidget):
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(8)
-        tb_layout.addWidget(QLabel("Highlight:"))
+        tb_layout.addWidget(QLabel(translate("TextView", "Highlight:")))
         self._highlight_combo = QComboBox()
-        self._highlight_combo.addItems(
-            ["Auto", "None", "JSON", "XML", "SQL", "INI/CONF", "YAML", "LOG", "CSV"]
+        # Item data is the mode key; only "Auto" and "None" are words to
+        # translate, the rest are format names.
+        for label, mode in [
+            (translate("TextView", "Auto"), "Auto"),
+            (translate("TextView", "None"), "None"),
+            ("JSON", "JSON"), ("XML", "XML"), ("SQL", "SQL"), ("INI/CONF", "INI/CONF"),
+            ("YAML", "YAML"), ("LOG", "LOG"), ("CSV", "CSV"),
+        ]:
+            self._highlight_combo.addItem(label, mode)
+        self._highlight_combo.currentIndexChanged.connect(
+            lambda _index: self._on_highlight_changed(self._highlight_combo.currentData())
         )
-        self._highlight_combo.currentTextChanged.connect(self._on_highlight_changed)
         tb_layout.addWidget(self._highlight_combo)
         tb_layout.addStretch()
-        tb_layout.addWidget(QLabel("Encoding:"))
+        tb_layout.addWidget(QLabel(translate("TextView", "Encoding:")))
         self._encoding_label = QLabel("")
         self._encoding_label.setStyleSheet("color: gray;")
         tb_layout.addWidget(self._encoding_label)
@@ -179,30 +188,30 @@ class TextView(QWidget):
         sb_layout = QHBoxLayout(search_bar)
         sb_layout.setContentsMargins(8, 4, 8, 4)
         sb_layout.setSpacing(8)
-        sb_layout.addWidget(QLabel("Search:"))
+        sb_layout.addWidget(QLabel(translate("TextView", "Search:")))
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Text, * wildcard, or regex")
+        self._search_input.setPlaceholderText(translate("TextView", "Text, * wildcard, or regex"))
         self._search_input.returnPressed.connect(self._find_next)
         self._search_input.textChanged.connect(self._refresh_search)
         sb_layout.addWidget(self._search_input, 1)
-        self._search_regex = QCheckBox("Regex")
+        self._search_regex = QCheckBox(translate("TextView", "Regex"))
         self._search_regex.toggled.connect(self._refresh_search)
         sb_layout.addWidget(self._search_regex)
-        self._search_case = QCheckBox("Case")
+        self._search_case = QCheckBox(translate("TextView", "Case"))
         self._search_case.toggled.connect(self._refresh_search)
         sb_layout.addWidget(self._search_case)
         self._search_prev = QToolButton()
-        self._search_prev.setText("Up")
+        self._search_prev.setText(translate("TextView", "Up"))
         self._search_prev.clicked.connect(self._find_prev)
         sb_layout.addWidget(self._search_prev)
         self._search_next = QToolButton()
-        self._search_next.setText("Down")
+        self._search_next.setText(translate("TextView", "Down"))
         self._search_next.clicked.connect(self._find_next)
         sb_layout.addWidget(self._search_next)
         self._search_count = QLabel("")
         sb_layout.addWidget(self._search_count)
         self._show_all_btn = QToolButton()
-        self._show_all_btn.setText("Show all")
+        self._show_all_btn.setText(translate("TextView", "Show all"))
         self._show_all_btn.setCheckable(True)
         self._show_all_btn.toggled.connect(self._toggle_result_panel)
         sb_layout.addWidget(self._show_all_btn)
@@ -233,7 +242,13 @@ class TextView(QWidget):
         rp_layout.setContentsMargins(0, 0, 0, 0)
         rp_layout.setSpacing(0)
         self._result_table = QTableWidget(0, 3)
-        self._result_table.setHorizontalHeaderLabels(["Line", "Col", "Preview"])
+        self._result_table.setHorizontalHeaderLabels(
+            [
+                translate("TextView", "Line"),
+                translate("TextView", "Col"),
+                translate("TextView", "Preview"),
+            ]
+        )
         self._result_table.horizontalHeader().setStretchLastSection(True)
         self._result_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -260,14 +275,17 @@ class TextView(QWidget):
         text = self._raw_text.lstrip()
         if text.startswith(("{", "[")):
             self._set_highlight_mode("JSON")
-            self._highlight_combo.setCurrentText("JSON")
+            self._select_highlight("JSON")
             return
         if text.startswith("<"):
             self._set_highlight_mode("XML")
-            self._highlight_combo.setCurrentText("XML")
+            self._select_highlight("XML")
             return
         self._set_highlight_mode("None")
-        self._highlight_combo.setCurrentText("None")
+        self._select_highlight("None")
+
+    def _select_highlight(self, mode: str) -> None:
+        self._highlight_combo.setCurrentIndex(self._highlight_combo.findData(mode))
 
     def _on_highlight_changed(self, value: str) -> None:
         if value == "Auto":
@@ -304,9 +322,9 @@ class TextView(QWidget):
                 break
         self._apply_search_highlights(self._search_hits)
         if hits >= max_hits:
-            self._search_count.setText(f"{len(self._search_hits)}+")
+            self._search_count.setText(f"{len(self._search_hits)}+")  # i18n: keep -- number
         else:
-            self._search_count.setText(f"{len(self._search_hits)}")
+            self._search_count.setText(f"{len(self._search_hits)}")  # i18n: keep -- number
         self._update_result_panel()
 
     def _build_search_regex(self, pattern: str) -> QRegularExpression | None:
@@ -319,7 +337,7 @@ class TextView(QWidget):
         if not self._search_case.isChecked():
             regex.setPatternOptions(QRegularExpression.PatternOption.CaseInsensitiveOption)
         if not regex.isValid():
-            self._search_count.setText("Invalid regex")
+            self._search_count.setText(translate("TextView", "Invalid regex"))
             return None
         return regex
 

@@ -9,7 +9,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, Signal
 from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -34,6 +34,8 @@ from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector, TableViewer, _cap_columns
 from crush.viewers.tree_viewer import TreeViewer
+from crush.ui.i18n import translate
+from crush.viewers.generated_text import Gen, gen_text, gens, set_headers
 
 
 class FreeDataViewer(QWidget):
@@ -44,7 +46,19 @@ class FreeDataViewer(QWidget):
         "active":   QColor("#cc3333"),   # red    — freed in this transaction
         "both":     QColor("#888888"),   # gray   — present in both free lists
     }
-    _COLUMNS = ["Offset", "Size", "Source", "Type", "Strings / notes"]
+    _COLUMNS = [
+        QT_TRANSLATE_NOOP("GeneratedView", "Offset"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Size"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Source"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Strings / notes"),
+    ]
+    # Which free list a block came from (parser values, shown translated).
+    _SOURCES = (
+        QT_TRANSLATE_NOOP("GeneratedView", "inactive"),
+        QT_TRANSLATE_NOOP("GeneratedView", "active"),
+        QT_TRANSLATE_NOOP("GeneratedView", "both"),
+    )
 
     def __init__(self, blocks: list[dict], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -59,7 +73,7 @@ class FreeDataViewer(QWidget):
 
         # --- top: table of freed blocks ---
         self._model = QStandardItemModel(0, len(self._COLUMNS))
-        self._model.setHorizontalHeaderLabels(self._COLUMNS)
+        set_headers(self._model, gens(*self._COLUMNS))
 
         for block in self._blocks:
             offset  = block["offset"]
@@ -76,17 +90,21 @@ class FreeDataViewer(QWidget):
                 )
                 notes = ""
             else:
-                type_str = "raw data"
+                type_str = gen_text(QT_TRANSLATE_NOOP("GeneratedView", "raw data"))
                 preview = " | ".join(strings[:4])
                 if len(strings) > 4:
-                    preview += f"  (+{len(strings) - 4} more)"
-                notes = preview or "(no printable strings)"
+                    preview += gen_text(
+                        QT_TRANSLATE_NOOP("GeneratedView", "  (+{count} more)")
+                    ).format(count=len(strings) - 4)
+                notes = preview or gen_text(
+                    QT_TRANSLATE_NOOP("GeneratedView", "(no printable strings)")
+                )
 
             color = self._SOURCE_COLORS.get(source)
             row_items = [
                 self._item(f"0x{offset:08x}", color),
                 self._item(f"{size:,}", color),
-                self._item(source, color),
+                self._item(gen_text(source), color),
                 self._item(type_str, color),
                 self._item(notes, color),
             ]
@@ -138,7 +156,11 @@ class FreeDataViewer(QWidget):
         if 0 <= row < len(self._blocks):
             raw: bytes = self._blocks[row]["bytes"]
             menu = QMenu(self)
-            inspect = menu.addAction(f"Inspect Block… ({len(raw)} B)")
+            inspect = menu.addAction(
+                translate("FreeDataViewer", "Inspect Block… ({raw_count} B)").format(
+                    raw_count=len(raw)
+                )
+            )
             if menu.exec(self._table.viewport().mapToGlobal(pos)) == inspect:
                 BlobInspector(raw, self).show()
 
@@ -530,11 +552,15 @@ class RealmViewer(QWidget):
         # --- Header ---
         header = self._data.get("header")
         if header:
-            tabs.addTab(TreeViewer({"Header": header}, tabs), "Header")
+            tabs.addTab(TreeViewer({"Header": header}, tabs), translate("RealmViewer", "Header"))
         else:
-            lbl = QLabel("Header not detected (possibly encrypted or non-standard).")
+            lbl = QLabel(
+                translate(
+                    "RealmViewer", "Header not detected (possibly encrypted or non-standard)."
+                )
+            )
             lbl.setWordWrap(True)
-            tabs.addTab(lbl, "Header")
+            tabs.addTab(lbl, translate("RealmViewer", "Header"))
 
         unsupported_row_format = self._data.get("unsupported_row_format")
         streaming_form = self._data.get("streaming_form")
@@ -575,26 +601,32 @@ class RealmViewer(QWidget):
                 else:
                     schema_tree[name] = "(no column data decoded)"
             tabs.addTab(
-                TreeViewer({f"Tables ({len(schema)})": schema_tree}, tabs), "Schema"
+                TreeViewer({f"Tables ({len(schema)})": schema_tree}, tabs),
+                translate("RealmViewer", "Schema"),
             )
         elif streaming_form is not None and not streaming_form.get("footer_valid"):
             # Group::write() "streaming form" file whose end-of-file footer
             # is missing/corrupt, so the real top ref could not be resolved
             # — an empty schema here means "unresolvable", not "zero tables".
             lbl = QLabel(
-                "This file is in Realm's streaming form (e.g. a Group::write() "
-                "export), but the end-of-file footer is missing or its magic "
-                "cookie doesn't match, so the real top reference could not be "
-                "resolved and no schema could be decoded. See Properties panel "
-                "→ Streaming form."
+                translate(
+                    "RealmViewer",
+                    "This file is in Realm's streaming form (e.g. a Group::write() "
+                    "export), but the end-of-file footer is missing or its magic "
+                    "cookie doesn't match, so the real top reference could not be "
+                    "resolved and no schema could be decoded. See Properties panel "
+                    "→ Streaming form.",
+                )
             )
             lbl.setWordWrap(True)
-            tabs.addTab(lbl, "Schema")
+            tabs.addTab(lbl, translate("RealmViewer", "Schema"))
 
         # --- Top Refs ---
         top_refs = self._data.get("top_refs", {})
         if top_refs:
-            tabs.addTab(self._build_top_refs_tab(top_refs, tabs), "Top Refs")
+            tabs.addTab(
+                self._build_top_refs_tab(top_refs, tabs), translate("RealmViewer", "Top Refs")
+            )
 
         # --- File Structure ---
         # Physical array/ref-graph layout (Group top array, free list,
@@ -611,34 +643,39 @@ class RealmViewer(QWidget):
                     structure_tree, tabs, raw=bytes(file_bytes),
                     byte_ranges_by_path=structure_ranges,
                 ),
-                "File Structure",
+                translate("RealmViewer", "File Structure"),
             )
 
         # --- Tables ---
         if tables or inactive_tables:
             tabs.addTab(
                 self._build_tables_tab(tables, tabs, inactive_tables, inactive_ref_index),
-                "Tables",
+                translate("RealmViewer", "Tables"),
             )
         elif unsupported_row_format is not None or cluster_reason:
             lbl = QLabel(
-                "Row/table data not extracted for this file — see Properties "
-                "panel → Row data for the specific reason. "
-                "Class names in the Schema tab are still accurate."
+                translate(
+                    "RealmViewer",
+                    "Row/table data not extracted for this file — see Properties "
+                    "panel → Row data for the specific reason. "
+                    "Class names in the Schema tab are still accurate.",
+                )
             )
             lbl.setWordWrap(True)
-            tabs.addTab(lbl, "Tables")
+            tabs.addTab(lbl, translate("RealmViewer", "Tables"))
 
         # --- Views ---
         if tables:
-            tabs.addTab(self._build_views_tab(tables, tabs), "Views")
+            tabs.addTab(self._build_views_tab(tables, tabs), translate("RealmViewer", "Views"))
 
         # --- Freed Data ---
         freed_blocks: list[dict] = self._data.get("freed_blocks", [])
         if freed_blocks:
             tabs.addTab(
                 FreeDataViewer(freed_blocks, tabs),
-                f"Freed Data ({len(freed_blocks)})",
+                translate("RealmViewer", "Freed Data ({freed_blocks_count})").format(
+                    freed_blocks_count=len(freed_blocks)
+                ),
             )
 
         # --- Strings ---
@@ -646,15 +683,18 @@ class RealmViewer(QWidget):
         if strings:
             strings_data: dict[str, Any] = {
                 f"Strings ({len(strings)})": {
-                    "columns": ["String"],
+                    "__label": Gen(
+                        QT_TRANSLATE_NOOP("GeneratedView", "Strings ({count})"), count=len(strings)
+                    ),
+                    "columns": [Gen(QT_TRANSLATE_NOOP("GeneratedView", "String"))],
                     "rows": [[s] for s in strings],
                 }
             }
-            tabs.addTab(TableViewer(strings_data, tabs), "Strings")
+            tabs.addTab(TableViewer(strings_data, tabs), translate("RealmViewer", "Strings"))
 
         # --- Hex Preview ---
         preview = self._data.get("preview", b"")
-        tabs.addTab(HexViewer(preview, tabs), "Hex Preview")
+        tabs.addTab(HexViewer(preview, tabs), translate("RealmViewer", "Hex Preview"))
 
         layout.addWidget(tabs)
 
@@ -728,7 +768,11 @@ class RealmViewer(QWidget):
             if cell_locator is not None:
                 col_indices = sorted((t.get("columns") or {}).keys())
                 cell_locator.add_table(name, t, col_indices)
-            notes = "row count estimated (file corruption)" if t.get("row_count_estimated") else ""
+            notes: str | Gen = (
+                Gen(QT_TRANSLATE_NOOP("GeneratedView", "row count estimated (file corruption)"))
+                if t.get("row_count_estimated")
+                else ""
+            )
             summary_rows.append([name, len(headers), n_rows, notes])
 
         for t in inactive_tables:
@@ -746,7 +790,13 @@ class RealmViewer(QWidget):
 
         viewer_data: dict[str, Any] = {
             "Summary": {
-                "columns": ["Table", "Decoded cols", "Rows", "Notes"],
+                "__label": Gen(QT_TRANSLATE_NOOP("GeneratedView", "Summary")),
+                "columns": gens(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Table"),
+                    QT_TRANSLATE_NOOP("GeneratedView", "Decoded cols"),
+                    QT_TRANSLATE_NOOP("GeneratedView", "Rows"),
+                    QT_TRANSLATE_NOOP("GeneratedView", "Notes"),
+                ),
                 "rows": summary_rows,
             },
             "__prev_ref_data": inactive_table_data or None,
@@ -812,7 +862,11 @@ class RealmViewer(QWidget):
                 table_links[name] = links
 
         if not table_links:
-            empty = QLabel("No Link/LinkList columns with a resolvable target table found.")
+            empty = QLabel(
+                translate(
+                    "RealmViewer", "No Link/LinkList columns with a resolvable target table found."
+                )
+            )
             empty.setWordWrap(True)
             empty.setContentsMargins(8, 8, 8, 8)
             return empty
@@ -825,7 +879,9 @@ class RealmViewer(QWidget):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        left_layout.addWidget(QLabel("Tables with Link / LinkList columns:"))
+        left_layout.addWidget(
+            QLabel(translate("RealmViewer", "Tables with Link / LinkList columns:"))
+        )
         table_list = QListWidget()
         table_list.setAlternatingRowColors(True)
         for name in table_links:
@@ -836,15 +892,18 @@ class RealmViewer(QWidget):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         hint_label = QLabel(
-            "Link columns and target columns to include (unchecked = leave raw). "
-            "A link target expands (▸) to resolve one hop further: a single-target "
-            "link becomes its own column, a to-many list stays one combined cell."
+            translate(
+                "RealmViewer",
+                "Link columns and target columns to include (unchecked = leave raw). "
+                "A link target expands (▸) to resolve one hop further: a single-target "
+                "link becomes its own column, a to-many list stays one combined cell.",
+            )
         )
         hint_label.setWordWrap(True)
         right_layout.addWidget(hint_label)
         sel_row = QHBoxLayout()
-        all_btn = QPushButton("Select All")
-        none_btn = QPushButton("Deselect All")
+        all_btn = QPushButton(translate("RealmViewer", "Select All"))
+        none_btn = QPushButton(translate("RealmViewer", "Deselect All"))
         sel_row.addWidget(all_btn)
         sel_row.addWidget(none_btn)
         sel_row.addStretch()
@@ -852,7 +911,7 @@ class RealmViewer(QWidget):
         tree = QTreeWidget()
         tree.setHeaderHidden(True)
         right_layout.addWidget(tree)
-        open_btn = QPushButton("Open View")
+        open_btn = QPushButton(translate("RealmViewer", "Open View"))
         open_btn.setEnabled(False)
         right_layout.addWidget(open_btn)
         splitter.addWidget(right)

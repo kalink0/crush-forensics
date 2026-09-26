@@ -42,7 +42,24 @@ CONVERTED: list[str] = [
     "ui/sqlcipher_dialog.py",
     "ui/viewer_factory.py",
     "ui/wheel_scroll.py",
+    "viewers/abx_viewer.py",
+    "viewers/analyzer_result_viewer.py",
+    "viewers/blob_inspector.py",
+    "viewers/byte_mapped_tree_hex.py",
+    "viewers/generated_text.py",
+    "viewers/hex_viewer.py",
+    "viewers/image_viewer.py",
+    "viewers/leveldb_viewer.py",
+    "viewers/media_viewer.py",
+    "viewers/mmkv_viewer.py",
+    "viewers/pdf_viewer.py",
+    "viewers/protobuf_viewer.py",
+    "viewers/realm_viewer.py",
     "viewers/table_viewer.py",
+    "viewers/text_viewer.py",
+    "viewers/tree_text_viewer.py",
+    "viewers/tree_viewer.py",
+    "viewers/value_inspector.py",
 ]
 
 # Qt calls (functions, constructors, methods) whose string arguments are
@@ -58,12 +75,13 @@ UI_CALLS = {
     "setPlaceholderText", "setPrefix", "setSpecialValueText", "setStatusTip", "setSuffix",
     "setTabText", "setTabToolTip", "setText", "setTitle", "setToolTip",
     "setVerticalHeaderLabels", "setWhatsThis", "setWindowTitle", "showMessage", "warning",
-    "getOpenFileNames",
+    "getOpenFileNames", "setPlainText", "QListWidgetItem",
     # Crush's own helpers that show the text they're given.
     "FolderDiscoveryDialog", "LoadingDialog", "_with_reason", "busy_call",
     "run_with_busy_dialog", "set_text",
-    # Generated-view texts (table_viewer): marked QT_TRANSLATE_NOOP at the call.
-    "_Gen", "_gens",
+    # Generated-view texts (crush/viewers/generated_text): marked
+    # QT_TRANSLATE_NOOP at the call.
+    "Gen", "_Gen", "gens", "_gens",
 }
 KEEP_MARKER = "# i18n: keep"
 # Also logger methods -- the log stays English. Counted only on QMessageBox.
@@ -81,6 +99,13 @@ def is_ui_call(node: ast.Call) -> bool:
     name = _call_name(node)
     if name not in UI_CALLS:
         return False
+    func = node.func
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Call)
+        and _call_name(func.value) == "clipboard"
+    ):
+        return False  # copied content, like export: English, not UI text
     if name in MESSAGE_BOX_ONLY:
         func = node.func
         return (

@@ -6,7 +6,7 @@ from __future__ import annotations
 import csv
 from typing import Any
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QSortFilterProxyModel
 from PySide6.QtGui import QColor, QFont, QStandardItem, QStandardItemModel, QTextCursor
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -27,6 +27,15 @@ from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector
 from crush.viewers.tree_viewer import TreeViewer
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
+from crush.viewers.generated_text import (
+    EXPORT_TEXT_ROLE,
+    Gen,
+    gen_text,
+    gens,
+    mark_generated,
+    set_headers,
+)
 
 # Raw bytes stored alongside display text via custom item data roles
 _KEY_BYTES_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -38,17 +47,24 @@ _STATE_COLORS: dict[str, QColor] = {
     "Unknown": QColor("#888888"),
 }
 
+# Shown translated; the CSV export writes its own English header.
 _COLUMNS = [
-    "Seq",
-    "State",
-    "File",
-    "Offset",
-    "User Key (text)",
-    "User Key (hex)",
-    "Value (text)",
-    "Value (hex)",
-    "Compressed",
+    QT_TRANSLATE_NOOP("GeneratedView", "Seq"),
+    QT_TRANSLATE_NOOP("GeneratedView", "State"),
+    QT_TRANSLATE_NOOP("GeneratedView", "File"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Offset"),
+    QT_TRANSLATE_NOOP("GeneratedView", "User Key (text)"),
+    QT_TRANSLATE_NOOP("GeneratedView", "User Key (hex)"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Value (text)"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Value (hex)"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Compressed"),
 ]
+# Record states from the parser (shown translated, kept English for the filter).
+_STATES = (
+    QT_TRANSLATE_NOOP("GeneratedView", "Live"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Deleted"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Unknown"),
+)
 
 # Number of bytes shown as hex preview in the table columns
 _HEX_PREVIEW_BYTES = 16
@@ -98,7 +114,8 @@ class _StateFilterProxy(QSortFilterProxyModel):
         model = self.sourceModel()
         if self._state is not None:
             idx = model.index(source_row, 1, source_parent)
-            if model.data(idx) != self._state:
+            # The state's English original, not the (translated) display.
+            if (model.data(idx, EXPORT_TEXT_ROLE) or model.data(idx)) != self._state:
                 return False
         if self._text:
             for col in range(model.columnCount()):
@@ -134,10 +151,15 @@ class LevelDbRecordsWidget(QWidget):
         # --- filter toolbar ---
         toolbar = QToolBar()
         toolbar.setMovable(False)
-        toolbar.addWidget(QLabel("  Show: "))
+        toolbar.addWidget(QLabel(translate("LevelDbRecordsWidget", "  Show: ")))
 
         self._filter_buttons: dict[str | None, QPushButton] = {}
-        for label, state in [("All", None), ("Live", "Live"), ("Deleted", "Deleted"), ("Unknown", "Unknown")]:
+        for label, state in [
+            (translate("LevelDbRecordsWidget", "All"), None),
+            (gen_text("Live"), "Live"),
+            (gen_text("Deleted"), "Deleted"),
+            (gen_text("Unknown"), "Unknown"),
+        ]:
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setFlat(True)
@@ -146,16 +168,16 @@ class LevelDbRecordsWidget(QWidget):
             self._filter_buttons[state] = btn
 
         toolbar.addSeparator()
-        toolbar.addWidget(QLabel("  Search: "))
+        toolbar.addWidget(QLabel(translate("LevelDbRecordsWidget", "  Search: ")))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter rows…")
+        self._search.setPlaceholderText(translate("LevelDbRecordsWidget", "Filter rows…"))
         self._search.setClearButtonEnabled(True)
         self._search.setFixedWidth(220)
         self._search.textChanged.connect(lambda t: self._proxy.set_text(t))
         toolbar.addWidget(self._search)
 
         toolbar.addSeparator()
-        export_btn = QPushButton("Export CSV…")
+        export_btn = QPushButton(translate("LevelDbRecordsWidget", "Export CSV…"))
         export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(export_btn)
 
@@ -165,7 +187,7 @@ class LevelDbRecordsWidget(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         self._model = QStandardItemModel(0, len(_COLUMNS))
-        self._model.setHorizontalHeaderLabels(_COLUMNS)
+        set_headers(self._model, gens(*_COLUMNS))
         self._model.setSortRole(Qt.ItemDataRole.UserRole)
         self._populate_model()
 
@@ -194,9 +216,9 @@ class LevelDbRecordsWidget(QWidget):
         self._hex_key = HexViewer(b"")
         self._hex_val = HexViewer(b"")
         self._hex_ikey = HexViewer(b"")
-        hex_tabs.addTab(self._hex_key, "Key")
-        hex_tabs.addTab(self._hex_val, "Value")
-        hex_tabs.addTab(self._hex_ikey, "Internal Key")
+        hex_tabs.addTab(self._hex_key, translate("LevelDbRecordsWidget", "Key"))
+        hex_tabs.addTab(self._hex_val, translate("LevelDbRecordsWidget", "Value"))
+        hex_tabs.addTab(self._hex_ikey, translate("LevelDbRecordsWidget", "Internal Key"))
         splitter.addWidget(hex_tabs)
         splitter.setSizes([400, 200])
 
@@ -225,7 +247,7 @@ class LevelDbRecordsWidget(QWidget):
                 (_hex_preview(uk_bytes), None),
                 (_text_preview(rec.get("value_text"), val_bytes), None),
                 (_hex_preview(val_bytes), None),
-                ("yes" if rec.get("compressed") else "no", None),
+                ("yes" if rec.get("compressed") else "no", None),  # translated below
             ]
 
             items = []
@@ -234,6 +256,15 @@ class LevelDbRecordsWidget(QWidget):
                 if color:
                     item.setForeground(color)
                 items.append(item)
+            mark_generated(items[_COLUMNS.index("State")], Gen(state))
+            mark_generated(
+                items[_COLUMNS.index("Compressed")],
+                Gen(
+                    QT_TRANSLATE_NOOP("GeneratedView", "yes")
+                    if rec.get("compressed")
+                    else QT_TRANSLATE_NOOP("GeneratedView", "no")
+                ),
+            )
 
             # Store raw bytes for hex pane and inspector
             items[0].setData(uk_bytes, _KEY_BYTES_ROLE)
@@ -251,10 +282,10 @@ class LevelDbRecordsWidget(QWidget):
         total = self._model.rowCount()
         for s, btn in self._filter_buttons.items():
             if s is None:
-                btn.setText(f"All ({total})")
+                btn.setText(translate("LevelDbRecordsWidget", "All ({total})").format(total=total))
             else:
                 count = sum(1 for r in self._records if r["state"] == s)
-                btn.setText(f"{s} ({count})")
+                btn.setText(f"{gen_text(s)} ({count})")  # i18n: keep -- layout
 
     def _source_row(self, proxy_index) -> int:
         return self._proxy.mapToSource(proxy_index).row()
@@ -271,7 +302,9 @@ class LevelDbRecordsWidget(QWidget):
             self._hex_ikey.set_data(ik)
 
     def _export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, translate("LevelDbRecordsWidget", "Export CSV"), "", "CSV (*.csv)"  # i18n: keep -- file filter
+        )
         if not path:
             return
         headers = [
@@ -320,9 +353,21 @@ class LevelDbRecordsWidget(QWidget):
         ik: bytes = item.data(_IKEY_BYTES_ROLE) or b""
 
         menu = QMenu(self)
-        inspect_key = menu.addAction(f"Inspect Key… ({len(uk)} B)")
-        inspect_val = menu.addAction(f"Inspect Value… ({len(val)} B)")
-        inspect_ikey = menu.addAction(f"Inspect Internal Key… ({len(ik)} B)")
+        inspect_key = menu.addAction(
+            translate("LevelDbRecordsWidget", "Inspect Key… ({uk_count} B)").format(
+                uk_count=len(uk)
+            )
+        )
+        inspect_val = menu.addAction(
+            translate("LevelDbRecordsWidget", "Inspect Value… ({val_count} B)").format(
+                val_count=len(val)
+            )
+        )
+        inspect_ikey = menu.addAction(
+            translate("LevelDbRecordsWidget", "Inspect Internal Key… ({ik_count} B)").format(
+                ik_count=len(ik)
+            )
+        )
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
         if action == inspect_key and uk:
             BlobInspector(uk, self).show()
@@ -351,22 +396,22 @@ class LevelDbViewer(QWidget):
 
         # --- Overview ---
         if manifests:
-            tabs.addTab(TreeViewer(manifests, tabs), "Overview")
+            tabs.addTab(TreeViewer(manifests, tabs), translate("LevelDbViewer", "Overview"))
         else:
-            lbl = QLabel("No MANIFEST file found.")
+            lbl = QLabel(translate("LevelDbViewer", "No MANIFEST file found."))
             lbl.setWordWrap(True)
-            tabs.addTab(lbl, "Overview")
+            tabs.addTab(lbl, translate("LevelDbViewer", "Overview"))
 
         # --- Files ---
         if files:
-            tabs.addTab(self._build_files_tab(files, tabs), "Files")
+            tabs.addTab(self._build_files_tab(files, tabs), translate("LevelDbViewer", "Files"))
 
         # --- Records (all, with filter toolbar) ---
         if records:
             total = len(records)
             tabs.addTab(
                 LevelDbRecordsWidget(records, initial_filter=None, parent=tabs),
-                f"Records ({total:,})",
+                translate("LevelDbViewer", "Records ({total:,})").format(total=total),
             )
 
         # --- LOG / LOG.old (full content, own tab each) ---
@@ -378,9 +423,20 @@ class LevelDbViewer(QWidget):
         layout.addWidget(tabs)
 
     def _build_files_tab(self, files: list[dict[str, Any]], parent: QWidget) -> QWidget:
-        columns = ["File", "Type", "Level", "Size (B)", "Total", "Live", "Deleted", "Unknown", "Smallest Key", "Largest Key"]
+        columns = gens(
+            QT_TRANSLATE_NOOP("GeneratedView", "File"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Level"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Size (B)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Total"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Live"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Deleted"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Unknown"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key"),
+        )
         model = QStandardItemModel(0, len(columns))
-        model.setHorizontalHeaderLabels(columns)
+        set_headers(model, columns)
 
         for f in files:
             level = f.get("level", -1)
@@ -430,15 +486,21 @@ class LevelDbViewer(QWidget):
         line_count = len(content.splitlines())
         toolbar = QToolBar()
         toolbar.setMovable(False)
-        toolbar.addWidget(QLabel(f"  {line_count:,} lines   "))
+        toolbar.addWidget(
+            QLabel(
+                translate("LevelDbViewer", "  {line_count:,} lines   ").format(
+                    line_count=line_count
+                )
+            )
+        )
         toolbar.addSeparator()
-        toolbar.addWidget(QLabel("  Find: "))
+        toolbar.addWidget(QLabel(translate("LevelDbViewer", "  Find: ")))
         search = QLineEdit()
-        search.setPlaceholderText("Find in log…")
+        search.setPlaceholderText(translate("LevelDbViewer", "Find in log…"))
         search.setClearButtonEnabled(True)
         search.setFixedWidth(240)
         toolbar.addWidget(search)
-        find_next_btn = QPushButton("Next")
+        find_next_btn = QPushButton(translate("LevelDbViewer", "Next"))
         toolbar.addWidget(find_next_btn)
         layout.addWidget(toolbar)
 

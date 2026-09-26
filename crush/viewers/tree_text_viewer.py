@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 from crush.viewers.text_viewer import TextView
 from crush.viewers.tree_viewer import TreeViewer
+from crush.ui.i18n import translate
 
 
 class TreeTextViewer(QWidget):
@@ -26,6 +27,6 @@ class TreeTextViewer(QWidget):
         layout.setSpacing(0)
 
         tabs = QTabWidget()
-        tabs.addTab(TreeViewer(data, tabs), "Decoded")
-        tabs.addTab(TextView(raw_text, tabs), "Text")
+        tabs.addTab(TreeViewer(data, tabs), translate("TreeTextViewer", "Decoded"))
+        tabs.addTab(TextView(raw_text, tabs), translate("TreeTextViewer", "Text"))
         layout.addWidget(tabs)

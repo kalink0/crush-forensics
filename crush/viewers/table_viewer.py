@@ -18,7 +18,6 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QT_TRANSLATE_NOOP,
-    QAbstractItemModel,
     QAbstractTableModel,
     QModelIndex,
     QObject,
@@ -106,6 +105,16 @@ from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
 from crush.viewers.hex_viewer import HexViewer
 from crush.ui.i18n import translate
+from crush.viewers.generated_text import (
+    EXPORT_TEXT_ROLE as _EXPORT_TEXT_ROLE,
+    Gen as _Gen,
+    export_cell_text as _export_cell_text,
+    export_header_text as _export_header_text,
+    gen_item as _gen_item,
+    gen_text as _gen_text,
+    gens as _gens,
+    set_headers as _set_headers,
+)
 
 
 _MAX_COL_WIDTH = 400
@@ -149,14 +158,6 @@ _WAL_COLUMN_RANGES_ROLE = Qt.ItemDataRole.UserRole + 25
 _TS_ORIGINAL_TEXT_ROLE = Qt.ItemDataRole.UserRole + 26
 _TS_ORIGINAL_FG_ROLE = Qt.ItemDataRole.UserRole + 27  # False = no foreground was set
 _TS_UNDECODED_COLOR = QColor("#cc8800")
-# A generated view (Summary, DB Info, WAL Frames, Freelist Recovery, ...)
-# shows Crush's own words -- headers, view names, explanations, status
-# values -- in the UI language. CSV export and copy always write the English
-# original, so the same analysis exports identically whatever language each
-# analyst's UI is in: it's kept in this role wherever the display differs.
-# File data never carries it (it's shown and exported as it is).
-_EXPORT_TEXT_ROLE = Qt.ItemDataRole.UserRole + 28
-
 # Values a generated view gets from crush.core at runtime (so they can't be
 # marked where they're written). Marked here, translated by their English
 # text via _gen_text(); anything not listed is shown as it is.
@@ -171,91 +172,6 @@ _GENERATED_VALUES = (
     QT_TRANSLATE_NOOP("GeneratedView", "Freeblock (deleted)"),
     QT_TRANSLATE_NOOP("GeneratedView", "Unallocated slack"),
 )
-
-
-def _gen_text(english: str) -> str:
-    """Display text for Crush's own words in a generated view. *english*
-    is marked QT_TRANSLATE_NOOP("GeneratedView", ...) where it's written (or
-    listed in _GENERATED_VALUES); unmarked text comes back unchanged."""
-    return translate("GeneratedView", english)  # i18n: keep -- marked where written
-
-
-class _Gen:
-    """Crush's own words in a generated view (not file data): a marked
-    English template plus its params. A param may itself be a _Gen (e.g. a
-    status value inside a label); it's translated for display too."""
-
-    __slots__ = ("template", "params")
-
-    def __init__(self, template: str, **params: object) -> None:
-        self.template = template
-        self.params = params
-
-    def pair(self) -> tuple[str, str]:
-        """(English original, display text). A translation whose
-        placeholders don't fit falls back to English."""
-        english_params = {
-            k: v.pair()[0] if isinstance(v, _Gen) else v for k, v in self.params.items()
-        }
-        display_params = {
-            k: v.pair()[1] if isinstance(v, _Gen) else v for k, v in self.params.items()
-        }
-        english = self.template.format(**english_params) if self.params else self.template
-        display = _gen_text(self.template)
-        if self.params:
-            try:
-                display = display.format(**display_params)
-            except (KeyError, IndexError, ValueError):
-                display = english
-        return english, display
-
-
-def _mark_generated(item: QStandardItem, text: _Gen) -> QStandardItem:
-    """Show *text* on *item* in the UI language, the English original kept
-    for export."""
-    english, display = text.pair()
-    item.setText(display)
-    if display != english:
-        item.setData(english, _EXPORT_TEXT_ROLE)
-    return item
-
-
-def _gen_item(text: _Gen) -> QStandardItem:
-    return _mark_generated(QStandardItem(), text)
-
-
-def _set_headers(model: QStandardItemModel, labels: list[str | _Gen]) -> None:
-    """Horizontal headers: a _Gen label (Crush's own word) is translated for
-    display with its English original kept for export; a plain str (a real
-    column name from the file) is shown as it is."""
-    pairs = [label.pair() if isinstance(label, _Gen) else (label, label) for label in labels]
-    model.setHorizontalHeaderLabels([display for _english, display in pairs])
-    for col, (english, display) in enumerate(pairs):
-        if display != english:
-            model.setHeaderData(col, Qt.Orientation.Horizontal, english, _EXPORT_TEXT_ROLE)
-
-
-def _gens(*labels: str) -> list[str | _Gen]:
-    """_Gen for each (marked) label -- a header row of Crush's own words."""
-    return [_Gen(label) for label in labels]
-
-
-def _export_cell_text(model: QAbstractItemModel, index: QModelIndex) -> str:
-    """What CSV export and copy write for a cell: the English original of a
-    generated-view text, else the displayed text (file data)."""
-    original = model.data(index, _EXPORT_TEXT_ROLE)
-    if original is not None:
-        return str(original)
-    shown = model.data(index)
-    return "" if shown is None else str(shown)
-
-
-def _export_header_text(model: QAbstractItemModel, col: int) -> str:
-    original = model.headerData(col, Qt.Orientation.Horizontal, _EXPORT_TEXT_ROLE)
-    if original is not None:
-        return str(original)
-    shown = model.headerData(col, Qt.Orientation.Horizontal)
-    return "" if shown is None else str(shown)
 
 
 def _ts_suffix(fmt: str) -> str:
@@ -980,7 +896,8 @@ class TableViewer(QWidget):
                     self._add_generated_view(self._freelist_label)
                     self._add_generated_view(self._freeblocks_label)
                     self._add_generated_view(self._unallocated_label)
-                self._table_combo.addItems(table_names)
+                for name in table_names:
+                    self._add_table_item(name)
                 if show_db_tabs:
                     conn = self._ensure_db()
                     if conn:
@@ -1019,7 +936,8 @@ class TableViewer(QWidget):
         toolbar_layout.addWidget(QLabel(translate("TableViewer", "Table:")))
 
         self._table_combo = QComboBox()
-        self._table_combo.addItems([k for k in self._data.keys() if not k.startswith("__")])
+        for name in [k for k in self._data.keys() if not k.startswith("__")]:
+            self._add_table_item(name)
         self._table_combo.currentIndexChanged.connect(
             lambda _index: self._load_table(self._current_table())
         )
@@ -1273,6 +1191,17 @@ class TableViewer(QWidget):
     def _add_generated_view(self, name: str) -> None:
         self._table_combo.addItem(_gen_text(name), name)
 
+    def _add_table_item(self, name: str) -> None:
+        """A table from the data dict. One another viewer generated can carry
+        a "__label" (_Gen) -- shown translated, keyed by its name; its
+        columns and cells may be _Gen too (see _set_headers / _append_row)."""
+        table = self._data.get(name) if isinstance(self._data, dict) else None
+        label = table.get("__label") if isinstance(table, dict) else None
+        if isinstance(label, _Gen):
+            self._table_combo.addItem(label.pair()[1], name)
+        else:
+            self._table_combo.addItem(name, name)
+
     def _current_table(self) -> str:
         """The selected table's name, or a generated view's English name
         (whatever the combo shows in the UI language)."""
@@ -1479,7 +1408,11 @@ class TableViewer(QWidget):
                 row_item.setForeground(row_color)
             items = [row_item]
             for val in row_data:
-                if val is None:
+                if isinstance(val, _Gen):
+                    # Crush's own words in a table another viewer generated
+                    # (e.g. Realm's Summary notes): translated, English kept.
+                    cell = _gen_item(val)
+                elif val is None:
                     cell = QStandardItem("")
                     cell.setForeground(Qt.GlobalColor.gray)
                 elif isinstance(val, (bytes, bytearray, memoryview)):
@@ -3712,7 +3645,7 @@ class TableViewer(QWidget):
                 _PRAGMA_CATALOG_count=len(_PRAGMA_CATALOG)
             )
         )
-        self._sql_input.setPlainText("PRAGMA integrity_check;")
+        self._sql_input.setPlainText("PRAGMA integrity_check;")  # i18n: keep -- SQL
         self._sql_status.setText("")
 
     def _apply_filter(self, text: str) -> None:

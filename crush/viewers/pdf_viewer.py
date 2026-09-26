@@ -31,6 +31,7 @@ from crush.core.issues import ParseIssue
 from crush.parsers.pdf_parser import PdfRevision
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.text_viewer import TextView
+from crush.ui.i18n import translate
 
 # ~144 DPI (PDF page units are 72/inch) -- sharp enough for on-screen
 # reading without rendering every page at a wasteful resolution.
@@ -94,12 +95,12 @@ class _PdfPagesView(QWidget):
 
         nav_row = QHBoxLayout()
         nav_row.setSpacing(8)
-        self._prev_btn = QPushButton("◀ Prev")
+        self._prev_btn = QPushButton(translate("_PdfPagesView", "◀ Prev"))
         self._prev_btn.clicked.connect(self._prev_page)
         nav_row.addWidget(self._prev_btn)
         self._page_label = QLabel("")
         nav_row.addWidget(self._page_label)
-        self._next_btn = QPushButton("Next ▶")
+        self._next_btn = QPushButton(translate("_PdfPagesView", "Next ▶"))
         self._next_btn.clicked.connect(self._next_page)
         nav_row.addWidget(self._next_btn)
         nav_row.addStretch(1)
@@ -142,7 +143,9 @@ class _PdfPagesView(QWidget):
             self._doc = pdfium.PdfDocument(data, password=password)
             self._page_count = len(self._doc)  # type: ignore[arg-type]
         except Exception as exc:
-            self._page_image_label.setText(f"Unable to render PDF: {exc}")
+            self._page_image_label.setText(
+                translate("_PdfPagesView", "Unable to render PDF: {exc}").format(exc=exc)
+            )
             self._prev_btn.setEnabled(False)
             self._next_btn.setEnabled(False)
             return
@@ -164,7 +167,11 @@ class _PdfPagesView(QWidget):
         pixmap = self._render_current_page()
         if pixmap is None:
             return
-        self._page_label.setText(f"Page {self._page + 1} / {self._page_count}")
+        self._page_label.setText(
+            translate("_PdfPagesView", "Page {page} / {pages}").format(
+                page=self._page + 1, pages=self._page_count
+            )
+        )
         self._prev_btn.setEnabled(self._page > 0)
         self._next_btn.setEnabled(self._page < self._page_count - 1)
         self._apply_scale(pixmap)
@@ -195,7 +202,7 @@ class _PdfPagesView(QWidget):
         pixmap = self._render_current_page()
         if pixmap is not None:
             self._apply_scale(pixmap)
-        self._zoom_label.setText(f"{int(scale * 100)}%")
+        self._zoom_label.setText(f"{int(scale * 100)}%")  # i18n: keep -- number
         self._zoom_slider.blockSignals(True)
         self._zoom_slider.setValue(int(scale * 100))
         self._zoom_slider.blockSignals(False)
@@ -248,7 +255,9 @@ class _PdfAttachmentsView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self._table = QTableWidget(len(attachments), 2, self)
-        self._table.setHorizontalHeaderLabels(["Name", "Size"])
+        self._table.setHorizontalHeaderLabels(
+            [translate("_PdfAttachmentsView", "Name"), translate("_PdfAttachmentsView", "Size")]
+        )
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -267,7 +276,13 @@ class _PdfAttachmentsView(QWidget):
 
     def _export(self, row: int) -> None:
         name, data = self._attachments[row]
-        path, _ = QFileDialog.getSaveFileName(self, "Export Attachment", name, "All files (*)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            translate("_PdfAttachmentsView", "Export Attachment"),
+            name,
+            translate("_PdfAttachmentsView", "All files")
+            + " (*)",  # i18n: keep -- file filter pattern
+        )
         if not path:
             return
         with open(path, "wb") as f:
@@ -278,8 +293,8 @@ class _PdfAttachmentsView(QWidget):
         if row < 0:
             return
         menu = QMenu(self)
-        open_action = menu.addAction("Open as New Tab")
-        export_action = menu.addAction("Export…")
+        open_action = menu.addAction(translate("_PdfAttachmentsView", "Open as New Tab"))
+        export_action = menu.addAction(translate("_PdfAttachmentsView", "Export…"))
         action = menu.exec(self._table.viewport().mapToGlobal(pos))  # type: ignore[arg-type]
         if action == open_action:
             self._open_as_new_tab(row)
@@ -314,7 +329,7 @@ class _PdfDiffView(QWidget):
 
         picker_row = QHBoxLayout()
         picker_row.setSpacing(6)
-        picker_row.addWidget(QLabel("Compare:"))
+        picker_row.addWidget(QLabel(translate("_PdfDiffView", "Compare:")))
         self._combo_a = QComboBox()
         self._combo_b = QComboBox()
         for i, _rev in enumerate(revisions):
@@ -438,7 +453,7 @@ class _PdfVisualDiffView(QWidget):
 
         picker_row = QHBoxLayout()
         picker_row.setSpacing(6)
-        picker_row.addWidget(QLabel("Compare:"))
+        picker_row.addWidget(QLabel(translate("_PdfVisualDiffView", "Compare:")))
         self._combo_a = QComboBox()
         self._combo_b = QComboBox()
         for i, _rev in enumerate(revisions):
@@ -451,12 +466,12 @@ class _PdfVisualDiffView(QWidget):
         picker_row.addWidget(QLabel("→"))
         picker_row.addWidget(self._combo_b)
         picker_row.addSpacing(16)
-        self._prev_btn = QPushButton("◀ Prev page")
+        self._prev_btn = QPushButton(translate("_PdfVisualDiffView", "◀ Prev page"))
         self._prev_btn.clicked.connect(self._prev_page)
         picker_row.addWidget(self._prev_btn)
         self._page_label = QLabel("")
         picker_row.addWidget(self._page_label)
-        self._next_btn = QPushButton("Next page ▶")
+        self._next_btn = QPushButton(translate("_PdfVisualDiffView", "Next page ▶"))
         self._next_btn.clicked.connect(self._next_page)
         picker_row.addWidget(self._next_btn)
         picker_row.addStretch(1)
@@ -504,7 +519,11 @@ class _PdfVisualDiffView(QWidget):
         count_a, count_err_a = _pdf_page_count(rev_a.data, self._password)
         count_b, count_err_b = _pdf_page_count(rev_b.data, self._password)
         page_count = max(count_a, count_b)
-        self._page_label.setText(f"Page {self._page + 1} / {max(page_count, 1)}")
+        self._page_label.setText(
+            translate("_PdfVisualDiffView", "Page {page} / {pages}").format(
+                page=self._page + 1, pages=max(page_count, 1)
+            )
+        )
         self._prev_btn.setEnabled(self._page > 0)
         self._next_btn.setEnabled(self._page + 1 < page_count)
 
@@ -521,15 +540,26 @@ class _PdfVisualDiffView(QWidget):
             return
         if img_a is None or img_b is None:
             self._status_label.setText(
-                "This page doesn't exist in one of the two selected revisions."
+                translate(
+                    "_PdfVisualDiffView",
+                    "This page doesn't exist in one of the two selected revisions.",
+                )
             )
             self._image_label.clear()
             return
         if img_a.size != img_b.size:
             self._status_label.setText(
-                f"Page size differs between revisions ({img_a.size[0]}×{img_a.size[1]} vs "
-                f"{img_b.size[0]}×{img_b.size[1]}) -- not diffed to avoid a misleading "
-                "resize; showing the newer revision only."
+                translate(
+                    "_PdfVisualDiffView",
+                    "Page size differs between revisions ({width_a}×{height_a} vs "
+                    "{width_b}×{height_b}) -- not diffed to avoid a misleading "
+                    "resize; showing the newer revision only.",
+                ).format(
+                    width_a=img_a.size[0],
+                    height_a=img_a.size[1],
+                    width_b=img_b.size[0],
+                    height_b=img_b.size[1],
+                )
             )
             pixmap = _pil_to_pixmap(img_b)
             self._image_label.setPixmap(pixmap)
@@ -544,12 +574,17 @@ class _PdfVisualDiffView(QWidget):
         total_px = mask.size[0] * mask.size[1]
 
         if changed_px == 0:
-            self._status_label.setText("No visual differences on this page.")
+            self._status_label.setText(
+                translate("_PdfVisualDiffView", "No visual differences on this page.")
+            )
             pixmap = _pil_to_pixmap(img_b)
         else:
             pct = 100.0 * changed_px / total_px
             self._status_label.setText(
-                f"{pct:.2f}% of pixels differ on this page (highlighted in red)."
+                translate(
+                    "_PdfVisualDiffView",
+                    "{pct:.2f}% of pixels differ on this page (highlighted in red).",
+                ).format(pct=pct)
             )
             red_layer = Image.new("RGBA", img_b.size, (255, 0, 0, 130))
             overlay = Image.new("RGBA", img_b.size, (255, 0, 0, 0))
@@ -593,9 +628,14 @@ class _PdfHistoryView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         sub_tabs = QTabWidget()
-        sub_tabs.addTab(self._build_browse_tab(), "Browse")
-        sub_tabs.addTab(_PdfDiffView(revisions, sub_tabs), "Text Diff")
-        sub_tabs.addTab(_PdfVisualDiffView(revisions, password, sub_tabs), "Visual Diff")
+        sub_tabs.addTab(self._build_browse_tab(), translate("_PdfHistoryView", "Browse"))
+        sub_tabs.addTab(
+            _PdfDiffView(revisions, sub_tabs), translate("_PdfHistoryView", "Text Diff")
+        )
+        sub_tabs.addTab(
+            _PdfVisualDiffView(revisions, password, sub_tabs),
+            translate("_PdfHistoryView", "Visual Diff"),
+        )
         layout.addWidget(sub_tabs)
 
     def _build_browse_tab(self) -> QWidget:
@@ -641,12 +681,21 @@ class _PdfHistoryView(QWidget):
         layout.addWidget(_status_label(info_text))
 
         tabs = QTabWidget()
-        tabs.addTab(_PdfPagesView(rev.data, self._password, tabs), "Pages")
-        tabs.addTab(_text_tab(rev.text, rev.text_status, tabs), "Text")
+        tabs.addTab(
+            _PdfPagesView(rev.data, self._password, tabs), translate("_PdfHistoryView", "Pages")
+        )
+        tabs.addTab(
+            _text_tab(rev.text, rev.text_status, tabs), translate("_PdfHistoryView", "Text")
+        )
         if rev.attachments:
             attachments_view = _PdfAttachmentsView(rev.attachments, tabs)
             attachments_view.open_bytes_requested.connect(self.open_bytes_requested)
-            tabs.addTab(attachments_view, f"Attachments ({len(rev.attachments)})")
+            tabs.addTab(
+                attachments_view,
+                translate("_PdfHistoryView", "Attachments ({attachments_count})").format(
+                    attachments_count=len(rev.attachments)
+                ),
+            )
         layout.addWidget(tabs)
         return container
 
@@ -671,14 +720,24 @@ class PDFViewer(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         tabs = QTabWidget()
-        tabs.addTab(_PdfPagesView(data, password, self), "Pages")
-        tabs.addTab(_text_tab(extracted_text, text_status, self), "Text")
+        tabs.addTab(_PdfPagesView(data, password, self), translate("PDFViewer", "Pages"))
+        tabs.addTab(_text_tab(extracted_text, text_status, self), translate("PDFViewer", "Text"))
         if attachments:
             attachments_view = _PdfAttachmentsView(attachments, self)
             attachments_view.open_bytes_requested.connect(self.open_bytes_requested)
-            tabs.addTab(attachments_view, f"Attachments ({len(attachments)})")
+            tabs.addTab(
+                attachments_view,
+                translate("PDFViewer", "Attachments ({attachments_count})").format(
+                    attachments_count=len(attachments)
+                ),
+            )
         if revisions:
             history_view = _PdfHistoryView(revisions, password, self)
             history_view.open_bytes_requested.connect(self.open_bytes_requested)
-            tabs.addTab(history_view, f"History ({len(revisions)})")
+            tabs.addTab(
+                history_view,
+                translate("PDFViewer", "History ({revisions_count})").format(
+                    revisions_count=len(revisions)
+                ),
+            )
         layout.addWidget(tabs)

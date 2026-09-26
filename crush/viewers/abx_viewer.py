@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from crush.viewers.text_viewer import TextView
 from crush.viewers.tree_viewer import TreeViewer
+from crush.ui.i18n import translate
 
 
 class AbxViewer(QWidget):
@@ -45,7 +46,7 @@ class AbxViewer(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
 
-        left_header = QLabel("  Parsed structure")
+        left_header = QLabel(translate("AbxViewer", "  Parsed structure"))
         left_header.setFixedHeight(28)
         left_header.setStyleSheet(
             "background: palette(mid); color: palette(text); font-size: 11px;"
@@ -62,7 +63,7 @@ class AbxViewer(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
 
-        right_header = QLabel("  Reconstructed XML")
+        right_header = QLabel(translate("AbxViewer", "  Reconstructed XML"))
         right_header.setFixedHeight(28)
         right_header.setStyleSheet(
             "background: palette(mid); color: palette(text); font-size: 11px;"

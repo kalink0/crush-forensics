@@ -6,7 +6,7 @@ from __future__ import annotations
 import csv
 from typing import Any
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QSortFilterProxyModel
 from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -27,6 +27,14 @@ from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector
 from crush.viewers.tree_viewer import TreeViewer
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
+from crush.viewers.generated_text import (
+    EXPORT_TEXT_ROLE,
+    Gen,
+    gens,
+    mark_generated,
+    set_headers,
+)
 
 _RAW_ROLE = Qt.ItemDataRole.UserRole + 1
 _FULLTEXT_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -39,7 +47,22 @@ _STATE_COLORS: dict[str, QColor] = {
     "Superseded": QColor("#b8860b"),
 }
 
-_COLUMNS = ["Index", "Key", "State", "Type", "Size (B)", "Value"]
+# English: the export header and the index lookups below; shown translated.
+_COLUMNS = [
+    QT_TRANSLATE_NOOP("GeneratedView", "Index"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Key"),
+    QT_TRANSLATE_NOOP("GeneratedView", "State"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Type"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Size (B)"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Value"),
+]
+# Record states from the parser (shown translated, kept English for the
+# filter and export).
+_STATES = (
+    QT_TRANSLATE_NOOP("GeneratedView", "Live"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Superseded"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Removed"),
+)
 _VALUE_COL = _COLUMNS.index("Value")
 _HEX_PREVIEW_BYTES = 64
 # Real MMKV stores can hold multi-megabyte values (e.g. a cached GraphQL/JSON
@@ -98,7 +121,8 @@ class _StateFilterProxy(QSortFilterProxyModel):
         model = self.sourceModel()
         if self._state:
             idx = model.index(source_row, _COLUMNS.index("State"), source_parent)
-            if model.data(idx) != self._state:
+            # The state's English original, not the (translated) display.
+            if (model.data(idx, EXPORT_TEXT_ROLE) or model.data(idx)) != self._state:
                 return False
         if self._text:
             for col in range(model.columnCount()):
@@ -145,9 +169,14 @@ class MMKVRecordsWidget(QWidget):
 
         toolbar = QToolBar()
         toolbar.setMovable(False)
-        toolbar.addWidget(QLabel("  Show: "))
+        toolbar.addWidget(QLabel(translate("MMKVRecordsWidget", "  Show: ")))
         self._filter_buttons: dict[str | None, QPushButton] = {}
-        for label, state in [("All", None), ("Live", "Live"), ("Superseded", "Superseded"), ("Removed", "Removed")]:
+        for label, state in [
+            (translate("MMKVRecordsWidget", "All"), None),
+            (translate("MMKVRecordsWidget", "Live"), "Live"),
+            (translate("MMKVRecordsWidget", "Superseded"), "Superseded"),
+            (translate("MMKVRecordsWidget", "Removed"), "Removed"),
+        ]:
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setFlat(True)
@@ -157,16 +186,16 @@ class MMKVRecordsWidget(QWidget):
         self._filter_buttons[None].setChecked(True)
 
         toolbar.addSeparator()
-        toolbar.addWidget(QLabel("  Search: "))
+        toolbar.addWidget(QLabel(translate("MMKVRecordsWidget", "  Search: ")))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter rows…")
+        self._search.setPlaceholderText(translate("MMKVRecordsWidget", "Filter rows…"))
         self._search.setClearButtonEnabled(True)
         self._search.setFixedWidth(220)
         self._search.textChanged.connect(lambda t: self._proxy.set_text(t))
         toolbar.addWidget(self._search)
 
         toolbar.addSeparator()
-        export_btn = QPushButton("Export CSV…")
+        export_btn = QPushButton(translate("MMKVRecordsWidget", "Export CSV…"))
         export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(export_btn)
         layout.addWidget(toolbar)
@@ -174,7 +203,7 @@ class MMKVRecordsWidget(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         self._model = QStandardItemModel(0, len(_COLUMNS))
-        self._model.setHorizontalHeaderLabels(_COLUMNS)
+        set_headers(self._model, gens(*_COLUMNS))
         self._model.setSortRole(Qt.ItemDataRole.UserRole)
         self._populate_model()
 
@@ -209,7 +238,7 @@ class MMKVRecordsWidget(QWidget):
         vb_layout = QHBoxLayout(value_bar)
         vb_layout.setContentsMargins(8, 4, 8, 4)
         vb_layout.setSpacing(8)
-        vb_layout.addWidget(QLabel("Value:"))
+        vb_layout.addWidget(QLabel(translate("MMKVRecordsWidget", "Value:")))
         self._value_field = QLineEdit()
         self._value_field.setReadOnly(True)
         vb_layout.addWidget(self._value_field, 1)
@@ -230,6 +259,7 @@ class MMKVRecordsWidget(QWidget):
                 (display_val, None),
             ]
             items = [_make_item(d, s) for d, s in cells]
+            mark_generated(items[_COLUMNS.index("State")], Gen(state))
             if color:
                 for item in items:
                     item.setForeground(color)
@@ -287,11 +317,15 @@ class MMKVRecordsWidget(QWidget):
         full_value = self._model.item(row, _VALUE_COL).data(_FULLTEXT_ROLE) or ""
 
         menu = QMenu(self)
-        inspect_val = menu.addAction(f"Inspect Value… ({len(value_bytes)} B)")
+        inspect_val = menu.addAction(
+            translate("MMKVRecordsWidget", "Inspect Value… ({value_bytes_count} B)").format(
+                value_bytes_count=len(value_bytes)
+            )
+        )
         inspect_val.setEnabled(bool(value_bytes))
         menu.addSeparator()
-        copy_key = menu.addAction("Copy Key")
-        copy_value = menu.addAction("Copy Value")
+        copy_key = menu.addAction(translate("MMKVRecordsWidget", "Copy Key"))
+        copy_value = menu.addAction(translate("MMKVRecordsWidget", "Copy Value"))
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
         if action == inspect_val:
             # Inspects the value's own bytes (MMKV's internal length-prefix
@@ -311,7 +345,9 @@ class MMKVRecordsWidget(QWidget):
             QApplication.clipboard().setText(full_value)
 
     def _export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, translate("MMKVRecordsWidget", "Export CSV"), "", "CSV (*.csv)"  # i18n: keep -- file filter
+        )
         if not path:
             return
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -366,17 +402,19 @@ class MMKVViewer(QWidget):
         overview["Live"] = sum(1 for r in records if r["state"] == "Live")
         overview["Superseded"] = sum(1 for r in records if r["state"] == "Superseded")
         overview["Removed"] = sum(1 for r in records if r["state"] == "Removed")
-        tabs.addTab(TreeViewer(overview, tabs), "Overview")
+        tabs.addTab(TreeViewer(overview, tabs), translate("MMKVViewer", "Overview"))
 
         if records:
             file_bytes = self._data.get("__mmkv_file_bytes")
             tabs.addTab(
                 MMKVRecordsWidget(records, tabs, file_bytes=file_bytes),
-                f"Records ({len(records):,})",
+                translate("MMKVViewer", "Records ({records_count:,})").format(
+                    records_count=len(records)
+                ),
             )
         else:
-            lbl = QLabel("No entries found.")
+            lbl = QLabel(translate("MMKVViewer", "No entries found."))
             lbl.setWordWrap(True)
-            tabs.addTab(lbl, "Records")
+            tabs.addTab(lbl, translate("MMKVViewer", "Records"))
 
         layout.addWidget(tabs)

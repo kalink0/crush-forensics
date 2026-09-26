@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from crush.core.pil_plugins import ensure_pil_plugins
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 
 def _pillow_decode(data: bytes) -> tuple[QPixmap | None, str]:
@@ -73,19 +74,19 @@ class ImageViewer(QWidget):
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(6)
 
-        self._fit_btn = QPushButton("Fit")
+        self._fit_btn = QPushButton(translate("ImageViewer", "Fit"))
         self._fit_btn.clicked.connect(self._fit)
         tb_layout.addWidget(self._fit_btn)
 
         self._rotate_left_btn = QPushButton("↶")
         self._rotate_left_btn.setFixedWidth(28)
-        self._rotate_left_btn.setToolTip("Rotate left 90°")
+        self._rotate_left_btn.setToolTip(translate("ImageViewer", "Rotate left 90°"))
         self._rotate_left_btn.clicked.connect(lambda: self._rotate(-90))
         tb_layout.addWidget(self._rotate_left_btn)
 
         self._rotate_right_btn = QPushButton("↷")
         self._rotate_right_btn.setFixedWidth(28)
-        self._rotate_right_btn.setToolTip("Rotate right 90°")
+        self._rotate_right_btn.setToolTip(translate("ImageViewer", "Rotate right 90°"))
         self._rotate_right_btn.clicked.connect(lambda: self._rotate(90))
         tb_layout.addWidget(self._rotate_right_btn)
 
@@ -109,7 +110,7 @@ class ImageViewer(QWidget):
         self._zoom_label = QLabel("100%")
         tb_layout.addWidget(self._zoom_label)
 
-        self._magnifier_btn = QPushButton("Magnifier")
+        self._magnifier_btn = QPushButton(translate("ImageViewer", "Magnifier"))
         self._magnifier_btn.setCheckable(True)
         self._magnifier_btn.toggled.connect(self._toggle_magnifier)
         tb_layout.addWidget(self._magnifier_btn)
@@ -150,7 +151,9 @@ class ImageViewer(QWidget):
                 self._pixmap = px
                 loaded = True
         if not loaded or self._pixmap.isNull():
-            self._image_label.setText(f"Unable to decode image.\n{reason}")
+            self._image_label.setText(
+                translate("ImageViewer", "Unable to decode image.\n{reason}").format(reason=reason)
+            )
             self._image_label.setWordWrap(True)
             return
         self._set_scale(1.0)
@@ -209,7 +212,7 @@ class ImageViewer(QWidget):
         )
         self._image_label.setPixmap(scaled)
         self._image_label.resize(scaled.size())
-        self._zoom_label.setText(f"{int(self._scale * 100)}%")
+        self._zoom_label.setText(f"{int(self._scale * 100)}%")  # i18n: keep -- number
         self._zoom_slider.blockSignals(True)
         self._zoom_slider.setValue(int(self._scale * 100))
         self._zoom_slider.blockSignals(False)

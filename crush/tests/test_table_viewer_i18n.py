@@ -13,6 +13,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
+import crush.viewers.generated_text as gen_module
 import crush.viewers.table_viewer as tv_module
 from crush.viewers.table_viewer import (
     TableViewer,
@@ -29,12 +30,12 @@ ROOT = Path(__file__).resolve().parents[2]
 def fake_translation(monkeypatch):
     """Every generated-view text shown as «text» -- a stand-in for a real
     translation that makes translated vs. original visible."""
-    real = tv_module.translate
+    real = gen_module.translate
 
     def fake(context: str, text: str, *args: object) -> str:
         return f"«{text}»" if context == "GeneratedView" else real(context, text, *args)
 
-    monkeypatch.setattr(tv_module, "translate", fake)
+    monkeypatch.setattr(gen_module, "translate", fake)
 
 
 def _headers(model) -> tuple[list[str], list[str]]:
@@ -141,10 +142,10 @@ def test_view_names_are_keyed_by_english(qapp, tmp_path: Path, fake_translation)
 
 def test_nested_value_and_broken_translation(qapp, monkeypatch) -> None:
     label = _Gen("WAL {status} (frame {frame})", status=_Gen("Superseded"), frame=3)
-    monkeypatch.setattr(tv_module, "translate", lambda c, t, *a: f"«{t}»")
+    monkeypatch.setattr(gen_module, "translate", lambda c, t, *a: f"«{t}»")
     assert label.pair() == ("WAL Superseded (frame 3)", "«WAL «Superseded» (frame 3)»")
     # A translation whose placeholders don't fit: English, never a crash.
-    monkeypatch.setattr(tv_module, "translate", lambda c, t, *a: "{wrong}")
+    monkeypatch.setattr(gen_module, "translate", lambda c, t, *a: "{wrong}")
     assert _Gen("{count} rows", count=2).pair() == ("2 rows", "2 rows")
 
 

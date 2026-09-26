@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt
 from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -32,6 +32,8 @@ from crush.parsers.protobuf_schema import (
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 from crush.viewers.tree_viewer import TreeViewer
+from crush.ui.i18n import translate
+from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_item
 
 
 class ProtobufViewer(QWidget):
@@ -61,32 +63,32 @@ class ProtobufViewer(QWidget):
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(8)
 
-        tb_layout.addWidget(QLabel("Schema:"))
-        self._schema_label = QLabel("None")
+        tb_layout.addWidget(QLabel(translate("ProtobufViewer", "Schema:")))
+        self._schema_label = QLabel(translate("ProtobufViewer", "None"))
         self._schema_label.setStyleSheet("color: gray;")
         tb_layout.addWidget(self._schema_label)
 
-        self._load_btn = QPushButton("Load .proto / descriptor…")
+        self._load_btn = QPushButton(translate("ProtobufViewer", "Load .proto / descriptor…"))
         self._load_btn.clicked.connect(self._on_load_schema)
         tb_layout.addWidget(self._load_btn)
 
-        self._clear_btn = QPushButton("Clear")
+        self._clear_btn = QPushButton(translate("ProtobufViewer", "Clear"))
         self._clear_btn.clicked.connect(self._clear_schema)
         self._clear_btn.setEnabled(False)
         tb_layout.addWidget(self._clear_btn)
 
         tb_layout.addSpacing(12)
-        tb_layout.addWidget(QLabel("Message:"))
+        tb_layout.addWidget(QLabel(translate("ProtobufViewer", "Message:")))
         self._msg_combo = QComboBox()
         self._msg_combo.setEnabled(False)
         tb_layout.addWidget(self._msg_combo)
 
-        self._decode_btn = QPushButton("Decode")
+        self._decode_btn = QPushButton(translate("ProtobufViewer", "Decode"))
         self._decode_btn.clicked.connect(self._decode_with_schema)
         self._decode_btn.setEnabled(False)
         tb_layout.addWidget(self._decode_btn)
 
-        self._raw_btn = QPushButton("Show Raw Decode")
+        self._raw_btn = QPushButton(translate("ProtobufViewer", "Show Raw Decode"))
         self._raw_btn.clicked.connect(self._show_schema_less)
         tb_layout.addWidget(self._raw_btn)
 
@@ -122,7 +124,7 @@ class ProtobufViewer(QWidget):
 
     def _show_schema_less(self) -> None:
         hex_visible = self._current_hex_visible()
-        self._status.setText("Schema-less decode")
+        self._status.setText(translate("ProtobufViewer", "Schema-less decode"))
         self._replace_view(
             ProtobufTreeWidget(
                 self._decoded,
@@ -136,20 +138,23 @@ class ProtobufViewer(QWidget):
         self._pool = None
         self._descriptor_set = None
         self._message_names = []
-        self._schema_label.setText("None")
+        self._schema_label.setText(translate("ProtobufViewer", "None"))
         self._schema_label.setStyleSheet("color: gray;")
         self._msg_combo.clear()
         self._msg_combo.setEnabled(False)
         self._decode_btn.setEnabled(False)
         self._clear_btn.setEnabled(False)
-        self._status.setText("Schema cleared")
+        self._status.setText(translate("ProtobufViewer", "Schema cleared"))
 
     def _on_load_schema(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load Protobuf schema",
+            translate("ProtobufViewer", "Load Protobuf schema"),
             "",
-            "Protobuf schema (*.proto *.pb *.desc *.fds);;All files (*)",
+            translate("ProtobufViewer", "Protobuf schema")
+            + " (*.proto *.pb *.desc *.fds);;"  # i18n: keep -- file filter pattern
+            + translate("ProtobufViewer", "All files")
+            + " (*)",  # i18n: keep -- file filter pattern
         )
         if not path:
             return
@@ -168,15 +173,19 @@ class ProtobufViewer(QWidget):
         self._clear_btn.setEnabled(True)
         self._schema_label.setText(Path(path).name)
         self._schema_label.setStyleSheet("color: palette(text);")
-        self._status.setText(f"Loaded {len(self._message_names)} message types")
+        self._status.setText(
+            translate("ProtobufViewer", "Loaded {message_names_count} message types").format(
+                message_names_count=len(self._message_names)
+            )
+        )
 
     def _decode_with_schema(self) -> None:
         if self._pool is None:
-            self._status.setText("Load a schema first")
+            self._status.setText(translate("ProtobufViewer", "Load a schema first"))
             return
         name = self._msg_combo.currentText().strip()
         if not name:
-            self._status.setText("Select a message type")
+            self._status.setText(translate("ProtobufViewer", "Select a message type"))
             return
         try:
             from google.protobuf import json_format
@@ -188,11 +197,13 @@ class ProtobufViewer(QWidget):
             )
             byte_ranges = schema_byte_ranges(self._pool, name, self._raw)
         except Exception as exc:
-            self._status.setText(f"Decode failed: {exc}")
+            self._status.setText(
+                translate("ProtobufViewer", "Decode failed: {exc}").format(exc=exc)
+            )
             return
 
         hex_visible = self._current_hex_visible()
-        self._status.setText(f"Decoded as {name}")
+        self._status.setText(translate("ProtobufViewer", "Decoded as {name}").format(name=name))
         self._replace_view(
             TreeViewer(
                 decoded,
@@ -327,30 +338,36 @@ class ProtobufTreeWidget(QWidget):
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(8)
-        self._expand_all_btn = QPushButton("Expand All")
+        self._expand_all_btn = QPushButton(translate("ProtobufTreeWidget", "Expand All"))
         self._expand_all_btn.clicked.connect(self._tree_expand_all)
         tb_layout.addWidget(self._expand_all_btn)
-        self._collapse_all_btn = QPushButton("Collapse All")
+        self._collapse_all_btn = QPushButton(translate("ProtobufTreeWidget", "Collapse All"))
         self._collapse_all_btn.clicked.connect(self._tree_collapse_all)
         tb_layout.addWidget(self._collapse_all_btn)
-        self._export_btn = QPushButton("Export…")
+        self._export_btn = QPushButton(translate("ProtobufTreeWidget", "Export…"))
         self._export_btn.clicked.connect(self._show_export_menu)
         tb_layout.addWidget(self._export_btn)
         tb_layout.addStretch()
-        tb_layout.addWidget(QLabel("Search:"))
+        tb_layout.addWidget(QLabel(translate("ProtobufTreeWidget", "Search:")))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter fields / values…")
+        self._search.setPlaceholderText(translate("ProtobufTreeWidget", "Filter fields / values…"))
         self._search.setClearButtonEnabled(True)
         self._search.setFixedWidth(200)
         self._search.textChanged.connect(self._apply_filter)
         tb_layout.addWidget(self._search)
-        self._hex_toggle_btn = QPushButton("Show Hex")
+        self._hex_toggle_btn = QPushButton(translate("ProtobufTreeWidget", "Show Hex"))
         self._hex_toggle_btn.clicked.connect(self._toggle_hex_view)
         tb_layout.addWidget(self._hex_toggle_btn)
         layout.addWidget(toolbar)
 
         self._model = QStandardItemModel()
-        self._model.setHorizontalHeaderLabels(["Field", "Value", "Wire type"])
+        self._model.setHorizontalHeaderLabels(
+            [
+                translate("ProtobufTreeWidget", "Field"),
+                translate("ProtobufTreeWidget", "Value"),
+                translate("ProtobufTreeWidget", "Wire type"),
+            ]
+        )
 
         self._tree = QTreeView()
         self._tree.setModel(self._model)
@@ -369,7 +386,7 @@ class ProtobufTreeWidget(QWidget):
         vb_layout = QHBoxLayout(value_bar)
         vb_layout.setContentsMargins(8, 4, 8, 4)
         vb_layout.setSpacing(8)
-        vb_layout.addWidget(QLabel("Value:"))
+        vb_layout.addWidget(QLabel(translate("ProtobufTreeWidget", "Value:")))
         self._value_field = QLineEdit()
         self._value_field.setReadOnly(True)
         vb_layout.addWidget(self._value_field, 1)
@@ -387,7 +404,11 @@ class ProtobufTreeWidget(QWidget):
         )
         self._hex = self._mapped_view.hex_viewer
         layout.addWidget(self._mapped_view, 1)
-        self._hex_toggle_btn.setText("Hide Hex" if self._initial_hex_visible else "Show Hex")
+        self._hex_toggle_btn.setText(
+            translate("ProtobufTreeWidget", "Hide Hex")
+            if self._initial_hex_visible
+            else translate("ProtobufTreeWidget", "Show Hex")
+        )
 
         self._populate(decoded.get("entries", []), self._model.invisibleRootItem())
         self._tree.expandToDepth(1)
@@ -395,7 +416,11 @@ class ProtobufTreeWidget(QWidget):
     def _toggle_hex_view(self) -> None:
         visible = not self._mapped_view.is_hex_visible()
         self._mapped_view.set_hex_visible(visible)
-        self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
+        self._hex_toggle_btn.setText(
+            translate("ProtobufTreeWidget", "Hide Hex")
+            if visible
+            else translate("ProtobufTreeWidget", "Show Hex")
+        )
 
     def _populate(self, entries: list[dict[str, Any]], parent: QStandardItem) -> None:
         for entry in entries:
@@ -406,11 +431,15 @@ class ProtobufTreeWidget(QWidget):
 
             # Primary value display
             raw_bytes = entry.get("raw")  # full payload; only set for length-delimited entries
+            label: str | Gen
             if isinstance(val, dict):
                 vtype = val.get("type")
                 if vtype == "message":
-                    label = f"{{ {len(val.get('entries', []))} field(s) }}"
-                    full_text = label
+                    label = Gen(
+                        QT_TRANSLATE_NOOP("GeneratedView", "{{ {count} field(s) }}"),
+                        count=len(val.get("entries", [])),
+                    )
+                    full_text = label.pair()[1]
                 elif vtype == "string":
                     text = val.get("text", "")
                     label = f'"{text}"'
@@ -424,8 +453,10 @@ class ProtobufTreeWidget(QWidget):
                 label = str(val) if val is not None else ""
                 full_text = label
 
-            field_item = QStandardItem(f"field {field}")
-            val_item = QStandardItem(label)
+            field_item = gen_item(
+                Gen(QT_TRANSLATE_NOOP("GeneratedView", "field {number}"), number=field)
+            )
+            val_item = gen_item(label) if isinstance(label, Gen) else QStandardItem(label)
             wt_item = QStandardItem(wire_type)
             val_item.setData(raw_bytes, _RAW_ROLE)
             val_item.setData(full_text, _FULLTEXT_ROLE)
@@ -440,7 +471,11 @@ class ProtobufTreeWidget(QWidget):
                 interp_font = field_item.font()
                 interp_font.setPointSize(max(7, interp_font.pointSize() + _INTERP_FONT_SIZE_DELTA))
                 for interp in interpretations:
-                    lbl_item = QStandardItem(f"  {interp.label}")
+                    # interp.label stays the parser's English value (compared
+                    # below); descriptive labels are marked in proto_interp.
+                    lbl_item = gen_item(
+                        Gen("  {label}", label=Gen(interp.label))  # i18n: keep -- layout
+                    )
                     lbl_item.setForeground(_GRAY)
                     lbl_item.setFont(interp_font)
                     lbl_item.setEditable(False)
@@ -500,8 +535,8 @@ class ProtobufTreeWidget(QWidget):
 
     def _show_export_menu(self) -> None:
         menu = QMenu(self)
-        export_text = menu.addAction("Export All as Text…")
-        export_json = menu.addAction("Export All as JSON…")
+        export_text = menu.addAction(translate("ProtobufTreeWidget", "Export All as Text…"))
+        export_json = menu.addAction(translate("ProtobufTreeWidget", "Export All as JSON…"))
         action = menu.exec(self._export_btn.mapToGlobal(self._export_btn.rect().bottomLeft()))
         entries = self._decoded.get("entries", [])
         if action == export_text:
@@ -517,7 +552,9 @@ class ProtobufTreeWidget(QWidget):
             from crush.viewers.blob_inspector import _render_protobuf
             content = _render_protobuf(entries)
             name_filter = "Text (*.txt)"
-        path, _ = QFileDialog.getSaveFileName(self, "Export Protobuf", default_name, name_filter)
+        path, _ = QFileDialog.getSaveFileName(
+            self, translate("ProtobufTreeWidget", "Export Protobuf"), default_name, name_filter
+        )
         if not path:
             return
         with open(path, "w", encoding="utf-8") as f:
@@ -553,24 +590,26 @@ class ProtobufTreeWidget(QWidget):
         if items is None:
             return
         key_item, val_item = items
-        key = key_item.text()
-        value = val_item.data(_FULLTEXT_ROLE)
+        # Copy and export file names use the English originals of Crush's
+        # own words ("field 7", "{ 3 field(s) }").
+        key = key_item.data(EXPORT_TEXT_ROLE) or key_item.text()
+        value = val_item.data(EXPORT_TEXT_ROLE) or val_item.data(_FULLTEXT_ROLE)
         value = value if value is not None else val_item.text()
         raw_bytes = val_item.data(_RAW_ROLE)
         subtree_ref = key_item.data(_ENTRY_ROLE)  # None for interpretation hint rows
         subtree_entry = subtree_ref.entry if isinstance(subtree_ref, _EntryRef) else None
 
         menu = QMenu(self)
-        inspect_action = menu.addAction("Inspect BLOB…")
+        inspect_action = menu.addAction(translate("ProtobufTreeWidget", "Inspect BLOB…"))
         inspect_action.setEnabled(bool(raw_bytes))
         menu.addSeparator()
-        copy_key = menu.addAction("Copy key")
-        copy_value = menu.addAction("Copy value")
-        copy_pair = menu.addAction("Copy key = value")
+        copy_key = menu.addAction(translate("ProtobufTreeWidget", "Copy key"))
+        copy_value = menu.addAction(translate("ProtobufTreeWidget", "Copy value"))
+        copy_pair = menu.addAction(translate("ProtobufTreeWidget", "Copy key = value"))
         menu.addSeparator()
-        export_text = menu.addAction("Export Subtree as Text…")
+        export_text = menu.addAction(translate("ProtobufTreeWidget", "Export Subtree as Text…"))
         export_text.setEnabled(subtree_entry is not None)
-        export_json = menu.addAction("Export Subtree as JSON…")
+        export_json = menu.addAction(translate("ProtobufTreeWidget", "Export Subtree as JSON…"))
         export_json.setEnabled(subtree_entry is not None)
         action = menu.exec(self._tree.viewport().mapToGlobal(pos))
         if action == inspect_action:
