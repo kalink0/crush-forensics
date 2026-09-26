@@ -13,7 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
-from crush.core.issues import ParseIssue, render_value
+from crush.core.issues import CatalogText, ParseIssue, render_value
 from crush.ui.i18n import translate
 
 # A generated view (Summary, DB Info, WAL Frames, Freelist Recovery, ...)
@@ -47,9 +47,11 @@ class Localized:
 
 def _param_pair(value: object) -> tuple[object, object]:
     """(English, display) form of one Gen param: a nested Gen / Localized,
-    or a ParseIssue (or list of them) rendered English vs. translated."""
+    a CatalogText, or a ParseIssue (or list of them) rendered English vs. translated."""
     if isinstance(value, (Gen, Localized)):
         return value.pair()
+    if isinstance(value, CatalogText):
+        return value.text, value.localized()
     if isinstance(value, ParseIssue) or (
         isinstance(value, (list, tuple)) and any(isinstance(v, ParseIssue) for v in value)
     ):

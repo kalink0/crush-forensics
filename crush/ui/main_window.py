@@ -63,7 +63,7 @@ from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog, i18n
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
-from crush.core.issues import ParseIssue, render_value
+from crush.core.issues import QT_TRANSLATE_NOOP, CatalogText, ParseIssue, render_value
 from crush.core.session import Session
 from crush.ui.log_scope import window_log_scope, WindowLogFilter, WindowStampFilter
 from crush.ui.fs_panel import FilesystemPanel
@@ -2601,10 +2601,18 @@ class MainWindow(QMainWindow):
     # (e.g. an app installed outside Play Store, or Play Store data that's
     # since been cleared) and a reader should be able to tell which one a
     # given result came from.
+    #
+    # Names (context "AnalyzerModule") and relevance texts (context
+    # "AnalyzerKnowledge", disambiguated by module id) are English here and
+    # translated at display; see _analyzer_title / _analyzer_relevance.
     _ANALYZER_MODULE_DISPLAY_NAMES = {
-        "get_installed_apps": "Installed Applications (iOS)",
-        "get_installedappsVending": "Installed Applications (Android, Play Store Cache)",
-        "get_package_info": "Installed Applications (Android, System)",
+        "get_installed_apps": QT_TRANSLATE_NOOP("AnalyzerModule", "Installed Applications (iOS)"),
+        "get_installedappsVending": QT_TRANSLATE_NOOP(
+            "AnalyzerModule", "Installed Applications (Android, Play Store Cache)"
+        ),
+        "get_package_info": QT_TRANSLATE_NOOP(
+            "AnalyzerModule", "Installed Applications (Android, System)"
+        ),
     }
 
     # Crush's own curated "what does this result actually tell you" text,
@@ -2623,29 +2631,49 @@ class MainWindow(QMainWindow):
     # LEAPP file/upstream commit) instead of only the Properties panel's
     # existing analyzer.source link, which only appears after a run.
     _ANALYZER_MODULE_FORENSIC_RELEVANCE = {
-        "get_installed_apps": (
+        "get_installed_apps": QT_TRANSLATE_NOOP(
+            "AnalyzerKnowledge",
             "From applicationState.db's compatibilityInfo per app: bundle ID, bundle "
             "container path, and sandbox (data) path. Shows which apps were installed and "
             "where their data lived, which lets you correlate other found artifacts back "
             "to the app that produced them -- and this state DB can retain an app's entry "
             "even after the app itself was uninstalled, so it's also a source for apps no "
-            "longer present on the device."
+            "longer present on the device.",
+            "get_installed_apps",
         ),
-        "get_installedappsVending": (
+        "get_installedappsVending": QT_TRANSLATE_NOOP(
+            "AnalyzerKnowledge",
             "The Play Store client's own local record of what it installed: package name, "
             "title, first download/last update time, install reason, auto-update setting, "
             "and the Google account that did the installing. Covers apps Play Store itself "
             "tracked installing -- an app installed by sideloading, ADB, or a different app "
             "store is not in this cache, and the cache can be cleared independently of the "
-            "app itself still being installed."
+            "app itself still being installed.",
+            "get_installedappsVending",
         ),
-        "get_package_info": (
+        "get_package_info": QT_TRANSLATE_NOOP(
+            "AnalyzerKnowledge",
             "The OS's own package manager record (/system/packages.xml): install/update "
             "time, installer and install-originator package, on-disk code path, and "
             "public/private flags. Present for every installed app regardless of install "
-            "source (Play Store, ADB, sideloading, another app store)."
+            "source (Play Store, ADB, sideloading, another app store).",
+            "get_package_info",
         ),
     }
+
+    def _analyzer_title(self, analyzer_id: str, fallback_name: str) -> str:
+        """A curated module's name in the UI language; any other module
+        keeps its own (English) name from crush-analyze."""
+        name = self._ANALYZER_MODULE_DISPLAY_NAMES.get(analyzer_id)
+        if name is None:
+            return fallback_name
+        return translate("AnalyzerModule", name)  # i18n: keep -- marked above
+
+    def _analyzer_relevance(self, analyzer_id: str) -> CatalogText | None:
+        text = self._ANALYZER_MODULE_FORENSIC_RELEVANCE.get(analyzer_id)
+        if text is None:
+            return None
+        return CatalogText("AnalyzerKnowledge", text, analyzer_id, knowledge=True)
 
     def _run_analyzer(self, node: VFSNode, vfs: VFS) -> None:
         """Runs one bundled crush-analyze module against *node* and shows
@@ -2697,8 +2725,8 @@ class MainWindow(QMainWindow):
         viewer = AnalyzerResultViewer(result, self)
         analyzer_id = result.get("analyzer", {}).get("id", module_id)
         fallback_name = result.get("analyzer", {}).get("name", module_id)
-        title = self._ANALYZER_MODULE_DISPLAY_NAMES.get(analyzer_id, fallback_name)
-        relevance = self._ANALYZER_MODULE_FORENSIC_RELEVANCE.get(analyzer_id)
+        title = self._analyzer_title(analyzer_id, fallback_name)
+        relevance = self._analyzer_relevance(analyzer_id)
         viewer.setProperty("crush_analyzer_result", result)
         viewer.setProperty("crush_analyzer_title", title)
         viewer.setProperty("crush_analyzer_relevance", relevance)
@@ -2728,7 +2756,7 @@ class MainWindow(QMainWindow):
             return
 
         labels = [
-            f"{self._ANALYZER_MODULE_DISPLAY_NAMES.get(m['id'], m['name'])} ({m['id']})"
+            f"{self._analyzer_title(m['id'], m['name'])} ({m['id']})"
             for m in curated
         ]
 
@@ -3328,7 +3356,7 @@ class MainWindow(QMainWindow):
                 if fmt.platforms:
                     fmt_meta["Platforms"] = fmt.platforms.replace(",", ", ")
                 if fmt.forensic_relevance:
-                    fmt_meta["Forensic relevance"] = fmt.forensic_relevance
+                    fmt_meta["Forensic relevance"] = fmt.relevance_text()
             if not fmt_meta:
                 return result
             # Parser metadata takes precedence over format defaults
@@ -3363,11 +3391,11 @@ class MainWindow(QMainWindow):
             if fmt:
                 meta: dict = {"Format": fmt.name}
                 if fmt.category:
-                    meta["Category"] = fmt.category
+                    meta["Category"] = fmt.category_text()
                 if fmt.platforms:
                     meta["Platforms"] = fmt.platforms.replace(",", ", ")
                 if fmt.forensic_relevance:
-                    meta["Forensic relevance"] = fmt.forensic_relevance
+                    meta["Forensic relevance"] = fmt.relevance_text()
                 meta["Parser support"] = (
                     translate("MainWindow", "Supported")
                     if fmt.parser_class

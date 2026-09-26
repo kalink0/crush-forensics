@@ -71,6 +71,53 @@ def set_translator(translate: Callable[[str, str, str], str] | None) -> None:
     _translate = translate
 
 
+# Set by the UI from the analyst's "English original" setting: knowledge
+# texts (see CatalogText) are then displayed in English even when a
+# translation is loaded.
+_knowledge_original = False
+
+
+def set_knowledge_original(on: bool) -> None:
+    global _knowledge_original
+    _knowledge_original = on
+
+
+def knowledge_original() -> bool:
+    return _knowledge_original
+
+
+def translation_loaded() -> bool:
+    return _translate is not None
+
+
+@dataclass(frozen=True, eq=True)
+class CatalogText:
+    """A text from one of Crush's own catalogs (formats.db, analyzer
+    modules) placed where a string would go, e.g. a metadata value.
+
+    *text* is the English original, marked where it is written with
+    QT_TRANSLATE_NOOP(context, text, disambiguation); str() returns it, so
+    logs, copies and exports stay English. render_value(localized=True)
+    shows the translation. *knowledge* marks written forensic guidance (a
+    format's relevance, a magic-byte description): the analyst can switch
+    those back to the English original; labels (a category) always follow
+    the UI language.
+    """
+
+    context: str
+    text: str
+    disambiguation: str = ""
+    knowledge: bool = False
+
+    def __str__(self) -> str:
+        return self.text
+
+    def localized(self) -> str:
+        if _translate is None or (self.knowledge and _knowledge_original):
+            return self.text
+        return _translate(self.context, self.text, self.disambiguation) or self.text
+
+
 @dataclass(frozen=True, eq=True)
 class ParseIssue:
     code: str
@@ -1903,6 +1950,8 @@ MESSAGES: dict[str, str] = {
 def _render_param(value: Any, localized: bool = False) -> Any:
     if isinstance(value, ParseIssue):
         return render(value, localized=localized)
+    if isinstance(value, CatalogText):
+        return value.localized() if localized else value.text
     if isinstance(value, (list, tuple)) and any(isinstance(v, ParseIssue) for v in value):
         return "; ".join(str(_render_param(v, localized)) for v in value)
     return value

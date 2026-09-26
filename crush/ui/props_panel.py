@@ -16,10 +16,11 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
-from crush.core.issues import render_value
+from crush.core.issues import CatalogText, render_value
 from crush.ui import open_url
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
+from crush.ui.knowledge_toggle import follow_knowledge_original, knowledge_original_checkbox
 
 _SELECTABLE = (
     Qt.TextInteractionFlag.TextSelectableByMouse
@@ -117,8 +118,9 @@ class PropertiesPanel(QScrollArea):
             self._layout.addRow(note)
 
         # Parser-supplied metadata: the key is an English label (marked in
-        # crush.core.metadata_labels), a value may be a ParseIssue -- both
-        # are shown in the UI language.
+        # crush.core.metadata_labels), a value may be a ParseIssue or a
+        # CatalogText -- both are shown in the UI language.
+        toggle_added = False
         for key, val in metadata.items():
             lbl = QLabel(render_value(val, localized=True))
             lbl.setWordWrap(True)
@@ -127,9 +129,16 @@ class PropertiesPanel(QScrollArea):
             self._layout.addRow(
                 translate("PropertiesPanel", "{key}:").format(key=shown_key), lbl
             )
+            if isinstance(val, CatalogText) and val.knowledge:
+                self._follow(lbl, val)
+                if not toggle_added:
+                    toggle_added = self._add_knowledge_toggle()
 
     def show_analyzer_result(
-        self, result: dict[str, Any], title: str | None = None, relevance: str | None = None
+        self,
+        result: dict[str, Any],
+        title: str | None = None,
+        relevance: CatalogText | str | None = None,
     ) -> None:
         """Populates the panel with a crush-analyze contract v1 result's
         own analyzer/run metadata instead of file metadata.
@@ -178,10 +187,13 @@ class PropertiesPanel(QScrollArea):
         self._layout.addRow(header)
 
         if relevance:
-            relevance_lbl = QLabel(relevance)
+            relevance_lbl = QLabel(render_value(relevance, localized=True))
             relevance_lbl.setWordWrap(True)
             relevance_lbl.setTextInteractionFlags(_SELECTABLE)
             self._layout.addRow(relevance_lbl)
+            if isinstance(relevance, CatalogText) and relevance.knowledge:
+                self._follow(relevance_lbl, relevance)
+                self._add_knowledge_toggle()
 
         def _row(label: str, value: object) -> None:
             lbl = QLabel(str(value) if value not in (None, "") else "—")
@@ -238,8 +250,11 @@ class PropertiesPanel(QScrollArea):
                 files_lbl,
             )
 
-        _row("Started at", run.get("started_at"))
-        _row("Duration", f"{run.get('duration_ms', 0):,} ms")
+        _row(translate("PropertiesPanel", "Started at"), run.get("started_at"))
+        _row(
+            translate("PropertiesPanel", "Duration"),
+            f"{run.get('duration_ms', 0):,} ms",  # i18n: keep -- number + unit
+        )
 
         status = result.get("status", "ok")
         status_lbl = QLabel(status)
@@ -252,7 +267,17 @@ class PropertiesPanel(QScrollArea):
 
         warnings = result.get("warnings", [])
         if warnings:
-            _row("Warnings", str(len(warnings)))
+            _row(translate("PropertiesPanel", "Warnings"), str(len(warnings)))
+
+    def _follow(self, label: QLabel, text: CatalogText) -> None:
+        follow_knowledge_original(label, lambda: label.setText(text.localized()))
+
+    def _add_knowledge_toggle(self) -> bool:
+        box = knowledge_original_checkbox(self._container)
+        if box is None:
+            return False
+        self._layout.addRow(box)
+        return True
 
     def _add_timestamp(self, label: str, ts_value: float) -> None:
         if ts_value:

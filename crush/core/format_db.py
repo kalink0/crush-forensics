@@ -8,6 +8,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from crush.core.issues import QT_TRANSLATE_NOOP, CatalogText
 from crush.core.magic import XML_PLIST_SIG, _looks_like_plist_xml
 
 
@@ -23,6 +24,32 @@ def _resolve_db_path() -> Path:
 _DB_PATH = _resolve_db_path()
 
 
+# Translation contexts. formats.db stays English; build_formats_db.py marks
+# each format's forensic_relevance and magic-byte descriptions with
+# QT_TRANSLATE_NOOP(KNOWLEDGE_CONTEXT, text, <format name>), and the UI
+# translates them at display time. A text whose English changed has no
+# matching translation any more and is shown in English.
+KNOWLEDGE_CONTEXT = "FormatKnowledge"
+CATEGORY_CONTEXT = "FormatCategory"
+
+# Every category value build_formats_db.py may use. The English label is
+# the value itself, shown as it always was.
+FORMAT_CATEGORIES = (
+    QT_TRANSLATE_NOOP("FormatCategory", "archive"),
+    QT_TRANSLATE_NOOP("FormatCategory", "configuration"),
+    QT_TRANSLATE_NOOP("FormatCategory", "database"),
+    QT_TRANSLATE_NOOP("FormatCategory", "disk_image"),
+    QT_TRANSLATE_NOOP("FormatCategory", "document"),
+    QT_TRANSLATE_NOOP("FormatCategory", "execution"),
+    QT_TRANSLATE_NOOP("FormatCategory", "filesystem"),
+    QT_TRANSLATE_NOOP("FormatCategory", "log"),
+    QT_TRANSLATE_NOOP("FormatCategory", "memory"),
+    QT_TRANSLATE_NOOP("FormatCategory", "network"),
+    QT_TRANSLATE_NOOP("FormatCategory", "serialization"),
+    QT_TRANSLATE_NOOP("FormatCategory", "uncategorized"),
+)
+
+
 @dataclass
 class FormatMatch:
     name: str
@@ -33,6 +60,15 @@ class FormatMatch:
     parser_class: str | None   # e.g. "SQLiteParser", or None if unsupported
     links: list[tuple[str, str]]  # [(label, url), ...]
     magic: list[tuple[int | None, bytes, str]]  # [(offset, pattern, description), ...]
+
+    def relevance_text(self) -> CatalogText:
+        return CatalogText(KNOWLEDGE_CONTEXT, self.forensic_relevance, self.name, knowledge=True)
+
+    def magic_description_text(self, description: str) -> CatalogText:
+        return CatalogText(KNOWLEDGE_CONTEXT, description, self.name, knowledge=True)
+
+    def category_text(self) -> CatalogText:
+        return CatalogText(CATEGORY_CONTEXT, self.category)
 
 
 class FormatDatabase:

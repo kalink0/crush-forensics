@@ -108,8 +108,10 @@ def main() -> None:
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
     # Before any widget exists: translated text is read when widgets are built.
-    language = args.language or i18n.saved_language(QSettings("Crush DFIR", "Crush"))
+    settings = QSettings("Crush DFIR", "Crush")
+    language = args.language or i18n.saved_language(settings)
     language_note = i18n.load_language(app, language)
+    i18n.load_knowledge_original(settings)
     if language_note:
         print(language_note, file=sys.stderr)
     window = MainWindow()

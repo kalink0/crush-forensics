@@ -7,12 +7,21 @@ Run from the project root:
 
 This is the single source of truth for all format knowledge.
 Parsers carry no metadata — format info lives here only.
+
+formats.db is English. Every forensic_relevance and magic-byte description
+is written as QT_TRANSLATE_NOOP("FormatKnowledge", text, <the format's
+name>) so it lands in the translation catalog (scripts/i18n.py update); the
+UI translates it at display time. Write a multi-line text as adjacent
+string literals *without* parentheses around them -- lupdate silently
+skips a parenthesised text. test_format_db checks both.
 """
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
 from typing import Any
+
+from crush.core.issues import QT_TRANSLATE_NOOP
 
 _OUT = Path(__file__).parent / "formats.db"
 
@@ -24,6 +33,8 @@ _OUT = Path(__file__).parent / "formats.db"
 #   category        database | configuration | log | execution | document |
 #                   filesystem | disk_image | archive | serialization |
 #                   memory | network | uncategorized
+#                   (a new one also goes into format_db.FORMAT_CATEGORIES,
+#                   the translation catalog's list)
 #   forensic_relevance  What an investigator would find here
 #   platforms       List of strings: "iOS", "macOS", "Android", "Windows", "Linux"
 #   parser_class    Class name that handles this — either a crush/parsers/
@@ -49,12 +60,14 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Binary XML (ABX)",
         "short_name": "ABX",
         "category": "configuration",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Android system and app configuration stored as compact binary XML, "
             "introduced in Android 12. Key files include packages.xml (installed apps "
             "and permissions), settings files (global, secure, system), and app backup "
             "manifests. Provides insight into installed software, permission grants, "
-            "and system configuration state."
+            "and system configuration state.",
+            "Android Binary XML (ABX)",
         ),
         "platforms": ["Android"],
         "parser_class": "AbxParser",
@@ -62,7 +75,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x41\x42\x58\x00",
-                "description": "Android Binary XML header",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Android Binary XML header",
+                    "Android Binary XML (ABX)",
+                ),
             }
         ],
         "extensions": [".xml", ".abx"],
@@ -90,14 +107,16 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Backup Archive",
         "short_name": "Android backup",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Backup created via ADB backup functionality (deprecated since Android 12 / API 31+). "
             "The archive is a TAR stream compressed with Deflate, optionally encrypted with AES-256. "
             "Contains app data, shared storage, and system settings depending on app configuration. "
             "Forensically relevant as a logical acquisition path — but significantly limited: "
             "apps setting allowBackup=false (e.g. banking, messaging) are excluded, "
             "and apps targeting Android 12+ are automatically excluded. "
-            "Can reveal installed app data, preferences, and media for apps that permit backup."
+            "Can reveal installed app data, preferences, and media for apps that permit backup.",
+            "Android Backup Archive",
         ),
         "platforms": ["Android"],
         "parser_class": "AndroidBackupVFS",
@@ -105,7 +124,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x41\x4e\x44\x52\x4f\x49\x44\x20\x42\x41\x43\x4b\x55\x50\x0a",
-                "description": "Android backup header",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Android backup header",
+                    "Android Backup Archive",
+                ),
             }
         ],
         "extensions": [".ab"],
@@ -133,13 +156,15 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Binary Property List",
         "short_name": "bplist",
         "category": "configuration",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "App preferences, caches, configuration, and iOS/macOS backup structures "
             "such as Manifest.plist and Info.plist. Many bplist files are NSKeyedArchiver "
             "object graphs — recognisable by the '$archiver' key — which can contain "
             "messages, contacts, health records, and other complex app data. "
             "Timestamps use Mac Absolute Time (seconds since 2001-01-01 UTC). "
-            "Widely used across all Apple platforms and most third-party iOS/macOS apps."
+            "Widely used across all Apple platforms and most third-party iOS/macOS apps.",
+            "Binary Property List",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "PlistParser",
@@ -147,7 +172,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x62\x70\x6c\x69\x73\x74",
-                "description": "Binary plist magic ('bplist')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Binary plist magic ('bplist')",
+                    "Binary Property List",
+                ),
             }
         ],
         "extensions": [".plist"],
@@ -175,14 +204,16 @@ FORMATS: list[dict[str, Any]] = [
         "name": "CBOR (Concise Binary Object Representation)",
         "short_name": "CBOR",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "RFC 8949 binary serialization format increasingly found in mobile and web app data. "
             "Mandatory encoding for WebAuthn/FIDO2 authentication — passkey credential data, "
             "attestation objects, and public key material on iOS, Android, and Windows are "
             "CBOR-encoded. Also used in some messaging app caches and IoT device communication. "
             "No magic bytes — identification relies on file extension or surrounding context. "
             "Structurally similar to JSON but binary; a CBOR decoder is required to recover "
-            "readable key/value structures."
+            "readable key/value structures.",
+            "CBOR (Concise Binary Object Representation)",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": None,
@@ -212,7 +243,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Realm Database",
         "short_name": "Realm",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Mobile app local object store used as a SQLite alternative, now marketed "
             "as MongoDB Atlas Device SDK. A single '.realm' file stores all object data "
             "in a B+ tree of fixed-size arrays. Crush extracts the full schema (class/table "
@@ -222,7 +254,8 @@ FORMATS: list[dict[str, Any]] = [
             "Class names reveal which app features were in use and what data categories "
             "are present (users, locations, media, events, etc.). "
             "Some Realm databases are AES-256 encrypted — key material is typically "
-            "hardcoded or derivable from the app binary."
+            "hardcoded or derivable from the app binary.",
+            "Realm Database",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "RealmParser",
@@ -230,7 +263,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 16,
                 "value": b"\x54\x2d\x44\x42",
-                "description": "Realm header mnemonic (T-DB)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Realm header mnemonic (T-DB)",
+                    "Realm Database",
+                ),
             }
         ],
         "extensions": [".realm"],
@@ -274,13 +311,15 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android DEX Bytecode",
         "short_name": "DEX",
         "category": "execution",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Compiled Android application bytecode executed by the Android Runtime (ART). "
             "Found as classes.dex (and classes2.dex, classes3.dex in multi-DEX apps) inside "
             "APK packages, which are ZIP archives. Decompilation with tools like jadx or "
             "apktool can recover app logic, hardcoded API keys, credentials, server endpoints, "
             "and encryption keys. Presence of OAT/ODEX companions confirms the app was "
-            "installed and executed on the device."
+            "installed and executed on the device.",
+            "Android DEX Bytecode",
         ),
         "platforms": ["Android"],
         "parser_class": None,
@@ -288,7 +327,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x64\x65\x78\x0a",
-                "description": "DEX magic ('dex\\n')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "DEX magic ('dex\\n')",
+                    "Android DEX Bytecode",
+                ),
             }
         ],
         "extensions": [".dex"],
@@ -312,7 +355,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Disk Image (DMG)",
         "short_name": "DMG",
         "category": "disk_image",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "macOS disk image format used for app distribution, software installers, "
             "and user-created backups. Contains HFS+, APFS, or FAT32 filesystems "
             "requiring mounting or extraction for analysis. Can be AES-128 or AES-256 "
@@ -320,7 +364,8 @@ FORMATS: list[dict[str, Any]] = [
             "Identified by a 512-byte 'koly' trailer block at EOF rather than a file header — "
             "standard magic byte detection will fail. "
             "Also used as a native forensic acquisition format for macOS devices (SWGDE). "
-            "Commonly found in Downloads folders and as components of Time Machine sparsebundles."
+            "Commonly found in Downloads folders and as components of Time Machine sparsebundles.",
+            "Apple Disk Image (DMG)",
         ),
         "platforms": ["macOS"],
         "parser_class": None,
@@ -328,7 +373,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x6b\x6f\x6c\x79",
-                "description": "DMG 'koly' trailer block at EOF-512 (no file header magic)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "DMG 'koly' trailer block at EOF-512 (no file header magic)",
+                    "Apple Disk Image (DMG)",
+                ),
             }
         ],
         "extensions": [".dmg", ".sparseimage", ".sparsebundle"],
@@ -356,7 +405,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ELF Executable",
         "short_name": "ELF",
         "category": "execution",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Native executable and shared library format for Android and Linux. "
             "On Android, ELF shared libraries (.so) are bundled inside APK packages "
             "under lib/ and loaded at runtime via JNI — they often contain hardcoded "
@@ -365,7 +415,8 @@ FORMATS: list[dict[str, Any]] = [
             "code into native libraries precisely because ELF is harder to decompile "
             "than DEX. On Linux, ELF binaries reveal installed software and potential "
             "implants. Strings extraction is a fast first step; full analysis requires "
-            "a disassembler such as Ghidra or IDA Pro."
+            "a disassembler such as Ghidra or IDA Pro.",
+            "ELF Executable",
         ),
         "platforms": ["Android", "Linux"],
         "parser_class": None,
@@ -373,7 +424,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x7f\x45\x4c\x46",
-                "description": "ELF magic number",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ELF magic number",
+                    "ELF Executable",
+                ),
             }
         ],
         "extensions": [".so", ".elf"],
@@ -401,7 +456,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Event Log (EVTX)",
         "short_name": "EVTX",
         "category": "log",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Windows structured event log format used since Vista/Server 2008, "
             "stored under C:\\Windows\\System32\\winevt\\Logs\\. "
             "Key forensic sources: Security.evtx (logons 4624/4625, account changes, "
@@ -412,7 +468,8 @@ FORMATS: list[dict[str, Any]] = [
             "significant anti-forensic indicators. "
             "Note: event messages are not stored in the EVTX file itself — they are "
             "resolved via provider DLLs at display time. Copying EVTX files off-system "
-            "may result in unresolvable messages without a message database."
+            "may result in unresolvable messages without a message database.",
+            "Windows Event Log (EVTX)",
         ),
         "platforms": ["Windows"],
         "parser_class": None,
@@ -420,7 +477,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x45\x6c\x66\x46\x69\x6c\x65\x00",
-                "description": "EVTX file signature ('ElfFile')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "EVTX file signature ('ElfFile')",
+                    "Windows Event Log (EVTX)",
+                ),
             }
         ],
         "extensions": [".evtx"],
@@ -448,7 +509,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JPEG Image",
         "short_name": "JPEG",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Photos and screenshots from device cameras, messaging apps, and downloads. "
             "EXIF metadata can contain GPS coordinates, timestamps, device model, camera "
             "settings, and an embedded thumbnail — the thumbnail may reveal original content "
@@ -464,7 +526,8 @@ FORMATS: list[dict[str, Any]] = [
             "segments, can record the generating/editing software, an IPTC Digital Source "
             "Type (a direct AI-generation/-editing signal), and a signed claim identity — "
             "not present in most images, but increasingly common from AI generation tools "
-            "and some camera/editing apps."
+            "and some camera/editing apps.",
+            "JPEG Image",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "ImageParser",
@@ -472,7 +535,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xd8\xff",
-                "description": "JPEG SOI marker",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "JPEG SOI marker",
+                    "JPEG Image",
+                ),
             }
         ],
         "extensions": [".jpg", ".jpeg"],
@@ -508,7 +575,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "PNG Image",
         "short_name": "PNG",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Lossless image format used for screenshots, app icons, and UI graphics. "
             "Unlike JPEG, PNG uses lossless compression — pixel data is preserved exactly. "
             "Metadata is stored in typed chunks: tEXt/zTXt for plain-text comments, "
@@ -522,7 +590,8 @@ FORMATS: list[dict[str, Any]] = [
             "An embedded C2PA (Content Credentials) manifest, carried in the ancillary "
             "'caBX' chunk, can record generating/editing software, an IPTC Digital Source "
             "Type (a direct AI-generation/-editing signal), and a signed claim identity — "
-            "PNG is a common output format for AI image generators."
+            "PNG is a common output format for AI image generators.",
+            "PNG Image",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -530,7 +599,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a",
-                "description": "PNG signature",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "PNG signature",
+                    "PNG Image",
+                ),
             }
         ],
         "extensions": [".png"],
@@ -562,7 +635,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "GIF Image",
         "short_name": "GIF",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Palette-based image format supporting animation, used in messaging apps, "
             "browser caches, and social media. Limited to 256 colors per frame — genuine "
             "photos in GIF format are rare and worth scrutinizing. "
@@ -576,7 +650,8 @@ FORMATS: list[dict[str, Any]] = [
             "A C2PA (Content Credentials) manifest, when present, is carried in a "
             "dedicated Application Extension block (identifier 'C2PA_GIF') and can record "
             "generating/editing software and an IPTC Digital Source Type — a direct "
-            "AI-generation/-editing signal."
+            "AI-generation/-editing signal.",
+            "GIF Image",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -584,12 +659,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x47\x49\x46\x38\x37\x61",
-                "description": "GIF87a header — static images only",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "GIF87a header — static images only",
+                    "GIF Image",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x47\x49\x46\x38\x39\x61",
-                "description": "GIF89a header — animation, comments, and extensions supported",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "GIF89a header — animation, comments, and extensions supported",
+                    "GIF Image",
+                ),
             },
         ],
         "extensions": [".gif"],
@@ -617,7 +700,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "BMP Image",
         "short_name": "BMP",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Uncompressed bitmap format common in Windows apps, legacy software, "
             "and some screenshot tools. "
             "The BITMAPFILEHEADER at offset 2 contains the declared file size — "
@@ -627,7 +711,8 @@ FORMATS: list[dict[str, Any]] = [
             "Pixel data is stored bottom-up by default — row order matters for carving. "
             "Can use RLE compression for 4-bit and 8-bit images. "
             "Very rare on modern mobile devices — presence in an acquisition may itself "
-            "be noteworthy. Widely used in Windows clipboard operations and legacy software."
+            "be noteworthy. Widely used in Windows clipboard operations and legacy software.",
+            "BMP Image",
         ),
         "platforms": ["Windows", "Android"],
         "parser_class": "ImageParser",
@@ -635,7 +720,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x42\x4d",
-                "description": "BMP file header signature ('BM')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "BMP file header signature ('BM')",
+                    "BMP Image",
+                ),
             }
         ],
         "extensions": [".bmp", ".dib"],
@@ -659,7 +748,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "TIFF Image",
         "short_name": "TIFF",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Flexible container format for high-quality images, document scans, and "
             "camera RAW derivatives. Supports multiple pages in a single file — "
             "multi-page TIFFs are common for scanned documents and fax transmissions "
@@ -673,7 +763,8 @@ FORMATS: list[dict[str, Any]] = [
             "SubIFDs can contain embedded thumbnails or alternate image representations. "
             "A C2PA (Content Credentials) manifest, when present, is carried in tag 0xCD41 "
             "(52545) of the last IFD in the main-IFD chain — relevant for TIFF-based RAW "
-            "formats (DNG, TIFF/EP) as well as plain TIFF."
+            "formats (DNG, TIFF/EP) as well as plain TIFF.",
+            "TIFF Image",
         ),
         "platforms": ["iOS", "macOS", "Windows"],
         "parser_class": None,
@@ -681,12 +772,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x49\x49\x2a\x00",
-                "description": "TIFF little-endian (Intel byte order, 'II')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "TIFF little-endian (Intel byte order, 'II')",
+                    "TIFF Image",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x4d\x4d\x00\x2a",
-                "description": "TIFF big-endian (Motorola byte order, 'MM')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "TIFF big-endian (Motorola byte order, 'MM')",
+                    "TIFF Image",
+                ),
             },
         ],
         "extensions": [".tif", ".tiff"],
@@ -718,7 +817,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WebP Image",
         "short_name": "WebP",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Modern image format used by Chrome, Android apps, and messaging platforms "
             "for compressed photos, stickers, and screenshots. "
             "Stored in a RIFF container — 'RIFF' at offset 0, 'WEBP' at offset 8. "
@@ -730,7 +830,8 @@ FORMATS: list[dict[str, Any]] = [
             "Unknown chunks in the RIFF structure may contain application-specific or hidden data. "
             "A C2PA (Content Credentials) manifest, when present, is carried in a dedicated "
             "'C2PA' RIFF chunk and can record generating/editing software and an IPTC "
-            "Digital Source Type — a direct AI-generation/-editing signal."
+            "Digital Source Type — a direct AI-generation/-editing signal.",
+            "WebP Image",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -738,7 +839,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x57\x45\x42\x50",
-                "description": "WebP signature within RIFF container ('WEBP' at offset 8)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "WebP signature within RIFF container ('WEBP' at offset 8)",
+                    "WebP Image",
+                ),
             }
         ],
         "extensions": [".webp"],
@@ -766,7 +871,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "HEIC / HEIF Image",
         "short_name": "HEIC/HEIF",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Default photo format on iOS 11+ and supported by Android since version 8. "
             "HEIF (ISO/IEC 23008-12) is the container; HEVC (H.265) is the default codec — "
             "hence the .heic extension on Apple devices. "
@@ -784,7 +890,8 @@ FORMATS: list[dict[str, Any]] = [
             "ISOBMFF 'uuid' box (a fixed extended-type UUID identifies it as C2PA, since "
             "some decoders reject unknown top-level box types outright) and can record "
             "generating/editing software and an IPTC Digital Source Type — a direct "
-            "AI-generation/-editing signal."
+            "AI-generation/-editing signal.",
+            "HEIC / HEIF Image",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -792,17 +899,29 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x68\x65\x69\x63",
-                "description": "HEIC brand identifier in ISOBMFF ftyp box (offset 8)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC brand identifier in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
             },
             {
                 "offset": 8,
                 "value": b"\x68\x65\x69\x78",
-                "description": "HEIF brand 'heix' in ISOBMFF ftyp box (offset 8)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIF brand 'heix' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
             },
             {
                 "offset": 8,
                 "value": b"\x6d\x69\x66\x31",
-                "description": "HEIF brand 'mif1' in ISOBMFF ftyp box (offset 8)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIF brand 'mif1' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
             },
         ],
         "extensions": [".heic", ".heif"],
@@ -838,7 +957,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JPEG XL Image",
         "short_name": "JPEG XL",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Next-generation image format standardised as ISO/IEC 18181 (2022). "
             "Supports both lossy and lossless compression with significantly better "
             "efficiency than JPEG; lossless JPEG transcoding (bit-exact round-trip) is "
@@ -856,7 +976,8 @@ FORMATS: list[dict[str, Any]] = [
             "A C2PA (Content Credentials) manifest, when present in the box-form container, "
             "is a top-level JUMBF superbox — the bare codestream variant cannot carry one at "
             "all. Can record generating/editing software and an IPTC Digital Source Type — "
-            "a direct AI-generation/-editing signal."
+            "a direct AI-generation/-editing signal.",
+            "JPEG XL Image",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
@@ -864,12 +985,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\x0a",
-                "description": "JPEG XL naked codestream signature",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "JPEG XL naked codestream signature",
+                    "JPEG XL Image",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x00\x00\x00\x0c\x4a\x58\x4c\x20\x0d\x0a\x87\x0a",
-                "description": "JPEG XL ISOBMFF/JXL container signature",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "JPEG XL ISOBMFF/JXL container signature",
+                    "JPEG XL Image",
+                ),
             },
         ],
         "extensions": [".jxl"],
@@ -901,7 +1030,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AVIF Image",
         "short_name": "AVIF",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "AV1 Image File Format — a royalty-free still-image format based on the AV1 video "
             "codec and the ISOBMFF container (ISO/IEC 23000-22). "
             "Adopted by Chrome (2020), Firefox (2021), Safari (2023), Android (2019), "
@@ -920,7 +1050,8 @@ FORMATS: list[dict[str, Any]] = [
             "replacement — relevant when investigating multimedia evidence. "
             "Like HEIC, a C2PA (Content Credentials) manifest, when present, is carried in "
             "a top-level ISOBMFF 'uuid' box and can record generating/editing software and "
-            "an IPTC Digital Source Type — a direct AI-generation/-editing signal."
+            "an IPTC Digital Source Type — a direct AI-generation/-editing signal.",
+            "AVIF Image",
         ),
         "platforms": ["Android", "iOS", "macOS", "Windows"],
         "parser_class": "ImageParser",
@@ -928,12 +1059,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x61\x76\x69\x66",
-                "description": "AVIF brand identifier 'avif' in ISOBMFF ftyp box (offset 8)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AVIF brand identifier 'avif' in ISOBMFF ftyp box (offset 8)",
+                    "AVIF Image",
+                ),
             },
             {
                 "offset": 8,
                 "value": b"\x61\x76\x69\x73",
-                "description": "AVIF animation brand 'avis' in ISOBMFF ftyp box (offset 8)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AVIF animation brand 'avis' in ISOBMFF ftyp box (offset 8)",
+                    "AVIF Image",
+                ),
             },
         ],
         "extensions": [".avif"],
@@ -965,13 +1104,15 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple ATX Texture Archive",
         "short_name": "ATX",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Apple AAPL texture container wrapping ASTC image payloads, including "
             "some LZFSE-compressed variants. Found in iOS and macOS UI caches such as "
             "wallpapers, PosterBoard snapshots, avatars, widgets, and app-generated "
             "interface imagery. Decoding can expose visible user interface state or "
             "cached imagery that standard image viewers miss because the file is not a "
-            "JPEG/PNG container."
+            "JPEG/PNG container.",
+            "Apple ATX Texture Archive",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "ImageParser",
@@ -979,7 +1120,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x41\x41\x50\x4c\x0d\x0a\x1a\x0a",
-                "description": "Apple ATX AAPL container signature",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Apple ATX AAPL container signature",
+                    "Apple ATX Texture Archive",
+                ),
             }
         ],
         "extensions": [".atx"],
@@ -1003,7 +1148,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Khronos KTX 1.1 Texture",
         "short_name": "KTX",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Khronos texture container. On iOS the payload is normally ASTC 4x4, "
             "optionally LZFSE-compressed, flagged by a Compression_APPLE entry in the "
             "key/value block. Observed holding application snapshots "
@@ -1015,7 +1161,8 @@ FORMATS: list[dict[str, Any]] = [
             "image the system captured of an app's screen when it was last backgrounded, so "
             "decoding one can show on-screen content at that moment. The same extension is "
             "also used by textures shipped inside system frameworks and apps, which carry "
-            "other pixel formats and are not user content."
+            "other pixel formats and are not user content.",
+            "Khronos KTX 1.1 Texture",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "ImageParser",
@@ -1023,7 +1170,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xabKTX 11\xbb\r\n\x1a\n",
-                "description": "Khronos KTX 1.1 file identifier",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Khronos KTX 1.1 file identifier",
+                    "Khronos KTX 1.1 Texture",
+                ),
             }
         ],
         "extensions": [".ktx"],
@@ -1047,7 +1198,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "iOS Crash Report",
         "short_name": "IPS / crash",
         "category": "log",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Application and system crash reports generated by iOS and macOS. "
             "Two formats: the newer .ips format (iOS 15+ / macOS 12+, JSON-based with "
             "bug_type field — value 309 indicates a crash report) and the older .crash "
@@ -1060,7 +1212,8 @@ FORMATS: list[dict[str, Any]] = [
             "identifying exploitation attempts or repeated crashes of security-relevant apps, "
             "detecting jailbreak-related crashes, and corroborating user activity. "
             "Stored on-device under /var/mobile/Library/Logs/CrashReporter/ and accessible "
-            "via Settings → Privacy → Analytics & Improvements → Analytics Data."
+            "via Settings → Privacy → Analytics & Improvements → Analytics Data.",
+            "iOS Crash Report",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": None,
@@ -1086,7 +1239,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JSON Document",
         "short_name": "JSON",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Human-readable serialization format used pervasively in mobile and web apps. "
             "Forensically relevant as: app configuration and cached API responses, "
             "browser localStorage/sessionStorage exports, browser bookmarks and preferences "
@@ -1096,7 +1250,8 @@ FORMATS: list[dict[str, Any]] = [
             "Many apps store sensitive data in plaintext JSON without encryption — "
             "credentials, tokens, and personal data are frequently found in app data directories. "
             "No magic bytes — identification relies on file extension or content inspection "
-            "for the leading '{' or '[' character."
+            "for the leading '{' or '[' character.",
+            "JSON Document",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "JsonParser",
@@ -1122,7 +1277,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LevelDB Database",
         "short_name": "LevelDB",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Key-value store used by Chrome/Chromium (IndexedDB, localStorage, sessionStorage), "
             "Electron-based apps (Discord, WhatsApp Desktop, Signal Desktop), "
             "and many Android and iOS apps for caches and app state. "
@@ -1135,7 +1291,8 @@ FORMATS: list[dict[str, Any]] = [
             "and a deleted/live state flag — deleted data is often recoverable. "
             "Values are frequently serialized as Protobuf (Chrome V8 objects) or JSON. "
             "Chrome IndexedDB stores web app state, cached API responses, and "
-            "browser localStorage — common sources of social media and messaging artifacts."
+            "browser localStorage — common sources of social media and messaging artifacts.",
+            "LevelDB Database",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "LeveldbParser",
@@ -1177,7 +1334,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MMKV Key-Value Store",
         "short_name": "MMKV",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Tencent's mmap-backed key-value store (github.com/Tencent/MMKV, BSD-3-Clause), "
             "used by many Android and iOS apps in place of SharedPreferences or "
             "NSUserDefaults — including WeChat, TikTok, Temu, SHEIN, Xiaohongshu, Weibo, "
@@ -1190,7 +1348,8 @@ FORMATS: list[dict[str, Any]] = [
             "rather than editing the old one, so superseded values and removed keys "
             "(recorded as a zero-length value, not a real deletion) remain recoverable in "
             "file order until the next full rewrite. Optionally AES-CFB encrypted, with the "
-            "key stored by neither file — decryptable if the app's key is known."
+            "key stored by neither file — decryptable if the app's key is known.",
+            "MMKV Key-Value Store",
         ),
         "platforms": ["Android", "iOS"],
         "parser_class": "MMKVParser",
@@ -1220,7 +1379,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Unified Log Archive (logarchive)",
         "short_name": "logarchive",
         "category": "log",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Packaged Apple Unified Log bundle containing tracev3 binary log files, "
             "uuidtext string catalogs, timesync boot-anchor records, and a DSC directory. "
             "Produced by 'log collect' on macOS/iOS or assembled from a full iOS filesystem "
@@ -1236,7 +1396,8 @@ FORMATS: list[dict[str, Any]] = [
             "Full string resolution requires uuidtext/, timesync/, and DSC — "
             "without them, message text falls back to raw format-string fragments. "
             "Crush assembles the correct logarchive layout from iOS full-filesystem "
-            "acquisitions automatically."
+            "acquisitions automatically.",
+            "Apple Unified Log Archive (logarchive)",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "UnifiedLogConverter",
@@ -1274,7 +1435,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LZFSE Compressed Data",
         "short_name": "LZFSE",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Apple-proprietary lossless compression algorithm introduced with iOS 9 "
             "and macOS 10.11 (El Capitan). Used in OTA software updates, IPSW firmware "
             "payloads, Dyld Shared Cache (DSC), kernelcache, some system binaries, "
@@ -1283,7 +1445,8 @@ FORMATS: list[dict[str, Any]] = [
             "Apple also uses a simpler variant called LZVN (used for inputs under 4096 bytes "
             "and unconditionally in Mach-O compressed segments). "
             "The open-source lzfse CLI tool (github.com/lzfse/lzfse) can decompress files. "
-            "Also used in Apple Archive (.aar) format since macOS Big Sur."
+            "Also used in Apple Archive (.aar) format since macOS Big Sur.",
+            "LZFSE Compressed Data",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": None,
@@ -1291,7 +1454,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x62\x76\x78\x32",
-                "description": "LZFSE magic ('bvx2')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "LZFSE magic ('bvx2')",
+                    "LZFSE Compressed Data",
+                ),
             }
         ],
         "extensions": [],
@@ -1315,7 +1482,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Mach-O Executable",
         "short_name": "Mach-O",
         "category": "execution",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Native executable, library, and object format for iOS and macOS. "
             "App binaries can be analysed for hardcoded strings, URLs, API endpoints, "
             "encryption keys, and embedded credentials. "
@@ -1325,7 +1493,8 @@ FORMATS: list[dict[str, Any]] = [
             "Code signatures link the binary to a developer identity and detect tampering. "
             "Fat/Universal Binaries contain multiple architecture slices (e.g. arm64 + x86_64) "
             "in a single file, preceded by a fat_header with magic 0xCAFEBABE. "
-            "Analysis tools: jtool2, otool, Ghidra, IDA Pro, class-dump, lipo, strings."
+            "Analysis tools: jtool2, otool, Ghidra, IDA Pro, class-dump, lipo, strings.",
+            "Mach-O Executable",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": None,
@@ -1333,22 +1502,38 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xcf\xfa\xed\xfe",
-                "description": "Mach-O 64-bit little-endian (arm64, x86_64) — most common on modern devices",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Mach-O 64-bit little-endian (arm64, x86_64) — most common on modern devices",
+                    "Mach-O Executable",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\xce\xfa\xed\xfe",
-                "description": "Mach-O 32-bit little-endian",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Mach-O 32-bit little-endian",
+                    "Mach-O Executable",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\xca\xfe\xba\xbe",
-                "description": "Fat/Universal Binary — contains multiple architecture slices",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Fat/Universal Binary — contains multiple architecture slices",
+                    "Mach-O Executable",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\xfe\xed\xfa\xcf",
-                "description": "Mach-O 64-bit big-endian",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Mach-O 64-bit big-endian",
+                    "Mach-O Executable",
+                ),
             },
         ],
         "extensions": ["", ".dylib", ".framework", ".o"],
@@ -1376,7 +1561,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MP4 Video",
         "short_name": "MP4",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Versatile ISOBMFF container format (ISO/IEC 14496-12) for video recordings, "
             "screen captures, and downloaded media. "
             "The ftyp box at offset 4 identifies the specific brand (mp42, isom, M4V, etc.). "
@@ -1387,7 +1573,8 @@ FORMATS: list[dict[str, Any]] = [
             "Metadata changes when a video is re-encoded or edited — "
             "altered mvhd timestamps and missing udta boxes are indicators of processing. "
             "Screen recordings from iOS and Android are commonly stored as MP4. "
-            "ExifTool and MediaInfo are standard tools for metadata extraction."
+            "ExifTool and MediaInfo are standard tools for metadata extraction.",
+            "MP4 Video",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "MediaParser",
@@ -1395,7 +1582,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\x66\x74\x79\x70",
-                "description": "ISOBMFF ftyp box at offset 4",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ISOBMFF ftyp box at offset 4",
+                    "MP4 Video",
+                ),
             }
         ],
         "extensions": [".mp4", ".m4v"],
@@ -1423,7 +1614,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MOV Video (QuickTime)",
         "short_name": "MOV",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Apple's native video container format based on ISOBMFF/QuickTime. "
             "iOS camera recordings — including the video component of Live Photos — "
             "are stored as .mov files. macOS screen recordings also use MOV. "
@@ -1435,7 +1627,8 @@ FORMATS: list[dict[str, Any]] = [
             "Device make/model, software version, and creation date are commonly present. "
             "Files processed by QuickTime Player, iMovie, or Final Cut Pro will show "
             "altered timestamps and may lack original device metadata — "
-            "a key indicator of post-processing."
+            "a key indicator of post-processing.",
+            "MOV Video (QuickTime)",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "MediaParser",
@@ -1443,12 +1636,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\x66\x74\x79\x70",
-                "description": "ISOBMFF ftyp box at offset 4",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ISOBMFF ftyp box at offset 4",
+                    "MOV Video (QuickTime)",
+                ),
             },
             {
                 "offset": 8,
                 "value": b"\x71\x74\x20\x20",
-                "description": "QuickTime brand identifier ('qt  ') at offset 8",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "QuickTime brand identifier ('qt  ') at offset 8",
+                    "MOV Video (QuickTime)",
+                ),
             },
         ],
         "extensions": [".mov"],
@@ -1480,7 +1681,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AVI Video",
         "short_name": "AVI",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Legacy RIFF-based video container format common in older Windows recordings, "
             "CCTV/DVR systems, dashcams, and surveillance cameras. "
             "RIFF header at offset 0, 'AVI ' identifier at offset 8. "
@@ -1493,7 +1695,8 @@ FORMATS: list[dict[str, Any]] = [
             "Files edited with AVIDemux, VirtualDub, or FFmpeg leave tool-specific "
             "JUNK chunks — a forensic indicator of post-processing. "
             "Standard RIFF is limited to ~4GB — larger files require OpenDML "
-            "extension (AVI 2.0)."
+            "extension (AVI 2.0).",
+            "AVI Video",
         ),
         "platforms": ["Windows", "Android"],
         "parser_class": "MediaParser",
@@ -1501,12 +1704,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x52\x49\x46\x46",
-                "description": "RIFF container header",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "RIFF container header",
+                    "AVI Video",
+                ),
             },
             {
                 "offset": 8,
                 "value": b"\x41\x56\x49\x20",
-                "description": "AVI subtype identifier ('AVI ') at offset 8",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AVI subtype identifier ('AVI ') at offset 8",
+                    "AVI Video",
+                ),
             },
         ],
         "extensions": [".avi"],
@@ -1534,7 +1745,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MKV Video (Matroska)",
         "short_name": "MKV",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Open EBML-based container format for HD video, commonly found in "
             "downloaded media, media server libraries (Plex, Jellyfin), and screen recordings. "
             "Supports chapters, subtitles, attachments, and multiple audio/video tracks. "
@@ -1545,7 +1757,8 @@ FORMATS: list[dict[str, Any]] = [
             "that created or remuxed the file (e.g. HandBrake, FFmpeg, MakeMKV, mkvmerge) "
             "and are strong indicators of post-processing. "
             "Shares the EBML magic (0x1A 0x45 0xDF 0xA3) with WebM — "
-            "distinguished by DocType 'matroska' vs 'webm' in the EBML header."
+            "distinguished by DocType 'matroska' vs 'webm' in the EBML header.",
+            "MKV Video (Matroska)",
         ),
         "platforms": ["Android", "Windows", "Linux"],
         "parser_class": "MediaParser",
@@ -1553,7 +1766,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1a\x45\xdf\xa3",
-                "description": "EBML header (Matroska/WebM) — DocType 'matroska' identifies MKV",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "EBML header (Matroska/WebM) — DocType 'matroska' identifies MKV",
+                    "MKV Video (Matroska)",
+                ),
             }
         ],
         "extensions": [".mkv"],
@@ -1577,7 +1794,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WebM Video",
         "short_name": "WebM",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Web-optimised video container based on a restricted subset of Matroska/EBML. "
             "Used by browsers (Chrome, Firefox, Edge), WebRTC recordings, "
             "YouTube downloads, and some Android apps. "
@@ -1588,7 +1806,8 @@ FORMATS: list[dict[str, Any]] = [
             "WritingApp and MuxingApp identify the creation software. "
             "Browser-cached WebM segments from streaming services may contain "
             "partial content rather than complete videos. "
-            "WebRTC recordings from browser video calls are commonly stored as WebM."
+            "WebRTC recordings from browser video calls are commonly stored as WebM.",
+            "WebM Video",
         ),
         "platforms": ["Android", "Windows", "Linux"],
         "parser_class": "MediaParser",
@@ -1596,7 +1815,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1a\x45\xdf\xa3",
-                "description": "EBML header (Matroska/WebM) — DocType 'webm' identifies WebM",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "EBML header (Matroska/WebM) — DocType 'webm' identifies WebM",
+                    "WebM Video",
+                ),
             }
         ],
         "extensions": [".webm"],
@@ -1620,7 +1843,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "3GP / 3G2 Video",
         "short_name": "3GP",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Mobile video container format based on ISOBMFF, defined by 3GPP (3GP) "
             "and 3GPP2 (3G2) for 3G mobile networks. "
             "3GP targets GSM/UMTS networks; 3G2 is the CDMA2000 variant with lower "
@@ -1632,7 +1856,8 @@ FORMATS: list[dict[str, Any]] = [
             "optimised for 2G/3G transmission. "
             "Found in older acquisitions, MMS message attachments, voice call recordings, "
             "and legacy Android/iOS camera recordings from pre-2012 devices. "
-            "Some devices stored 3GP files with an .mp4 extension."
+            "Some devices stored 3GP files with an .mp4 extension.",
+            "3GP / 3G2 Video",
         ),
         "platforms": ["Android", "iOS"],
         "parser_class": "MediaParser",
@@ -1640,7 +1865,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\x66\x74\x79\x70",
-                "description": "ISOBMFF ftyp box at offset 4",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ISOBMFF ftyp box at offset 4",
+                    "3GP / 3G2 Video",
+                ),
             }
         ],
         "extensions": [".3gp", ".3g2"],
@@ -1664,7 +1893,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MP3 Audio",
         "short_name": "MP3",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Ubiquitous lossy audio format for music, voice memos, voicemails, "
             "and messaging app voice messages. "
             "ID3v2 tags (at file start, 'ID3' magic) can embed title, artist, album, "
@@ -1676,7 +1906,8 @@ FORMATS: list[dict[str, Any]] = [
             "useful for source attribution and detecting re-encoding. "
             "Bitrate and sample rate can help fingerprint the recording device or app. "
             "No native timestamp — recording time must be inferred from ID3 tags "
-            "or filesystem metadata."
+            "or filesystem metadata.",
+            "MP3 Audio",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "MediaParser",
@@ -1684,12 +1915,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x49\x44\x33",
-                "description": "ID3 tag header (MP3 with ID3v2 metadata)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ID3 tag header (MP3 with ID3v2 metadata)",
+                    "MP3 Audio",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\xff\xfb",
-                "description": "MPEG-1 Layer 3 sync word (MP3 without ID3 header)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "MPEG-1 Layer 3 sync word (MP3 without ID3 header)",
+                    "MP3 Audio",
+                ),
             },
         ],
         "extensions": [".mp3"],
@@ -1717,7 +1956,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WAV Audio",
         "short_name": "WAV",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Uncompressed PCM audio container based on RIFF, used for voice recordings, "
             "call recordings, dictation devices, bodycams, and professional recorders. "
             "RIFF INFO chunks may contain title, creation date, originator, and software. "
@@ -1727,7 +1967,8 @@ FORMATS: list[dict[str, Any]] = [
             "and a CodingHistory field describing the encoding chain. "
             "No native encryption — audio is directly accessible. "
             "Standard RIFF is limited to ~4GB; larger files use RF64 extension. "
-            "ExifTool and BWF MetaEdit extract all RIFF and BWF metadata."
+            "ExifTool and BWF MetaEdit extract all RIFF and BWF metadata.",
+            "WAV Audio",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "MediaParser",
@@ -1735,12 +1976,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x52\x49\x46\x46",
-                "description": "RIFF container header",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "RIFF container header",
+                    "WAV Audio",
+                ),
             },
             {
                 "offset": 8,
                 "value": b"\x57\x41\x56\x45",
-                "description": "WAVE subtype identifier at offset 8",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "WAVE subtype identifier at offset 8",
+                    "WAV Audio",
+                ),
             },
         ],
         "extensions": [".wav", ".bwf"],
@@ -1768,7 +2017,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "M4A Audio",
         "short_name": "M4A",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "ISOBMFF audio-only container (ftyp brand 'M4A ') typically containing "
             "AAC (lossy) or ALAC (lossless) audio. "
             "Used for iTunes/Apple Music purchases and downloads, iOS Voice Memos, "
@@ -1782,7 +2032,8 @@ FORMATS: list[dict[str, Any]] = [
             "album, comment, encoded date). "
             "iTunes Store purchases with FairPlay DRM use .m4p extension and "
             "cannot be decoded without authorization. "
-            "ALAC variant (Apple Music lossless) is bit-perfect — no lossy artefacts."
+            "ALAC variant (Apple Music lossless) is bit-perfect — no lossy artefacts.",
+            "M4A Audio",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "MediaParser",
@@ -1790,7 +2041,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\x66\x74\x79\x70",
-                "description": "ISOBMFF ftyp box at offset 4",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ISOBMFF ftyp box at offset 4",
+                    "M4A Audio",
+                ),
             }
         ],
         "extensions": [".m4a", ".m4p", ".m4b"],
@@ -1814,7 +2069,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AAC Audio",
         "short_name": "AAC",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Advanced Audio Coding — the dominant lossy audio codec on iOS and Android. "
             "AAC exists in multiple container forms requiring different analysis: "
             "(1) Raw ADTS-framed AAC (.aac) — sync word 0xFFF1 or 0xFFF9, "
@@ -1827,7 +2083,8 @@ FORMATS: list[dict[str, Any]] = [
             "a complete moov box. "
             "Recording time must be inferred from filesystem timestamps or "
             "container metadata; ADTS carries no embedded timestamps. "
-            "Bitrate and sampling rate can help fingerprint the recording device or app."
+            "Bitrate and sampling rate can help fingerprint the recording device or app.",
+            "AAC Audio",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "MediaParser",
@@ -1835,12 +2092,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf1",
-                "description": "ADTS AAC sync word — MPEG-4 AAC, no CRC",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ADTS AAC sync word — MPEG-4 AAC, no CRC",
+                    "AAC Audio",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\xff\xf9",
-                "description": "ADTS AAC sync word — MPEG-2 AAC, no CRC",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ADTS AAC sync word — MPEG-2 AAC, no CRC",
+                    "AAC Audio",
+                ),
             },
         ],
         "extensions": [".aac"],
@@ -1860,7 +2125,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "FLAC Audio",
         "short_name": "FLAC",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Free Lossless Audio Codec — bit-perfect audio with native metadata support. "
             "Used for music archiving, high-quality recordings, and some Android devices. "
             "FLAC metadata blocks: STREAMINFO (sample rate, bit depth, channel count, "
@@ -1872,7 +2138,8 @@ FORMATS: list[dict[str, Any]] = [
             "and version (e.g. 'reference libFLAC 1.3.0') — useful for source attribution. "
             "No native recording timestamp — inferred from filesystem metadata or "
             "VORBIS_COMMENT DATE field. "
-            "Identified by 'fLaC' magic (0x664C6143) at offset 0."
+            "Identified by 'fLaC' magic (0x664C6143) at offset 0.",
+            "FLAC Audio",
         ),
         "platforms": ["Android", "Windows", "Linux"],
         "parser_class": "MediaParser",
@@ -1880,7 +2147,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x66\x4c\x61\x43",
-                "description": "FLAC stream marker ('fLaC')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "FLAC stream marker ('fLaC')",
+                    "FLAC Audio",
+                ),
             }
         ],
         "extensions": [".flac"],
@@ -1908,7 +2179,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "OGG Audio",
         "short_name": "OGG",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Open bitstream container supporting multiple codecs — forensically "
             "encountered as Ogg Vorbis (music, games), Ogg Opus (voice messages), "
             "and Ogg FLAC (lossless audio). "
@@ -1920,7 +2192,8 @@ FORMATS: list[dict[str, Any]] = [
             "Vorbis comment metadata (same key-value format as FLAC) may contain "
             "title, artist, date, encoder, and custom fields. "
             "No native embedded timestamps — recording time inferred from filesystem "
-            "metadata or messaging app databases."
+            "metadata or messaging app databases.",
+            "OGG Audio",
         ),
         "platforms": ["Android", "iOS", "Windows", "Linux"],
         "parser_class": "MediaParser",
@@ -1928,7 +2201,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x4f\x67\x67\x53",
-                "description": "OGG capture pattern ('OggS')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "OGG capture pattern ('OggS')",
+                    "OGG Audio",
+                ),
             }
         ],
         "extensions": [".ogg", ".oga", ".opus"],
@@ -1952,7 +2229,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Opus Audio",
         "short_name": "Opus",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Low-latency voice and audio codec (RFC 6716) used in WebRTC, Discord, "
             "WhatsApp, Telegram, Signal, and VoIP applications. "
             "Opus is a codec, not a container — stored files use Ogg encapsulation "
@@ -1966,7 +2244,8 @@ FORMATS: list[dict[str, Any]] = [
             "in browser cache or WebRTC dump files. "
             "No native embedded timestamps — recording time inferred from filesystem "
             "metadata, messaging app databases, or WhatsApp filename convention "
-            "(PTT-YYYYMMDD-WANNNN.opus)."
+            "(PTT-YYYYMMDD-WANNNN.opus).",
+            "Opus Audio",
         ),
         "platforms": ["Android", "iOS", "Windows", "Linux"],
         "parser_class": "MediaParser",
@@ -1974,7 +2253,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 28,
                 "value": b"\x4f\x70\x75\x73\x48\x65\x61\x64",
-                "description": "OpusHead codec identification (RFC 7845 §5.1, offset 28 in first Ogg page)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "OpusHead codec identification (RFC 7845 §5.1, offset 28 in first Ogg page)",
+                    "Opus Audio",
+                ),
             }
         ],
         "extensions": [".opus"],
@@ -1998,7 +2281,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WMA Audio",
         "short_name": "WMA",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Windows Media Audio — Microsoft proprietary audio format stored in the "
             "Advanced Systems Format (ASF) container. "
             "ASF is GUID-based: each object begins with a 16-byte GUID and size field. "
@@ -2011,7 +2295,8 @@ FORMATS: list[dict[str, Any]] = [
             "device may be required for decryption. "
             "Common on older Windows systems, Windows Phone devices, and Zune players. "
             "Rare on modern mobile devices — presence may indicate Windows Phone origin "
-            "or legacy media library transfer."
+            "or legacy media library transfer.",
+            "WMA Audio",
         ),
         "platforms": ["Windows"],
         "parser_class": "MediaParser",
@@ -2019,7 +2304,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c",
-                "description": "ASF Header Object GUID",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ASF Header Object GUID",
+                    "WMA Audio",
+                ),
             }
         ],
         "extensions": [".wma", ".asf"],
@@ -2047,7 +2336,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AMR Audio",
         "short_name": "AMR",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Adaptive Multi-Rate speech codec standardised by 3GPP for GSM/UMTS networks. "
             "Two variants: AMR-NB (Narrowband, 4.75-12.2 kbps, 8 kHz sampling) and "
             "AMR-WB (Wideband/HD Voice, 6.6-23.85 kbps, 16 kHz, also known as G.722.2). "
@@ -2059,7 +2349,8 @@ FORMATS: list[dict[str, Any]] = [
             "and detect splicing forgeries even after decompression. "
             "No native embedded timestamps — recording time inferred from filesystem "
             "metadata or messaging app databases. "
-            "Replaced by AAC and Opus on modern devices but common in older acquisitions."
+            "Replaced by AAC and Opus on modern devices but common in older acquisitions.",
+            "AMR Audio",
         ),
         "platforms": ["Android"],
         "parser_class": "MediaParser",
@@ -2067,12 +2358,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x23\x21\x41\x4d\x52\x0a",
-                "description": "AMR-NB file magic ('#!AMR\\n')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AMR-NB file magic ('#!AMR\\n')",
+                    "AMR Audio",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x23\x21\x41\x4d\x52\x2d\x57\x42\x0a",
-                "description": "AMR-WB file magic ('#!AMR-WB\\n')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AMR-WB file magic ('#!AMR-WB\\n')",
+                    "AMR Audio",
+                ),
             },
         ],
         "extensions": [".amr", ".awb"],
@@ -2096,7 +2395,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MessagePack",
         "short_name": "MsgPack",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Compact binary serialization format used as a JSON alternative in "
             "mobile apps, game clients, Redis, and network protocols. "
             "Self-describing at the type level (integers, strings, arrays, maps, binary, "
@@ -2109,7 +2409,8 @@ FORMATS: list[dict[str, Any]] = [
             "Forensically found in: app caches, network capture payloads, "
             "Redis RDB snapshots, and some iOS/Android app data directories. "
             "The msgpack Python library or MsgPack Explorer can decode raw files "
-            "without schema knowledge."
+            "without schema knowledge.",
+            "MessagePack",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": None,
@@ -2135,7 +2436,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "NSKeyedArchiver",
         "short_name": "NSKeyedArchiver",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Apple's object graph serialization format, stored as a binary plist (bplist00) "
             "with a specific internal structure. "
             "Identified by the root dictionary keys: '$archiver' = 'NSKeyedArchiver', "
@@ -2151,7 +2453,8 @@ FORMATS: list[dict[str, Any]] = [
             "Parsing requires a two-step process: first parse the bplist structure, "
             "then resolve UID references to reconstruct the object graph. "
             "Tools: ccl_bplist (Python, deserialise_NsKeyedArchiver), "
-            "bpylist, plutil -p (macOS), and Mushy."
+            "bpylist, plutil -p (macOS), and Mushy.",
+            "NSKeyedArchiver",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "PlistParser",
@@ -2159,7 +2462,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x62\x70\x6c\x69\x73\x74\x30\x30",
-                "description": "Binary plist header ('bplist00') — NSKeyedArchiver identified by internal keys",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Binary plist header ('bplist00') — NSKeyedArchiver identified by internal keys",
+                    "NSKeyedArchiver",
+                ),
             }
         ],
         "extensions": [".plist", ".sfl", ".archive"],
@@ -2187,7 +2494,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android OAT/ART",
         "short_name": "OAT/ART",
         "category": "execution",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Android Runtime (ART) ahead-of-time compiled code artifacts introduced "
             "with Android 5.0 (Lollipop). Three file types form a triplet per app: "
             ".odex/.oat (ELF binary with AOT-compiled native code from dex2oat), "
@@ -2200,7 +2508,8 @@ FORMATS: list[dict[str, Any]] = [
             "Stored under /data/app/<package>/oat/<arch>/ for user apps "
             "and /data/dalvik-cache/ for system apps. "
             "The ELF build ID and dex2oat compilation timestamp indicate "
-            "when the app was last installed or optimized."
+            "when the app was last installed or optimized.",
+            "Android OAT/ART",
         ),
         "platforms": ["Android"],
         "parser_class": None,
@@ -2208,7 +2517,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x7f\x45\x4c\x46",
-                "description": "ELF magic — OAT/ODEX files are ELF binaries",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ELF magic — OAT/ODEX files are ELF binaries",
+                    "Android OAT/ART",
+                ),
             }
         ],
         "extensions": [".oat", ".odex", ".vdex", ".art"],
@@ -2232,7 +2545,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "PDF Document",
         "short_name": "PDF",
         "category": "document",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Portable Document Format — used pervasively for official documents, "
             "reports, forms, contracts, and communications. "
             "Two metadata layers: DocInfo dictionary (Author, Title, Creator, Producer, "
@@ -2250,7 +2564,8 @@ FORMATS: list[dict[str, Any]] = [
             "recoverable from superseded objects in the same file. "
             "Can embed files, JavaScript (malware vector), digital signatures, "
             "and hidden layers (Optional Content Groups). "
-            "Absent metadata on institutional documents is itself a fraud indicator."
+            "Absent metadata on institutional documents is itself a fraud indicator.",
+            "PDF Document",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "PDFParser",
@@ -2258,7 +2573,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x25\x50\x44\x46\x2d",
-                "description": "PDF header ('%PDF-')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "PDF header ('%PDF-')",
+                    "PDF Document",
+                ),
             }
         ],
         "extensions": [".pdf"],
@@ -2290,7 +2609,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Property List (XML plist)",
         "short_name": "XML plist",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Human-readable Apple property list format using XML serialization. "
             "Used for app preferences, configuration files, system settings, "
             "and iTunes/Xcode metadata. "
@@ -2305,7 +2625,8 @@ FORMATS: list[dict[str, Any]] = [
             "Identified by XML declaration and Apple plist DOCTYPE. "
             "Some plists use JSON format in rare cases. "
             "Hardcoded API keys or credentials in Info.plist are a common "
-            "security finding in app analysis."
+            "security finding in app analysis.",
+            "Property List (XML plist)",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "PlistParser",
@@ -2313,7 +2634,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x3c\x3f\x78\x6d\x6c",
-                "description": "XML declaration ('<?xml')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "XML declaration ('<?xml')",
+                    "Property List (XML plist)",
+                ),
             }
         ],
         "extensions": [".plist"],
@@ -2337,7 +2662,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Protocol Buffers (protobuf)",
         "short_name": "protobuf",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Google's binary serialization format used by Android system services, "
             "Chrome/Edge/Brave (Network Action Predictor, Local State), "
             "Google apps (Gmail, Maps, Drive, Photos), Jetpack DataStore "
@@ -2354,7 +2680,8 @@ FORMATS: list[dict[str, Any]] = [
             "For open-source apps (Chrome, Chromium), schemas are often findable "
             "in the project source code. "
             "Partial blackbox decoding possible with Protoscope, pbtk, or CyberChef. "
-            "Nested messages, repeated fields, and oneof unions are common structures."
+            "Nested messages, repeated fields, and oneof unions are common structures.",
+            "Protocol Buffers (protobuf)",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "ProtobufParser",
@@ -2388,7 +2715,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Registry Hive",
         "short_name": "Registry Hive",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Windows hierarchical configuration database stored as binary hive files. "
             "Key forensic hives: "
             "SYSTEM (C:\\Windows\\System32\\config\\SYSTEM) — boot config, services, "
@@ -2405,7 +2733,8 @@ FORMATS: list[dict[str, Any]] = [
             "since 1601-01-01 UTC). "
             "Transaction logs (.LOG1/.LOG2) contain uncommitted changes not yet written "
             "to the primary hive — must be merged for complete analysis. "
-            "Deleted keys may survive in hive slack space."
+            "Deleted keys may survive in hive slack space.",
+            "Windows Registry Hive",
         ),
         "platforms": ["Windows"],
         "parser_class": None,
@@ -2413,7 +2742,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x72\x65\x67\x66",
-                "description": "Registry hive signature ('regf')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Registry hive signature ('regf')",
+                    "Windows Registry Hive",
+                ),
             }
         ],
         "extensions": [".dat", ".hve", ".log1", ".log2"],
@@ -2441,7 +2774,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple SEGB (Biome store)",
         "short_name": "SEGB",
         "category": "log",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Apple's Segmented Binary format — the on-disk storage container for iOS "
             "and macOS Biome data, which replaced much of KnowledgeC from iOS 16 onwards. "
             "Two versions: SEGB v1 (iOS 14-16, 56-byte header ending with 'SEGB' in ASCII, "
@@ -2457,7 +2791,8 @@ FORMATS: list[dict[str, Any]] = [
             "and 'remote/' (iCloud-synced from other devices) subdirectories. "
             "Tombstone/ folder contains expired/deleted records — partially recoverable. "
             "Filenames are Mac Absolute Time floats (insert decimal 6 places from end). "
-            "Data survives app deletion and may outlast primary databases."
+            "Data survives app deletion and may outlast primary databases.",
+            "Apple SEGB (Biome store)",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "SegbParser",
@@ -2465,12 +2800,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x53\x45\x47\x42",
-                "description": "SEGB v2 signature at offset 0 (32-byte header)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SEGB v2 signature at offset 0 (32-byte header)",
+                    "Apple SEGB (Biome store)",
+                ),
             },
             {
                 "offset": 52,
                 "value": b"\x53\x45\x47\x42",
-                "description": "SEGB v1 signature at offset 52 (within 56-byte header)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SEGB v1 signature at offset 52 (within 56-byte header)",
+                    "Apple SEGB (Biome store)",
+                ),
             },
         ],
         "extensions": [],
@@ -2511,7 +2854,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Sparse Image",
         "short_name": "simg",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Android's space-efficient flash image format that replaces empty and "
             "repetitive blocks with metadata chunks, reducing image size for "
             "transmission and fastboot flashing. "
@@ -2527,7 +2871,8 @@ FORMATS: list[dict[str, Any]] = [
             "that must be reassembled before conversion. "
             "Forensically relevant as the delivery container for Android system "
             "partitions (system.img, vendor.img, product.img) — "
-            "useful for comparing suspect device partitions against factory baselines."
+            "useful for comparing suspect device partitions against factory baselines.",
+            "Android Sparse Image",
         ),
         "platforms": ["Android"],
         "parser_class": None,
@@ -2535,7 +2880,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x3a\xff\x26\xed",
-                "description": "Android sparse image magic (0xED26FF3A little-endian)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Android sparse image magic (0xED26FF3A little-endian)",
+                    "Android Sparse Image",
+                ),
             }
         ],
         "extensions": [".img", ".simg"],
@@ -2563,7 +2912,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLite Database",
         "short_name": "SQLite",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "The dominant embedded database on iOS, Android, macOS, and Windows. "
             "Used by virtually every app for messages, call logs, contacts, browser "
             "history, location data, and app state. "
@@ -2582,7 +2932,8 @@ FORMATS: list[dict[str, Any]] = [
             "CRITICAL: opening a WAL-mode database with a standard SQLite driver "
             "triggers a checkpoint, irreversibly committing and clearing the WAL — "
             "use read-only forensic tools or low-level parsing only. "
-            "sqlite_sequence table gaps reveal deleted AUTOINCREMENT rows."
+            "sqlite_sequence table gaps reveal deleted AUTOINCREMENT rows.",
+            "SQLite Database",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "SQLiteParser",
@@ -2590,7 +2941,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x53\x51\x4c\x69\x74\x65\x20\x66\x6f\x72\x6d\x61\x74\x20\x33\x00",
-                "description": "SQLite magic string ('SQLite format 3\\x00')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SQLite magic string ('SQLite format 3\\x00')",
+                    "SQLite Database",
+                ),
             }
         ],
         "extensions": [".db", ".sqlite", ".sqlite3", ".db3"],
@@ -2626,7 +2981,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLite WAL",
         "short_name": "SQLite WAL",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Write-Ahead Log companion file for SQLite databases in WAL journal mode. "
             "Contains uncommitted database pages and, after checkpoint, WAL slack — "
             "old page versions that persist until overwritten from the start of the file. "
@@ -2636,7 +2992,8 @@ FORMATS: list[dict[str, Any]] = [
             "use read-only forensic tools only. "
             "Opened standalone (no companion database), crush shows the same per-frame "
             "inventory as raw decoded values, since column names require the schema. "
-            "See SQLite Database entry for full forensic context."
+            "See SQLite Database entry for full forensic context.",
+            "SQLite WAL",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "SQLiteWALParser",
@@ -2644,7 +3001,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x37\x7f\x06\x82",
-                "description": "SQLite WAL magic (big-endian)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SQLite WAL magic (big-endian)",
+                    "SQLite WAL",
+                ),
             }
         ],
         "extensions": ["-wal"],
@@ -2668,7 +3029,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLite Rollback Journal",
         "short_name": "SQLite Journal",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Legacy (pre-WAL) companion file for a SQLite database in DELETE/TRUNCATE/"
             "PERSIST/MEMORY journal_mode. Holds the pre-transaction content of every page "
             "a still-open or crash-interrupted transaction touched, so SQLite can roll "
@@ -2687,7 +3049,8 @@ FORMATS: list[dict[str, Any]] = [
             "possibly repeated across multiple header segments. "
             "Deleted rows and unallocated slack within a journaled page are recoverable "
             "the same way as in a live database page (freeblock chain, page-content-area "
-            "gap) — crush surfaces every live/deleted/slack entry, not just live pages."
+            "gap) — crush surfaces every live/deleted/slack entry, not just live pages.",
+            "SQLite Rollback Journal",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "SQLiteJournalParser",
@@ -2695,7 +3058,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xd9\xd5\x05\xf9\x20\xa1\x63\xd7",
-                "description": "SQLite rollback-journal magic",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SQLite rollback-journal magic",
+                    "SQLite Rollback Journal",
+                ),
             }
         ],
         "extensions": ["-journal", ".db-journal"],
@@ -2715,7 +3082,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "TAR Archive",
         "short_name": "TAR",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Unix standard archive format packaging files and directory trees with "
             "full metadata preservation. TAR itself provides no compression — "
             "commonly combined with gzip (.tar.gz/.tgz), bzip2 (.tar.bz2), or "
@@ -2732,7 +3100,8 @@ FORMATS: list[dict[str, Any]] = [
             "Linux backup archives, Docker image layers, and forensic tool outputs. "
             "TAR has no deletion mechanism — updated files are appended as new entries; "
             "superseded versions of the same file remain in the archive. "
-            "mtime in headers may reveal original file timestamps from the source system."
+            "mtime in headers may reveal original file timestamps from the source system.",
+            "TAR Archive",
         ),
         "platforms": ["Android", "Linux", "macOS", "iOS"],
         "parser_class": "TarVFS",
@@ -2740,7 +3109,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 257,
                 "value": b"\x75\x73\x74\x61\x72",
-                "description": "USTAR/GNU magic ('ustar') at offset 257 in first header block",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "USTAR/GNU magic ('ustar') at offset 257 in first header block",
+                    "TAR Archive",
+                ),
             }
         ],
         "extensions": [".tar", ".tgz", ".tar.gz", ".tar.bz2", ".tar.xz"],
@@ -2764,7 +3137,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "EWF Acquisition",
         "short_name": "EWF",
         "category": "disk_image",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Expert Witness Format (EWF) — the .E01 forensic disk image format "
             "written and read by many acquisition tools (EnCase, FTK Imager, "
             "ewfacquire/libewf, X-Ways, and others). EWF-E01 (version 1) is "
@@ -2781,7 +3155,8 @@ FORMATS: list[dict[str, Any]] = [
             "The acquisition stores its own MD5/SHA1 of the media in a dedicated "
             "hash section, written by the acquisition tool — recomputing and "
             "comparing against it verifies the acquisition has not been altered "
-            "since it was made, independent of any chain-of-custody paperwork."
+            "since it was made, independent of any chain-of-custody paperwork.",
+            "EWF Acquisition",
         ),
         "platforms": ["Windows", "macOS", "Linux"],
         "parser_class": "RawImageVFS",
@@ -2789,7 +3164,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x45\x56\x46\x09\x0d\x0a\xff\x00",
-                "description": "EWF-E01 signature ('EVF' + control bytes)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "EWF-E01 signature ('EVF' + control bytes)",
+                    "EWF Acquisition",
+                ),
             }
         ],
         "extensions": [".e01"],
@@ -2817,7 +3196,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Unified Log (tracev3)",
         "short_name": "tracev3",
         "category": "log",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Binary log chunk format used by Apple's Unified Logging System. "
             "Individual .tracev3 files are stored under "
             "/private/var/db/diagnostics/ in Persist/, Special/, Signpost/, "
@@ -2830,7 +3210,8 @@ FORMATS: list[dict[str, Any]] = [
             "In crush, the logarchive viewer assembles these files automatically "
             "from iOS full-filesystem acquisitions into a parseable bundle. "
             "See the Apple Unified Log Archive (logarchive) entry for full "
-            "forensic context and artifact categories."
+            "forensic context and artifact categories.",
+            "Apple Unified Log (tracev3)",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "UnifiedLogConverter",
@@ -2838,7 +3219,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x0c\x10\x00\x00",
-                "description": "tracev3 file magic",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "tracev3 file magic",
+                    "Apple Unified Log (tracev3)",
+                ),
             }
         ],
         "extensions": [".tracev3"],
@@ -2862,7 +3247,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "XML Document",
         "short_name": "XML",
         "category": "serialization",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Human-readable markup format used pervasively for configuration, "
             "data exchange, and structured documents. "
             "Key forensic XML files on Android: "
@@ -2878,7 +3264,8 @@ FORMATS: list[dict[str, Any]] = [
             "app configuration and user state, sometimes containing credentials or tokens. "
             "On iOS/macOS: XML plists (see Property List entry). "
             "In Office documents: OOXML internals (.docx/.xlsx/.pptx are ZIP+XML). "
-            "No meaningful magic beyond the XML declaration '<?xml' at offset 0."
+            "No meaningful magic beyond the XML declaration '<?xml' at offset 0.",
+            "XML Document",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "XmlParser",
@@ -2886,7 +3273,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x3c\x3f\x78\x6d\x6c",
-                "description": "XML declaration ('<?xml')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "XML declaration ('<?xml')",
+                    "XML Document",
+                ),
             }
         ],
         "extensions": [".xml"],
@@ -2910,7 +3301,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ZIP Archive",
         "short_name": "ZIP",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Ubiquitous archive format and basis for many higher-level formats: "
             "APK (Android apps), IPA (iOS apps), DOCX/XLSX/PPTX (Office Open XML), "
             "JAR (Java), and many others are ZIP archives with specific internal structures. "
@@ -2927,7 +3319,8 @@ FORMATS: list[dict[str, Any]] = [
             "can fingerprint the tool or OS used to create the archive. "
             "Encryption: ZipCrypto (legacy, weak — known-plaintext attack possible) "
             "or WinZip AES-256 (strong). "
-            "Standard ZIP limited to 4GB — ZIP64 extension required for larger archives."
+            "Standard ZIP limited to 4GB — ZIP64 extension required for larger archives.",
+            "ZIP Archive",
         ),
         "platforms": ["iOS", "macOS", "Android", "Windows", "Linux"],
         "parser_class": "ZipVFS",
@@ -2935,7 +3328,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x50\x4b\x03\x04",
-                "description": "ZIP Local File Header signature ('PK\\x03\\x04')",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ZIP Local File Header signature ('PK\\x03\\x04')",
+                    "ZIP Archive",
+                ),
             }
         ],
         "extensions": [".zip", ".apk", ".ipa", ".jar", ".docx", ".xlsx", ".pptx"],
@@ -2967,7 +3364,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "7-Zip Archive",
         "short_name": "7Z",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "General-purpose archive format with high compression ratios (LZMA/LZMA2), "
             "increasingly seen as a container for forensic tool output and exfiltrated "
             "data due to strong optional AES-256 encryption of both file contents and, "
@@ -2979,7 +3377,8 @@ FORMATS: list[dict[str, Any]] = [
             "several unrelated files at once — a mitigating vs. ZIP's per-file compression. "
             "Seen in the wild bundling malware droppers (compression ratio + optional "
             "encryption both help evade signature-based and content-inspection scanning), "
-            "as well as legitimate acquisition tool exports."
+            "as well as legitimate acquisition tool exports.",
+            "7-Zip Archive",
         ),
         "platforms": ["Windows", "Linux", "macOS", "Android"],
         "parser_class": "SevenZipVFS",
@@ -2987,7 +3386,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x37\x7a\xbc\xaf\x27\x1c",
-                "description": "7z signature",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "7z signature",
+                    "7-Zip Archive",
+                ),
             }
         ],
         "extensions": [".7z"],
@@ -3007,7 +3410,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Keychain",
         "short_name": "Keychain",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Apple's password management system storing credentials, private keys, "
             "certificates, Wi-Fi passwords, payment data, and secure notes. "
             "On iOS, implemented as a single SQLite database at "
@@ -3024,7 +3428,8 @@ FORMATS: list[dict[str, Any]] = [
             "credentials from all the user's Apple devices. "
             "Decryption on 64-bit devices requires either a jailbroken device, "
             "a known passcode, or specialized forensic tools (Elcomsoft EIFT, GrayKey). "
-            "32-bit devices (pre-iPhone 6) allow offline decryption with extracted class keys."
+            "32-bit devices (pre-iPhone 6) allow offline decryption with extracted class keys.",
+            "Apple Keychain",
         ),
         "platforms": ["iOS", "macOS"],
         "parser_class": "SQLiteParser",
@@ -3032,7 +3437,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x53\x51\x4c\x69\x74\x65\x20\x66\x6f\x72\x6d\x61\x74\x20\x33\x00",
-                "description": "SQLite magic — keychain-2.db is a standard SQLite database",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SQLite magic — keychain-2.db is a standard SQLite database",
+                    "Apple Keychain",
+                ),
             }
         ],
         "extensions": [".db", ".keychain-db", ".keychain"],
@@ -3057,7 +3466,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Keystore",
         "short_name": "Keystore",
         "category": "database",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Android's credential and key storage system. Two distinct layers: "
             "(1) App-level keystore files — BKS (Bouncy Castle KeyStore) or PKCS#12/PFX "
             "files bundled in APKs for certificate pinning and SSL. "
@@ -3071,7 +3481,8 @@ FORMATS: list[dict[str, Any]] = [
             "JKS by 0xFEEDFEED; PKCS#12 by 0x30 (ASN.1 SEQUENCE). "
             "JKS format is weakly protected and passwords are brute-forceable. "
             "Hardcoded keystore passwords in decompiled DEX are a common "
-            "finding in mobile app security assessments."
+            "finding in mobile app security assessments.",
+            "Android Keystore",
         ),
         "platforms": ["Android"],
         "parser_class": None,
@@ -3079,12 +3490,20 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xfe\xed\xfe\xed",
-                "description": "JKS (Java KeyStore) magic",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "JKS (Java KeyStore) magic",
+                    "Android Keystore",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x30",
-                "description": "PKCS#12/PFX — ASN.1 SEQUENCE tag",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "PKCS#12/PFX — ASN.1 SEQUENCE tag",
+                    "Android Keystore",
+                ),
             },
         ],
         "extensions": [".keystore", ".jks", ".bks", ".p12", ".pfx"],
@@ -3109,7 +3528,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "iOS Backup (iTunes/Finder)",
         "short_name": "iOS Backup",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Local iOS device backup created by iTunes (Windows/older macOS) or "
             "Finder (macOS 10.15+). Stored at: "
             "Windows: %APPDATA%\\Apple Computer\\MobileSync\\Backup\\{UDID}\\ "
@@ -3132,7 +3552,8 @@ FORMATS: list[dict[str, Any]] = [
             "contents — not tied to device passcode. "
             "Keychain data (keychain-backup.plist) only present in encrypted backups. "
             "Manifest.plist's WasPasscodeSet and RestoreApplications may reveal "
-            "jailbreak history even after device restoration."
+            "jailbreak history even after device restoration.",
+            "iOS Backup (iTunes/Finder)",
         ),
         "platforms": ["iOS"],
         "parser_class": "ITunesBackupVFS",
@@ -3163,7 +3584,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Prefetch",
         "short_name": "Prefetch",
         "category": "log",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Windows execution evidence artifacts created when an application is run "
             "for the first time from a specific path. "
             "Stored under C:\\Windows\\Prefetch\\ as {EXECUTABLE}-{HASH}.pf, "
@@ -3181,7 +3603,8 @@ FORMATS: list[dict[str, Any]] = [
             "Multiple .pf files for the same executable indicate execution from "
             "different paths. "
             "Post-Windows 8.1: files use MAM compression requiring specialized parsing. "
-            "Format reversed by Joachim Metz (libscca); no official public specification."
+            "Format reversed by Joachim Metz (libscca); no official public specification.",
+            "Windows Prefetch",
         ),
         "platforms": ["Windows"],
         "parser_class": None,
@@ -3189,22 +3612,38 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x11\x00\x00\x00\x53\x43\x43\x41",
-                "description": "Prefetch v17 header (Windows XP/2003)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Prefetch v17 header (Windows XP/2003)",
+                    "Windows Prefetch",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x17\x00\x00\x00\x53\x43\x43\x41",
-                "description": "Prefetch v23 header (Windows Vista/7)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Prefetch v23 header (Windows Vista/7)",
+                    "Windows Prefetch",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x1a\x00\x00\x00\x53\x43\x43\x41",
-                "description": "Prefetch v26 header (Windows 8.1)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Prefetch v26 header (Windows 8.1)",
+                    "Windows Prefetch",
+                ),
             },
             {
                 "offset": 0,
                 "value": b"\x1e\x00\x00\x00\x53\x43\x43\x41",
-                "description": "Prefetch v30 header (Windows 10)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Prefetch v30 header (Windows 10)",
+                    "Windows Prefetch",
+                ),
             },
         ],
         "extensions": [".pf"],
@@ -3233,7 +3672,8 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Gzip Compressed Data",
         "short_name": "gzip",
         "category": "archive",
-        "forensic_relevance": (
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
             "Single-file lossless compression format using DEFLATE (RFC 1951), "
             "defined in RFC 1952. Identified by magic bytes 0x1F 0x8B at offset 0. "
             "10-byte header contains: compression method (CM=8 for DEFLATE), "
@@ -3247,7 +3687,8 @@ FORMATS: list[dict[str, Any]] = [
             "Linux log rotation (.gz), iOS/macOS system files, "
             "network traffic content encoding, and database backups. "
             "Multiple gzip members can be concatenated in a single .gz file. "
-            "OS byte and mtime can reveal the origin platform and source file age."
+            "OS byte and mtime can reveal the origin platform and source file age.",
+            "Gzip Compressed Data",
         ),
         "platforms": ["Android", "Linux", "iOS", "macOS", "Windows"],
         "parser_class": "GzipVFS",
@@ -3255,7 +3696,11 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1f\x8b",
-                "description": "Gzip magic number (ID1=0x1F, ID2=0x8B)",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Gzip magic number (ID1=0x1F, ID2=0x8B)",
+                    "Gzip Compressed Data",
+                ),
             }
         ],
         "extensions": [".gz", ".tgz"],
