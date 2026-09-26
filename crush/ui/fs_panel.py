@@ -105,6 +105,7 @@ class FilesystemPanel(QWidget):
     format_info_requested = Signal(object, object)  # (VFSNode, VFS)
     close_source_requested = Signal(object)  # (VFS)
     open_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
+    open_disk_image_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
     send_to_peach_batch_requested = Signal(object)  # list[(VFSNode, VFS)]
     load_finished = Signal()
     background_status = Signal(str)
@@ -533,9 +534,13 @@ class FilesystemPanel(QWidget):
         menu = QMenu(self)
         open_action = menu.addAction(translate("FilesystemPanel", "Open"))
         open_in_new_window_action = None
+        open_disk_image_action = None
         if not node.is_dir:
             open_in_new_window_action = menu.addAction(
                 translate("FilesystemPanel", "Open in New Window")
+            )
+            open_disk_image_action = menu.addAction(
+                translate("FilesystemPanel", "Open Disk Image in New Window")
             )
         open_as_menu = menu.addMenu(translate("FilesystemPanel", "Open as"))
         open_hex_action = open_as_menu.addAction(translate("FilesystemPanel", "Hex"))
@@ -640,6 +645,8 @@ class FilesystemPanel(QWidget):
             return
         if action == open_in_new_window_action:
             self.open_in_new_window_requested.emit(node, vfs)
+        elif action == open_disk_image_action:
+            self.open_disk_image_in_new_window_requested.emit(node, vfs)
         elif action == open_action:
             self.open_requested.emit(node, vfs, "default")
         elif action == open_hex_action:

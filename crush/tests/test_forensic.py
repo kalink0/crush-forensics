@@ -1744,7 +1744,7 @@ def _live_file_nodes(volume: VFSNode) -> list[VFSNode]:
 def test_raw_image_vfs_does_not_modify_source(raw_image_fixture: Path) -> None:
     digest_before = _sha256_file(raw_image_fixture)
 
-    vfs = open_vfs(raw_image_fixture)
+    vfs = open_vfs(raw_image_fixture, as_disk_image=True)
     assert isinstance(vfs, RawImageVFS)
     try:
         volume = vfs.root().children[0]
@@ -1764,7 +1764,7 @@ def test_raw_image_vfs_does_not_modify_source(raw_image_fixture: Path) -> None:
 def test_raw_image_vfs_does_not_change_timestamps(raw_image_fixture: Path) -> None:
     ts_before = _timestamps(raw_image_fixture)
 
-    vfs = open_vfs(raw_image_fixture)
+    vfs = open_vfs(raw_image_fixture, as_disk_image=True)
     assert isinstance(vfs, RawImageVFS)
     try:
         volume = vfs.root().children[0]
@@ -1783,7 +1783,7 @@ def test_raw_image_vfs_does_not_change_timestamps(raw_image_fixture: Path) -> No
 def test_raw_image_vfs_creates_no_sibling_files(raw_image_fixture: Path) -> None:
     files_before = set(raw_image_fixture.parent.iterdir())
 
-    vfs = open_vfs(raw_image_fixture)
+    vfs = open_vfs(raw_image_fixture, as_disk_image=True)
     assert isinstance(vfs, RawImageVFS)
     try:
         volume = vfs.root().children[0]
@@ -1804,7 +1804,7 @@ def test_raw_image_vfs_creates_no_sibling_files(raw_image_fixture: Path) -> None
 def test_raw_image_vfs_works_on_readonly_media(raw_image_fixture: Path) -> None:
     raw_image_fixture.chmod(0o444)
     try:
-        vfs = open_vfs(raw_image_fixture)
+        vfs = open_vfs(raw_image_fixture, as_disk_image=True)
         assert isinstance(vfs, RawImageVFS)
         try:
             volume = vfs.root().children[0]
@@ -1821,7 +1821,7 @@ def test_raw_image_vfs_works_on_readonly_media(raw_image_fixture: Path) -> None:
     desc="Reading the same file from a raw image twice must return byte-identical data",
 )
 def test_raw_image_vfs_read_is_reproducible(raw_image_fixture: Path) -> None:
-    vfs = open_vfs(raw_image_fixture)
+    vfs = open_vfs(raw_image_fixture, as_disk_image=True)
     assert isinstance(vfs, RawImageVFS)
     try:
         volume = vfs.root().children[0]

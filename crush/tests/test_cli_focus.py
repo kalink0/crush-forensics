@@ -28,6 +28,14 @@ def test_focus_allowed_with_single_open_flag() -> None:
     assert args.focus_path == "x.db"
 
 
+def test_image_flag_is_repeatable_and_counts_for_focus() -> None:
+    args = _parse_args(["--image", "/tmp/a.img", "--image", "/tmp/b.E01"])
+    assert args.image_paths == ["/tmp/a.img", "/tmp/b.E01"]
+    assert _parse_args(["--image", "/tmp/a.img", "--focus", "x.db"]).focus_path == "x.db"
+    with pytest.raises(SystemExit):
+        _parse_args(["/tmp/a", "--image", "/tmp/b.img", "--focus", "x.db"])
+
+
 def _load_and_wait(win: MainWindow, path: str, focus_path: str | None) -> None:
     win._load_source(path, open_after_load=True, append_to_tree=True, focus_path=focus_path)
     loop = QEventLoop()

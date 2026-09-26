@@ -1740,11 +1740,27 @@ class RawImageVFS(VFS):
         if entry is None or entry.stored is not None:
             return None
         if entry.deleted is not None:
-            status = (
-                ParseIssue("entry.recovered_intact") if entry.deleted.recoverable
-                else ParseIssue("entry.not_recoverable", detail=str(entry.deleted.reason))
+            deleted = entry.deleted
+            status: str | ParseIssue = (
+                ParseIssue("entry.recovered_intact") if deleted.recoverable
+                else ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
             )
-            return {"kind": "deleted file", "note": status}
+            # A flash record's note says what the recovery had to decide
+            # that the flash itself doesn't record (YAFFS2's size-0 header).
+            recovery_note = getattr(deleted, "note", "")
+            if recovery_note:
+                status = join_notes([
+                    status, ParseIssue("entry.recovery_note", detail=str(recovery_note)),
+                ])
+            info: dict[str, Any] = {"kind": "deleted file", "note": status}
+            # Only the flash records name the folder the file was deleted
+            # from: "" is the volume root, None a folder no longer present.
+            if hasattr(deleted, "parent_path"):
+                info["original_folder"] = (
+                    ParseIssue("entry.original_folder_gone") if deleted.parent_path is None
+                    else "/" + deleted.parent_path
+                )
+            return info
         if entry.walker is not None:
             return None
         return {"kind": entry.kind, "note": entry.note}
@@ -2011,11 +2027,16 @@ def zip_leading_bytes(path: str | Path) -> int | None:
     return min(info.header_offset for info in infos) or None
 
 
-def open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = False) -> VFS:
+def open_vfs(
+    path: str | Path, *, password: str = "", embedded_zip: bool = False,
+    as_disk_image: bool = False,
+) -> VFS:
     """Factory — open the right VFS type for a source path, by its content
     (see _open_vfs), and note once if reading it may update the evidence's
     access times."""
-    vfs = _open_vfs(path, password=password, embedded_zip=embedded_zip)
+    vfs = _open_vfs(
+        path, password=password, embedded_zip=embedded_zip, as_disk_image=as_disk_image,
+    )
     if not vfs.load_note:
         vfs.load_note = _source_atime_note(Path(path), vfs)
     return vfs
@@ -2042,18 +2063,40 @@ def _source_atime_note(path: Path, vfs: VFS) -> str | ParseIssue:
     return _atime_note(path, 1 if euid is not None and owner != euid else 0)
 
 
-def _open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = False) -> VFS:
+def _open_vfs(
+    path: str | Path, *, password: str = "", embedded_zip: bool = False,
+    as_disk_image: bool = False,
+) -> VFS:
     """Open the right VFS type for a source path, by its content.
 
-    Archives, backups and disk images are recognised by their bytes; a name
-    only counts for V7 TAR (no magic). A file named like an archive whose
-    content isn't one opens as a single file, and its fallback_note says so.
+    Archives and backups are recognised by their bytes; a name only counts
+    for V7 TAR (no magic). A file named like an archive whose content isn't
+    one opens as a single file, and its fallback_note says so.
     *embedded_zip* also opens a ZIP that follows leading bytes -- the
     explicit "Open in New Window" path; a plain open only notes it.
+
+    A disk image is opened only when asked for (*as_disk_image*, the
+    "Open Disk Image…" path). Recognising one means reading the partition
+    table and filesystems, and for a file without either, scanning it for
+    flash filesystems -- up to the whole file -- which every other file
+    opened would pay for. Once asked, qnxprobe decides by content what the
+    image holds; a file in which it finds nothing opens as a single file,
+    and its fallback_note says why.
     """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"File no longer exists: {p}")
+    if as_disk_image:
+        if not p.is_file():
+            raise ValueError(f"Not a file, can't be opened as a disk image: {p}")
+        from crush.core.raw_image import RawImageOpenError
+
+        try:
+            return RawImageVFS(p)
+        except RawImageOpenError as exc:
+            file_vfs = FileVFS(p)
+            file_vfs.fallback_note = ParseIssue("vfs.not_disk_image", detail=str(exc))
+            return file_vfs
     if p.is_dir():
         if _is_itunes_backup_dir(p):
             return ITunesBackupVFS(p, password=password)
@@ -2101,19 +2144,11 @@ def _open_vfs(path: str | Path, *, password: str = "", embedded_zip: bool = Fals
             else:
                 notes.append(ParseIssue("vfs.contains_zip_after", {"leading": leading}))
 
-    # A disk image is recognised by its content, never its name -- .bin
-    # or no extension at all are as common as .img/.dd. qnxprobe itself
-    # decides (partition table, bare filesystem, EWF signature); anything
-    # it finds nothing browsable in stays a file.
-    from crush.core.raw_image import RawImageOpenError
-
-    try:
-        vfs = RawImageVFS(p)
-    except RawImageOpenError as exc:
-        vfs = FileVFS(p)
-        raw_note = _raw_image_fallback_note(p, exc)
-        if raw_note:
-            notes.append(raw_note)
+    # Not probed as a disk image (see the docstring); a cheap hint only.
+    hint = _disk_image_hint(p, head)
+    if hint:
+        notes.append(hint)
+    vfs = FileVFS(p)
     vfs.fallback_note = join_notes(notes)
     return vfs
 
@@ -2162,39 +2197,47 @@ def _tar_suffix(p: Path) -> str:
     return next(s for s in sorted(_TAR_SUFFIXES, key=len, reverse=True) if name.endswith(s))
 
 
-_RAW_IMAGE_SUFFIXES = (".img", ".dd", ".raw", ".e01", ".001")
+# Names that suggest a disk image, for the hint pointing at Open Disk Image…
+# (never to decide anything): raw/dd and EWF acquisitions, and dumps of the
+# flash filesystems qnxprobe reads. `.bin` is left out: too many other files
+# carry it. A numbered split-set segment (FTK-style `.001`..`.999`) counts too.
+DISK_IMAGE_SUFFIXES = (
+    ".img", ".dd", ".raw", ".e01",
+    ".nand", ".ubi", ".ubifs", ".squashfs", ".sqsh", ".jffs2", ".yaffs2",
+)
+
+# The EWF-E01 signature, as qnxprobe.looks_like_ewf() checks it.
+EWF_SIGNATURE = b"EVF\x09\x0d\x0a\xff\x00"
 
 
-def _raw_image_fallback_note(path: Path, exc: Exception) -> ParseIssue | None:
-    """Why a file that was meant to be a disk image opened as a plain file,
-    or "" when nothing suggests it was meant to be one.
-
-    Every file is offered to qnxprobe, so "nothing browsable found" is the
-    normal answer for a database or a log and says nothing. It is only worth
-    surfacing when the file announces itself as an image: an image
-    extension, the EWF signature, or a numbered segment of a split set
-    (FTK-style three-digit suffix) that couldn't be joined.
-    """
-    import crush.core.raw_image  # noqa: F401 — registers vendored ewfprobe before qnxprobe loads
-    from crush.third_party import qnxprobe
-
-    suffix = path.suffix.lower()
-    split_error = isinstance(exc.__cause__, qnxprobe.SplitImageError)
-    is_segment = len(suffix) >= 4 and suffix[1:].isascii() and suffix[1:].isdigit()
-    if (
-        suffix in _RAW_IMAGE_SUFFIXES
-        or qnxprobe.looks_like_ewf(str(path))  # type: ignore[no-untyped-call]
-        or (split_error and is_segment)
-    ):
-        return ParseIssue("vfs.not_disk_image", detail=str(exc))
+def looks_like_disk_image(name: str, head: bytes) -> ParseIssue | None:
+    """What suggests that a file is a disk image -- its EWF signature, an
+    image extension, or a numbered segment of a split set -- as the hint's
+    "what", or None. Only the name and the first bytes already read are
+    looked at: a hint, never a probe."""
+    if head.startswith(EWF_SIGNATURE):
+        return ParseIssue("vfs.disk_image_hint_ewf")
+    suffix = Path(name).suffix.lower()
+    is_segment = len(suffix) == 4 and suffix[1:].isascii() and suffix[1:].isdigit()
+    if suffix in DISK_IMAGE_SUFFIXES or is_segment:
+        return ParseIssue("vfs.disk_image_hint_name")
     return None
+
+
+def _disk_image_hint(path: Path, head: bytes) -> ParseIssue | None:
+    """A note for a file opened as a single file that announces itself as
+    a disk image (looks_like_disk_image), so the analyst knows Open Disk
+    Image… exists for it. None otherwise."""
+    what = looks_like_disk_image(path.name, head)
+    return ParseIssue("vfs.disk_image_hint", {"what": what}) if what else None
 
 
 def is_browsable_source_file(path: str | Path) -> bool:
     """True when open_vfs() would open this on-disk file as a browsable
-    source (archive, backup, disk image) rather than a single file -- the
+    source (archive, backup) rather than a single file -- the
     content-sniffed cases only; extension-routed archives are the caller's
-    cheaper check. Mirrors open_vfs()'s own sniffing."""
+    cheaper check. Mirrors open_vfs()'s own sniffing. A disk image isn't one
+    of them: it opens only through Open Disk Image…."""
     p = Path(path)
     if not p.is_file():
         return False
@@ -2202,15 +2245,7 @@ def is_browsable_source_file(path: str | Path) -> bool:
         head = f.read(SNIFF_BYTES)
     if archive_kind(head) is not None:
         return True
-    if head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p):
-        return True
-    from crush.core.raw_image import RawImageOpenError, open_raw_image
-
-    try:
-        open_raw_image(p).close()
-    except RawImageOpenError:
-        return False
-    return True
+    return head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p)
 
 
 def _is_compressed_tar(path: Path) -> bool:

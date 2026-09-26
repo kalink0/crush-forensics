@@ -41,8 +41,13 @@ class Session:
                 USING fts5(path, content, content='artifact', content_rowid='id');
         """)
 
-    def add_source(self, path: str | Path, *, password: str = "", embedded_zip: bool = False) -> VFS:
-        vfs = open_vfs(path, password=password, embedded_zip=embedded_zip)
+    def add_source(
+        self, path: str | Path, *, password: str = "", embedded_zip: bool = False,
+        as_disk_image: bool = False,
+    ) -> VFS:
+        vfs = open_vfs(
+            path, password=password, embedded_zip=embedded_zip, as_disk_image=as_disk_image,
+        )
         self.sources.append(vfs)
         return vfs
 

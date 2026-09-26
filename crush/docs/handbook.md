@@ -30,7 +30,7 @@ Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also
 Most viewers need a file's bytes in memory — often several times over (raw bytes, decoded structures, widgets). Crush therefore checks a file's size against the memory that is free right now before it loads one (double-click, or any **Open as** mode):
 
 - Up to about a quarter of free memory it just opens.
-- Above that it asks what to do: **Open anyway**, **Open in New Window** (opens the file as a source of its own, so an archive, backup or disk image becomes browsable; not offered for a file on disk whose content holds nothing to browse, but always offered for a member of an archive or image, since only extracting it would tell), **Export…**, or **Cancel**. **Open anyway** is not offered once the file is more than about 80 % of free memory — it could not realistically fit.
+- Above that it asks what to do: **Open anyway**, **Open in New Window** (opens the file as a source of its own, so an archive or backup becomes browsable; not offered for a file on disk whose content holds nothing to browse, but always offered for a member of an archive or image, since only extracting it would tell; a disk image opens via right-click → **Open Disk Image in New Window** instead), **Export…**, or **Cancel**. **Open anyway** is not offered once the file is more than about 80 % of free memory — it could not realistically fit.
 - Nothing is ever cut short: a file is opened whole or not at all.
 
 **Compressed tar archives** (`.tar.gz`, `.tar.xz`, `.tar.bz2`) have no index. Crush reads the whole stream once to build the tree — the loading dialog stays up until that pass ends — and keeps the first bytes of every file during it, so browsing and type detection afterwards need no further reading. Opening one file's content still decompresses everything before it, behind a wait dialog. For big compressed tars, extract once to a fast disk or ask for ZIP/plain TAR.
@@ -43,13 +43,19 @@ Archive members, disk-image files and backups are streamed rather than unpacked 
 
 ## Raw Disk Images & EWF Acquisitions
 
-**Open file…** also accepts raw disk images (a whole disk or a single partition/filesystem dump, or a numbered `.001` segment of a split set) and EWF (Expert Witness Format, `.E01` + segments) acquisitions — opened in place, without mounting and without administrator rights. Only the bytes an examiner actually opens ever leave the image.
+**Open Disk Image…** (File menu and start screen; `crush --image PATH` on the command line) opens raw disk images (a whole disk, a single partition/filesystem dump or a flash dump, or a numbered `.001` segment of a split set) and EWF (Expert Witness Format, `.E01` + segments) acquisitions — in place, without mounting and without administrator rights. Only the bytes an examiner actually opens ever leave the image. A disk image found inside a folder, archive or another image opens the same way via right-click → **Open Disk Image in New Window**.
 
-Supported filesystems: NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, and QNX IFS boot images. A split `.001..NNN` dd set is joined automatically from whichever segment is opened; an `.E01` acquisition joins its own numbered segments the same way. Built on [abrignoni/qnxprobe](https://github.com/abrignoni/qnxprobe) and [abrignoni/ewfprobe](https://github.com/abrignoni/ewfprobe).
+Supported filesystems: NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX IFS boot images, and the flash filesystems of embedded Linux devices: SquashFS 4.0, JFFS2, UBI/UBIFS, YAFFS1 and YAFFS2. MBR and GPT partition tables are read, GPT on disks with 512- and 4096-byte logical sectors (4Kn drives, UFS storage in current smartphones). A split `.001..NNN` dd set is joined automatically from whichever segment is opened; an `.E01` acquisition joins its own numbered segments the same way. Built on [abrignoni/qnxprobe](https://github.com/abrignoni/qnxprobe) and [abrignoni/ewfprobe](https://github.com/abrignoni/ewfprobe).
 
-A raw image is recognised by its content — an MBR/GPT partition table or a filesystem it can read — not by its file name, so `.bin` or extensionless images open the same way as `.img`/`.dd`. A file in which no readable filesystem is found opens as an ordinary file (Hex View) instead; if its name or signature says it is an image (`.img`, `.dd`, `.raw`, `.E01`, a numbered `.001`-style segment, or the EWF signature), the status bar and log say why it could not be opened as one — e.g. a split set with a missing segment. EWF acquisitions and split sets are the exception: their segments are found by name, so they must keep their `.E01`/`.001` extensions.
+A disk image is only read as one when opened this way. **Open file…**, drag & drop and Open Recent (for a file not opened as an image before) never probe a file for a disk image: recognising one means reading its partition table and filesystems, and for a file without either, scanning up to all of it for flash filesystems — a cost every other file opened would pay. Such a file opens as an ordinary file; when its name or signature suggests an image (`.img`, `.dd`, `.raw`, `.E01`, a numbered segment `.001`–`.999`, the flash dump names `.nand`, `.ubi`, `.ubifs`, `.squashfs`, `.sqsh`, `.jffs2`, `.yaffs2`, or the EWF signature), the status bar says to use Open Disk Image… — the same when such a file is selected inside an opened folder, archive or image. `.bin` gets no such hint: too many other files carry it. Open Recent remembers which entries were opened as disk images and reopens them the same way.
 
-**Known limitation:** whole-disk images from media with 4096-byte logical sectors (e.g. UFS storage in current smartphones, Apple SSDs, 4Kn drives) are not partitioned correctly yet — the partition table is read as 512-byte sectors, so such an image opens as Hex View. Dumps of a single partition/filesystem from the same media are not affected.
+Once opened as a disk image, what it holds is recognised by its content — an MBR/GPT partition table or a filesystem it can read — not by its file name, so `.bin` or extensionless images open the same way as `.img`/`.dd`. If no readable filesystem is found, a dialog says why (e.g. a split set with a missing segment) and the file opens as an ordinary file (Hex View) instead. EWF acquisitions and split sets are the exception to name-independence: their segments are found by name, so they must keep their `.E01`/`.001` extensions.
+
+A GPT is used only when its header passes the checks in UEFI 2.10 section 5.3.2 (signature, header CRC32, MyLBA, CRC32 of the partition entry array); when the primary header fails, the backup header in the last block is read. A disk whose primary and backup GPT headers both fail these checks shows no partitions from that table.
+
+A **flash dump** (e.g. a `nanddump` of a router, camera or older Android phone) usually has no partition table. It is recognised by the SquashFS, UBI, JFFS2 or YAFFS structures it holds; NAND spare (OOB) bytes in the dump are detected and stripped by the reader, and the YAFFS page/spare layout is found by trying the common geometries.
+
+**zstd-compressed SquashFS/UBIFS** can only be read on Python 3.14 or newer, which current Crush builds don't use. Such a volume is identified but lists nothing; the volume's **Entry status** says so, so it doesn't look like an empty filesystem.
 
 ### Volume tree
 
@@ -63,11 +69,19 @@ Each partition or bare filesystem qnxprobe finds becomes one top-level node, nam
 
 ### Deleted files
 
-For **NTFS, FAT32, and exFAT** volumes only (the only filesystems the underlying reader has this for), a `$Recovered` folder appears alongside the live files, containing every directory/MFT record still on disk whose entry is marked free but hasn't yet been overwritten — this is filesystem-level deletion, not the Recycle Bin. A file sitting in `$Recycle.Bin` (NTFS) is a completely ordinary, live file from the filesystem's point of view and already appears in the normal tree; `$Recovered` is a level below that: records for files already removed from (or bypassing) the Recycle Bin, recoverable only because the filesystem hasn't reused that specific record/directory slot for something else yet.
+For **NTFS, FAT32, exFAT, YAFFS2, JFFS2 and UBIFS** volumes (the filesystems the underlying reader has this for), a `$Recovered` folder appears alongside the live files. On NTFS/FAT32/exFAT it contains every directory/MFT record still on disk whose entry is marked free but hasn't yet been overwritten — this is filesystem-level deletion, not the Recycle Bin. A file sitting in `$Recycle.Bin` (NTFS) is a completely ordinary, live file from the filesystem's point of view and already appears in the normal tree; `$Recovered` is a level below that: records for files already removed from (or bypassing) the Recycle Bin, recoverable only because the filesystem hasn't reused that specific record/directory slot for something else yet.
 
 - Every entry is listed, including ones judged **not recoverable** (data clusters already reused, attributes overflowed the record, or it's a deleted directory — recursing into a deleted directory's own contents isn't attempted). The Properties panel states the reason; attempting to open one of these shows a clear error rather than wrong or partial bytes.
 - Recovered files are placed **flat** under `$Recovered`, not reassembled into the folder structure they were originally deleted from.
 - **FAT32 specifically** cannot recover a deleted file's first character — the delete operation overwrites exactly that byte on disk. Such a name is shown with a leading `_` in place of the lost character (the same convention long used by DOS/Windows undelete tools), e.g. a deleted `one.jpg` reappears as `_ne.jpg`. The file's **content** is unaffected by this and is recovered exactly. exFAT does not have this limitation.
+
+**YAFFS2, JFFS2 and UBIFS** never overwrite in place: a change is written to a new page or node and the old one stays until garbage collection erases its block. A deleted file's last name, size, modification time and content can therefore outlive the deletion, and each one still on the flash is listed in `$Recovered`:
+
+- A file is readable only when every page, node or block its recorded size needs is still on the flash; otherwise the Properties panel says how many are missing and opening it shows an error rather than a partial copy.
+- The Properties panel shows the **Original folder** the file was deleted from, or says that folder no longer exists.
+- Where the recovery had to decide something the flash doesn't record, the status says so. On YAFFS2, deleting a file first writes a size-0 header for it; a file truncated to 0 just before its deletion leaves the same header, so such a file is recovered as the header before that one describes it, with a **recovery note** saying this.
+- A file whose last copy was superseded several times (e.g. rewritten, then deleted) can appear more than once, numbered like other same-named entries.
+- YAFFS1 deleted files are not recovered: its chunks carry only a 2-bit serial number, which can't say which copy of a page a deleted file last held.
 
 ### Verifying an EWF acquisition
 
@@ -78,7 +92,8 @@ Right-click the root of an EWF-backed source and choose **Verify EWF Hash…** t
 - **No other container formats yet** — AFF4, VMDK, VDI, and QCOW disk images are not supported; only raw/dd images and EWF (.E01).
 - **No other filesystems yet** — notably Btrfs, XFS, and LittleFS (common on smartwatches and other small embedded/IoT devices) are not covered by the underlying reader.
 - **No snapshot support** — NTFS Volume Shadow Copies and APFS snapshots are not read; only the filesystem's current, live state (plus the deleted-file recovery above) is available.
-- **Deleted-file recovery is NTFS/FAT32/exFAT only** — ext2/3/4, F2FS, HFS+, APFS, and the QNX filesystems have no equivalent in the underlying reader.
+- **Deleted-file recovery is NTFS/FAT32/exFAT/YAFFS2/JFFS2/UBIFS only** — ext2/3/4, F2FS, HFS+, APFS, YAFFS1, SquashFS (read-only, nothing is deleted) and the QNX filesystems have no equivalent in the underlying reader.
+- **Flash readers and real devices** — SquashFS and JFFS2 have been validated only against images written by their own tools and the Linux kernel; YAFFS2 and UBIFS have also been read off real device dumps (see the qnxprobe README).
 
 ---
 
@@ -141,6 +156,7 @@ The left panel shows the loaded archive or folder as a tree.
 - **Right-click** a file or folder for options:
   - **Open** — best viewer for the format
   - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z/gzip archive, Android/iTunes backup, or raw disk image/EWF acquisition — the file is extracted to the [temp directory](#large-files-memory-and-the-temp-directory) for the new window, behind a progress dialog with **Cancel** (free space is checked first). The new window's title names where it came from, and its temp copy is deleted when that window closes. A ZIP that follows other data in a file (a self-extracting executable, a ZIP appended to an image) is only noted in the status bar when the file itself is opened; **Open in New Window** opens that ZIP
+  - **Open Disk Image in New Window** — the same, but reads the file as a disk image (see [Raw Disk Images & EWF Acquisitions](#raw-disk-images--ewf-acquisitions)); the only way to open a disk image that sits inside an opened folder, archive or image.
   - **Open as** — submenu to force a specific viewer regardless of auto-detection:
     - **Hex** — force raw hex view
     - **Text** — force text view

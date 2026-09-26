@@ -1668,6 +1668,18 @@ MESSAGES: dict[str, str] = {
         "Not opened as a disk image — {detail}",
         "vfs.not_disk_image",
     ),
+    "vfs.disk_image_hint": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Opened as a single file; its {what} suggests a disk image — use "
+        "Open Disk Image… to read it as one",
+        "vfs.disk_image_hint",
+    ),
+    "vfs.disk_image_hint_name": QT_TRANSLATE_NOOP(
+        "ParseIssue", "name", "vfs.disk_image_hint_name",
+    ),
+    "vfs.disk_image_hint_ewf": QT_TRANSLATE_NOOP(
+        "ParseIssue", "EWF signature", "vfs.disk_image_hint_ewf",
+    ),
     "vfs.atime_platform": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Crush does not prevent access-time updates on this platform; mount the "
@@ -1791,6 +1803,21 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "not recoverable: {detail}",
         "entry.not_recoverable",
+    ),
+    "entry.recovery_note": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "recovery note: {detail}",
+        "entry.recovery_note",
+    ),
+    "entry.original_folder_gone": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "(folder no longer present)",
+        "entry.original_folder_gone",
+    ),
+    "entry.raw_volume_note": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Filesystem reader note: {detail}",
+        "entry.raw_volume_note",
     ),
     "entry.raw_no_reader": QT_TRANSLATE_NOOP(
         "ParseIssue",

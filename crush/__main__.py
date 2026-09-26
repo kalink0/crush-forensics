@@ -23,6 +23,17 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="File or folder to open on startup (repeatable)",
     )
     parser.add_argument(
+        "--image",
+        action="append",
+        dest="image_paths",
+        metavar="PATH",
+        help=(
+            "Disk image to open on startup (repeatable): raw/dd, split .001 set, "
+            "EWF (.E01) or flash dump. A disk image is only read as one when "
+            "opened this way (or via File → Open disk image…)"
+        ),
+    )
+    parser.add_argument(
         "--focus",
         dest="focus_path",
         metavar="REL_PATH",
@@ -43,9 +54,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         ),
     )
     args = parser.parse_args(argv)
-    open_paths = list(args.paths) + list(args.open_paths or [])
+    open_paths = list(args.paths) + list(args.open_paths or []) + list(args.image_paths or [])
     if args.focus_path and len(open_paths) != 1:
-        parser.error("--focus requires exactly one file/folder to open (via PATH or --open)")
+        parser.error(
+            "--focus requires exactly one file/folder/image to open (via PATH, --open or --image)"
+        )
     return args
 
 
@@ -107,6 +120,11 @@ def main() -> None:
     for path in open_paths:
         window._load_source(
             path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path
+        )
+    for path in args.image_paths or []:
+        window._load_source(
+            path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path,
+            as_disk_image=True,
         )
     sys.exit(app.exec())
 

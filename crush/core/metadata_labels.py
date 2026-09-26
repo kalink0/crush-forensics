@@ -76,6 +76,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Nesting"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Not decoded"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Note"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Original folder"),
     QT_TRANSLATE_NOOP("MetadataLabel", "PDF Version"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Page records"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Page size"),

@@ -73,7 +73,7 @@ def _ack_body() -> str:
         'mmkv-parser': translate("AboutDialog", "MMKV key-value store reader"),
         'qnxprobe': translate(
             "AboutDialog",
-            "Raw disk image / partition reader (NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX IFS)",
+            "Raw disk image / partition reader (NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
         ),
         'ewfprobe': translate(
             "AboutDialog",

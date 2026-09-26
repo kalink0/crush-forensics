@@ -137,7 +137,7 @@ def _assert_all_files_match(vfs: RawImageVFS, volume: VFSNode) -> None:
 
 class TestRawImage:
     def test_open_vfs_returns_raw_image_vfs(self, raw_ntfs_image: Path) -> None:
-        vfs = open_vfs(raw_ntfs_image)
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
         finally:
@@ -148,7 +148,7 @@ class TestRawImage:
         desc="raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes",
     )
     def test_single_volume_content_matches(self, raw_ntfs_image: Path) -> None:
-        vfs = open_vfs(raw_ntfs_image)
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
         try:
             root = vfs.root()
             assert len(root.children) == 1
@@ -159,7 +159,7 @@ class TestRawImage:
             vfs.close()
 
     def test_file_count_and_total_size(self, raw_ntfs_image: Path) -> None:
-        vfs = open_vfs(raw_ntfs_image)
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
         try:
             root = vfs.root()
             expected = _expected_hashes()
@@ -173,7 +173,7 @@ class TestRawImage:
         degrade to a hex-viewable FileVFS."""
         bogus = tmp_path / "not_an_image.img"
         bogus.write_bytes(b"just some plain text, not an image at all" * 100)
-        vfs = open_vfs(bogus)
+        vfs = open_vfs(bogus, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -189,7 +189,7 @@ class TestRawImage:
         what it actually is."""
         misnamed = tmp_path / "misnamed.E01"
         misnamed.write_bytes(raw_ntfs_image.read_bytes())
-        vfs = open_vfs(misnamed)
+        vfs = open_vfs(misnamed, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             assert vfs.is_ewf() is False
@@ -205,7 +205,7 @@ class TestRawImage:
         part1.write_bytes(data[:midpoint])
         part2.write_bytes(data[midpoint:])
 
-        vfs = open_vfs(part1)
+        vfs = open_vfs(part1, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             root = vfs.root()
@@ -228,7 +228,7 @@ class TestRawImage:
         data = raw_ntfs_image.read_bytes()
         raw_ntfs_image.write_bytes(data[: len(data) // 2])
 
-        vfs = open_vfs(raw_ntfs_image)
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
         try:
             root = vfs.root()
             volume = root.children[0]
@@ -249,7 +249,7 @@ class TestRawImage:
 
 class TestEwf:
     def test_open_vfs_returns_raw_image_vfs(self, raw_ntfs_e01: Path) -> None:
-        vfs = open_vfs(raw_ntfs_e01)
+        vfs = open_vfs(raw_ntfs_e01, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             assert vfs.is_ewf()
@@ -261,7 +261,7 @@ class TestEwf:
         desc="raw_ntfs.E01's files must read back identically through the EWF path as through raw .img",
     )
     def test_content_matches(self, raw_ntfs_e01: Path) -> None:
-        vfs = open_vfs(raw_ntfs_e01)
+        vfs = open_vfs(raw_ntfs_e01, as_disk_image=True)
         try:
             root = vfs.root()
             volume = root.children[0]
@@ -274,7 +274,7 @@ class TestEwf:
         desc="verify_ewf() must report MATCH against a real ewfacquire-created acquisition's own stored hash",
     )
     def test_verify_matches_stored_hash(self, raw_ntfs_e01: Path) -> None:
-        vfs = open_vfs(raw_ntfs_e01)
+        vfs = open_vfs(raw_ntfs_e01, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             result = vfs.verify_ewf()
@@ -295,7 +295,7 @@ class TestEwf:
         is a graceful fall back to plain hex view, not a crash."""
         renamed = tmp_path / "acquisition_no_extension"
         renamed.write_bytes(raw_ntfs_e01.read_bytes())
-        vfs = open_vfs(renamed)
+        vfs = open_vfs(renamed, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -309,7 +309,7 @@ class TestEwf:
         rather than open as an empty, nothing-browsable RawImageVFS."""
         garbage = tmp_path / "no_filesystem.img"
         garbage.write_bytes(b"\x00" * (1024 * 1024))
-        vfs = open_vfs(garbage)
+        vfs = open_vfs(garbage, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -349,7 +349,7 @@ class TestUnsupportedFilesystemVolume:
         they must be genuinely readable, exactly as the disk's own bytes,
         so an examiner can still open them in Hex View rather than hitting
         a dead end."""
-        vfs = open_vfs(raw_multi_partition_image)
+        vfs = open_vfs(raw_multi_partition_image, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             root = vfs.root()
@@ -382,7 +382,7 @@ class TestUnsupportedFilesystemVolume:
         import crush.parsers  # noqa: F401 — triggers parser registration
         from crush.core.registry import ParserRegistry
 
-        vfs = open_vfs(raw_multi_partition_image)
+        vfs = open_vfs(raw_multi_partition_image, as_disk_image=True)
         try:
             unsupported = next(c for c in vfs.root().children if not c.is_dir)
             parser = ParserRegistry.best(unsupported, vfs)
@@ -407,7 +407,7 @@ class TestUnsupportedFilesystemVolume:
         ntfs_size = len(gzip.decompress((FIXTURES_DIR / "raw_ntfs.img.gz").read_bytes()))
         after_gap_start = partition_start_byte + ntfs_size
 
-        vfs = open_vfs(raw_image_with_unallocated_gaps)
+        vfs = open_vfs(raw_image_with_unallocated_gaps, as_disk_image=True)
         try:
             root = vfs.root()
             assert len(root.children) == 3
@@ -446,7 +446,7 @@ class TestUnsupportedFilesystemVolume:
 
 class TestVolumeInfoPropertiesEnrichment:
     def test_volume_info_none_for_normal_walked_file(self, raw_ntfs_image: Path) -> None:
-        vfs = open_vfs(raw_ntfs_image)
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             volume = vfs.root().children[0]
@@ -458,7 +458,7 @@ class TestVolumeInfoPropertiesEnrichment:
     def test_volume_info_for_unsupported_partition(
         self, raw_multi_partition_image: Path
     ) -> None:
-        vfs = open_vfs(raw_multi_partition_image)
+        vfs = open_vfs(raw_multi_partition_image, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             unsupported = next(c for c in vfs.root().children if not c.is_dir)
@@ -478,7 +478,7 @@ class TestVolumeInfoPropertiesEnrichment:
         method in isolation."""
         from crush.ui.main_window import MainWindow
 
-        vfs = open_vfs(raw_multi_partition_image)
+        vfs = open_vfs(raw_multi_partition_image, as_disk_image=True)
         win = MainWindow()
         try:
             unsupported = next(c for c in vfs.root().children if not c.is_dir)
@@ -532,7 +532,7 @@ class TestDeletedFileRecovery:
         expected = _expected_from("raw_ntfs.deleted.sha256")
         assert set(expected) == {"resident-note.txt", "recording.bin"}
 
-        vfs = open_vfs(raw_ntfs_image)
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
         try:
             volume = vfs.root().children[0]
             recovered = next(c for c in volume.children if c.name == "$Recovered")
@@ -561,7 +561,7 @@ class TestDeletedFileRecovery:
         dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_exfat_deleted.img.gz").read_bytes()))
         expected = _expected_from("raw_exfat_deleted.sha256")
 
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             volume = vfs.root().children[0]
             recovered = next(c for c in volume.children if c.name == "$Recovered")
@@ -589,7 +589,7 @@ class TestDeletedFileRecovery:
         dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_fat32_deleted.img.gz").read_bytes()))
         expected = _expected_from("raw_fat32_deleted.sha256")
 
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             volume = vfs.root().children[0]
             recovered = next(c for c in volume.children if c.name == "$Recovered")
@@ -618,7 +618,7 @@ class TestDeletedFileRecovery:
 
         dst = tmp_path / "fat32.img"
         dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_fat32_deleted.img.gz").read_bytes()))
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             volume = vfs.root().children[0]
             recovered = next(c for c in volume.children if c.name == "$Recovered")
@@ -676,18 +676,15 @@ def test_streamed_open_matches_read_for_every_file(
 
 def _make_gpt_image(payload: bytes, first_lba: int = 2048) -> bytes:
     """A protective MBR, a GPT header at LBA 1 and a 128-entry array at
-    LBA 2 holding one Microsoft basic data partition around `payload`."""
+    LBA 2 holding one Microsoft basic data partition around `payload`. The
+    header carries MyLBA and both CRC32s (UEFI 2.10 5.3.2), which the
+    reader checks before using it."""
     import uuid
+    import zlib
 
     assert len(payload) % 512 == 0
     last_lba = first_lba + len(payload) // 512 - 1
     total_sectors = last_lba + 1
-
-    header = bytearray(512)
-    header[0:8] = b"EFI PART"
-    header[72:80] = (2).to_bytes(8, "little")  # partition entry array LBA
-    header[80:84] = (128).to_bytes(4, "little")  # number of entries
-    header[84:88] = (128).to_bytes(4, "little")  # size of one entry
 
     entries = bytearray(128 * 128)
     entries[0:16] = uuid.UUID("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7").bytes_le
@@ -695,21 +692,35 @@ def _make_gpt_image(payload: bytes, first_lba: int = 2048) -> bytes:
     entries[40:48] = last_lba.to_bytes(8, "little")
     entries[56:64] = "data".encode("utf-16-le")
 
+    header = bytearray(512)
+    header[0:8] = b"EFI PART"
+    header[8:12] = (0x00010000).to_bytes(4, "little")  # revision 1.0
+    header[12:16] = (92).to_bytes(4, "little")  # header size
+    header[24:32] = (1).to_bytes(8, "little")  # MyLBA
+    header[32:40] = (total_sectors - 1).to_bytes(8, "little")  # AlternateLBA
+    header[40:48] = (34).to_bytes(8, "little")  # FirstUsableLBA
+    header[48:56] = last_lba.to_bytes(8, "little")  # LastUsableLBA
+    header[72:80] = (2).to_bytes(8, "little")  # partition entry array LBA
+    header[80:84] = (128).to_bytes(4, "little")  # number of entries
+    header[84:88] = (128).to_bytes(4, "little")  # size of one entry
+    header[88:92] = zlib.crc32(entries).to_bytes(4, "little")
+    header[16:20] = zlib.crc32(header[:92]).to_bytes(4, "little")
+
     head = _make_mbr([(0xEE, 1, total_sectors - 1)]) + bytes(header) + bytes(entries)
     return head + bytes(first_lba * 512 - len(head)) + payload
 
 
 class TestContentSniffedImage:
-    """A disk image is found by its content, whatever it's called -- `.bin`
-    is what many acquisition tools write, and a bare filesystem dump often
-    has no extension at all."""
+    """Opened as a disk image, what it holds is found by its content,
+    whatever it's called -- `.bin` is what many acquisition tools write, and
+    a bare filesystem dump often has no extension at all."""
 
     def test_bare_filesystem_without_extension_opens_as_raw_image(
         self, raw_ntfs_image: Path, tmp_path: Path
     ) -> None:
         dst = tmp_path / "volume_dump"
         dst.write_bytes(raw_ntfs_image.read_bytes())
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
         finally:
@@ -724,7 +735,7 @@ class TestContentSniffedImage:
         con.executemany("INSERT INTO t VALUES (?)", [(b"\x55\xaa" * 300,)] * 200)
         con.commit()
         con.close()
-        vfs = open_vfs(db)
+        vfs = open_vfs(db, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -734,7 +745,7 @@ class TestContentSniffedImage:
         ntfs_bytes = gzip.decompress((FIXTURES_DIR / "raw_ntfs.img.gz").read_bytes())
         dst = tmp_path / "acquisition.bin"
         dst.write_bytes(_make_gpt_image(ntfs_bytes))
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
             volume = next(c for c in vfs.root().children if c.is_dir)
@@ -747,7 +758,7 @@ class TestContentSniffedImage:
     ) -> None:
         dst = tmp_path / "multi.bin"
         dst.write_bytes(raw_multi_partition_image.read_bytes())
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
         finally:
@@ -756,7 +767,7 @@ class TestContentSniffedImage:
     def test_bin_with_no_partition_table_stays_file_vfs(self, tmp_path: Path) -> None:
         dst = tmp_path / "firmware.bin"
         dst.write_bytes(b"\xab" * (1024 * 1024))
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -767,7 +778,7 @@ class TestContentSniffedImage:
         partitions starts inside the file, so it isn't a disk image."""
         dst = tmp_path / "blob.bin"
         dst.write_bytes(_make_mbr([(0x83, 10_000_000, 2048)]) + bytes(64 * 1024))
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -778,7 +789,7 @@ class TestContentSniffedImage:
     ) -> None:
         dst = tmp_path / "unknown_fs.bin"
         dst.write_bytes(_make_gpt_image(b"\xab" * (1024 * 1024)))
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
         finally:
@@ -786,13 +797,13 @@ class TestContentSniffedImage:
 
 
 class TestFallbackNote:
-    """A file every name of which says "disk image" but that can't be opened
-    as one falls back to a plain file -- with the reason, never silently."""
+    """A file opened as a disk image that can't be read as one falls back to
+    a plain file -- with the reason, never silently."""
 
     def test_img_without_filesystem_carries_reason(self, tmp_path: Path) -> None:
         dst = tmp_path / "disk.img"
         dst.write_bytes(b"\xab" * (1024 * 1024))
-        vfs = open_vfs(dst)
+        vfs = open_vfs(dst, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
             assert "Not opened as a disk image" in str(vfs.fallback_note)
@@ -803,7 +814,7 @@ class TestFallbackNote:
     def test_split_set_with_hole_carries_reason(self, tmp_path: Path) -> None:
         for n in (1, 3):
             (tmp_path / f"case.{n:03d}").write_bytes(b"\xab" * 4096)
-        vfs = open_vfs(tmp_path / "case.003")
+        vfs = open_vfs(tmp_path / "case.003", as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
             assert "hole" in str(vfs.fallback_note)
@@ -811,8 +822,8 @@ class TestFallbackNote:
             vfs.close()
 
     def test_ordinary_files_carry_no_note(self, tmp_path: Path) -> None:
-        """Rotated logs look like a broken split set to qnxprobe; nothing
-        about them says "image", so no note."""
+        """Opened the normal way, rotated logs and a .bin say nothing about
+        being an image, so they get no note."""
         (tmp_path / "syslog.2").write_bytes(b"b\n")
         (tmp_path / "syslog.3").write_bytes(b"c\n")
         (tmp_path / "firmware.bin").write_bytes(b"\xab" * 4096)
@@ -823,6 +834,87 @@ class TestFallbackNote:
                 assert str(vfs.fallback_note) == ""
             finally:
                 vfs.close()
+
+
+class TestOnlyOpenedWhenAskedFor:
+    """A disk image is read as one only through Open Disk Image… -- a
+    normal open never probes a file for one (for a file without a partition
+    table that means scanning up to all of it for flash filesystems)."""
+
+    def test_normal_open_of_an_image_is_a_single_file(self, raw_ntfs_image: Path) -> None:
+        vfs = open_vfs(raw_ntfs_image)
+        try:
+            assert isinstance(vfs, FileVFS)
+        finally:
+            vfs.close()
+
+    @pytest.mark.parametrize("name", [
+        "disk.img", "disk.dd", "disk.raw", "case.001", "case.002", "case.E01",
+        "flash.nand", "rootfs.ubi", "data.ubifs", "fw.squashfs", "fw.sqsh", "cfg.jffs2",
+        "data.yaffs2",
+    ])
+    def test_image_name_gets_a_hint(self, tmp_path: Path, name: str) -> None:
+        dst = tmp_path / name
+        dst.write_bytes(b"\xab" * 4096)
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert vfs.fallback_note.code == "vfs.disk_image_hint"  # type: ignore[union-attr]
+            assert "Open Disk Image" in str(vfs.fallback_note)
+        finally:
+            vfs.close()
+
+    @pytest.mark.parametrize("name", ["firmware.bin", "syslog.3", "notes.txt", "x.0001"])
+    def test_other_names_get_no_hint(self, tmp_path: Path, name: str) -> None:
+        dst = tmp_path / name
+        dst.write_bytes(b"\xab" * 4096)
+        vfs = open_vfs(dst)
+        try:
+            assert str(vfs.fallback_note) == ""
+        finally:
+            vfs.close()
+
+    @pytest.mark.parametrize("name", ["case.002", "flash.nand", "disk.IMG", "firmware.bin"])
+    def test_tree_hint_follows_the_same_rule_as_opening(
+        self, qapp: Any, tmp_path: Path, name: str
+    ) -> None:
+        """The status-bar hint for a file selected in an opened folder uses
+        the same names as the note on a file opened directly."""
+        from crush.core.vfs import DirectoryVFS
+        from crush.ui.main_window import _open_as_source_hint
+
+        (tmp_path / name).write_bytes(b"\xab" * 4096)
+        folder = DirectoryVFS(tmp_path)
+        node = next(c for c in folder.root().children if c.name == name)
+        in_tree = bool(_open_as_source_hint(node, folder, probe_archive=False))
+        opened = open_vfs(tmp_path / name)
+        try:
+            assert in_tree == bool(opened.fallback_note)
+        finally:
+            opened.close()
+
+    def test_ewf_signature_gets_a_hint_whatever_the_name(
+        self, raw_ntfs_e01: Path, tmp_path: Path
+    ) -> None:
+        dst = tmp_path / "acquisition_no_extension"
+        dst.write_bytes(raw_ntfs_e01.read_bytes())
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "EWF signature" in str(vfs.fallback_note)
+        finally:
+            vfs.close()
+
+    def test_normal_open_never_calls_the_image_reader(
+        self, raw_ntfs_image: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import crush.core.raw_image as raw_image
+
+        def _refuse(*_a: Any, **_k: Any) -> Any:
+            raise AssertionError("a normal open must not probe for a disk image")
+
+        monkeypatch.setattr(raw_image, "open_raw_image", _refuse)
+        open_vfs(raw_ntfs_image).close()
 
 
 def test_source_sniff_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

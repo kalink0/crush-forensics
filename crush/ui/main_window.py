@@ -88,6 +88,7 @@ class _LoadSourceWorker(QObject):
         password: str = "",
         window_id: str | None = None,
         embedded_zip: bool = False,
+        as_disk_image: bool = False,
     ) -> None:
         super().__init__()
         self._session = session
@@ -97,6 +98,7 @@ class _LoadSourceWorker(QObject):
         self._password = password
         self._window_id = window_id
         self._embedded_zip = embedded_zip
+        self._as_disk_image = as_disk_image
 
     def run(self) -> None:
         with window_log_scope(self._window_id):
@@ -117,6 +119,7 @@ class _LoadSourceWorker(QObject):
             else:
                 vfs = self._session.add_source(
                     self._path, password=self._password, embedded_zip=self._embedded_zip,
+                    as_disk_image=self._as_disk_image,
                 )
             if self._integrity:
                 self._log_source_hash()
@@ -219,7 +222,7 @@ class _DockTitleBar(QWidget):
 class _RecentFileButton(QWidget):
     opened = Signal(str)
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, as_disk_image: bool = False) -> None:
         super().__init__()
         self._path = path
         self.setToolTip(path)
@@ -234,6 +237,8 @@ class _RecentFileButton(QWidget):
         )
         directory.setSizePolicy(directory.sizePolicy().horizontalPolicy(), directory.sizePolicy().verticalPolicy())
         layout.addWidget(name)
+        if as_disk_image:
+            layout.addWidget(QLabel(translate("MainWindow", "(disk image)")))
         layout.addWidget(directory, stretch=1)
 
     def mousePressEvent(self, event: object) -> None:  # type: ignore[override]
@@ -629,7 +634,9 @@ class MainWindow(QMainWindow):
         empty_title.setFont(title_font)
         empty_layout.addWidget(empty_title)
 
-        empty_subtitle = QLabel(translate("MainWindow", "Choose a file, archive, or folder."))
+        empty_subtitle = QLabel(
+            translate("MainWindow", "Choose a file, archive, folder, or disk image.")
+        )
         empty_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_subtitle)
 
@@ -640,6 +647,14 @@ class MainWindow(QMainWindow):
         open_folder_button = QPushButton(translate("MainWindow", "Open Folder…"))
         open_folder_button.clicked.connect(self._open_folder)
         button_row.addWidget(open_folder_button)
+        open_image_button = QPushButton(translate("MainWindow", "Open Disk Image…"))
+        open_image_button.setToolTip(translate(
+            "MainWindow",
+            "Raw/dd image, split .001 set, EWF (.E01) acquisition or flash dump — "
+            "a disk image is only read as one when opened this way",
+        ))
+        open_image_button.clicked.connect(self._open_disk_image)
+        button_row.addWidget(open_image_button)
         empty_layout.addLayout(button_row)
 
         self._recent_on_welcome = QVBoxLayout()
@@ -668,6 +683,9 @@ class MainWindow(QMainWindow):
         self._fs_panel.background_status.connect(self._on_background_status)
         self._fs_panel.format_info_requested.connect(self._show_format_info)
         self._fs_panel.open_in_new_window_requested.connect(self._open_in_new_window)
+        self._fs_panel.open_disk_image_in_new_window_requested.connect(
+            lambda node, vfs: self._open_in_new_window(node, vfs, as_disk_image=True)
+        )
         self._fs_panel.send_to_peach_batch_requested.connect(self._send_to_peach_batch)
         self._fs_dock = QDockWidget(translate("MainWindow", "Filesystem"), self)
         self._fs_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
@@ -797,6 +815,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(translate("MainWindow", "Open file…"), self._open_file)
         file_menu.addAction(translate("MainWindow", "Open folder…"), self._open_folder)
+        file_menu.addAction(translate("MainWindow", "Open disk image…"), self._open_disk_image)
         file_menu.addSeparator()
         self._recent_menu = file_menu.addMenu(translate("MainWindow", "Open Recent"))
         self._rebuild_recent_menu()
@@ -922,7 +941,7 @@ class MainWindow(QMainWindow):
         window.move(target)
         window.show()
 
-    def _open_in_new_window(self, node: VFSNode, vfs: VFS) -> None:
+    def _open_in_new_window(self, node: VFSNode, vfs: VFS, as_disk_image: bool = False) -> None:
         if isinstance(vfs, DirectoryVFS):
             self._hash_node_if_integrity(node, vfs)
         path = self._materialize_node_for_external(
@@ -950,7 +969,7 @@ class MainWindow(QMainWindow):
             window._external_temp_paths = [path]
         # The explicit action: also opens a ZIP that follows leading bytes
         # (self-extractor, appended ZIP), which a plain open only notes.
-        window._load_source(str(path), embedded_zip=True)
+        window._load_source(str(path), embedded_zip=True, as_disk_image=as_disk_image)
 
     @classmethod
     def _remove_window_reference(cls, destroyed: QObject | None = None) -> None:
@@ -975,6 +994,19 @@ class MainWindow(QMainWindow):
         for path in paths:
             self._load_source(path, open_after_load=True, append_to_tree=True)
 
+    def _open_disk_image(self) -> None:
+        """The only way a file is read as a disk image: the analyst says it
+        is one. Split sets and EWF segments are joined from whichever
+        segment is picked."""
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            translate("MainWindow", "Open disk image"),
+            "",
+            translate("MainWindow", "All files") + " (*)",  # i18n: keep -- file filter pattern
+        )
+        for path in paths:
+            self._load_source(path, open_after_load=True, append_to_tree=True, as_disk_image=True)
+
     def _load_source(
         self,
         path: str,
@@ -984,14 +1016,15 @@ class MainWindow(QMainWindow):
         password: str = "",
         focus_path: str | None = None,
         embedded_zip: bool = False,
+        as_disk_image: bool = False,
     ) -> None:
-        if itunes_zip_prefix is None and _is_zip_file(path):
+        if not as_disk_image and itunes_zip_prefix is None and _is_zip_file(path):
             itunes_zip_prefix = self._maybe_confirm_itunes_backup_zip(path)
 
         if self._thread_is_running(getattr(self, "_load_thread", None)):
             self._load_queue.append(
                 (path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path,
-                 embedded_zip)
+                 embedded_zip, as_disk_image)
             )
             self._status.showMessage(translate("MainWindow", "Queued source for loading…"))
             self._logger.debug("Load queued: %s (open_after_load=%s append=%s)", path, open_after_load, append_to_tree)
@@ -1002,6 +1035,7 @@ class MainWindow(QMainWindow):
         self._loading_path = path
         self._loading_itunes_zip_prefix = itunes_zip_prefix
         self._loading_embedded_zip = embedded_zip
+        self._loading_as_disk_image = as_disk_image
         self._open_after_load = open_after_load
         self._append_to_tree = append_to_tree
         self._pending_focus_path = focus_path
@@ -1013,7 +1047,7 @@ class MainWindow(QMainWindow):
         self._load_thread = QThread(self)
         self._load_worker = _LoadSourceWorker(
             self.session, path, self.session.integrity_mode, itunes_zip_prefix, password,
-            window_id=self._window_id, embedded_zip=embedded_zip,
+            window_id=self._window_id, embedded_zip=embedded_zip, as_disk_image=as_disk_image,
         )
         self._load_worker.moveToThread(self._load_thread)
         self._load_thread.started.connect(self._load_worker.run)
@@ -1132,7 +1166,24 @@ class MainWindow(QMainWindow):
                     loading_path=self._loading_path
                 )
             )
-        self._add_to_recent_files(self._loading_path)
+        from crush.core.vfs import RawImageVFS
+
+        opened_as_image = isinstance(loaded_vfs, RawImageVFS)
+        self._add_to_recent_files(self._loading_path, as_disk_image=opened_as_image)
+        if getattr(self, "_loading_as_disk_image", False) and not opened_as_image:
+            # Asked for explicitly, so a status-bar line alone is too easy to miss.
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Open Disk Image"),
+                translate(
+                    "MainWindow",
+                    "{name} could not be read as a disk image and was opened as a "
+                    "single file instead.\n\n{reason}",
+                ).format(
+                    name=Path(self._loading_path).name,
+                    reason=render_value(getattr(loaded_vfs, "fallback_note", ""), localized=True),
+                ),
+            )
         if hasattr(self, "_tree_build_started"):
             elapsed = time.monotonic() - self._tree_build_started
             if hasattr(self, "_loading_vfs"):
@@ -1413,8 +1464,8 @@ class MainWindow(QMainWindow):
             return True
         from crush.ui import large_open
 
-        # open_vfs() recognises a disk image by its content, not its name, so
-        # a large .bin may well be one. Offered unless it is known not to be.
+        # Offered unless the file is known to hold nothing to browse (a disk
+        # image isn't among them: it opens via Open Disk Image in New Window).
         decision = large_open.confirm_large_open(
             self, node.name, node.size,
             can_open_as_source=_can_open_as_source(node, vfs) is not False,
@@ -1478,7 +1529,7 @@ class MainWindow(QMainWindow):
                     message += f"  — {render_value(fallback_note, localized=True)}"  # i18n: keep -- layout
                 else:
                     hint = _open_as_source_hint(
-                        node, vfs, probe_disk_image=isinstance(parser, HexFallbackParser),
+                        node, vfs, probe_archive=isinstance(parser, HexFallbackParser),
                     )
                     if hint:
                         message += f"  — {hint}"
@@ -3167,9 +3218,10 @@ class MainWindow(QMainWindow):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(4)
+        images = self._recent_disk_images()
         for path in recent[:10]:
-            btn = _RecentFileButton(path)
-            btn.opened.connect(self._load_source)
+            btn = _RecentFileButton(path, as_disk_image=path in images)
+            btn.opened.connect(self._load_recent)
             container_layout.addWidget(btn)
         self._recent_on_welcome.addWidget(container, alignment=Qt.AlignmentFlag.AlignHCenter)
 
@@ -3230,6 +3282,8 @@ class MainWindow(QMainWindow):
                 if vol_info is not None:
                     fmt_meta["Filesystem"] = vol_info["kind"] or "unknown"
                     fmt_meta["Status"] = vol_info["note"] or ParseIssue("entry.raw_no_reader")
+                    if "original_folder" in vol_info:
+                        fmt_meta["Original folder"] = vol_info["original_folder"]
 
             # Cellebrite's own recorded MD5/SHA-256/category for this node,
             # plus an explicit status if its bytes couldn't be located in
@@ -3319,7 +3373,10 @@ class MainWindow(QMainWindow):
         # dropped item follows the exact same append-vs-replace rule already
         # in _on_load_finished: a single flat file appends to the current
         # tree, a folder or archive (anything whose VFS root is a directory)
-        # replaces it — nothing drag & drop specific to decide here.
+        # replaces it — nothing drag & drop specific to decide here. A drop
+        # can't say "this is a disk image", so it never opens one; that
+        # takes Open Disk Image… (the dropped file's status line says so
+        # when its name or EWF signature suggests one).
         paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
         if not paths:
             return
@@ -3429,7 +3486,7 @@ class MainWindow(QMainWindow):
         if self._load_queue:
             (
                 path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path,
-                embedded_zip,
+                embedded_zip, as_disk_image,
             ) = self._load_queue.pop(0)
             self._load_source(
                 path,
@@ -3439,6 +3496,7 @@ class MainWindow(QMainWindow):
                 password=password,
                 focus_path=focus_path,
                 embedded_zip=embedded_zip,
+                as_disk_image=as_disk_image,
             )
 
     def _on_password_required(self, was_wrong: bool, reason: str = "") -> None:
@@ -3466,6 +3524,7 @@ class MainWindow(QMainWindow):
             itunes_zip_prefix=getattr(self, "_loading_itunes_zip_prefix", None),
             password=password,
             embedded_zip=getattr(self, "_loading_embedded_zip", False),
+            as_disk_image=getattr(self, "_loading_as_disk_image", False),
         )
 
     def _maybe_confirm_itunes_backup_zip(self, path: str) -> str | None:
@@ -3998,14 +4057,31 @@ class MainWindow(QMainWindow):
         workers = self._settings.value("prescan_workers", default, type=int)
         self._fs_panel._prescan_workers = max(1, workers)
 
-    def _add_to_recent_files(self, path: str) -> None:
+    def _add_to_recent_files(self, path: str, as_disk_image: bool = False) -> None:
         recent: list[str] = self._settings.value("recent_files", [], type=list)
         if path in recent:
             recent.remove(path)
         recent.insert(0, path)
         recent = recent[:10]
         self._settings.setValue("recent_files", recent)
+        # Which of them were opened as disk images, so reopening one does
+        # the same -- a disk image is never recognised on its own.
+        images = {p for p in self._recent_disk_images() if p in recent and p != path}
+        if as_disk_image:
+            images.add(path)
+        self._settings.setValue("recent_disk_images", sorted(images))
         self._rebuild_recent_menu()
+
+    def _recent_disk_images(self) -> set[str]:
+        return set(self._settings.value("recent_disk_images", [], type=list))
+
+    def _load_recent(self, path: str) -> None:
+        self._load_source(path, as_disk_image=path in self._recent_disk_images())
+
+    def _recent_label(self, path: str) -> str:
+        if path in self._recent_disk_images():
+            return translate("MainWindow", "{path}  (disk image)").format(path=path)
+        return path
 
     def _rebuild_recent_menu(self) -> None:
         self._recent_menu.clear()
@@ -4015,9 +4091,9 @@ class MainWindow(QMainWindow):
             empty.setEnabled(False)
         else:
             for path in recent:
-                action = self._recent_menu.addAction(path)
+                action = self._recent_menu.addAction(self._recent_label(path))
                 action.setToolTip(path)
-                action.triggered.connect(lambda checked=False, p=path: self._load_source(p))
+                action.triggered.connect(lambda checked=False, p=path: self._load_recent(p))
             self._recent_menu.addSeparator()
             self._recent_menu.addAction(
                 translate("MainWindow", "Clear Recent"), self._clear_recent_files
@@ -4025,6 +4101,7 @@ class MainWindow(QMainWindow):
 
     def _clear_recent_files(self) -> None:
         self._settings.setValue("recent_files", [])
+        self._settings.setValue("recent_disk_images", [])
         self._rebuild_recent_menu()
 
     def _set_prescan_workers(self) -> None:
@@ -4423,11 +4500,6 @@ class MainWindow(QMainWindow):
 # A UX cut-off only -- nothing is skipped or shortened on either side of it.
 _BUSY_BYTES = 8 * 1024 * 1024
 
-# A disk image inside an archive or image can't be recognised from its first
-# bytes (qnxprobe needs the partition table/filesystem, i.e. extracting it),
-# so for such members the name is the only hint there is.
-_DISK_IMAGE_SUFFIXES = (".e01", ".img", ".dd", ".raw", ".001")
-
 def _browse_hint() -> str:
     return translate("MainWindow", "right-click → Open in New Window to browse its contents")
 
@@ -4454,10 +4526,12 @@ def _peeked_archive_kind(node: VFSNode, vfs: VFS) -> str | None:
         return None
 
 
-def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_disk_image: bool) -> str:
-    """Status-bar hint that this file can be browsed via Open in New Window,
-    decided by content; "" when there is nothing to say. *probe_disk_image*
-    runs the (costlier) qnxprobe check on an on-disk file."""
+def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_archive: bool) -> str:
+    """Status-bar hint that this file can be browsed via Open in New Window
+    (decided by content), or read via Open Disk Image in New Window (a
+    hint from its name or EWF signature); "" when there is nothing to say.
+    *probe_archive* runs the (costlier) bzip2/xz-TAR check on an on-disk
+    file."""
     if node.is_dir or isinstance(vfs, FileVFS):
         return ""
     if _peeked_archive_kind(node, vfs) is not None:
@@ -4472,21 +4546,35 @@ def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_disk_image: bool) -> 
                 "contains a ZIP archive after {leading:,} leading bytes — "
                 "right-click → Open in New Window to browse it",
             ).format(leading=leading)
-        if probe_disk_image and is_browsable_source_file(node.path):
+        if probe_archive and is_browsable_source_file(node.path):
             return _browse_hint()
-        return ""
-    if node.name.lower().endswith(_DISK_IMAGE_SUFFIXES):
-        return _browse_hint()
+    return _disk_image_hint(node, vfs)
+
+
+def _disk_image_hint(node: VFSNode, vfs: VFS) -> str:
+    """A disk image is never probed for (see open_vfs); a file whose name or
+    EWF signature says it is one gets pointed at the explicit action."""
+    from crush.core.vfs import SNIFF_BYTES, looks_like_disk_image
+
+    try:
+        head = vfs.peek(node, SNIFF_BYTES)
+    except (OSError, ValueError):
+        head = b""
+    if looks_like_disk_image(node.name, head):
+        return translate(
+            "MainWindow",
+            "looks like a disk image — right-click → Open Disk Image in New Window to read it",
+        )
     return ""
 
 
 def _can_open_as_source(node: VFSNode, vfs: VFS) -> bool | None:
-    """Whether open_vfs() would open this file as a browsable source.
+    """Whether open_vfs() would open this file as a browsable source
+    (archive, backup -- a disk image only opens when asked for).
 
     True/False when that is known: from the file's first bytes, or by
-    probing a file that is on disk as-is. None for an archive member whose
-    first bytes don't tell (a disk image, a bzip2/xz TAR) -- only
-    extracting it would.
+    checking a file that is on disk as-is. None for an archive member whose
+    first bytes don't tell (a bzip2/xz TAR) -- only extracting it would.
     """
     if node.is_dir or isinstance(vfs, FileVFS):
         # A FileVFS is what open_vfs() fell back to after finding nothing to
