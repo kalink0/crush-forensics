@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 
 from crush.core.sysmem import available_memory
 from crush.ui.extract_dialog import format_size
+from crush.ui.i18n import translate
 
 # Share of free RAM above which opening a file is put to the user.
 WARN_FRACTION = 0.25
@@ -72,31 +73,43 @@ def confirm_large_open(
 
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Warning)
-    box.setWindowTitle("Large file")
+    box.setWindowTitle(translate("LargeOpen", "Large file"))
     ram = (
-        f"{format_size(result.available)} of memory is free"
+        translate("LargeOpen", "{free} of memory is free").format(
+            free=format_size(result.available)
+        )
         if result.available is not None
-        else "the free memory could not be determined"
+        else translate("LargeOpen", "the free memory could not be determined")
     )
     if result.level is Level.WARN:
         box.setText(
-            f"'{name}' is {format_size(size)}, and {ram}.\n\n"
-            "Opening it loads the whole file into memory, usually several times over, "
-            "and can slow down or crash Crush and other programs."
+            translate(
+                "LargeOpen",
+                "'{name}' is {size}, and {ram}.\n\n"
+                "Opening it loads the whole file into memory, usually several times over, "
+                "and can slow down or crash Crush and other programs.",
+            ).format(name=name, size=format_size(size), ram=ram)
         )
     else:
         box.setText(
-            f"'{name}' is {format_size(size)}, and {ram}.\n\n"
-            "It cannot be loaded into memory safely, so it is not offered here."
+            translate(
+                "LargeOpen",
+                "'{name}' is {size}, and {ram}.\n\n"
+                "It cannot be loaded into memory safely, so it is not offered here.",
+            ).format(name=name, size=format_size(size), ram=ram)
         )
 
     proceed = None
     if result.level is Level.WARN:
-        proceed = box.addButton("Open anyway", QMessageBox.ButtonRole.DestructiveRole)
+        proceed = box.addButton(
+            translate("LargeOpen", "Open anyway"), QMessageBox.ButtonRole.DestructiveRole
+        )
     new_window = None
     if can_open_as_source:
-        new_window = box.addButton("Open in New Window", QMessageBox.ButtonRole.AcceptRole)
-    export = box.addButton("Export…", QMessageBox.ButtonRole.ActionRole)
+        new_window = box.addButton(
+            translate("LargeOpen", "Open in New Window"), QMessageBox.ButtonRole.AcceptRole
+        )
+    export = box.addButton(translate("LargeOpen", "Export…"), QMessageBox.ButtonRole.ActionRole)
     cancel = box.addButton(QMessageBox.StandardButton.Cancel)
     box.setDefaultButton(new_window or cancel)
     box.exec()

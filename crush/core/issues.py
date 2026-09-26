@@ -45,8 +45,11 @@ def QT_TRANSLATE_NOOP(  # noqa: N802
     keeps crush.core free of PySide6. It returns *text* unchanged: the
     catalog stays English, translation happens in render(localized=True).
 
-    lupdate reads the arguments literally: the context must be the string
-    "ParseIssue", the disambiguation must repeat the entry's code (the
+    Other core modules use it too for text the UI shows (e.g. ts_decode's
+    menu labels, context "TimestampFormat").
+
+    lupdate reads the arguments literally: in MESSAGES the context must be
+    the string "ParseIssue", the disambiguation must repeat the entry's code (the
     translator sees it next to the text, and two codes with the same
     English wording can be translated differently), and a multi-line text
     must be written as adjacent string literals *without* extra

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from crush.ui.i18n import translate
 
 
 class MMKVKeyDialog(QDialog):
@@ -34,15 +35,25 @@ class MMKVKeyDialog(QDialog):
         # attempt was rejected ("" if the source gave no reason).
         was_wrong = wrong_reason is not None
         super().__init__(parent)
-        self.setWindowTitle("Incorrect Key" if was_wrong else "MMKV Encryption Key")
+        self.setWindowTitle(
+            translate("MMKVKeyDialog", "Incorrect Key")
+            if was_wrong
+            else translate("MMKVKeyDialog", "MMKV Encryption Key")
+        )
         self._build_ui(wrong_reason)
 
     def _build_ui(self, wrong_reason: str | None) -> None:
         root = QVBoxLayout(self)
 
         if wrong_reason is not None:
-            retry = "Incorrect key, or not a valid hex string. Try again:"
-            warn = QLabel(f"{wrong_reason}\n\n{retry}" if wrong_reason else retry)
+            retry = translate(
+                "MMKVKeyDialog", "Incorrect key, or not a valid hex string. Try again:"
+            )
+            warn = QLabel(
+                f"{wrong_reason}\n\n{retry}"  # i18n: keep -- layout of translated parts
+                if wrong_reason
+                else retry
+            )
             warn.setTextFormat(Qt.TextFormat.PlainText)
             warn.setStyleSheet("color: #b33;")
             warn.setWordWrap(True)
@@ -50,13 +61,17 @@ class MMKVKeyDialog(QDialog):
 
         form = QFormLayout()
         self._key_edit = QLineEdit()
-        self._key_edit.setPlaceholderText("Key MMKV was given")
-        form.addRow("Key:", self._key_edit)
+        self._key_edit.setPlaceholderText(translate("MMKVKeyDialog", "Key MMKV was given"))
+        form.addRow(translate("MMKVKeyDialog", "Key:"), self._key_edit)
 
-        self._hex_cb = QCheckBox("Hex (raw/derived binary key, not typed text)")
+        self._hex_cb = QCheckBox(
+            translate("MMKVKeyDialog", "Hex (raw/derived binary key, not typed text)")
+        )
         form.addRow("", self._hex_cb)
 
-        self._aes256_cb = QCheckBox("AES-256 (MMKV's default is AES-128)")
+        self._aes256_cb = QCheckBox(
+            translate("MMKVKeyDialog", "AES-256 (MMKV's default is AES-128)")
+        )
         form.addRow("", self._aes256_cb)
 
         root.addLayout(form)

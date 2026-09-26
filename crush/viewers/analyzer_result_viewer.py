@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from crush.ui.i18n import translate
 
 _ROW_STATUS_COLORS = {
     "error": QColor(255, 205, 205),
@@ -132,15 +133,15 @@ class AnalyzerResultViewer(QWidget):
             layout.addWidget(banner)
 
         toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel("Search:"))
+        toolbar.addWidget(QLabel(translate("AnalyzerResultViewer", "Search:")))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter rows…")
+        self._search.setPlaceholderText(translate("AnalyzerResultViewer", "Filter rows…"))
         self._search.setClearButtonEnabled(True)
         self._search.setFixedWidth(220)
         self._search.textChanged.connect(self._apply_filter)
         toolbar.addWidget(self._search)
         toolbar.addStretch()
-        export_btn = QPushButton("Export…")
+        export_btn = QPushButton(translate("AnalyzerResultViewer", "Export…"))
         export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(export_btn)
         layout.addLayout(toolbar)
@@ -171,7 +172,7 @@ class AnalyzerResultViewer(QWidget):
         layout.addWidget(self._table)
 
         value_bar = QHBoxLayout()
-        value_bar.addWidget(QLabel("Value:"))
+        value_bar.addWidget(QLabel(translate("AnalyzerResultViewer", "Value:")))
         self._value_field = QLineEdit()
         self._value_field.setReadOnly(True)
         value_bar.addWidget(self._value_field, 1)
@@ -188,7 +189,9 @@ class AnalyzerResultViewer(QWidget):
         self._proxy_model.setFilterFixedString(text)
 
     def _export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, translate("AnalyzerResultViewer", "Export CSV"), "", "CSV (*.csv)"  # i18n: keep -- file filter
+        )
         if not path:
             return
         headers = [
@@ -211,9 +214,9 @@ class AnalyzerResultViewer(QWidget):
         if not index.isValid():
             return
         menu = QMenu(self)
-        copy_cell = menu.addAction("Copy cell")
-        copy_row = menu.addAction("Copy row (TSV)")
-        copy_selection = menu.addAction("Copy selection (TSV)")
+        copy_cell = menu.addAction(translate("AnalyzerResultViewer", "Copy cell"))
+        copy_row = menu.addAction(translate("AnalyzerResultViewer", "Copy row (TSV)"))
+        copy_selection = menu.addAction(translate("AnalyzerResultViewer", "Copy selection (TSV)"))
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
         if action == copy_cell:
             QApplication.clipboard().setText(str(index.data() or ""))

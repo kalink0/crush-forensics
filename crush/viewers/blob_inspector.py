@@ -10,7 +10,7 @@ import zlib
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt
 from PySide6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,11 +42,38 @@ from crush.parsers.protobuf_schema import (
     load_descriptor_set,
 )
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.viewers.hex_viewer import HexViewer
+from crush.ui.i18n import translate
 
-# Column layout of bytes_to_hexview output, e.g. "0000000a: 48 65 6c  Hel"
-_BLOB_HEX_START = 10
-_BLOB_HEX_END = 57
-_BLOB_ASCII_START = 59
+_HEX_VIEW = "Hex view"
+
+# Crush's own names for interpretations and pipeline steps: the English name
+# is the key everywhere (item data, _cached_results, _INTERMEDIATE); only the
+# lists show it translated. Format names (JSON, XML, Plist, ABX) stay as they are.
+_ENTRY_NAMES = (
+    QT_TRANSLATE_NOOP("BlobInspector", "Hex view"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Image"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Decoded (from table)"),
+    QT_TRANSLATE_NOOP("BlobInspector", "UTF-8 text"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Latin-1 text"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Protobuf (schema-less)"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Base64 (decode)"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Base64url (decode)"),
+    QT_TRANSLATE_NOOP("BlobInspector", "Hex → Bytes"),
+    QT_TRANSLATE_NOOP("BlobInspector", "zlib decompress"),
+    QT_TRANSLATE_NOOP("BlobInspector", "gzip decompress"),
+    QT_TRANSLATE_NOOP("BlobInspector", "lzfse decompress"),
+)
+_SCHEMA_PREFIX = "Protobuf (schema: "
+
+
+def _entry_label(name: str) -> str:
+    """Display name of an interpretation / pipeline step key."""
+    if name.startswith(_SCHEMA_PREFIX) and name.endswith(")"):
+        return translate("BlobInspector", "Protobuf (schema: {message})").format(
+            message=name[len(_SCHEMA_PREFIX):-1]
+        )
+    return translate("BlobInspector", name)  # i18n: keep -- marked in _ENTRY_NAMES
 
 _PROTOBUF_INTERP_SKIP = {"uint64", "uint32"}
 
@@ -255,7 +282,7 @@ def _render_protobuf(entries: list, indent: int = 0) -> str:
 
 
 class _BlobViewerEdit(QPlainTextEdit):
-    """QPlainTextEdit with a hex-aware context menu."""
+    """QPlainTextEdit with a Copy All context-menu entry."""
 
     def __init__(self, panel: "_BlobPanel") -> None:
         super().__init__()
@@ -263,17 +290,10 @@ class _BlobViewerEdit(QPlainTextEdit):
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = self.createStandardContextMenu()
-        cursor = self.textCursor()
-        if cursor.hasSelection() and self._panel._is_hex_mode():
-            menu.addSeparator()
-            menu.addAction("Copy Selected Hex").triggered.connect(
-                self._panel._copy_selected_hex
-            )
-            menu.addAction("Copy Selected ASCII").triggered.connect(
-                self._panel._copy_selected_ascii
-            )
         menu.addSeparator()
-        menu.addAction("Copy All").triggered.connect(self._panel._copy_all)
+        menu.addAction(translate("_BlobViewerEdit", "Copy All")).triggered.connect(
+            self._panel._copy_all
+        )
         menu.exec(event.globalPos())
 
 
@@ -291,19 +311,24 @@ class _StepRow(QWidget):
         layout.setSpacing(2)
 
         header = QHBoxLayout()
-        self._num_label = QLabel(f"Step {number}:")
+        self._num_label = QLabel(translate("_StepRow", "Step {number}:").format(number=number))
         header.addWidget(self._num_label)
         header.addStretch()
         remove_btn = QPushButton("✕")
         remove_btn.setFixedSize(22, 22)
-        remove_btn.setToolTip("Remove this step")
+        remove_btn.setToolTip(translate("_StepRow", "Remove this step"))
         remove_btn.clicked.connect(lambda: inspector._remove_step(self))
         header.addWidget(remove_btn)
         layout.addLayout(header)
 
         self._list = QListWidget()
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self._list.addItems(_INTERMEDIATE_FORMATS)
+        # Item data is the step's key into _INTERMEDIATE; the text is only
+        # its (translated) name.
+        for key in _INTERMEDIATE_FORMATS:
+            item = QListWidgetItem(_entry_label(key))
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self._list.addItem(item)
         self._list.setCurrentRow(0)
         visible = min(len(_INTERMEDIATE_FORMATS), _STEP_LIST_MAX_VISIBLE)
         row_h = self._list.sizeHintForRow(0)
@@ -317,10 +342,10 @@ class _StepRow(QWidget):
 
     def format(self) -> str:
         item = self._list.currentItem()
-        return item.text() if item else ""
+        return item.data(Qt.ItemDataRole.UserRole) if item else ""
 
     def set_number(self, n: int) -> None:
-        self._num_label.setText(f"Step {n}:")
+        self._num_label.setText(translate("_StepRow", "Step {n}:").format(n=n))
 
     def set_hint(self, text: str) -> None:
         self._hint.setText(text)
@@ -342,7 +367,10 @@ class _BlobPanel(QWidget):
         self._steps: list[_StepRow] = []
         self._cached_results: dict[str, str] = {}
         self._cached_image_data: bytes | None = None
-        self._hex_mode = False
+        # The data the interpretations are computed from (after the pipeline
+        # steps) -- shown complete in the paged Hex Viewer page.
+        self._current_data = b""
+        self._hex_view_data: bytes | None = None
         self._schema_pool = None
         self._schema_message: str | None = None
         self._build_panel()
@@ -368,7 +396,7 @@ class _BlobPanel(QWidget):
         pipeline_col.setContentsMargins(0, 0, 4, 0)
         pipeline_col.setSpacing(4)
 
-        lbl_pipeline = QLabel("Decode pipeline")
+        lbl_pipeline = QLabel(translate("_BlobPanel", "Decode pipeline"))
         lbl_pipeline.setStyleSheet("font-weight: bold;")
         pipeline_col.addWidget(lbl_pipeline)
 
@@ -379,7 +407,7 @@ class _BlobPanel(QWidget):
         pipeline_col.addWidget(steps_container)
         pipeline_col.addStretch()
 
-        self._add_btn = QPushButton("＋  Add step")
+        self._add_btn = QPushButton(translate("_BlobPanel", "＋  Add step"))
         self._add_btn.clicked.connect(self._push_step)
         pipeline_col.addWidget(self._add_btn)
 
@@ -391,7 +419,7 @@ class _BlobPanel(QWidget):
         interp_col.setContentsMargins(4, 0, 4, 0)
         interp_col.setSpacing(4)
 
-        lbl_interp = QLabel("Interpretations")
+        lbl_interp = QLabel(translate("_BlobPanel", "Interpretations"))
         lbl_interp.setStyleSheet("font-weight: bold;")
         interp_col.addWidget(lbl_interp)
 
@@ -411,18 +439,20 @@ class _BlobPanel(QWidget):
         schema_row = QHBoxLayout(self._schema_toolbar)
         schema_row.setContentsMargins(0, 0, 0, 0)
         schema_row.setSpacing(4)
-        self._schema_load_btn = QPushButton("Load .proto schema…")
-        self._schema_load_btn.setToolTip("Load a .proto/.pb/.desc/.fds schema for Protobuf decoding")
+        self._schema_load_btn = QPushButton(translate("_BlobPanel", "Load .proto schema…"))
+        self._schema_load_btn.setToolTip(
+            translate("_BlobPanel", "Load a .proto/.pb/.desc/.fds schema for Protobuf decoding")
+        )
         self._schema_load_btn.clicked.connect(self._on_load_schema)
         schema_row.addWidget(self._schema_load_btn)
         self._schema_combo = QComboBox()
-        self._schema_combo.setPlaceholderText("No schema loaded")
+        self._schema_combo.setPlaceholderText(translate("_BlobPanel", "No schema loaded"))
         self._schema_combo.setEnabled(False)
         self._schema_combo.currentTextChanged.connect(self._on_schema_message_changed)
         schema_row.addWidget(self._schema_combo, stretch=1)
         self._schema_clear_btn = QPushButton("✕")
         self._schema_clear_btn.setFixedWidth(22)
-        self._schema_clear_btn.setToolTip("Clear loaded schema")
+        self._schema_clear_btn.setToolTip(translate("_BlobPanel", "Clear loaded schema"))
         self._schema_clear_btn.setEnabled(False)
         self._schema_clear_btn.clicked.connect(self._on_clear_schema)
         schema_row.addWidget(self._schema_clear_btn)
@@ -450,10 +480,15 @@ class _BlobPanel(QWidget):
         self._img_scroll.setWidget(self._img_label)
         self._stack.addWidget(self._img_scroll)
 
+        # "Hex view": the paged Hex Viewer, so the whole blob is shown
+        # however large it is (a text dump of it would freeze the dialog).
+        self._hex_view = HexViewer(b"", self)
+        self._stack.addWidget(self._hex_view)
+
         content_col.addWidget(self._stack, stretch=1)
 
         copy_row = QHBoxLayout()
-        self._copy_btn = QPushButton("Copy")
+        self._copy_btn = QPushButton(translate("_BlobPanel", "Copy"))
         self._copy_btn.clicked.connect(self._copy_current)
         copy_row.addWidget(self._copy_btn)
         copy_row.addStretch()
@@ -471,16 +506,21 @@ class _BlobPanel(QWidget):
     def _on_load_schema(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load Protobuf schema",
+            translate("_BlobPanel", "Load Protobuf schema"),
             "",
-            "Protobuf schema (*.proto *.pb *.desc *.fds);;All files (*)",
+            translate("BlobInspector", "Protobuf schema")
+            + " (*.proto *.pb *.desc *.fds);;"  # i18n: keep -- file filter pattern
+            + translate("BlobInspector", "All files")
+            + " (*)",  # i18n: keep -- file filter pattern
         )
         if not path:
             return
         try:
             loaded = load_descriptor_set(Path(path))
         except SchemaLoadError as exc:
-            self._viewer.setPlainText(f"[schema load failed: {exc}]")
+            self._viewer.setPlainText(
+                translate("BlobInspector", "[schema load failed: {error}]").format(error=exc)
+            )
             return
         self._schema_pool = loaded["pool"]
         self._schema_combo.blockSignals(True)
@@ -548,9 +588,12 @@ class _BlobPanel(QWidget):
                 self._format_list.blockSignals(True)
                 self._format_list.clear()
                 self._format_list.blockSignals(False)
-                self._viewer.setPlainText(f"[step {i + 1}: {fmt!r} failed]")
+                self._viewer.setPlainText(
+                    translate("BlobInspector", "[step {number}: {step} failed]").format(
+                        number=i + 1, step=_entry_label(fmt)
+                    )
+                )
                 self._stack.setCurrentIndex(0)
-                self._hex_mode = False
                 self._copy_btn.setEnabled(False)
                 self._schema_toolbar.setVisible(False)
                 return
@@ -562,6 +605,8 @@ class _BlobPanel(QWidget):
     def _populate_format_list(self, data: bytes) -> None:
         self._cached_results = {}
         self._cached_image_data = None
+        self._current_data = data
+        self._hex_view_data = None
 
         confident: list[str] = []
         uncertain: list[str] = []
@@ -605,7 +650,6 @@ class _BlobPanel(QWidget):
                 self._cached_results[label] = f"[schema decode failed: {exc}]"
                 failed.append(label)
 
-        self._cached_results["Hex view"] = bytes_to_hexview(data, max_bytes=200_000)
 
         prev = self._format_list.currentItem()
         prev_name: str | None = prev.data(Qt.ItemDataRole.UserRole) if prev else None
@@ -621,21 +665,21 @@ class _BlobPanel(QWidget):
             s.setForeground(muted)
             self._format_list.addItem(s)
 
-        hex_item = QListWidgetItem("Hex view")
-        hex_item.setData(Qt.ItemDataRole.UserRole, "Hex view")
+        hex_item = QListWidgetItem(_entry_label(_HEX_VIEW))
+        hex_item.setData(Qt.ItemDataRole.UserRole, _HEX_VIEW)
         self._format_list.addItem(hex_item)
 
         if confident:
             _sep()
             for name in confident:
-                item = QListWidgetItem(f"✓  {name}")
+                item = QListWidgetItem(f"✓  {_entry_label(name)}")  # i18n: keep -- layout
                 item.setData(Qt.ItemDataRole.UserRole, name)
                 self._format_list.addItem(item)
 
         if uncertain:
             _sep()
             for name in uncertain:
-                item = QListWidgetItem(f"~  {name}")
+                item = QListWidgetItem(f"~  {_entry_label(name)}")  # i18n: keep -- layout
                 item.setData(Qt.ItemDataRole.UserRole, name)
                 item.setForeground(muted)
                 self._format_list.addItem(item)
@@ -643,14 +687,15 @@ class _BlobPanel(QWidget):
         if failed:
             _sep()
             for name in failed:
-                item = QListWidgetItem(f"    {name}")
+                item = QListWidgetItem(f"    {_entry_label(name)}")  # i18n: keep -- layout
                 item.setData(Qt.ItemDataRole.UserRole, name)
                 item.setForeground(muted)
                 self._format_list.addItem(item)
 
         to_select: str
         prev_still_valid = prev_name is not None and (
-            prev_name in self._cached_results
+            prev_name == _HEX_VIEW
+            or prev_name in self._cached_results
             or (prev_name == "Image" and self._cached_image_data is not None)
         )
         if prev_still_valid:
@@ -660,7 +705,7 @@ class _BlobPanel(QWidget):
         elif self._cached_image_data is not None:
             to_select = "Image"
         else:
-            to_select = next((k for k in _AUTO_ORDER if k in self._cached_results and k not in _PERMISSIVE), "Hex view")
+            to_select = next((k for k in _AUTO_ORDER if k in self._cached_results and k not in _PERMISSIVE), _HEX_VIEW)
 
         for i in range(self._format_list.count()):
             item = self._format_list.item(i)
@@ -693,18 +738,28 @@ class _BlobPanel(QWidget):
             else:
                 self._stack.setCurrentIndex(0)
                 self._copy_btn.setEnabled(False)
-                self._viewer.setPlainText("[not recognised as image]")
+                self._viewer.setPlainText(translate("BlobInspector", "[not recognised as image]"))
+            return
+
+        if name == _HEX_VIEW:
+            if self._hex_view_data is not self._current_data:
+                self._hex_view.set_data(self._current_data)
+                self._hex_view_data = self._current_data
+            self._stack.setCurrentIndex(2)
+            self._copy_btn.setEnabled(True)
             return
 
         self._stack.setCurrentIndex(0)
-        self._hex_mode = name == "Hex view"
-
         if name in self._cached_results:
             self._copy_btn.setEnabled(True)
-            self._viewer.setPlainText(self._cached_results[name][:500_000])
+            self._viewer.setPlainText(self._cached_results[name])
         else:
             self._copy_btn.setEnabled(False)
-            self._viewer.setPlainText(f"[{name}: not recognised]")
+            self._viewer.setPlainText(
+                translate("BlobInspector", "[{name}: not recognised]").format(
+                    name=_entry_label(name)
+                )
+            )
 
     def _show_image(self, data: bytes) -> None:
         from PySide6.QtCore import QByteArray
@@ -717,38 +772,17 @@ class _BlobPanel(QWidget):
         else:
             self._stack.setCurrentIndex(0)
             self._copy_btn.setEnabled(True)
-            self._viewer.setPlainText("[not a recognised image format]")
-
-    def _is_hex_mode(self) -> bool:
-        return self._hex_mode
+            self._viewer.setPlainText(translate("BlobInspector", "[not a recognised image format]"))
 
     def _copy_current(self) -> None:
+        if self._stack.currentIndex() == 2:
+            # The whole blob as a text hex dump, built only when asked for.
+            QApplication.clipboard().setText(bytes_to_hexview(self._current_data))
+            return
         QApplication.clipboard().setText(self._viewer.toPlainText())
 
     def _copy_all(self) -> None:
         QApplication.clipboard().setText(self._viewer.toPlainText())
-
-    def _copy_selected_hex(self) -> None:
-        cursor = self._viewer.textCursor()
-        if not cursor.hasSelection():
-            return
-        tokens: list[str] = []
-        for line in cursor.selectedText().split(" "):
-            hex_section = line[_BLOB_HEX_START:_BLOB_HEX_END]
-            for part in hex_section.split():
-                if len(part) == 2 and all(c in "0123456789ABCDEFabcdef" for c in part):
-                    tokens.append(part.upper())
-        QApplication.clipboard().setText(" ".join(tokens))
-
-    def _copy_selected_ascii(self) -> None:
-        cursor = self._viewer.textCursor()
-        if not cursor.hasSelection():
-            return
-        parts: list[str] = []
-        for line in cursor.selectedText().split(" "):
-            if len(line) > _BLOB_ASCII_START:
-                parts.append(line[_BLOB_ASCII_START:])
-        QApplication.clipboard().setText("".join(parts))
 
 
 class BlobInspector(QDialog):
@@ -763,7 +797,11 @@ class BlobInspector(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle(f"BLOB Inspector ({len(blob):,} B)")
+        self.setWindowTitle(
+            translate("BlobInspector", "BLOB Inspector ({blob_count:,} B)").format(
+                blob_count=len(blob)
+            )
+        )
         self.resize(900, 560)
 
         outer = QVBoxLayout(self)

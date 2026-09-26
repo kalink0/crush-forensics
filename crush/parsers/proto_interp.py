@@ -12,6 +12,8 @@ import struct
 from datetime import datetime, timezone
 from typing import NamedTuple
 
+from crush.core.issues import QT_TRANSLATE_NOOP
+
 # Seconds between Unix epoch (1970-01-01) and Cocoa epoch (2001-01-01)
 _COCOA_OFFSET = 978_307_200
 
@@ -53,11 +55,17 @@ def interpret_varint(value: int) -> list[Interpretation]:
         out.append(Interpretation("bool", "true" if value else "false"))
 
     if _UNIX_S_MIN <= value <= _UNIX_S_MAX:
-        out.append(Interpretation("Unix timestamp (s)", _fmt_ts(value)))
+        out.append(
+            Interpretation(QT_TRANSLATE_NOOP("GeneratedView", "Unix timestamp (s)"), _fmt_ts(value))
+        )
 
     if _CHROME_MIN <= value <= _CHROME_MAX:
         unix_s = (value / 1_000_000) - _FILETIME_OFFSET
-        out.append(Interpretation("Chrome/WebKit timestamp (µs)", _fmt_ts(unix_s)))
+        out.append(
+            Interpretation(
+                QT_TRANSLATE_NOOP("GeneratedView", "Chrome/WebKit timestamp (µs)"), _fmt_ts(unix_s)
+            )
+        )
 
     return out
 
@@ -79,16 +87,34 @@ def interpret_fixed64(raw: bytes) -> list[Interpretation]:
     if not math.isnan(double) and not math.isinf(double):
         out.append(Interpretation("double", repr(double)))
         if _COCOA_MIN < double <= _COCOA_MAX:
-            out.append(Interpretation("Cocoa timestamp", _fmt_ts(double + _COCOA_OFFSET)))
+            out.append(
+                Interpretation(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Cocoa timestamp"),
+                    _fmt_ts(double + _COCOA_OFFSET),
+                )
+            )
         if _UNIX_S_MIN <= double <= _UNIX_S_MAX:
-            out.append(Interpretation("Unix timestamp (double, s)", _fmt_ts(double)))
+            out.append(
+                Interpretation(
+                    QT_TRANSLATE_NOOP("GeneratedView", "Unix timestamp (double, s)"),
+                    _fmt_ts(double),
+                )
+            )
 
     if _UNIX_S_MIN <= uint64 <= _UNIX_S_MAX:
-        out.append(Interpretation("Unix timestamp (uint64, s)", _fmt_ts(uint64)))
+        out.append(
+            Interpretation(
+                QT_TRANSLATE_NOOP("GeneratedView", "Unix timestamp (uint64, s)"), _fmt_ts(uint64)
+            )
+        )
 
     if _CHROME_MIN <= uint64 <= _CHROME_MAX:
         unix_s = (uint64 / 1_000_000) - _FILETIME_OFFSET
-        out.append(Interpretation("Chrome/WebKit timestamp (µs)", _fmt_ts(unix_s)))
+        out.append(
+            Interpretation(
+                QT_TRANSLATE_NOOP("GeneratedView", "Chrome/WebKit timestamp (µs)"), _fmt_ts(unix_s)
+            )
+        )
 
     return out
 
@@ -111,7 +137,11 @@ def interpret_fixed32(raw: bytes) -> list[Interpretation]:
         out.append(Interpretation("float", repr(float32)))
 
     if _UNIX_S_MIN <= uint32 <= _UNIX_S_MAX:
-        out.append(Interpretation("Unix timestamp (uint32, s)", _fmt_ts(uint32)))
+        out.append(
+            Interpretation(
+                QT_TRANSLATE_NOOP("GeneratedView", "Unix timestamp (uint32, s)"), _fmt_ts(uint32)
+            )
+        )
 
     return out
 

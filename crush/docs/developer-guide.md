@@ -383,18 +383,39 @@ class ParseResult:
 The UI is translated with Qt Linguist; English is the source language. Catalogs live in
 `crush/i18n/` and are maintained with `scripts/i18n.py` (`update`, `release`, `pseudo`).
 
-- Wrap UI text in `QCoreApplication.translate("<Context>", "Text")` with an explicit context
-  (usually the class name). Don't use `self.tr()`: in PySide it looks the text up under the
+- Wrap UI text in `translate("<Context>", "Text")` (`from crush.ui.i18n import translate`,
+  imported under exactly that name — lupdate finds the calls by it) with an explicit context,
+  usually the class name. Don't use `self.tr()`: in PySide it looks the text up under the
   runtime class name, so in a subclass the translation is silently not found.
 - Only literal strings are extracted. Put values in placeholders and fill them after
   translating: `translate("Ctx", "{count:,} rows").format(count=n)`, never an f-string inside
   `translate()`. A multi-line text is adjacent string literals without extra parentheses.
+  Numbers keep their English grouping (`{count:,}` → 12,345), the same as in exports.
+- Translate when the text is shown, not at import: a module-level constant is evaluated
+  before the translation is loaded. Mark such texts with `QT_TRANSLATE_NOOP("Ctx", "Text")`
+  and call `translate("Ctx", value)` where they are displayed.
+- A text that doubles as a key (a set element, a dict key, a metadata label) stays English;
+  translate only its display.
+- File dialog filters: translate the description, keep the pattern out of the text:
+  `translate("Ctx", "Log files") + " (*.log)"`.
+- `crush/tests/test_i18n_coverage.py` checks every converted module: text passed to a Qt
+  display call (or one of Crush's own display helpers) must go through `translate()`, and
+  lupdate must extract every `translate()` call. A deliberate exception — markup only, a
+  technical value, a file pattern — is marked on its line with `# i18n: keep -- <reason>`.
 - Don't branch on displayed text (`currentText() == "Hex"`); keep a stable value in
   `itemData`/a constant.
 - Not translated: exports (CSV/JSON/reports), the log, timestamps (ISO/UTC), `detail` texts
   from libraries, spec terms that are values (PRAGMA values, SQLCipher parameters, log levels).
 - Parsers never produce UI sentences (see `ParseIssue` above); the UI shows an issue with
-  `render(issue, localized=True)`, while `str(issue)` stays English for exports and the log.
+  `render(issue, localized=True)` (an exception carrying one: `i18n.exception_text(exc)`),
+  while `str(issue)` stays English for exports and the log.
+- A metadata key (`meta["Records"]`) is an English label and stays English in code and
+  lookups; add every new key to `crush/core/metadata_labels.py` (a test fails otherwise) —
+  the Properties panel shows it translated. Field names a file format's spec defines (PDF
+  document-info keys, XMP, media tags) are not listed and stay as they are.
+- Crush's own words inside a data view (headers, status values, notes) go through
+  `crush/viewers/generated_text.py` (`Gen`, `set_headers`, ...): shown translated, while CSV
+  export and copy write the English original. File data is never translated.
 - Check with the pseudo locale: `python scripts/i18n.py pseudo`, then
   `python -m crush --language pseudo`. Every text still in plain English isn't translatable
   yet; a missing closing `]` means the text is cut off.

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.core import tempdir
+from crush.ui.i18n import translate
 
 _OGG_MAGIC = b"OggS"
 _AMR_MAGIC = b"#!AMR"
@@ -108,7 +109,7 @@ class MediaViewer(QWidget):
         ctrl_layout.setContentsMargins(8, 4, 8, 4)
         ctrl_layout.setSpacing(8)
 
-        self._play_btn = QPushButton("Play")
+        self._play_btn = QPushButton(translate("MediaViewer", "Play"))
         self._play_btn.setFixedWidth(60)
         self._play_btn.clicked.connect(self._toggle_play)
         ctrl_layout.addWidget(self._play_btn)
@@ -160,7 +161,7 @@ class MediaViewer(QWidget):
         self._pcm_bpm = bpm if bpm > 0 else 1
         self._pcm_duration_ms = len(pcm) // self._pcm_bpm
         self._position_slider.setRange(0, self._pcm_duration_ms)
-        self._time_label.setText(f"0:00 / {_ms_to_str(self._pcm_duration_ms)}")
+        self._time_label.setText(f"0:00 / {_ms_to_str(self._pcm_duration_ms)}")  # i18n: keep -- times
 
         fmt = QAudioFormat()
         fmt.setSampleRate(rate)
@@ -174,7 +175,7 @@ class MediaViewer(QWidget):
         self._sink = QAudioSink(QMediaDevices.defaultAudioOutput(), fmt)
         self._sink.setVolume(0.8)
         self._sink.start(self._buf)  # pull mode
-        self._play_btn.setText("Pause")
+        self._play_btn.setText(translate("MediaViewer", "Pause"))
         self._pcm_timer.start()
 
     # ------------------------------------------------------------------ #
@@ -188,13 +189,13 @@ class MediaViewer(QWidget):
             if self._sink.state() == QAudio.State.ActiveState:
                 self._sink.suspend()
                 self._pcm_timer.stop()
-                self._play_btn.setText("Play")
+                self._play_btn.setText(translate("MediaViewer", "Play"))
             else:
                 if self._buf and self._buf.atEnd():
                     self._buf.seek(0)
                 self._sink.resume()
                 self._pcm_timer.start()
-                self._play_btn.setText("Pause")
+                self._play_btn.setText(translate("MediaViewer", "Pause"))
         else:
             if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._player.pause()
@@ -218,7 +219,7 @@ class MediaViewer(QWidget):
     def _on_position_changed(self, position: int) -> None:
         self._position_slider.setValue(position)
         self._time_label.setText(
-            f"{_ms_to_str(position)} / {_ms_to_str(self._player.duration())}"
+            f"{_ms_to_str(position)} / {_ms_to_str(self._player.duration())}"  # i18n: keep -- times
         )
 
     def _on_duration_changed(self, duration: int) -> None:
@@ -233,9 +234,9 @@ class MediaViewer(QWidget):
 
     def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         if state == QMediaPlayer.PlaybackState.PlayingState:
-            self._play_btn.setText("Pause")
+            self._play_btn.setText(translate("MediaViewer", "Pause"))
         else:
-            self._play_btn.setText("Play")
+            self._play_btn.setText(translate("MediaViewer", "Play"))
 
     # ------------------------------------------------------------------ #
     # PCM timer handler                                                   #
@@ -247,11 +248,11 @@ class MediaViewer(QWidget):
         pos_ms = self._buf.pos() // self._pcm_bpm
         self._position_slider.setValue(pos_ms)
         self._time_label.setText(
-            f"{_ms_to_str(pos_ms)} / {_ms_to_str(self._pcm_duration_ms)}"
+            f"{_ms_to_str(pos_ms)} / {_ms_to_str(self._pcm_duration_ms)}"  # i18n: keep -- times
         )
         if self._buf.atEnd():
             self._pcm_timer.stop()
-            self._play_btn.setText("Play")
+            self._play_btn.setText(translate("MediaViewer", "Play"))
 
     # ------------------------------------------------------------------ #
     # Cleanup                                                             #

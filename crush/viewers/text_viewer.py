@@ -4,8 +4,17 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left, bisect_right
 
-from PySide6.QtCore import QRect, QSize, Qt, QRegularExpression
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QModelIndex,
+    QRect,
+    QRegularExpression,
+    QSize,
+    Qt,
+    QTimer,
+)
 from PySide6.QtGui import (
     QFont,
     QPainter,
@@ -20,8 +29,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QPlainTextEdit,
     QSplitter,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QVBoxLayout,
     QWidget,
     QHBoxLayout,
@@ -36,6 +44,7 @@ from PySide6.QtWidgets import (
 from crush.core.encodings import detect_encoding as _detect_encoding
 from crush.core.formatters import pretty_json
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 
 class _LineNumberArea(QWidget):
@@ -124,14 +133,63 @@ class _CodeEditor(QPlainTextEdit):
         return
 
 
+class _SearchResultModel(QAbstractTableModel):
+    """Every search hit as a row. Line, column and preview are computed only
+    for the rows the table actually shows, so a search with hundreds of
+    thousands of hits lists all of them without building them up front."""
+
+    def __init__(self, editor: QPlainTextEdit) -> None:
+        super().__init__(editor)
+        self._editor = editor
+        self._starts: list[int] = []
+
+    def set_hits(self, starts: list[int]) -> None:
+        self.beginResetModel()
+        self._starts = starts
+        self.endResetModel()
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._starts)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else 3
+
+    def headerData(
+        self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
+    ) -> object:
+        if orientation != Qt.Orientation.Horizontal or role != Qt.ItemDataRole.DisplayRole:
+            return None
+        return (
+            translate("TextView", "Line"),
+            translate("TextView", "Col"),
+            translate("TextView", "Preview"),
+        )[section]
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> object:
+        if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
+            return None
+        start = self._starts[index.row()]
+        block = self._editor.document().findBlock(start)
+        if index.column() == 0:
+            return str(block.blockNumber() + 1)
+        if index.column() == 1:
+            return str(start - block.position() + 1)
+        return block.text().strip()
+
+
 class TextView(QWidget):
     """Viewer for plain text and JSON content."""
 
     def __init__(self, data: str | bytes, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._raw_text = ""
-        self._search_hits: list[QTextCursor] = []
+        # Every hit of the current search, as document positions (sorted,
+        # non-overlapping, so both lists are ascending).
+        self._hit_starts: list[int] = []
+        self._hit_ends: list[int] = []
         self._current_hit_index: int = -1
+        # (first, last visible position, hit count) the highlights were drawn for.
+        self._highlighted_range: tuple[int, int, int] | None = None
         self._build_ui()
 
         if isinstance(data, bytes):
@@ -139,7 +197,7 @@ class TextView(QWidget):
             self._encoding_label.setText(enc)
         else:
             text = str(data)
-            self._encoding_label.setText("str")
+            self._encoding_label.setText("str")  # i18n: keep -- Python str input, no encoding
 
         # Pretty-print JSON if possible
         if text.lstrip().startswith(("{", "[")):
@@ -161,15 +219,23 @@ class TextView(QWidget):
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(8)
-        tb_layout.addWidget(QLabel("Highlight:"))
+        tb_layout.addWidget(QLabel(translate("TextView", "Highlight:")))
         self._highlight_combo = QComboBox()
-        self._highlight_combo.addItems(
-            ["Auto", "None", "JSON", "XML", "SQL", "INI/CONF", "YAML", "LOG", "CSV"]
+        # Item data is the mode key; only "Auto" and "None" are words to
+        # translate, the rest are format names.
+        for label, mode in [
+            (translate("TextView", "Auto"), "Auto"),
+            (translate("TextView", "None"), "None"),
+            ("JSON", "JSON"), ("XML", "XML"), ("SQL", "SQL"), ("INI/CONF", "INI/CONF"),
+            ("YAML", "YAML"), ("LOG", "LOG"), ("CSV", "CSV"),
+        ]:
+            self._highlight_combo.addItem(label, mode)
+        self._highlight_combo.currentIndexChanged.connect(
+            lambda _index: self._on_highlight_changed(self._highlight_combo.currentData())
         )
-        self._highlight_combo.currentTextChanged.connect(self._on_highlight_changed)
         tb_layout.addWidget(self._highlight_combo)
         tb_layout.addStretch()
-        tb_layout.addWidget(QLabel("Encoding:"))
+        tb_layout.addWidget(QLabel(translate("TextView", "Encoding:")))
         self._encoding_label = QLabel("")
         self._encoding_label.setStyleSheet("color: gray;")
         tb_layout.addWidget(self._encoding_label)
@@ -179,30 +245,35 @@ class TextView(QWidget):
         sb_layout = QHBoxLayout(search_bar)
         sb_layout.setContentsMargins(8, 4, 8, 4)
         sb_layout.setSpacing(8)
-        sb_layout.addWidget(QLabel("Search:"))
+        sb_layout.addWidget(QLabel(translate("TextView", "Search:")))
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Text, * wildcard, or regex")
+        self._search_input.setPlaceholderText(translate("TextView", "Text, * wildcard, or regex"))
         self._search_input.returnPressed.connect(self._find_next)
-        self._search_input.textChanged.connect(self._refresh_search)
+        # Each search scans the whole text: wait for a pause in typing.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(200)
+        self._search_timer.timeout.connect(self._refresh_search)
+        self._search_input.textChanged.connect(lambda _text: self._search_timer.start())
         sb_layout.addWidget(self._search_input, 1)
-        self._search_regex = QCheckBox("Regex")
+        self._search_regex = QCheckBox(translate("TextView", "Regex"))
         self._search_regex.toggled.connect(self._refresh_search)
         sb_layout.addWidget(self._search_regex)
-        self._search_case = QCheckBox("Case")
+        self._search_case = QCheckBox(translate("TextView", "Case"))
         self._search_case.toggled.connect(self._refresh_search)
         sb_layout.addWidget(self._search_case)
         self._search_prev = QToolButton()
-        self._search_prev.setText("Up")
+        self._search_prev.setText(translate("TextView", "Up"))
         self._search_prev.clicked.connect(self._find_prev)
         sb_layout.addWidget(self._search_prev)
         self._search_next = QToolButton()
-        self._search_next.setText("Down")
+        self._search_next.setText(translate("TextView", "Down"))
         self._search_next.clicked.connect(self._find_next)
         sb_layout.addWidget(self._search_next)
         self._search_count = QLabel("")
         sb_layout.addWidget(self._search_count)
         self._show_all_btn = QToolButton()
-        self._show_all_btn.setText("Show all")
+        self._show_all_btn.setText(translate("TextView", "Show all"))
         self._show_all_btn.setCheckable(True)
         self._show_all_btn.toggled.connect(self._toggle_result_panel)
         sb_layout.addWidget(self._show_all_btn)
@@ -232,8 +303,9 @@ class TextView(QWidget):
         rp_layout = QVBoxLayout(self._result_panel)
         rp_layout.setContentsMargins(0, 0, 0, 0)
         rp_layout.setSpacing(0)
-        self._result_table = QTableWidget(0, 3)
-        self._result_table.setHorizontalHeaderLabels(["Line", "Col", "Preview"])
+        self._result_model = _SearchResultModel(self._editor)
+        self._result_table = QTableView()
+        self._result_table.setModel(self._result_model)
         self._result_table.horizontalHeader().setStretchLastSection(True)
         self._result_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -241,13 +313,19 @@ class TextView(QWidget):
         self._result_table.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
-        self._result_table.cellActivated.connect(self._jump_to_result_row)
-        self._result_table.cellDoubleClicked.connect(self._jump_to_result_row)
+        self._result_table.activated.connect(lambda index: self._jump_to_result_row(index.row()))
+        self._result_table.doubleClicked.connect(lambda index: self._jump_to_result_row(index.row()))
         rp_layout.addWidget(self._result_table)
         self._result_panel.setVisible(False)
         self._splitter.addWidget(self._result_panel)
 
         layout.addWidget(self._splitter)
+
+        # Highlights are drawn for the visible part of the text only.
+        self._editor.verticalScrollBar().valueChanged.connect(
+            lambda _value: self._update_visible_highlights()
+        )
+        self._editor.updateRequest.connect(lambda _rect, _dy: self._update_visible_highlights())
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "matches") and event.matches(QKeySequence.StandardKey.Find):
@@ -260,14 +338,17 @@ class TextView(QWidget):
         text = self._raw_text.lstrip()
         if text.startswith(("{", "[")):
             self._set_highlight_mode("JSON")
-            self._highlight_combo.setCurrentText("JSON")
+            self._select_highlight("JSON")
             return
         if text.startswith("<"):
             self._set_highlight_mode("XML")
-            self._highlight_combo.setCurrentText("XML")
+            self._select_highlight("XML")
             return
         self._set_highlight_mode("None")
-        self._highlight_combo.setCurrentText("None")
+        self._select_highlight("None")
+
+    def _select_highlight(self, mode: str) -> None:
+        self._highlight_combo.setCurrentIndex(self._highlight_combo.findData(mode))
 
     def _on_highlight_changed(self, value: str) -> None:
         if value == "Auto":
@@ -279,35 +360,26 @@ class TextView(QWidget):
         self._highlighter.set_mode(mode.lower())
 
     def _refresh_search(self) -> None:
+        """Find every hit of the search in the whole text."""
+        self._search_timer.stop()
         pattern = self._search_input.text() if hasattr(self, "_search_input") else ""
-        self._search_hits = []
+        self._hit_starts = []
+        self._hit_ends = []
         self._current_hit_index = -1
         self._search_count.setText("")
-        self._apply_search_highlights([])
-        if not pattern:
-            self._update_result_panel()
-            return
-        regex = self._build_search_regex(pattern)
-        if regex is None:
-            return
-        doc = self._editor.document()
-        cursor = QTextCursor(doc)
-        max_hits = 5000
-        hits = 0
-        while True:
-            cursor = doc.find(regex, cursor)
-            if cursor.isNull():
-                break
-            self._search_hits.append(cursor)
-            hits += 1
-            if hits >= max_hits:
-                break
-        self._apply_search_highlights(self._search_hits)
-        if hits >= max_hits:
-            self._search_count.setText(f"{len(self._search_hits)}+")
-        else:
-            self._search_count.setText(f"{len(self._search_hits)}")
-        self._update_result_panel()
+        regex = self._build_search_regex(pattern) if pattern else None
+        if regex is not None:
+            matches = regex.globalMatch(self._editor.toPlainText())
+            while matches.hasNext():
+                m = matches.next()
+                if m.capturedEnd() > m.capturedStart():  # an empty match marks nothing
+                    self._hit_starts.append(m.capturedStart())
+                    self._hit_ends.append(m.capturedEnd())
+            self._search_count.setText(f"{len(self._hit_starts)}")  # i18n: keep -- number
+        self._result_model.set_hits(self._hit_starts)
+        self._highlighted_range = None
+        self._update_visible_highlights()
+        self._sync_result_selection()
 
     def _build_search_regex(self, pattern: str) -> QRegularExpression | None:
         if not self._search_regex.isChecked():
@@ -319,87 +391,84 @@ class TextView(QWidget):
         if not self._search_case.isChecked():
             regex.setPatternOptions(QRegularExpression.PatternOption.CaseInsensitiveOption)
         if not regex.isValid():
-            self._search_count.setText("Invalid regex")
+            self._search_count.setText(translate("TextView", "Invalid regex"))
             return None
         return regex
 
-    def _apply_search_highlights(self, cursors: list[QTextCursor]) -> None:
-        selections: list[QTextEdit.ExtraSelection] = []
+    def _update_visible_highlights(self) -> None:
+        """Mark the hits in the visible part of the text (all hits are
+        found; drawing them all at once would slow the editor down)."""
+        if not self._hit_starts:
+            if self._highlighted_range is not None or self._editor.extraSelections():
+                self._highlighted_range = None
+                self._editor.setExtraSelections([])
+            return
+        first = self._editor.firstVisibleBlock().position()
+        last_block = self._editor.cursorForPosition(
+            self._editor.viewport().rect().bottomRight()
+        ).block()
+        last = last_block.position() + last_block.length()
+        visible = (first, last, len(self._hit_starts))
+        if visible == self._highlighted_range:
+            return
+        self._highlighted_range = visible
         fmt = QTextCharFormat()
         fmt.setBackground(QColor(255, 230, 128))
-        for c in cursors:
+        doc = self._editor.document()
+        selections: list[QTextEdit.ExtraSelection] = []
+        for i in range(bisect_right(self._hit_ends, first), bisect_left(self._hit_starts, last)):
+            cursor = QTextCursor(doc)
+            cursor.setPosition(self._hit_starts[i])
+            cursor.setPosition(self._hit_ends[i], QTextCursor.MoveMode.KeepAnchor)
             sel = QTextEdit.ExtraSelection()
-            sel.cursor = c
+            sel.cursor = cursor
             sel.format = fmt
             selections.append(sel)
         self._editor.setExtraSelections(selections)
 
-    def _find_next(self) -> None:
-        if not self._search_hits:
-            return
-        current = self._editor.textCursor()
-        for i, hit in enumerate(self._search_hits):
-            if hit.selectionStart() > current.position():
-                self._current_hit_index = i
-                self._editor.setTextCursor(hit)
-                self._sync_result_selection()
-                return
-        # wrap
-        self._current_hit_index = 0
-        self._editor.setTextCursor(self._search_hits[0])
+    def _ensure_search_current(self) -> None:
+        if self._search_timer.isActive():
+            self._refresh_search()
+
+    def _select_hit(self, i: int) -> None:
+        cursor = QTextCursor(self._editor.document())
+        cursor.setPosition(self._hit_starts[i])
+        cursor.setPosition(self._hit_ends[i], QTextCursor.MoveMode.KeepAnchor)
+        self._current_hit_index = i
+        self._editor.setTextCursor(cursor)
         self._sync_result_selection()
 
-    def _find_prev(self) -> None:
-        if not self._search_hits:
+    def _find_next(self) -> None:
+        self._ensure_search_current()
+        if not self._hit_starts:
             return
-        current = self._editor.textCursor()
-        for i, hit in enumerate(reversed(self._search_hits)):
-            if hit.selectionEnd() < current.position():
-                self._current_hit_index = len(self._search_hits) - 1 - i
-                self._editor.setTextCursor(self._search_hits[self._current_hit_index])
-                self._sync_result_selection()
-                return
-        # wrap
-        self._current_hit_index = len(self._search_hits) - 1
-        self._editor.setTextCursor(self._search_hits[-1])
-        self._sync_result_selection()
+        i = bisect_right(self._hit_starts, self._editor.textCursor().position())
+        self._select_hit(i if i < len(self._hit_starts) else 0)  # wrap
+
+    def _find_prev(self) -> None:
+        self._ensure_search_current()
+        if not self._hit_starts:
+            return
+        i = bisect_left(self._hit_ends, self._editor.textCursor().position()) - 1
+        self._select_hit(i if i >= 0 else len(self._hit_starts) - 1)  # wrap
 
     def _toggle_result_panel(self, checked: bool) -> None:
         self._result_panel.setVisible(checked)
         if checked:
-            self._update_result_panel()
-
-    def _update_result_panel(self) -> None:
-        if not self._result_panel.isVisible():
-            return
-        self._result_table.setRowCount(0)
-        for cursor in self._search_hits:
-            row = self._result_table.rowCount()
-            self._result_table.insertRow(row)
-            block = cursor.block()
-            line = block.blockNumber() + 1
-            col = cursor.selectionStart() - block.position() + 1
-            preview = block.text().strip()
-            self._result_table.setItem(row, 0, QTableWidgetItem(str(line)))
-            self._result_table.setItem(row, 1, QTableWidgetItem(str(col)))
-            self._result_table.setItem(row, 2, QTableWidgetItem(preview))
-        self._sync_result_selection()
+            self._sync_result_selection()
 
     def _sync_result_selection(self) -> None:
         if not self._result_panel.isVisible():
             return
         idx = self._current_hit_index
-        if 0 <= idx < self._result_table.rowCount():
+        if 0 <= idx < len(self._hit_starts):
             self._result_table.selectRow(idx)
-            item = self._result_table.item(idx, 0)
-            if item is not None:
-                self._result_table.scrollToItem(item)
+            self._result_table.scrollTo(self._result_model.index(idx, 0))
 
-    def _jump_to_result_row(self, row: int, _col: int = 0) -> None:
-        if row < 0 or row >= len(self._search_hits):
+    def _jump_to_result_row(self, row: int) -> None:
+        if row < 0 or row >= len(self._hit_starts):
             return
-        self._current_hit_index = row
-        self._editor.setTextCursor(self._search_hits[row])
+        self._select_hit(row)
         self._editor.centerCursor()
 
 

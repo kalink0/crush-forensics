@@ -8,7 +8,7 @@ import struct
 import uuid as _uuid_mod
 from datetime import datetime, timedelta, timezone
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt
 from PySide6.QtGui import QClipboard, QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from crush.ui.i18n import translate
 
 _MUTED = QColor(140, 140, 140)
 _GROUP_BG = QColor(240, 240, 240)
@@ -213,95 +214,311 @@ def _interpret(raw: str) -> list[_Row]:
     eff_int = int_val if int_val is not None else hex_int_val
 
     if eff_int is not None:
-        rows.append(R("Integer", "Decimal", f"{eff_int:,}"))
-        rows.append(R("Integer", "Hex", hex(eff_int)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Decimal"),
+                f"{eff_int:,}",
+            )
+        )
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Hex"),
+                hex(eff_int),
+            )
+        )
         if 0 <= eff_int <= 0xFFFF_FFFF:
             s32 = eff_int if eff_int < 0x8000_0000 else eff_int - 0x1_0000_0000
-            rows.append(R("Integer", "Signed 32-bit", str(s32)))
-            rows.append(R("Integer", "Unsigned 32-bit", str(eff_int)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 32-bit"),
+                    str(s32),
+                )
+            )
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 32-bit"),
+                    str(eff_int),
+                )
+            )
         else:
-            rows.append(R("Integer", "Signed 32-bit", None))
-            rows.append(R("Integer", "Unsigned 32-bit", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 32-bit"),
+                    None,
+                )
+            )
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 32-bit"),
+                    None,
+                )
+            )
         if -(2**63) <= eff_int <= 2**63 - 1:
-            rows.append(R("Integer", "Signed 64-bit", str(eff_int)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 64-bit"),
+                    str(eff_int),
+                )
+            )
         else:
-            rows.append(R("Integer", "Signed 64-bit", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 64-bit"),
+                    None,
+                )
+            )
         if 0 <= eff_int <= 2**64 - 1:
-            rows.append(R("Integer", "Unsigned 64-bit", str(eff_int)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 64-bit"),
+                    str(eff_int),
+                )
+            )
         else:
-            rows.append(R("Integer", "Unsigned 64-bit", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 64-bit"),
+                    None,
+                )
+            )
     else:
-        for lbl in ("Decimal", "Hex", "Signed 32-bit", "Unsigned 32-bit", "Signed 64-bit", "Unsigned 64-bit"):
-            rows.append(R("Integer", lbl, None))
+        for lbl in (QT_TRANSLATE_NOOP("ValueInspector", "Decimal"), QT_TRANSLATE_NOOP("ValueInspector", "Hex"), QT_TRANSLATE_NOOP("ValueInspector", "Signed 32-bit"), QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 32-bit"), QT_TRANSLATE_NOOP("ValueInspector", "Signed 64-bit"), QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 64-bit")):
+            rows.append(R(QT_TRANSLATE_NOOP("ValueInspector", "Integer"), lbl, None))
 
     # Little-endian variants — only shown for hex byte inputs (not decimal)
     if hex_le_int_val is not None and int_val is None:
         le = hex_le_int_val
-        rows.append(R("Integer", "Decimal (LE)", f"{le:,}"))
-        rows.append(R("Integer", "Hex (LE)", hex(le)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Decimal (LE)"),
+                f"{le:,}",
+            )
+        )
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Hex (LE)"),
+                hex(le),
+            )
+        )
         if 0 <= le <= 0xFFFF_FFFF:
             s32 = le if le < 0x8000_0000 else le - 0x1_0000_0000
-            rows.append(R("Integer", "Signed 32-bit (LE)", str(s32)))
-            rows.append(R("Integer", "Unsigned 32-bit (LE)", str(le)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 32-bit (LE)"),
+                    str(s32),
+                )
+            )
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 32-bit (LE)"),
+                    str(le),
+                )
+            )
         else:
-            rows.append(R("Integer", "Signed 32-bit (LE)", None))
-            rows.append(R("Integer", "Unsigned 32-bit (LE)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 32-bit (LE)"),
+                    None,
+                )
+            )
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 32-bit (LE)"),
+                    None,
+                )
+            )
         if -(2**63) <= le <= 2**63 - 1:
-            rows.append(R("Integer", "Signed 64-bit (LE)", str(le)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 64-bit (LE)"),
+                    str(le),
+                )
+            )
         else:
-            rows.append(R("Integer", "Signed 64-bit (LE)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Signed 64-bit (LE)"),
+                    None,
+                )
+            )
         if 0 <= le <= 2**64 - 1:
-            rows.append(R("Integer", "Unsigned 64-bit (LE)", str(le)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 64-bit (LE)"),
+                    str(le),
+                )
+            )
         else:
-            rows.append(R("Integer", "Unsigned 64-bit (LE)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Integer"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Unsigned 64-bit (LE)"),
+                    None,
+                )
+            )
 
     # -----------------------------------------------------------------------
     # Group: Data Size
     # -----------------------------------------------------------------------
     if eff_int is not None and eff_int >= 0:
-        rows.append(R("Data Size", "Decimal (KB/MB/GB…)", _fmt_size(eff_int, 1000, _DECIMAL_SIZE_UNITS)))
-        rows.append(R("Data Size", "Binary (KiB/MiB/GiB…)", _fmt_size(eff_int, 1024, _BINARY_SIZE_UNITS)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Data Size"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Decimal (KB/MB/GB…)"),
+                _fmt_size(eff_int, 1000, _DECIMAL_SIZE_UNITS),
+            )
+        )
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Data Size"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Binary (KiB/MiB/GiB…)"),
+                _fmt_size(eff_int, 1024, _BINARY_SIZE_UNITS),
+            )
+        )
     else:
-        rows.append(R("Data Size", "Decimal (KB/MB/GB…)", None))
-        rows.append(R("Data Size", "Binary (KiB/MiB/GiB…)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Data Size"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Decimal (KB/MB/GB…)"),
+                None,
+            )
+        )
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Data Size"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Binary (KiB/MiB/GiB…)"),
+                None,
+            )
+        )
 
     # -----------------------------------------------------------------------
     # Group: Float
     # -----------------------------------------------------------------------
     if float_val is not None and int_val is None:
-        rows.append(R("Float", "Double (64-bit)", f"{float_val:.17g}"))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Double (64-bit)"),
+                f"{float_val:.17g}",
+            )
+        )
     else:
-        rows.append(R("Float", "Double (64-bit)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Double (64-bit)"),
+                None,
+            )
+        )
 
     if eff_int is not None and 0 <= eff_int <= 0xFFFF_FFFF:
         f32 = struct.unpack(">f", eff_int.to_bytes(4, "big"))[0]
-        rows.append(R("Float", "Float32 · 4 bytes BE", f"{f32:.9g}"))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Float32 · 4 bytes BE"),
+                f"{f32:.9g}",
+            )
+        )
     else:
-        rows.append(R("Float", "Float32 · 4 bytes BE", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Float32 · 4 bytes BE"),
+                None,
+            )
+        )
 
     if hex_bytes_val is not None and len(hex_bytes_val) == 4:
         f32_le = struct.unpack("<f", hex_bytes_val)[0]
-        rows.append(R("Float", "Float32 · 4 bytes LE", f"{f32_le:.9g}"))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Float32 · 4 bytes LE"),
+                f"{f32_le:.9g}",
+            )
+        )
     else:
-        rows.append(R("Float", "Float32 · 4 bytes LE", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Float32 · 4 bytes LE"),
+                None,
+            )
+        )
 
     if eff_int is not None and 0 <= eff_int <= 2**64 - 1:
         try:
             f64 = struct.unpack(">d", eff_int.to_bytes(8, "big"))[0]
-            rows.append(R("Float", "Double · 8 bytes BE", f"{f64:.17g}"))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Double · 8 bytes BE"),
+                    f"{f64:.17g}",
+                )
+            )
         except struct.error:
-            rows.append(R("Float", "Double · 8 bytes BE", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Double · 8 bytes BE"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Float", "Double · 8 bytes BE", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Double · 8 bytes BE"),
+                None,
+            )
+        )
 
     if hex_bytes_val is not None and len(hex_bytes_val) == 8:
         try:
             f64_le = struct.unpack("<d", hex_bytes_val)[0]
-            rows.append(R("Float", "Double · 8 bytes LE", f"{f64_le:.17g}"))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Double · 8 bytes LE"),
+                    f"{f64_le:.17g}",
+                )
+            )
         except struct.error:
-            rows.append(R("Float", "Double · 8 bytes LE", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Double · 8 bytes LE"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Float", "Double · 8 bytes LE", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Float"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Double · 8 bytes LE"),
+                None,
+            )
+        )
 
     # -----------------------------------------------------------------------
     # Group: Timestamps
@@ -314,30 +531,84 @@ def _interpret(raw: str) -> list[_Row]:
     ts: int | float | None = eff_int if eff_int is not None else float_val
 
     if ts is not None and _TS_S_MIN <= ts <= _TS_S_MAX:
-        rows.append(R("Timestamp", "Unix (s)", _safe_ts(ts)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Unix (s)"),
+                _safe_ts(ts),
+            )
+        )
     else:
-        rows.append(R("Timestamp", "Unix (s)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Unix (s)"),
+                None,
+            )
+        )
 
     if ts is not None and _TS_MS_MIN <= ts <= _TS_MS_MAX:
-        rows.append(R("Timestamp", "Unix (ms)", _safe_ts(ts / 1_000)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Unix (ms)"),
+                _safe_ts(ts / 1_000),
+            )
+        )
     else:
-        rows.append(R("Timestamp", "Unix (ms)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Unix (ms)"),
+                None,
+            )
+        )
 
     if ts is not None and _TS_US_MIN <= ts <= _TS_US_MAX:
-        rows.append(R("Timestamp", "Unix (µs)", _safe_ts(ts / 1_000_000)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Unix (µs)"),
+                _safe_ts(ts / 1_000_000),
+            )
+        )
     else:
-        rows.append(R("Timestamp", "Unix (µs)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Unix (µs)"),
+                None,
+            )
+        )
 
     # Cocoa: seconds since 2001-01-01; for floats require > 1M to avoid false positives on
     # tiny values (Cocoa's plausible range dips below zero, unlike the other formats).
     cocoa_src = ts if eff_int is not None else (float_val if float_val is not None and float_val > 1_000_000 else None)
     if cocoa_src is not None and _COCOA_MIN <= cocoa_src <= _COCOA_MAX:
         try:
-            rows.append(R("Timestamp", "Cocoa / Apple (s)", _fmt_dt(_COCOA_EPOCH + timedelta(seconds=cocoa_src))))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
+                    _fmt_dt(_COCOA_EPOCH + timedelta(seconds=cocoa_src)),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "Cocoa / Apple (s)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Timestamp", "Cocoa / Apple (s)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
+                None,
+            )
+        )
 
     # Cocoa nanoseconds: ns since 2001-01-01; same float-magnitude guard as Cocoa (s) above —
     # _COCOA_NS_MIN is deep negative, so an unguarded float fallback would match trivial values.
@@ -345,68 +616,160 @@ def _interpret(raw: str) -> list[_Row]:
     if cocoa_ns_src is not None and _COCOA_NS_MIN <= cocoa_ns_src <= _COCOA_NS_MAX:
         try:
             dt = _COCOA_EPOCH + timedelta(seconds=cocoa_ns_src / 1_000_000_000)
-            rows.append(R("Timestamp", "Cocoa / Apple (ns)", _fmt_dt(dt)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
+                    _fmt_dt(dt),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "Cocoa / Apple (ns)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Timestamp", "Cocoa / Apple (ns)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
+                None,
+            )
+        )
 
     # Chrome / WebKit: µs since 1601-01-01
     if ts is not None and _CHROME_US_MIN <= ts <= _CHROME_US_MAX:
         try:
-            rows.append(R("Timestamp", "Chrome / WebKit (µs)", _fmt_dt(_CHROME_EPOCH + timedelta(microseconds=ts))))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
+                    _fmt_dt(_CHROME_EPOCH + timedelta(microseconds=ts)),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "Chrome / WebKit (µs)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Timestamp", "Chrome / WebKit (µs)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
+                None,
+            )
+        )
 
     # Windows FILETIME: 100ns intervals since 1601-01-01
     if ts is not None and _WIN_FT_MIN <= ts <= _WIN_FT_MAX:
         try:
-            rows.append(R("Timestamp", "Windows FILETIME", _fmt_dt(_CHROME_EPOCH + timedelta(microseconds=ts / 10))))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    "Windows FILETIME",
+                    _fmt_dt(_CHROME_EPOCH + timedelta(microseconds=ts / 10)),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "Windows FILETIME", None))
+            rows.append(
+                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows FILETIME", None)
+            )
     else:
-        rows.append(R("Timestamp", "Windows FILETIME", None))
+        rows.append(R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows FILETIME", None))
 
     # HFS+: seconds since 1904-01-01
     if ts is not None and _HFS_MIN <= ts <= _HFS_MAX:
         try:
-            rows.append(R("Timestamp", "HFS+ / Mac OS (s)", _fmt_dt(_HFS_EPOCH + timedelta(seconds=ts))))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
+                    _fmt_dt(_HFS_EPOCH + timedelta(seconds=ts)),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "HFS+ / Mac OS (s)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Timestamp", "HFS+ / Mac OS (s)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
+                None,
+            )
+        )
 
     # Microsoft .NET Ticks: 100ns intervals since 0001-01-01
     if ts is not None and _TICKS_MIN <= ts <= _TICKS_MAX:
         try:
             unix_s = (ts - _NET_EPOCH_TICKS) / _NET_TICKS_PER_S
-            rows.append(R("Timestamp", "Microsoft .NET Ticks", _safe_ts(unix_s)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    "Microsoft .NET Ticks",
+                    _safe_ts(unix_s),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "Microsoft .NET Ticks", None))
+            rows.append(
+                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Microsoft .NET Ticks", None)
+            )
     else:
-        rows.append(R("Timestamp", "Microsoft .NET Ticks", None))
+        rows.append(
+            R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Microsoft .NET Ticks", None)
+        )
 
     # OLE Automation Date: days (float) since 1899-12-30
     ole_val = float_val if float_val is not None else (float(eff_int) if eff_int is not None else None)
     if ole_val is not None and _OLE_MIN <= ole_val <= _OLE_MAX:
         try:
-            rows.append(R("Timestamp", "OLE Automation Date", _fmt_dt(_OLE_EPOCH + timedelta(days=ole_val))))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    "OLE Automation Date",
+                    _fmt_dt(_OLE_EPOCH + timedelta(days=ole_val)),
+                )
+            )
         except (OverflowError, ValueError):
-            rows.append(R("Timestamp", "OLE Automation Date", None))
+            rows.append(
+                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "OLE Automation Date", None)
+            )
     else:
-        rows.append(R("Timestamp", "OLE Automation Date", None))
+        rows.append(
+            R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "OLE Automation Date", None)
+        )
 
     # Twitter / X Snowflake ID: upper 41 bits = ms since Twitter epoch (bit-packed, integer-only)
     if ts_int is not None and ts_int >= (1 << 22):  # timestamp part must be > 0
         tw_ms = (ts_int >> 22) + _TWITTER_EPOCH_MS
         if _TS_MS_MIN <= tw_ms <= _TS_MS_MAX:
-            rows.append(R("Timestamp", "Twitter / X Snowflake", _safe_ts(tw_ms / 1000.0)))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    "Twitter / X Snowflake",
+                    _safe_ts(tw_ms / 1000.0),
+                )
+            )
         else:
-            rows.append(R("Timestamp", "Twitter / X Snowflake", None))
+            rows.append(
+                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Twitter / X Snowflake", None)
+            )
     else:
-        rows.append(R("Timestamp", "Twitter / X Snowflake", None))
+        rows.append(
+            R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Twitter / X Snowflake", None)
+        )
 
     # FAT / exFAT (MS-DOS): 32-bit packed date+time, 2-second resolution, epoch 1980-01-01
     if ts_int is not None and _FAT_TS_MIN <= ts_int <= _FAT_TS_MAX:
@@ -421,13 +784,37 @@ def _interpret(raw: str) -> list[_Row]:
         if 1 <= fat_month <= 12 and 1 <= fat_day <= 31 and fat_hour <= 23 and fat_min <= 59 and fat_sec <= 58:
             try:
                 dt = datetime(fat_year, fat_month, fat_day, fat_hour, fat_min, fat_sec, tzinfo=timezone.utc)
-                rows.append(R("Timestamp", "FAT / exFAT (MS-DOS)", _fmt_dt(dt)))
+                rows.append(
+                    R(
+                        QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                        QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
+                        _fmt_dt(dt),
+                    )
+                )
             except (ValueError, OverflowError):
-                rows.append(R("Timestamp", "FAT / exFAT (MS-DOS)", None))
+                rows.append(
+                    R(
+                        QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                        QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
+                        None,
+                    )
+                )
         else:
-            rows.append(R("Timestamp", "FAT / exFAT (MS-DOS)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Timestamp", "FAT / exFAT (MS-DOS)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
+                None,
+            )
+        )
 
     # BCD timestamp: 7 hex bytes = YYYY MM DD HH mm SS (each byte = 2 BCD digits)
     if hex_bytes_val is not None and len(hex_bytes_val) == 7:
@@ -437,34 +824,100 @@ def _interpret(raw: str) -> list[_Row]:
             if 1 <= bmo <= 12 and 1 <= bd <= 31 and bh <= 23 and bmi <= 59 and bs <= 59:
                 try:
                     dt = datetime(by, bmo, bd, bh, bmi, bs, tzinfo=timezone.utc)
-                    rows.append(R("Timestamp", "BCD (YYYYMMDDHHmmSS)", _fmt_dt(dt)))
+                    rows.append(
+                        R(
+                            QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                            QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
+                            _fmt_dt(dt),
+                        )
+                    )
                 except (ValueError, OverflowError):
-                    rows.append(R("Timestamp", "BCD (YYYYMMDDHHmmSS)", None))
+                    rows.append(
+                        R(
+                            QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                            QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
+                            None,
+                        )
+                    )
             else:
-                rows.append(R("Timestamp", "BCD (YYYYMMDDHHmmSS)", None))
+                rows.append(
+                    R(
+                        QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                        QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
+                        None,
+                    )
+                )
         else:
-            rows.append(R("Timestamp", "BCD (YYYYMMDDHHmmSS)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
+                    None,
+                )
+            )
     else:
-        rows.append(R("Timestamp", "BCD (YYYYMMDDHHmmSS)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
+                None,
+            )
+        )
 
     # UUID v1 timestamp: 60-bit, 100ns intervals since Gregorian epoch 1582-10-15
     if uuid_obj is not None and uuid_obj.version == 1:
         unix_s = (uuid_obj.time - _UUID_V1_GREG_OFFSET) / 10_000_000
-        rows.append(R("Timestamp", "UUID v1 Timestamp", _safe_ts(unix_s)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "UUID v1 Timestamp"),
+                _safe_ts(unix_s),
+            )
+        )
     else:
-        rows.append(R("Timestamp", "UUID v1 Timestamp", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "UUID v1 Timestamp"),
+                None,
+            )
+        )
 
     # GPS Time (s): seconds since 1980-01-06, no leap-second correction
     if ts is not None and _GPS_S_MIN <= ts <= _GPS_S_MAX:
-        rows.append(R("Timestamp", "GPS Time (s)", _safe_ts(ts + _GPS_EPOCH_UNIX)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (s)"),
+                _safe_ts(ts + _GPS_EPOCH_UNIX),
+            )
+        )
     else:
-        rows.append(R("Timestamp", "GPS Time (s)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (s)"),
+                None,
+            )
+        )
 
     # GPS Time (ns): nanoseconds since 1980-01-06, no leap-second correction
     if ts is not None and _GPS_NS_MIN <= ts <= _GPS_NS_MAX:
-        rows.append(R("Timestamp", "GPS Time (ns)", _safe_ts(ts / 1_000_000_000 + _GPS_EPOCH_UNIX)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (ns)"),
+                _safe_ts(ts / 1_000_000_000 + _GPS_EPOCH_UNIX),
+            )
+        )
     else:
-        rows.append(R("Timestamp", "GPS Time (ns)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
+                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (ns)"),
+                None,
+            )
+        )
 
     # Windows SYSTEMTIME: 16 hex bytes = 8×WORD LE (year, month, dow, day, h, m, s, ms)
     if hex_bytes_val is not None and len(hex_bytes_val) == 16:
@@ -475,13 +928,19 @@ def _interpret(raw: str) -> list[_Row]:
                 dt = datetime(st_year, st_month, st_day, st_hour, st_min, st_sec,
                               st_ms * 1000, tzinfo=timezone.utc)
                 val = f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{st_ms:03d} UTC"
-                rows.append(R("Timestamp", "Windows SYSTEMTIME", val))
+                rows.append(
+                    R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", val)
+                )
             else:
-                rows.append(R("Timestamp", "Windows SYSTEMTIME", None))
+                rows.append(
+                    R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", None)
+                )
         except (struct.error, ValueError, OverflowError):
-            rows.append(R("Timestamp", "Windows SYSTEMTIME", None))
+            rows.append(
+                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", None)
+            )
     else:
-        rows.append(R("Timestamp", "Windows SYSTEMTIME", None))
+        rows.append(R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", None))
 
     # -----------------------------------------------------------------------
     # Group: UUID
@@ -495,30 +954,78 @@ def _interpret(raw: str) -> list[_Row]:
     if ipv4_src is not None and 0 <= ipv4_src <= 0xFFFF_FFFF:
         b_be = ipv4_src.to_bytes(4, "big")
         b_le = ipv4_src.to_bytes(4, "little")
-        rows.append(R("Network", "IPv4 (big-endian)", ".".join(str(x) for x in b_be)))
-        rows.append(R("Network", "IPv4 (little-endian)", ".".join(str(x) for x in b_le)))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Network"),
+                QT_TRANSLATE_NOOP("ValueInspector", "IPv4 (big-endian)"),
+                ".".join(str(x) for x in b_be),
+            )
+        )
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Network"),
+                QT_TRANSLATE_NOOP("ValueInspector", "IPv4 (little-endian)"),
+                ".".join(str(x) for x in b_le),
+            )
+        )
     else:
-        rows.append(R("Network", "IPv4 (big-endian)", None))
-        rows.append(R("Network", "IPv4 (little-endian)", None))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Network"),
+                QT_TRANSLATE_NOOP("ValueInspector", "IPv4 (big-endian)"),
+                None,
+            )
+        )
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Network"),
+                QT_TRANSLATE_NOOP("ValueInspector", "IPv4 (little-endian)"),
+                None,
+            )
+        )
 
     mac_val: str | None = None
     if is_hex_str and len(hex_clean) == 12:
         mac_val = ":".join(hex_clean[i:i + 2] for i in range(0, 12, 2))
     elif len(raw) == 17 and raw.count(":") == 5:
         mac_val = raw.lower()
-    rows.append(R("Network", "MAC address", mac_val))
+    rows.append(
+        R(
+            QT_TRANSLATE_NOOP("ValueInspector", "Network"),
+            QT_TRANSLATE_NOOP("ValueInspector", "MAC address"),
+            mac_val,
+        )
+    )
 
     # -----------------------------------------------------------------------
     # Group: Text
     # -----------------------------------------------------------------------
     if hex_bytes_val:
         ascii_text = "".join(chr(b) if 32 <= b < 127 else "." for b in hex_bytes_val)
-        rows.append(R("Text", "ASCII (hex bytes)", ascii_text))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Text"),
+                QT_TRANSLATE_NOOP("ValueInspector", "ASCII (hex bytes)"),
+                ascii_text,
+            )
+        )
         try:
             utf8_text = hex_bytes_val.decode("utf-8")
-            rows.append(R("Text", "UTF-8 (hex bytes)", utf8_text))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Text"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "UTF-8 (hex bytes)"),
+                    utf8_text,
+                )
+            )
         except UnicodeDecodeError:
-            rows.append(R("Text", "UTF-8 (hex bytes)", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Text"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "UTF-8 (hex bytes)"),
+                    None,
+                )
+            )
 
     # -----------------------------------------------------------------------
     # Group: Encoding
@@ -538,11 +1045,29 @@ def _interpret(raw: str) -> list[_Row]:
                 pass
 
     if b64_decoded is not None:
-        rows.append(R("Encoding", "Base64 → bytes", b64_decoded.hex(" ")))
+        rows.append(
+            R(
+                QT_TRANSLATE_NOOP("ValueInspector", "Encoding"),
+                QT_TRANSLATE_NOOP("ValueInspector", "Base64 → bytes"),
+                b64_decoded.hex(" "),
+            )
+        )
         try:
-            rows.append(R("Encoding", "Base64 → UTF-8", b64_decoded.decode("utf-8")))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Encoding"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Base64 → UTF-8"),
+                    b64_decoded.decode("utf-8"),
+                )
+            )
         except UnicodeDecodeError:
-            rows.append(R("Encoding", "Base64 → UTF-8", None))
+            rows.append(
+                R(
+                    QT_TRANSLATE_NOOP("ValueInspector", "Encoding"),
+                    QT_TRANSLATE_NOOP("ValueInspector", "Base64 → UTF-8"),
+                    None,
+                )
+            )
 
     return rows
 
@@ -579,7 +1104,7 @@ class ValueInspector(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle("Value Inspector")
+        self.setWindowTitle(translate("ValueInspector", "Value Inspector"))
         self.resize(500, 560)
         self.destroyed.connect(_clear_instance)
         self._build_ui()
@@ -613,15 +1138,17 @@ class ValueInspector(QDialog):
         outer.setContentsMargins(8, 8, 8, 8)
 
         input_row = QHBoxLayout()
-        input_row.addWidget(QLabel("Value:"))
+        input_row.addWidget(QLabel(translate("ValueInspector", "Value:")))
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Enter or paste a value…")
+        self._input.setPlaceholderText(translate("ValueInspector", "Enter or paste a value…"))
         self._input.textChanged.connect(self._refresh)
         input_row.addWidget(self._input)
         outer.addLayout(input_row)
 
         self._table = QTableWidget(0, 2)
-        self._table.setHorizontalHeaderLabels(["Interpretation", "Value"])
+        self._table.setHorizontalHeaderLabels(
+            [translate("ValueInspector", "Interpretation"), translate("ValueInspector", "Value")]
+        )
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setDefaultSectionSize(190)
         self._table.verticalHeader().setVisible(False)
@@ -630,7 +1157,7 @@ class ValueInspector(QDialog):
         outer.addWidget(self._table)
 
         bottom = QHBoxLayout()
-        copy_btn = QPushButton("Copy value")
+        copy_btn = QPushButton(translate("ValueInspector", "Copy value"))
         copy_btn.clicked.connect(self._copy_selected)
         bottom.addWidget(copy_btn)
         bottom.addStretch()
@@ -660,7 +1187,9 @@ class ValueInspector(QDialog):
         self._table.setRowCount(len(items))
         for i, (is_header, label, value) in enumerate(items):
             if is_header:
-                for col, text in enumerate((label, "")):
+                # Group and row labels are marked where the rows are built.
+                shown = translate("ValueInspector", label)  # i18n: keep -- marked in R(...)
+                for col, text in enumerate((shown, "")):
                     item = QTableWidgetItem(text)
                     item.setFont(bold)
                     item.setBackground(_GROUP_BG)
@@ -670,9 +1199,10 @@ class ValueInspector(QDialog):
             else:
                 applicable = value is not None
                 val_text = value if applicable else "—"
-                lbl_item = QTableWidgetItem(label)
+                shown = translate("ValueInspector", label)  # i18n: keep -- marked in R(...)
+                lbl_item = QTableWidgetItem(shown)
                 val_item = QTableWidgetItem(val_text)
-                lbl_item.setToolTip(label)
+                lbl_item.setToolTip(shown)
                 val_item.setToolTip(val_text)
                 if not applicable:
                     lbl_item.setForeground(_MUTED)

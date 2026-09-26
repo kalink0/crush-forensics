@@ -64,7 +64,9 @@ def pretty_object(obj: Any) -> str:
         return str(obj)
 
 
-def bytes_to_hexview(b: bytes, width: int = 16, max_bytes: int = 200_000) -> str:
+def bytes_to_hexview(b: bytes, width: int = 16, max_bytes: int = -1) -> str:
+    """Hex + ASCII dump of *b*, all of it unless the caller passes *max_bytes*
+    (then the caller has to say the dump is cut)."""
     if max_bytes > -1:
         b = b[:max_bytes]
     offset = 0

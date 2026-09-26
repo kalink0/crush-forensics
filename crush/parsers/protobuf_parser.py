@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from crush.core.issues import ParseIssue
+from crush.core.issues import QT_TRANSLATE_NOOP, ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.parsers.proto_interp import Interpretation, interpret_fixed32, interpret_fixed64, interpret_varint
@@ -187,7 +187,10 @@ def _decode_message(
                             # bytes alongside it (like the scalar interpretations
                             # below), instead of presenting the guess as fact.
                             entry["interpretations"] = [
-                                Interpretation("raw bytes", _bytes_preview(payload)["hex_preview"])
+                                Interpretation(
+                                    QT_TRANSLATE_NOOP("GeneratedView", "raw bytes"),
+                                    _bytes_preview(payload)["hex_preview"],
+                                )
                             ]
                     if not nested_ok:
                         if _looks_like_utf8(payload):

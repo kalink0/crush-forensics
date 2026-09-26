@@ -22,6 +22,7 @@ from typing import Any, Callable
 from PySide6.QtCore import QEventLoop, QObject, QThread, Signal
 from PySide6.QtWidgets import QWidget
 
+from crush.ui.i18n import exception_text
 from crush.ui.loading_dialog import LoadingDialog
 from crush.ui.log_scope import window_log_scope
 
@@ -35,7 +36,7 @@ _inflight: dict[int, set[tuple[Any, ...]]] = {}
 
 class _BusyWorker(QObject):
     finished = Signal(object)
-    failed = Signal(str)
+    failed = Signal(object)  # the exception
 
     def __init__(self, work_fn: Callable[[], object], window_id: str | None = None) -> None:
         super().__init__()
@@ -50,7 +51,7 @@ class _BusyWorker(QObject):
         try:
             result = self._work_fn()
         except Exception as exc:  # noqa: BLE001 - reported to caller, not swallowed
-            self.failed.emit(str(exc))
+            self.failed.emit(exc)
             return
         self.finished.emit(result)
 
@@ -85,7 +86,9 @@ class _BusyController(QObject):
         self._cleanup()
         self._on_done(result)
 
-    def on_failed(self, message: str) -> None:
+    def on_failed(self, exc: object) -> None:
+        # Shown by the caller's error callback: in the UI language.
+        message = exception_text(exc) if isinstance(exc, BaseException) else str(exc)
         self._cleanup()
         if self._on_error is not None:
             self._on_error(message)
@@ -157,8 +160,9 @@ class _BlockingController(QObject):
         self.result = result
         self._loop.quit()
 
-    def on_failed(self, message: str) -> None:
-        self.error = message
+    def on_failed(self, exc: object) -> None:
+        # busy_call re-raises it for the caller (and its log): English text.
+        self.error = str(exc)
         self._loop.quit()
 
 

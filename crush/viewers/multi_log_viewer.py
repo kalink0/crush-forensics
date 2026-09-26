@@ -50,6 +50,7 @@ import logging
 import time
 
 from PySide6.QtCore import (
+    QT_TRANSLATE_NOOP,
     QAbstractTableModel,
     QDateTime,
     QModelIndex,
@@ -94,6 +95,8 @@ from crush.core.log_ts import TS_NO_YEAR, TS_NO_ZONE, TS_UNPARSED
 from crush.core.vfs import VFS, VFSNode
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
+from crush.viewers.generated_text import gen_text
 
 _log = logging.getLogger("crush")
 
@@ -134,7 +137,16 @@ _COL_SUB  = 5
 _COL_CAT  = 6
 _COL_MSG  = 7
 
-_HEADERS = ["Source", "Timestamp", "Level", "Process / Tag", "PID", "Subsystem", "Category", "Message"]
+_HEADERS = [
+    QT_TRANSLATE_NOOP("GeneratedView", "Source"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Timestamp"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Level"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Process / Tag"),
+    QT_TRANSLATE_NOOP("GeneratedView", "PID"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Subsystem"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Category"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Message"),
+]
 
 # Custom data roles
 _ROLE_TS_DT    = Qt.ItemDataRole.UserRole + 1   # datetime | None
@@ -143,23 +155,37 @@ _ROLE_RAW      = Qt.ItemDataRole.UserRole + 3   # str (original lines)
 _ROLE_MSG_FULL = Qt.ItemDataRole.UserRole + 4   # str (full message, may be multiline)
 
 
-def _fmt_ts(dt: datetime | None, tz: tzinfo = timezone.utc, flags: str = "") -> str:
+def _marker(english_text: str, english: bool) -> str:
+    """Crush's own marker words in a log cell: translated on screen, English
+    in the TSV copy (like an export). *english_text* is marked where written."""
+    return english_text if english else gen_text(english_text)
+
+
+def _fmt_ts(
+    dt: datetime | None, tz: tzinfo = timezone.utc, flags: str = "", *, english: bool = False
+) -> str:
     """Show only what the log recorded: a zone-less time is never converted
     to the display zone, a missing year is never filled in."""
     tokens = flags.split()
     if dt is None:
-        return "— (not decoded)" if TS_UNPARSED in tokens else "—"
+        if TS_UNPARSED in tokens:
+            return _marker(QT_TRANSLATE_NOOP("GeneratedView", "— (not decoded)"), english)
+        return "—"
     no_zone = TS_NO_ZONE in tokens
     text = dt.astimezone(timezone.utc if no_zone else tz).strftime("%Y-%m-%d %H:%M:%S")
     if TS_NO_YEAR in tokens:
         text = "????" + text[4:]
     if no_zone:
-        text += " (no zone)"
+        text += _marker(QT_TRANSLATE_NOOP("GeneratedView", " (no zone)"), english)
     return text
 
 
-def _level_display(level: str, level_note: str) -> str:
-    return f"{level} (guessed)" if level_note else level
+def _level_display(level: str, level_note: str, *, english: bool = False) -> str:
+    if not level_note:
+        return level  # log levels (INFO, WARN, ...) are the log's own values
+    return _marker(QT_TRANSLATE_NOOP("GeneratedView", "{level} (guessed)"), english).format(
+        level=level
+    )
 
 
 def _tsv_field(text: str) -> str:
@@ -173,13 +199,22 @@ def _ts_tooltip(flags: str) -> str | None:
     tokens = flags.split()
     notes = []
     if TS_NO_ZONE in tokens:
-        notes.append("The log records no time zone: shown as recorded, not converted "
-                     "to the display zone. Sorting and the time filter treat it as UTC.")
+        notes.append(translate(
+            "MultiLogViewer",
+            "The log records no time zone: shown as recorded, not converted "
+            "to the display zone. Sorting and the time filter treat it as UTC.",
+        ))
     if TS_NO_YEAR in tokens:
-        notes.append("The log records no year: shown as ????. Sorting uses a placeholder "
-                     "year, so its order against other sources is not meaningful.")
+        notes.append(translate(
+            "MultiLogViewer",
+            "The log records no year: shown as ????. Sorting uses a placeholder "
+            "year, so its order against other sources is not meaningful.",
+        ))
     if TS_UNPARSED in tokens:
-        notes.append("The line has a timestamp that couldn't be decoded — see the raw line.")
+        notes.append(translate(
+            "MultiLogViewer",
+            "The line has a timestamp that couldn't be decoded — see the raw line.",
+        ))
     return "\n".join(notes) or None
 
 
@@ -187,7 +222,12 @@ def _msg_display(msg: str) -> str:
     if "\n" in msg:
         lines = msg.split("\n")
         n = len(lines) - 1
-        return f"{lines[0]}  [{n} more line{'s' if n > 1 else ''}]"
+        more = (
+            translate("MultiLogViewer", "[{count} more line]")
+            if n == 1
+            else translate("MultiLogViewer", "[{count} more lines]")
+        ).format(count=n)
+        return f"{lines[0]}  {more}"  # i18n: keep -- layout
     return msg
 
 
@@ -229,7 +269,7 @@ class DefineFormatDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Define Log Format — Multi-Log Studio")
+        self.setWindowTitle(translate("DefineFormatDialog", "Define Log Format — Multi-Log Studio"))
         self.setMinimumSize(840, 660)
 
         self._preview_lines = preview_lines[: self.PREVIEW_LINES]
@@ -266,15 +306,15 @@ class DefineFormatDialog(QDialog):
 
         # ---- Saved-profiles bar ----
         saved_row = QHBoxLayout()
-        saved_row.addWidget(QLabel("Saved profiles:"))
+        saved_row.addWidget(QLabel(translate("DefineFormatDialog", "Saved profiles:")))
         self._profiles_combo = QComboBox()
         self._profiles_combo.setMinimumWidth(220)
         saved_row.addWidget(self._profiles_combo)
-        load_btn = QPushButton("Load")
+        load_btn = QPushButton(translate("DefineFormatDialog", "Load"))
         load_btn.setFixedWidth(64)
         load_btn.clicked.connect(self._on_load_profile)
         saved_row.addWidget(load_btn)
-        del_btn = QPushButton("Delete")
+        del_btn = QPushButton(translate("DefineFormatDialog", "Delete"))
         del_btn.setFixedWidth(64)
         del_btn.clicked.connect(self._on_delete_profile)
         saved_row.addWidget(del_btn)
@@ -290,50 +330,58 @@ class DefineFormatDialog(QDialog):
         form.setContentsMargins(0, 0, 0, 0)
 
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("e.g. Nginx Access Log")
-        form.addRow("Profile Name:", self._name_edit)
+        self._name_edit.setPlaceholderText(translate("DefineFormatDialog", "e.g. Nginx Access Log"))
+        form.addRow(translate("DefineFormatDialog", "Profile Name:"), self._name_edit)
 
         self._pattern_edit = QLineEdit()
         self._pattern_edit.setPlaceholderText(
-            r"(?P<timestamp>\S+) (?P<level>\w+) (?P<process>[^:]+): (?P<message>.*)"
+            translate(
+                "DefineFormatDialog",
+                r"(?P<timestamp>\S+) (?P<level>\w+) (?P<process>[^:]+): (?P<message>.*)",
+            )
         )
         self._pattern_edit.textChanged.connect(self._schedule_preview)
-        form.addRow("Parse Pattern:", self._pattern_edit)
+        form.addRow(translate("DefineFormatDialog", "Parse Pattern:"), self._pattern_edit)
 
         hint = QLabel(
-            "Named groups → columns: "
+            translate("DefineFormatDialog", "Named groups → columns: "
             "<b>timestamp</b> · <b>level</b> · <b>process</b> · "
-            "<b>pid</b> · <b>message</b> — any other group → <i>extra</i> field."
+            "<b>pid</b> · <b>message</b> — any other group → <i>extra</i> field.")
         )
         hint.setWordWrap(True)
         form.addRow("", hint)
 
         self._ts_fmt_edit = QLineEdit()
         self._ts_fmt_edit.setPlaceholderText(
-            "%Y-%m-%d %H:%M:%S  (empty = auto-detect ISO / epoch)"
+            translate("DefineFormatDialog", "%Y-%m-%d %H:%M:%S  (empty = auto-detect ISO / epoch)")
         )
         self._ts_fmt_edit.textChanged.connect(self._schedule_preview)
-        form.addRow("Timestamp Format:", self._ts_fmt_edit)
+        form.addRow(translate("DefineFormatDialog", "Timestamp Format:"), self._ts_fmt_edit)
 
         self._line_start_edit = QLineEdit()
         self._line_start_edit.setPlaceholderText(
-            r"^\d{4}-\d{2}-\d{2}  (optional — marks start of multiline events)"
+            translate(
+                "DefineFormatDialog",
+                r"^\d{4}-\d{2}-\d{2}  (optional — marks start of multiline events)",
+            )
         )
         self._line_start_edit.textChanged.connect(self._schedule_preview)
-        form.addRow("Line-Start Regex:", self._line_start_edit)
+        form.addRow(translate("DefineFormatDialog", "Line-Start Regex:"), self._line_start_edit)
 
         self._level_map_edit = QLineEdit()
         self._level_map_edit.setPlaceholderText(
-            '{"GET":"INFO","POST":"INFO","500":"ERROR"}  (optional JSON)'
+            translate(
+                "DefineFormatDialog", '{"GET":"INFO","POST":"INFO","500":"ERROR"}  (optional JSON)'
+            )
         )
         self._level_map_edit.textChanged.connect(self._schedule_preview)
-        form.addRow("Level Map:", self._level_map_edit)
+        form.addRow(translate("DefineFormatDialog", "Level Map:"), self._level_map_edit)
 
         self._default_level_combo = QComboBox()
         for lvl in ["UNKNOWN", "INFO", "DEBUG", "WARN", "ERROR", "TRACE"]:
             self._default_level_combo.addItem(lvl)
         self._default_level_combo.currentTextChanged.connect(self._schedule_preview)
-        form.addRow("Default Level:", self._default_level_combo)
+        form.addRow(translate("DefineFormatDialog", "Default Level:"), self._default_level_combo)
 
         splitter.addWidget(form_outer)
 
@@ -344,7 +392,13 @@ class DefineFormatDialog(QDialog):
         prev_layout.setSpacing(4)
 
         legend_row = QHBoxLayout()
-        legend_row.addWidget(QLabel(f"Live preview (first {self.PREVIEW_LINES} lines):"))
+        legend_row.addWidget(
+            QLabel(
+                translate(
+                    "DefineFormatDialog", "Live preview (first {PREVIEW_LINES} lines):"
+                ).format(PREVIEW_LINES=self.PREVIEW_LINES)
+            )
+        )
         legend_parts = " · ".join(
             f"<span style='color:{c};'>{g}</span>"
             for g, c in _PREVIEW_GROUP_COLORS.items()
@@ -376,23 +430,23 @@ class DefineFormatDialog(QDialog):
 
         # ---- Bottom buttons ----
         btn_row = QHBoxLayout()
-        btn_row.addWidget(QLabel("Apply to source:"))
+        btn_row.addWidget(QLabel(translate("DefineFormatDialog", "Apply to source:")))
         self._source_combo = QComboBox()
         for sid, name in self._sources:
             self._source_combo.addItem(name, sid)
         btn_row.addWidget(self._source_combo)
         btn_row.addStretch()
 
-        save_btn = QPushButton("Save Profile")
+        save_btn = QPushButton(translate("DefineFormatDialog", "Save Profile"))
         save_btn.clicked.connect(self._on_save_profile)
         btn_row.addWidget(save_btn)
 
-        apply_btn = QPushButton("Apply")
+        apply_btn = QPushButton(translate("DefineFormatDialog", "Apply"))
         apply_btn.setDefault(True)
         apply_btn.clicked.connect(self._on_apply)
         btn_row.addWidget(apply_btn)
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(translate("DefineFormatDialog", "Close"))
         close_btn.clicked.connect(self.reject)
         btn_row.addWidget(close_btn)
 
@@ -405,7 +459,9 @@ class DefineFormatDialog(QDialog):
     def _reload_profiles_combo(self) -> None:
         from crush.parsers.multi_log_parser import ProfileManager
         self._profiles_combo.clear()
-        self._profiles_combo.addItem("— select a saved profile —", None)
+        self._profiles_combo.addItem(
+            translate("DefineFormatDialog", "— select a saved profile —"), None
+        )
         for p in ProfileManager.all():
             self._profiles_combo.addItem(p.name, p)
 
@@ -496,16 +552,17 @@ class DefineFormatDialog(QDialog):
 
     def _refresh_preview(self) -> None:
         if not self._preview_lines:
-            self._preview.setPlainText("(no preview content)")
+            self._preview.setPlainText(translate("DefineFormatDialog", "(no preview content)"))
             return
 
         pattern = self._pattern_edit.text().strip()
         if not pattern:
             raw_block = "<br>".join(html.escape(ln) for ln in self._preview_lines)
             self._preview.setHtml(
-                f"<pre style='color:#888;'>"
-                f"(enter a parse pattern to see matches)<br><br>"
-                f"{raw_block}</pre>"
+                translate(
+                    "DefineFormatDialog",
+                    "<pre style='color:#888;'>(enter a parse pattern to see matches)<br><br>{raw_block}</pre>",
+                ).format(raw_block=raw_block)
             )
             return
 
@@ -513,8 +570,11 @@ class DefineFormatDialog(QDialog):
             rx = re.compile(pattern)
         except re.error as exc:
             self._preview.setHtml(
-                f"<pre style='color:#e74c3c;'>"
-                f"Invalid regex: {html.escape(str(exc))}</pre>"
+                "<pre style='color:#e74c3c;'>"  # i18n: keep -- markup
+                + html.escape(
+                    translate("DefineFormatDialog", "Invalid regex: {error}").format(error=exc)
+                )
+                + "</pre>"  # i18n: keep -- markup
             )
             return
 
@@ -533,9 +593,9 @@ class DefineFormatDialog(QDialog):
                 )
 
         self._preview.setHtml(
-            "<div style='font-family:monospace;font-size:10pt;'>"
+            "<div style='font-family:monospace;font-size:10pt;'>"  # i18n: keep -- markup
             + "".join(rows)
-            + "</div>"
+            + "</div>"  # i18n: keep -- markup
         )
 
     @staticmethod
@@ -826,12 +886,12 @@ class _SortWorker(QThread):
 
 # Maps column index → (sql_column_name, display_label)
 _COL_FILTER_MAP: dict[int, tuple[str, str]] = {
-    _COL_LVL:  ("level",     "Level"),
-    _COL_PROC: ("process",   "Process"),
-    _COL_PID:  ("pid",       "PID"),
-    _COL_SUB:  ("subsystem", "Subsystem"),
-    _COL_CAT:  ("category",  "Category"),
-    _COL_MSG:  ("message",   "Message"),
+    _COL_LVL:  ("level",     QT_TRANSLATE_NOOP("GeneratedView", "Level")),
+    _COL_PROC: ("process",   QT_TRANSLATE_NOOP("GeneratedView", "Process")),
+    _COL_PID:  ("pid",       QT_TRANSLATE_NOOP("GeneratedView", "PID")),
+    _COL_SUB:  ("subsystem", QT_TRANSLATE_NOOP("GeneratedView", "Subsystem")),
+    _COL_CAT:  ("category",  QT_TRANSLATE_NOOP("GeneratedView", "Category")),
+    _COL_MSG:  ("message",   QT_TRANSLATE_NOOP("GeneratedView", "Message")),
 }
 
 # Page cache: how many rows per page, and how many pages to keep in RAM
@@ -957,7 +1017,7 @@ class MultiLogModel(QAbstractTableModel):
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return _HEADERS[section]
+            return gen_text(_HEADERS[section])
         return None
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -1010,10 +1070,11 @@ class MultiLogModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole and col == _COL_TS:
             return _ts_tooltip(ts_flags)
         if role == Qt.ItemDataRole.ToolTipRole and col == _COL_LVL and level_note:
-            return (
+            return translate(
+                "MultiLogViewer",
                 "This format has no level field. Guessed from keyword(s) in the "
-                f"message: {level_note} (the first one is used)."
-            )
+                "message: {keywords} (the first one is used).",
+            ).format(keywords=level_note)
 
         if role == _ROLE_TS_DT:
             return _unix_to_ts(ts_unix)
@@ -1419,7 +1480,9 @@ class MultiLogViewer(QWidget):
             Qt.TextInteractionFlag.TextSelectableByMouse
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
-        self._raw_panel.setPlaceholderText("Select a row to see the original line…")
+        self._raw_panel.setPlaceholderText(
+            translate("MultiLogViewer", "Select a row to see the original line…")
+        )
         self._raw_panel.setMinimumHeight(40)
         self._raw_panel.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         splitter.addWidget(self._raw_panel)
@@ -1440,7 +1503,7 @@ class MultiLogViewer(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(6)
 
-        layout.addWidget(QLabel("Level:"))
+        layout.addWidget(QLabel(translate("MultiLogViewer", "Level:")))
         self._level_btns: dict[str, QPushButton] = {}
         for lvl in _LEVELS:
             btn = QPushButton(lvl)
@@ -1457,9 +1520,11 @@ class MultiLogViewer(QWidget):
 
         layout.addSpacing(8)
 
-        layout.addWidget(QLabel("Search:"))
+        layout.addWidget(QLabel(translate("MultiLogViewer", "Search:")))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter message / process / extra…")
+        self._search.setPlaceholderText(
+            translate("MultiLogViewer", "Filter message / process / extra…")
+        )
         self._search.setClearButtonEnabled(True)
         self._search.setMinimumWidth(80)     # can grow/shrink with window width
         self._search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -1467,9 +1532,12 @@ class MultiLogViewer(QWidget):
         layout.addWidget(self._search)
 
         layout.addSpacing(8)
-        fmt_btn = QPushButton("Format")
+        fmt_btn = QPushButton(translate("MultiLogViewer", "Format"))
         fmt_btn.setToolTip(
-            "Re-parse a source as another built-in format, or define a custom one"
+            translate(
+                "MultiLogViewer",
+                "Re-parse a source as another built-in format, or define a custom one",
+            )
         )
         self._fmt_menu = QMenu(fmt_btn)
         self._fmt_submenus: list[QMenu] = []
@@ -1501,7 +1569,7 @@ class MultiLogViewer(QWidget):
         outer_layout.setContentsMargins(4, 2, 4, 2)
         outer_layout.setSpacing(6)
 
-        add_btn = QPushButton("+ Add Source")
+        add_btn = QPushButton(translate("MultiLogViewer", "+ Add Source"))
         add_btn.setFixedHeight(26)
         add_btn.clicked.connect(self._on_add_source_clicked)
         outer_layout.addWidget(add_btn)
@@ -1562,7 +1630,7 @@ class MultiLogViewer(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(6)
 
-        self._time_filter_cb = QCheckBox("Time range:")
+        self._time_filter_cb = QCheckBox(translate("MultiLogViewer", "Time range:"))
         self._time_filter_cb.setChecked(False)
         self._time_filter_cb.toggled.connect(self._on_time_filter_toggled)
         layout.addWidget(self._time_filter_cb)
@@ -1583,17 +1651,17 @@ class MultiLogViewer(QWidget):
         self._dt_to.setTimeSpec(Qt.TimeSpec.UTC)
         layout.addWidget(self._dt_to)
 
-        self._time_reset_btn = QPushButton("Reset")
+        self._time_reset_btn = QPushButton(translate("MultiLogViewer", "Reset"))
         self._time_reset_btn.setEnabled(False)
         self._time_reset_btn.clicked.connect(self._reset_time_filter)
         layout.addWidget(self._time_reset_btn)
 
         layout.addSpacing(16)
 
-        layout.addWidget(QLabel("Display TZ:"))
+        layout.addWidget(QLabel(translate("MultiLogViewer", "Display TZ:")))
         self._tz_combo = QComboBox()
-        self._tz_combo.addItem("UTC", timezone.utc)
-        self._tz_combo.addItem("Local", None)
+        self._tz_combo.addItem(translate("MultiLogViewer", "UTC"), timezone.utc)
+        self._tz_combo.addItem(translate("MultiLogViewer", "Local"), None)
         self._tz_combo.currentIndexChanged.connect(self._on_tz_changed)
         layout.addWidget(self._tz_combo)
 
@@ -1613,7 +1681,7 @@ class MultiLogViewer(QWidget):
         self._col_text_inputs: dict[str, QLineEdit] = {}
         for _col_idx, (sql_col, label) in _COL_FILTER_MAP.items():
             edit = QLineEdit()
-            edit.setPlaceholderText(label)
+            edit.setPlaceholderText(gen_text(label))
             edit.setFixedHeight(22)
             edit.setClearButtonEnabled(True)
             edit.textChanged.connect(
@@ -1632,11 +1700,11 @@ class MultiLogViewer(QWidget):
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(8, 2, 8, 2)
         layout.setSpacing(6)
-        layout.addWidget(QLabel("Active filters:"))
+        layout.addWidget(QLabel(translate("MultiLogViewer", "Active filters:")))
         self._col_filter_chip_layout = QHBoxLayout()
         self._col_filter_chip_layout.setSpacing(4)
         layout.addLayout(self._col_filter_chip_layout)
-        clear_all_btn = QPushButton("Clear all")
+        clear_all_btn = QPushButton(translate("MultiLogViewer", "Clear all"))
         clear_all_btn.setFixedHeight(22)
         clear_all_btn.clicked.connect(self._clear_all_col_filters)
         layout.addWidget(clear_all_btn)
@@ -1653,9 +1721,11 @@ class MultiLogViewer(QWidget):
         filters = self._model.active_column_filters()
         for col_name, value in filters.items():
             label = f"{col_name} = {value!r}"
-            chip = QPushButton(f"✕  {label}")
+            chip = QPushButton(translate("MultiLogViewer", "✕  {label}").format(label=label))
             chip.setFixedHeight(22)
-            chip.setToolTip(f"Remove filter: {label}")
+            chip.setToolTip(
+                translate("MultiLogViewer", "Remove filter: {label}").format(label=label)
+            )
             chip.clicked.connect(
                 lambda _checked=False, c=col_name: self._remove_col_filter(c)
             )
@@ -1760,7 +1830,9 @@ class MultiLogViewer(QWidget):
     def _on_error(self, source_id: int, message: str) -> None:
         self._stop_status_anim()
         src_name = self._model.source_name(source_id) or "?"
-        self._source_meta[source_id] = (f"Error: {message}", {})
+        self._source_meta[source_id] = (
+            translate("MultiLogViewer", "Error: {message}").format(message=message), {}
+        )
         self._refresh_fmt_label()
         self._logger.error("[Multi-Log] Error loading %s: %s", src_name, message)
         if all(not w.isRunning() for w in self._workers.values()):
@@ -1774,7 +1846,14 @@ class MultiLogViewer(QWidget):
         parts = []
         for sid, (fmt, metadata) in sorted(self._source_meta.items()):
             name = html.escape(self._model.source_name(sid) or "?")
-            part = f"{name}: {html.escape(fmt)}"
+            # fmt is the English form (it also goes to the log); show the
+            # parser's own format issue in the UI language where there is one.
+            shown = (
+                render_value(metadata["Log format"], localized=True)
+                if "Log format" in metadata
+                else fmt
+            )
+            part = f"{name}: {html.escape(shown)}"
             if metadata:
                 part += f' <a href="{sid}">ⓘ</a>'
             parts.append(part)
@@ -1786,13 +1865,16 @@ class MultiLogViewer(QWidget):
     def _source_details(self, source_id: int) -> str:
         fmt, metadata = self._source_meta.get(source_id, ("", {}))
         lines = [self._model.source_name(source_id) or "?"]
-        lines += [f"{key}: {render_value(val)}" for key, val in metadata.items()]
+        lines += [
+            f"{translate('MetadataLabel', key)}: {render_value(val, localized=True)}"  # i18n: keep -- labels marked in crush.core.metadata_labels
+            for key, val in metadata.items()
+        ]
         return "\n".join(lines) if metadata else f"{lines[0]}: {fmt}"
 
     def _show_source_details(self, link: str) -> None:
         sid = int(link)
         box = QMessageBox(self)
-        box.setWindowTitle("Log source details")
+        box.setWindowTitle(translate("MultiLogViewer", "Log source details"))
         box.setText(self._source_details(sid))
         box.setTextFormat(Qt.TextFormat.PlainText)
         box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -1815,7 +1897,10 @@ class MultiLogViewer(QWidget):
             # not the text-log parser.
             if node.is_dir or name_lower.endswith((".tracev3", ".logarchive")):
                 continue
-            sub = QMenu(f"Re-parse {node.name} as", self._fmt_menu)
+            sub = QMenu(
+                translate("MultiLogViewer", "Re-parse {name} as").format(name=node.name),
+                self._fmt_menu,
+            )
             self._fmt_menu.addMenu(sub)
             self._fmt_submenus.append(sub)
             for fmt in LOG_FORMATS:
@@ -1825,7 +1910,7 @@ class MultiLogViewer(QWidget):
                 )
         if self._fmt_menu.actions():
             self._fmt_menu.addSeparator()
-        custom = self._fmt_menu.addAction("Define custom format…")
+        custom = self._fmt_menu.addAction(translate("MultiLogViewer", "Define custom format…"))
         custom.setEnabled(bool(self._source_nodes))
         custom.triggered.connect(self._on_format_clicked)
 
@@ -1897,9 +1982,12 @@ class MultiLogViewer(QWidget):
     def _on_add_source_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Add Log Source",
+            translate("MultiLogViewer", "Add Log Source"),
             "",
-            "Log files (*.log *.txt *.json *.jsonl *.csv);;All files (*)",
+            translate("MultiLogViewer", "Log files")
+            + " (*.log *.txt *.json *.jsonl *.csv);;"  # i18n: keep -- file filter pattern
+            + translate("MultiLogViewer", "All files")
+            + " (*)",  # i18n: keep -- file filter pattern
         )
         if not path:
             return
@@ -1987,9 +2075,9 @@ class MultiLogViewer(QWidget):
         entry = self._model.entry_at(row)
 
         menu = QMenu(self)
-        copy_msg  = menu.addAction("Copy message")
-        copy_raw  = menu.addAction("Copy raw line")
-        copy_rows = menu.addAction("Copy selection (TSV)")
+        copy_msg  = menu.addAction(translate("MultiLogViewer", "Copy message"))
+        copy_raw  = menu.addAction(translate("MultiLogViewer", "Copy raw line"))
+        copy_rows = menu.addAction(translate("MultiLogViewer", "Copy selection (TSV)"))
 
         # Column filter action — only for filterable columns
         filter_action = None
@@ -2005,7 +2093,9 @@ class MultiLogViewer(QWidget):
             if cell_val:
                 menu.addSeparator()
                 filter_action = menu.addAction(
-                    f"Filter: {display_label} = {cell_val!r}"
+                    translate("MultiLogViewer", "Filter: {display_label} = {cell_val!r}").format(
+                        display_label=gen_text(display_label), cell_val=cell_val
+                    )
                 )
 
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
@@ -2030,10 +2120,11 @@ class MultiLogViewer(QWidget):
         lines: list[str] = []
         for r in rows:
             e = self._model.entry_at(r)
+            # Like an export: Crush's own markers in English.
             lines.append("\t".join(_tsv_field(v) for v in [
                 e.get("source", ""),
-                _fmt_ts(e.get("timestamp"), self._display_tz, e.get("ts_flags", "")),
-                _level_display(e.get("level", ""), e.get("level_note", "")),
+                _fmt_ts(e.get("timestamp"), self._display_tz, e.get("ts_flags", ""), english=True),
+                _level_display(e.get("level", ""), e.get("level_note", ""), english=True),
                 e.get("process", ""),
                 e.get("pid", ""),
                 e.get("subsystem", ""),
@@ -2052,13 +2143,27 @@ class MultiLogViewer(QWidget):
             # else: status_update already set the label text
         elif loading:
             # visible is 0 during silent loading; show total so user sees progress
-            word = "entry" if total == 1 else "entries"
-            self._count_label.setText(f"Loading… {total:,} {word}")
+            self._count_label.setText(
+                (
+                    translate("MultiLogViewer", "Loading… {total:,} entry")
+                    if total == 1
+                    else translate("MultiLogViewer", "Loading… {total:,} entries")
+                ).format(total=total)
+            )
         elif visible == total:
-            word = "entry" if total == 1 else "entries"
-            self._count_label.setText(f"{total:,} {word}")
+            self._count_label.setText(
+                (
+                    translate("MultiLogViewer", "{total:,} entry")
+                    if total == 1
+                    else translate("MultiLogViewer", "{total:,} entries")
+                ).format(total=total)
+            )
         else:
-            self._count_label.setText(f"{visible:,} of {total:,} entries")
+            self._count_label.setText(
+                translate("MultiLogViewer", "{visible:,} of {total:,} entries").format(
+                    visible=visible, total=total
+                )
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -2196,16 +2301,25 @@ class FolderDiscoveryDialog(QDialog):
 
         n = len(self._nodes)
         header = QLabel(
-            f"Found <b>{n}</b> log file{'s' if n != 1 else ''} in "
-            f"<b>{folder_name}</b>. Select the files to load:"
+            (
+                translate(
+                    "FolderDiscoveryDialog",
+                    "Found <b>{count}</b> log file in <b>{folder}</b>. Select the files to load:",
+                )
+                if n == 1
+                else translate(
+                    "FolderDiscoveryDialog",
+                    "Found <b>{count}</b> log files in <b>{folder}</b>. Select the files to load:",
+                )
+            ).format(count=n, folder=folder_name)
         )
         header.setWordWrap(True)
         root.addWidget(header)
 
         # Select All / Deselect All
         sel_row = QHBoxLayout()
-        all_btn  = QPushButton("Select All")
-        none_btn = QPushButton("Deselect All")
+        all_btn  = QPushButton(translate("FolderDiscoveryDialog", "Select All"))
+        none_btn = QPushButton(translate("FolderDiscoveryDialog", "Deselect All"))
         all_btn.setFixedWidth(100)
         none_btn.setFixedWidth(100)
         sel_row.addWidget(all_btn)
@@ -2232,7 +2346,7 @@ class FolderDiscoveryDialog(QDialog):
         self._load_btn = QPushButton()
         self._load_btn.setDefault(True)
         self._load_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton(translate("FolderDiscoveryDialog", "Cancel"))
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(self._load_btn)
         btn_row.addWidget(cancel_btn)
@@ -2256,5 +2370,11 @@ class FolderDiscoveryDialog(QDialog):
             1 for i in range(self._list.count())
             if self._list.item(i).checkState() == Qt.CheckState.Checked
         )
-        self._load_btn.setText(f"Load {n} file{'s' if n != 1 else ''}")
+        self._load_btn.setText(
+            (
+                translate("FolderDiscoveryDialog", "Load {count} file")
+                if n == 1
+                else translate("FolderDiscoveryDialog", "Load {count} files")
+            ).format(count=n)
+        )
         self._load_btn.setEnabled(n > 0)

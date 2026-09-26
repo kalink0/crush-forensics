@@ -7,7 +7,7 @@ import plistlib
 from collections.abc import Mapping
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt
 from PySide6.QtGui import QKeySequence, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -23,6 +23,9 @@ from PySide6.QtWidgets import (
 
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
+from crush.core.issues import ParseIssue, render
+from crush.ui.i18n import translate
+from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_item
 
 _USER_ROLE = Qt.ItemDataRole.UserRole
 _BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -97,33 +100,39 @@ class TreeViewer(QWidget):
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(8)
-        self._expand_all_btn = QPushButton("Expand All")
+        self._expand_all_btn = QPushButton(translate("TreeViewer", "Expand All"))
         self._expand_all_btn.clicked.connect(self._expand_all)
         tb_layout.addWidget(self._expand_all_btn)
-        self._collapse_all_btn = QPushButton("Collapse All")
+        self._collapse_all_btn = QPushButton(translate("TreeViewer", "Collapse All"))
         self._collapse_all_btn.clicked.connect(self._collapse_all)
         tb_layout.addWidget(self._collapse_all_btn)
         tb_layout.addStretch()
-        tb_layout.addWidget(QLabel("Search:"))
+        tb_layout.addWidget(QLabel(translate("TreeViewer", "Search:")))
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter keys / values…")
+        self._search.setPlaceholderText(translate("TreeViewer", "Filter keys / values…"))
         self._search.setClearButtonEnabled(True)
         self._search.setFixedWidth(200)
         self._search.textChanged.connect(self._apply_filter)
         tb_layout.addWidget(self._search)
         self._hex_toggle_btn: QPushButton | None = None
         if self._raw is not None:
-            self._hex_toggle_btn = QPushButton("Show Hex")
+            self._hex_toggle_btn = QPushButton(translate("TreeViewer", "Show Hex"))
             self._hex_toggle_btn.clicked.connect(self._toggle_hex_view)
             tb_layout.addWidget(self._hex_toggle_btn)
             if self._initial_hex_visible:
-                self._hex_toggle_btn.setText("Hide Hex")
+                self._hex_toggle_btn.setText(translate("TreeViewer", "Hide Hex"))
         layout.addWidget(toolbar)
 
         # Tree view
         self._model = QStandardItemModel()
-        self._model.setHorizontalHeaderLabels(["Key / Index", "Value", "Type"])
+        self._model.setHorizontalHeaderLabels(
+            [
+                translate("TreeViewer", "Key / Index"),
+                translate("TreeViewer", "Value"),
+                translate("TreeViewer", "Type"),
+            ]
+        )
 
         self._tree = QTreeView()
         self._tree.setModel(self._model)
@@ -141,7 +150,7 @@ class TreeViewer(QWidget):
         vb_layout = QHBoxLayout(value_bar)
         vb_layout.setContentsMargins(8, 4, 8, 4)
         vb_layout.setSpacing(8)
-        vb_layout.addWidget(QLabel("Value:"))
+        vb_layout.addWidget(QLabel(translate("TreeViewer", "Value:")))
         self._value_field = QLineEdit()
         self._value_field.setReadOnly(True)
         vb_layout.addWidget(self._value_field, 1)
@@ -170,7 +179,9 @@ class TreeViewer(QWidget):
             return
         visible = not self._mapped_view.is_hex_visible()
         self._mapped_view.set_hex_visible(visible)
-        self._hex_toggle_btn.setText("Hide Hex" if visible else "Show Hex")
+        self._hex_toggle_btn.setText(
+            translate("TreeViewer", "Hide Hex") if visible else translate("TreeViewer", "Show Hex")
+        )
 
     def _expand_all(self) -> None:
         self._tree.expandAll()
@@ -210,7 +221,9 @@ class TreeViewer(QWidget):
             )
             display_obj = {k: v for k, v in obj.items() if k not in ("$class", "$classes", "$classname")}
             key_item = QStandardItem(str(key))
-            val_item = QStandardItem(f"({len(display_obj)} keys)")
+            val_item = gen_item(
+                Gen(QT_TRANSLATE_NOOP("GeneratedView", "({count} keys)"), count=len(display_obj))
+            )
             type_item = QStandardItem(classname if classname else "dict")
             key_item.setData(_ObjRef(obj), _USER_ROLE)
             self._apply_byte_range_metadata(key_item, node_path)
@@ -223,7 +236,9 @@ class TreeViewer(QWidget):
 
         elif isinstance(obj, (list, tuple)):
             key_item = QStandardItem(str(key))
-            val_item = QStandardItem(f"({len(obj)} items)")
+            val_item = gen_item(
+                Gen(QT_TRANSLATE_NOOP("GeneratedView", "({count} items)"), count=len(obj))
+            )
             type_item = QStandardItem(type_name)
             key_item.setData(_ObjRef(obj), _USER_ROLE)
             self._apply_byte_range_metadata(key_item, node_path)
@@ -236,7 +251,9 @@ class TreeViewer(QWidget):
 
         elif isinstance(obj, bytes):
             key_item = QStandardItem(str(key))
-            val_item = QStandardItem(f"<BLOB {len(obj):,} B>")
+            val_item = gen_item(
+                Gen(QT_TRANSLATE_NOOP("GeneratedView", "<BLOB {size:,} B>"), size=len(obj))
+            )
             type_item = QStandardItem("bytes")
             key_item.setData(_ObjRef(obj), _USER_ROLE)
             self._apply_byte_range_metadata(key_item, node_path)
@@ -248,6 +265,13 @@ class TreeViewer(QWidget):
         else:
             key_item = QStandardItem(str(key))
             val_item = QStandardItem(str(obj))
+            if isinstance(obj, ParseIssue):
+                # A parser's note (e.g. in the Realm File Structure tree):
+                # shown in the UI language, copied in English.
+                shown = render(obj, localized=True)
+                val_item.setText(shown)
+                if shown != str(obj):
+                    val_item.setData(str(obj), EXPORT_TEXT_ROLE)
             type_item = QStandardItem(type_name)
             key_item.setData(_ObjRef(obj), _USER_ROLE)
             self._apply_byte_range_metadata(key_item, node_path)
@@ -310,7 +334,7 @@ class TreeViewer(QWidget):
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "matches"):
             if event.matches(QKeySequence.StandardKey.Copy):
-                key, val = self._current_key_value()
+                key, val = self._current_key_value(for_copy=True)
                 if key == "" and val == "":
                     return
                 if val:
@@ -320,7 +344,9 @@ class TreeViewer(QWidget):
                 return
         super().keyPressEvent(event)  # type: ignore[arg-type]
 
-    def _current_key_value(self) -> tuple[str, str]:
+    def _current_key_value(self, for_copy: bool = False) -> tuple[str, str]:
+        """Key and value text of the current row. *for_copy*: the English
+        original of Crush's own words (e.g. "(3 keys)"), as copy writes it."""
         index = self._tree.currentIndex()
         if not index.isValid():
             return "", ""
@@ -332,6 +358,8 @@ class TreeViewer(QWidget):
             return "", ""
         key = key_item.text()
         val = val_item.text() if val_item is not None else ""
+        if for_copy and val_item is not None:
+            val = val_item.data(EXPORT_TEXT_ROLE) or val
         return key, val
 
     def _update_value_field(self) -> None:
@@ -357,16 +385,16 @@ class TreeViewer(QWidget):
         if not index.isValid():
             return
         self._tree.setCurrentIndex(index)
-        key, val = self._current_key_value()
+        key, val = self._current_key_value(for_copy=True)
         if not key and not val:
             return
         obj, _ = self._current_obj_and_key()
         menu = QMenu(self)
-        inspect_action = menu.addAction("Inspect BLOB…")
+        inspect_action = menu.addAction(translate("TreeViewer", "Inspect BLOB…"))
         menu.addSeparator()
-        copy_key = menu.addAction("Copy key")
-        copy_value = menu.addAction("Copy value")
-        copy_pair = menu.addAction("Copy key = value")
+        copy_key = menu.addAction(translate("TreeViewer", "Copy key"))
+        copy_value = menu.addAction(translate("TreeViewer", "Copy value"))
+        copy_pair = menu.addAction(translate("TreeViewer", "Copy key = value"))
         action = menu.exec(self._tree.viewport().mapToGlobal(pos))
         if action == inspect_action:
             from crush.viewers.table_viewer import BlobInspector

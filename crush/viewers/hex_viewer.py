@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from crush.ui.busy_dialog import busy_call
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
+from crush.ui.i18n import translate
 
 
 _BYTES_PER_ROW = 16
@@ -76,21 +77,23 @@ class _HexPlainTextEdit(QPlainTextEdit):
         cursor = self.textCursor()
         if cursor.hasSelection():
             menu.addSeparator()
-            menu.addAction("Copy Selected Hex").triggered.connect(
+            menu.addAction(translate("_HexPlainTextEdit", "Copy Selected Hex")).triggered.connect(
                 self._viewer._copy_selected_hex
             )
-            menu.addAction("Copy Selected ASCII").triggered.connect(
+            menu.addAction(translate("_HexPlainTextEdit", "Copy Selected ASCII")).triggered.connect(
                 self._viewer._copy_selected_ascii
             )
             menu.addSeparator()
-            menu.addAction("Search Selected as ASCII").triggered.connect(
-                self._viewer._search_selected_as_ascii
-            )
-            menu.addAction("Search Selected as Hex").triggered.connect(
-                self._viewer._search_selected_as_hex
-            )
+            menu.addAction(
+                translate("_HexPlainTextEdit", "Search Selected as ASCII")
+            ).triggered.connect(self._viewer._search_selected_as_ascii)
+            menu.addAction(
+                translate("_HexPlainTextEdit", "Search Selected as Hex")
+            ).triggered.connect(self._viewer._search_selected_as_hex)
         menu.addSeparator()
-        menu.addAction("Copy All").triggered.connect(self._viewer._copy_all)
+        menu.addAction(translate("_HexPlainTextEdit", "Copy All")).triggered.connect(
+            self._viewer._copy_all
+        )
         menu.exec(event.globalPos())
 
 
@@ -134,10 +137,10 @@ class HexViewer(QWidget):
         search_row = QHBoxLayout()
         search_row.setSpacing(8)
 
-        search_row.addWidget(QLabel("Search as:"))
+        search_row.addWidget(QLabel(translate("HexViewer", "Search as:")))
         self._search_mode = QComboBox()
-        self._search_mode.addItem("ASCII", _SEARCH_MODE_ASCII)
-        self._search_mode.addItem("Hex", _SEARCH_MODE_HEX)
+        self._search_mode.addItem(translate("HexViewer", "ASCII"), _SEARCH_MODE_ASCII)
+        self._search_mode.addItem(translate("HexViewer", "Hex"), _SEARCH_MODE_HEX)
         self._search_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         search_row.addWidget(self._search_mode)
 
@@ -145,23 +148,23 @@ class HexViewer(QWidget):
             QRegularExpression(r"[0-9a-fA-F\s:]*")
         )
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search text…")
+        self._search_input.setPlaceholderText(translate("HexViewer", "Search text…"))
         self._search_input.returnPressed.connect(self._do_search)
         search_row.addWidget(self._search_input, stretch=1)
 
-        self._find_btn = QPushButton("Find")
+        self._find_btn = QPushButton(translate("HexViewer", "Find"))
         self._find_btn.clicked.connect(self._do_search)
         search_row.addWidget(self._find_btn)
 
         self._search_prev_btn = QToolButton()
         self._search_prev_btn.setText("↑")
-        self._search_prev_btn.setToolTip("Previous match")
+        self._search_prev_btn.setToolTip(translate("HexViewer", "Previous match"))
         self._search_prev_btn.clicked.connect(self._find_prev)
         search_row.addWidget(self._search_prev_btn)
 
         self._search_next_btn = QToolButton()
         self._search_next_btn.setText("↓")
-        self._search_next_btn.setToolTip("Next match")
+        self._search_next_btn.setToolTip(translate("HexViewer", "Next match"))
         self._search_next_btn.clicked.connect(self._find_next)
         search_row.addWidget(self._search_next_btn)
 
@@ -170,7 +173,7 @@ class HexViewer(QWidget):
         search_row.addWidget(self._count_label)
 
         self._show_all_btn = QToolButton()
-        self._show_all_btn.setText("Show all")
+        self._show_all_btn.setText(translate("HexViewer", "Show all"))
         self._show_all_btn.setCheckable(True)
         self._show_all_btn.toggled.connect(self._toggle_result_panel)
         search_row.addWidget(self._show_all_btn)
@@ -183,28 +186,28 @@ class HexViewer(QWidget):
         nav_row = QHBoxLayout()
         nav_row.setSpacing(8)
 
-        self._prev_btn = QPushButton("◀ Prev")
+        self._prev_btn = QPushButton(translate("HexViewer", "◀ Prev"))
         self._prev_btn.clicked.connect(self._prev_page)
         nav_row.addWidget(self._prev_btn)
 
         self._page_label = QLabel("")
         nav_row.addWidget(self._page_label)
 
-        self._next_btn = QPushButton("Next ▶")
+        self._next_btn = QPushButton(translate("HexViewer", "Next ▶"))
         self._next_btn.clicked.connect(self._next_page)
         nav_row.addWidget(self._next_btn)
 
         nav_row.addSpacing(8)
 
-        self._copy_hex_btn = QPushButton("Copy Hex")
+        self._copy_hex_btn = QPushButton(translate("HexViewer", "Copy Hex"))
         self._copy_hex_btn.clicked.connect(self._copy_hex)
         nav_row.addWidget(self._copy_hex_btn)
 
-        self._copy_ascii_btn = QPushButton("Copy ASCII")
+        self._copy_ascii_btn = QPushButton(translate("HexViewer", "Copy ASCII"))
         self._copy_ascii_btn.clicked.connect(self._copy_ascii)
         nav_row.addWidget(self._copy_ascii_btn)
 
-        self._copy_all_btn = QPushButton("Copy All")
+        self._copy_all_btn = QPushButton(translate("HexViewer", "Copy All"))
         self._copy_all_btn.clicked.connect(self._copy_all)
         nav_row.addWidget(self._copy_all_btn)
         nav_row.addStretch(1)
@@ -214,27 +217,29 @@ class HexViewer(QWidget):
         goto_row.setSpacing(8)
 
         self._offset_mode_btn = QToolButton()
-        self._offset_mode_btn.setText("Offset: Hex")
-        self._offset_mode_btn.setToolTip("Switch the offset gutter between hex and decimal")
+        self._offset_mode_btn.setText(translate("HexViewer", "Offset: Hex"))
+        self._offset_mode_btn.setToolTip(
+            translate("HexViewer", "Switch the offset gutter between hex and decimal")
+        )
         self._offset_mode_btn.clicked.connect(self._toggle_offset_mode)
         goto_row.addWidget(self._offset_mode_btn)
 
         goto_row.addSpacing(8)
-        goto_row.addWidget(QLabel("Go to offset:"))
+        goto_row.addWidget(QLabel(translate("HexViewer", "Go to offset:")))
         self._goto_offset_input = QLineEdit()
-        self._goto_offset_input.setPlaceholderText("offset (hex)")
+        self._goto_offset_input.setPlaceholderText(translate("HexViewer", "offset (hex)"))
         self._goto_offset_input.setMaximumWidth(120)
         self._goto_offset_input.returnPressed.connect(self._do_goto)
         goto_row.addWidget(self._goto_offset_input)
 
-        goto_row.addWidget(QLabel("Length:"))
+        goto_row.addWidget(QLabel(translate("HexViewer", "Length:")))
         self._goto_length_input = QLineEdit()
-        self._goto_length_input.setPlaceholderText("optional")
+        self._goto_length_input.setPlaceholderText(translate("HexViewer", "optional"))
         self._goto_length_input.setMaximumWidth(80)
         self._goto_length_input.returnPressed.connect(self._do_goto)
         goto_row.addWidget(self._goto_length_input)
 
-        self._goto_btn = QPushButton("Go")
+        self._goto_btn = QPushButton(translate("HexViewer", "Go"))
         self._goto_btn.clicked.connect(self._do_goto)
         goto_row.addWidget(self._goto_btn)
 
@@ -271,7 +276,13 @@ class HexViewer(QWidget):
         rp_layout.setContentsMargins(0, 0, 0, 0)
         rp_layout.setSpacing(0)
         self._result_table = QTableWidget(0, 3)
-        self._result_table.setHorizontalHeaderLabels(["Offset", "Hex", "ASCII"])
+        self._result_table.setHorizontalHeaderLabels(
+            [
+                translate("HexViewer", "Offset"),
+                translate("HexViewer", "Hex"),
+                translate("HexViewer", "ASCII"),
+            ]
+        )
         self._result_table.horizontalHeader().setStretchLastSection(True)
         self._result_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -317,14 +328,19 @@ class HexViewer(QWidget):
         self._update_highlights()
 
         pages = self._page_count()
-        self._page_label.setText(f"Page {self._page + 1} / {pages}")
+        self._page_label.setText(
+            translate("HexViewer", "Page {page} / {pages}").format(page=self._page + 1, pages=pages)
+        )
         self._prev_btn.setEnabled(self._page > 0)
         self._next_btn.setEnabled(self._page < pages - 1)
         start = base_offset
         end = base_offset + len(page_data)
         self._status.setText(
-            f"{self._format_offset(start)}–{self._format_offset(end)}  "
-            f"({len(self._data):,} B total)"
+            translate("HexViewer", "{start}–{end}  ({total:,} B total)").format(
+                start=self._format_offset(start),
+                end=self._format_offset(end),
+                total=len(self._data),
+            )
         )
 
     def set_data(self, data: bytes) -> None:
@@ -444,9 +460,15 @@ class HexViewer(QWidget):
         if mode == self._offset_mode:
             return
         self._offset_mode = mode
-        self._offset_mode_btn.setText("Offset: Hex" if mode == "hex" else "Offset: Dec")
+        self._offset_mode_btn.setText(
+            translate("HexViewer", "Offset: Hex")
+            if mode == "hex"
+            else translate("HexViewer", "Offset: Dec")
+        )
         self._goto_offset_input.setPlaceholderText(
-            "offset (hex)" if mode == "hex" else "offset (dec)"
+            translate("HexViewer", "offset (hex)")
+            if mode == "hex"
+            else translate("HexViewer", "offset (dec)")
         )
         self._compute_layout()
         self._load_page()
@@ -463,12 +485,12 @@ class HexViewer(QWidget):
     def _do_goto(self) -> None:
         offset = self._parse_offset_value(self._goto_offset_input.text())
         if offset is None or not (0 <= offset < max(1, len(self._data))):
-            self._goto_status.setText("Invalid offset")
+            self._goto_status.setText(translate("HexViewer", "Invalid offset"))
             return
         length_text = self._goto_length_input.text().strip()
         length = self._parse_offset_value(length_text) if length_text else None
         if length_text and (length is None or length <= 0):
-            self._goto_status.setText("Invalid length")
+            self._goto_status.setText(translate("HexViewer", "Invalid length"))
             return
         self._goto_status.setText("")
         if length:
@@ -499,10 +521,12 @@ class HexViewer(QWidget):
         self._count_label.setText("")
         self._update_highlights()
         if self._search_mode.currentData() == _SEARCH_MODE_HEX:
-            self._search_input.setPlaceholderText("Hex pattern… (e.g. de ad be ef)")
+            self._search_input.setPlaceholderText(
+                translate("HexViewer", "Hex pattern… (e.g. de ad be ef)")
+            )
             self._search_input.setValidator(self._hex_validator)
         else:
-            self._search_input.setPlaceholderText("Search text…")
+            self._search_input.setPlaceholderText(translate("HexViewer", "Search text…"))
             self._search_input.setValidator(None)
 
     @staticmethod
@@ -535,7 +559,7 @@ class HexViewer(QWidget):
         if self._search_mode.currentData() == _SEARCH_MODE_HEX:
             pattern = _parse_hex_query(query)
             if pattern is None:
-                self._count_label.setText("Invalid hex")
+                self._count_label.setText(translate("HexViewer", "Invalid hex"))
                 return False
         else:
             # Text search is byte-for-byte latin-1: a character above U+00FF
@@ -549,7 +573,7 @@ class HexViewer(QWidget):
         data = self._data
         if len(data) > _BUSY_SCAN_BYTES:
             self._search_hits = busy_call(
-                self, "Searching…", lambda: self._scan_hits(data, pattern)
+                self, translate("HexViewer", "Searching…"), lambda: self._scan_hits(data, pattern)
             )
         else:
             self._search_hits = self._scan_hits(data, pattern)
@@ -559,7 +583,7 @@ class HexViewer(QWidget):
     def _do_search(self) -> None:
         """Re-collect all hits for the current query and jump to the first."""
         if not self._collect_hits():
-            self._count_label.setText("Not found")
+            self._count_label.setText(translate("HexViewer", "Not found"))
             self._update_highlights()
             self._update_result_panel()
             return
@@ -608,11 +632,11 @@ class HexViewer(QWidget):
     def _update_count_label(self) -> None:
         n = len(self._search_hits)
         if n == 0:
-            self._count_label.setText("Not found")
+            self._count_label.setText(translate("HexViewer", "Not found"))
         elif self._current_hit >= 0:
-            self._count_label.setText(f"{self._current_hit + 1} / {n}")
+            self._count_label.setText(f"{self._current_hit + 1} / {n}")  # i18n: keep -- numbers
         else:
-            self._count_label.setText(f"{n} found")
+            self._count_label.setText(translate("HexViewer", "{n} found").format(n=n))
 
     # ------------------------------------------------------------------
     # Highlights
