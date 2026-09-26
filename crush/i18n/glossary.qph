@@ -1,0 +1,428 @@
+<!DOCTYPE QPH>
+<QPH sourcelanguage="en">
+  <phrase>
+    <source>SQLite</source>
+    <target>SQLite</target>
+    <definition>Do not translate -- Format name</definition>
+  </phrase>
+  <phrase>
+    <source>SQLCipher</source>
+    <target>SQLCipher</target>
+    <definition>Do not translate -- Format/library name</definition>
+  </phrase>
+  <phrase>
+    <source>Realm</source>
+    <target>Realm</target>
+    <definition>Do not translate -- Format name</definition>
+  </phrase>
+  <phrase>
+    <source>LevelDB</source>
+    <target>LevelDB</target>
+    <definition>Do not translate -- Format name</definition>
+  </phrase>
+  <phrase>
+    <source>MMKV</source>
+    <target>MMKV</target>
+    <definition>Do not translate -- Format name</definition>
+  </phrase>
+  <phrase>
+    <source>SEGB</source>
+    <target>SEGB</target>
+    <definition>Do not translate -- Format name (Apple)</definition>
+  </phrase>
+  <phrase>
+    <source>Biome</source>
+    <target>Biome</target>
+    <definition>Do not translate -- Apple's name for the SEGB-based data store</definition>
+  </phrase>
+  <phrase>
+    <source>Protobuf</source>
+    <target>Protobuf</target>
+    <definition>Do not translate -- Format name (Protocol Buffers)</definition>
+  </phrase>
+  <phrase>
+    <source>.proto</source>
+    <target>.proto</target>
+    <definition>Do not translate -- Protobuf schema file extension</definition>
+  </phrase>
+  <phrase>
+    <source>wire type</source>
+    <target>wire type</target>
+    <definition>Do not translate -- Protobuf spec term</definition>
+  </phrase>
+  <phrase>
+    <source>varint</source>
+    <target>varint</target>
+    <definition>Do not translate -- Protobuf spec term</definition>
+  </phrase>
+  <phrase>
+    <source>plist</source>
+    <target>plist</target>
+    <definition>Do not translate -- Apple property list</definition>
+  </phrase>
+  <phrase>
+    <source>bplist</source>
+    <target>bplist</target>
+    <definition>Do not translate -- Apple binary property list</definition>
+  </phrase>
+  <phrase>
+    <source>NSKeyedArchiver</source>
+    <target>NSKeyedArchiver</target>
+    <definition>Do not translate -- Apple class name</definition>
+  </phrase>
+  <phrase>
+    <source>ABX</source>
+    <target>ABX</target>
+    <definition>Do not translate -- Android Binary XML</definition>
+  </phrase>
+  <phrase>
+    <source>EWF</source>
+    <target>EWF</target>
+    <definition>Do not translate -- Expert Witness Format</definition>
+  </phrase>
+  <phrase>
+    <source>E01</source>
+    <target>E01</target>
+    <definition>Do not translate -- EWF file extension</definition>
+  </phrase>
+  <phrase>
+    <source>UFDR</source>
+    <target>UFDR</target>
+    <definition>Do not translate -- Cellebrite container format</definition>
+  </phrase>
+  <phrase>
+    <source>iTunes</source>
+    <target>iTunes</target>
+    <definition>Do not translate -- Product name</definition>
+  </phrase>
+  <phrase>
+    <source>Play Store</source>
+    <target>Play Store</target>
+    <definition>Do not translate -- Product name</definition>
+  </phrase>
+  <phrase>
+    <source>Unified Log</source>
+    <target>Unified Log</target>
+    <definition>Do not translate -- Apple logging system</definition>
+  </phrase>
+  <phrase>
+    <source>tracev3</source>
+    <target>tracev3</target>
+    <definition>Do not translate -- Apple Unified Log file type</definition>
+  </phrase>
+  <phrase>
+    <source>logarchive</source>
+    <target>logarchive</target>
+    <definition>Do not translate -- Apple Unified Log bundle type</definition>
+  </phrase>
+  <phrase>
+    <source>APFS</source>
+    <target>APFS</target>
+    <definition>Do not translate -- File system name</definition>
+  </phrase>
+  <phrase>
+    <source>NTFS</source>
+    <target>NTFS</target>
+    <definition>Do not translate -- File system name</definition>
+  </phrase>
+  <phrase>
+    <source>FAT</source>
+    <target>FAT</target>
+    <definition>Do not translate -- File system name</definition>
+  </phrase>
+  <phrase>
+    <source>exFAT</source>
+    <target>exFAT</target>
+    <definition>Do not translate -- File system name</definition>
+  </phrase>
+  <phrase>
+    <source>ext4</source>
+    <target>ext4</target>
+    <definition>Do not translate -- File system name</definition>
+  </phrase>
+  <phrase>
+    <source>HFS+</source>
+    <target>HFS+</target>
+    <definition>Do not translate -- File system name</definition>
+  </phrase>
+  <phrase>
+    <source>QNX</source>
+    <target>QNX</target>
+    <definition>Do not translate -- Operating system name</definition>
+  </phrase>
+  <phrase>
+    <source>Android</source>
+    <target>Android</target>
+    <definition>Do not translate -- Platform name</definition>
+  </phrase>
+  <phrase>
+    <source>iOS</source>
+    <target>iOS</target>
+    <definition>Do not translate -- Platform name</definition>
+  </phrase>
+  <phrase>
+    <source>macOS</source>
+    <target>macOS</target>
+    <definition>Do not translate -- Platform name</definition>
+  </phrase>
+  <phrase>
+    <source>Windows</source>
+    <target>Windows</target>
+    <definition>Do not translate -- Platform name</definition>
+  </phrase>
+  <phrase>
+    <source>Linux</source>
+    <target>Linux</target>
+    <definition>Do not translate -- Platform name</definition>
+  </phrase>
+  <phrase>
+    <source>Chrome</source>
+    <target>Chrome</target>
+    <definition>Do not translate -- Browser (timestamp format name)</definition>
+  </phrase>
+  <phrase>
+    <source>WebKit</source>
+    <target>WebKit</target>
+    <definition>Do not translate -- Browser engine (timestamp format name)</definition>
+  </phrase>
+  <phrase>
+    <source>Cocoa</source>
+    <target>Cocoa</target>
+    <definition>Do not translate -- Apple framework (timestamp format name)</definition>
+  </phrase>
+  <phrase>
+    <source>FILETIME</source>
+    <target>FILETIME</target>
+    <definition>Do not translate -- Windows timestamp format</definition>
+  </phrase>
+  <phrase>
+    <source>Unix</source>
+    <target>Unix</target>
+    <definition>Do not translate -- Timestamp format name</definition>
+  </phrase>
+  <phrase>
+    <source>UTC</source>
+    <target>UTC</target>
+    <definition>Do not translate -- Time standard; timestamps are always shown in UTC</definition>
+  </phrase>
+  <phrase>
+    <source>UTF-8</source>
+    <target>UTF-8</target>
+    <definition>Do not translate -- Text encoding</definition>
+  </phrase>
+  <phrase>
+    <source>Base64</source>
+    <target>Base64</target>
+    <definition>Do not translate -- Encoding</definition>
+  </phrase>
+  <phrase>
+    <source>LZFSE</source>
+    <target>LZFSE</target>
+    <definition>Do not translate -- Compression format</definition>
+  </phrase>
+  <phrase>
+    <source>SHA-256</source>
+    <target>SHA-256</target>
+    <definition>Do not translate -- Hash algorithm</definition>
+  </phrase>
+  <phrase>
+    <source>MD5</source>
+    <target>MD5</target>
+    <definition>Do not translate -- Hash algorithm</definition>
+  </phrase>
+  <phrase>
+    <source>WAL</source>
+    <target>WAL</target>
+    <definition>Do not translate -- SQLite write-ahead log (spec term)</definition>
+  </phrase>
+  <phrase>
+    <source>-wal</source>
+    <target>-wal</target>
+    <definition>Do not translate -- SQLite companion file suffix</definition>
+  </phrase>
+  <phrase>
+    <source>-journal</source>
+    <target>-journal</target>
+    <definition>Do not translate -- SQLite companion file suffix</definition>
+  </phrase>
+  <phrase>
+    <source>WAL slack</source>
+    <target>WAL slack</target>
+    <definition>Do not translate -- Term of art (Sanderson) for frames from an earlier WAL generation</definition>
+  </phrase>
+  <phrase>
+    <source>BLOB</source>
+    <target>BLOB</target>
+    <definition>Do not translate -- SQLite data type</definition>
+  </phrase>
+  <phrase>
+    <source>PRAGMA</source>
+    <target>PRAGMA</target>
+    <definition>Do not translate -- SQLite statement</definition>
+  </phrase>
+  <phrase>
+    <source>rowid</source>
+    <target>rowid</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>freelist</source>
+    <target>freelist</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>freeblock</source>
+    <target>freeblock</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>B-tree</source>
+    <target>B-tree</target>
+    <definition>Do not translate -- Data structure (SQLite spec term)</definition>
+  </phrase>
+  <phrase>
+    <source>VFS</source>
+    <target>VFS</target>
+    <definition>Do not translate -- Crush's virtual file system layer</definition>
+  </phrase>
+  <phrase>
+    <source>tmpfs</source>
+    <target>tmpfs</target>
+    <definition>Do not translate -- Linux RAM-backed file system</definition>
+  </phrase>
+  <phrase>
+    <source>hex</source>
+    <target>hex</target>
+    <definition>Do not translate -- Hexadecimal (as in hex view / hex dump)</definition>
+  </phrase>
+  <phrase>
+    <source>crush-analyze</source>
+    <target>crush-analyze</target>
+    <definition>Do not translate -- Program name</definition>
+  </phrase>
+  <phrase>
+    <source>peach</source>
+    <target>peach</target>
+    <definition>Do not translate -- Program name</definition>
+  </phrase>
+  <phrase>
+    <source>Hex View</source>
+    <target>Hex View</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>Value Inspector</source>
+    <target>Value Inspector</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>BLOB Inspector</source>
+    <target>BLOB Inspector</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>Multi-Log Studio</source>
+    <target>Multi-Log Studio</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>Format Reference</source>
+    <target>Format Reference</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>Feature Reference</source>
+    <target>Feature Reference</target>
+    <definition>Do not translate -- Crush documentation name</definition>
+  </phrase>
+  <phrase>
+    <source>Paste &amp; Decode</source>
+    <target>Paste &amp; Decode</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>Integrity Mode</source>
+    <target>Integrity Mode</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>Run Analyzer</source>
+    <target>Run Analyzer</target>
+    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
+  </phrase>
+  <phrase>
+    <source>deleted</source>
+    <target />
+    <definition>Translate, always the same way -- Deleted records/files -- one wording everywhere</definition>
+  </phrase>
+  <phrase>
+    <source>recovered</source>
+    <target />
+    <definition>Translate, always the same way -- Data brought back from deleted/unallocated areas</definition>
+  </phrase>
+  <phrase>
+    <source>carved</source>
+    <target />
+    <definition>Translate, always the same way -- Recovered by carving (found by content in free space)</definition>
+  </phrase>
+  <phrase>
+    <source>unallocated space</source>
+    <target />
+    <definition>Translate, always the same way -- Space not assigned to any live file or record</definition>
+  </phrase>
+  <phrase>
+    <source>superseded</source>
+    <target />
+    <definition>Translate, always the same way -- WAL status: an older page version overwritten by a newer frame</definition>
+  </phrase>
+  <phrase>
+    <source>uncommitted</source>
+    <target />
+    <definition>Translate, always the same way -- WAL status: written in a transaction that never committed</definition>
+  </phrase>
+  <phrase>
+    <source>active</source>
+    <target />
+    <definition>Translate, always the same way -- WAL status: the version SQLite reads now</definition>
+  </phrase>
+  <phrase>
+    <source>journal</source>
+    <target />
+    <definition>Translate, always the same way -- Rollback journal (SQLite) -- or keep the English term</definition>
+  </phrase>
+  <phrase>
+    <source>magic bytes</source>
+    <target />
+    <definition>Translate, always the same way -- File signature at a fixed offset</definition>
+  </phrase>
+  <phrase>
+    <source>schema</source>
+    <target />
+    <definition>Translate, always the same way -- Database schema / Protobuf schema</definition>
+  </phrase>
+  <phrase>
+    <source>hash</source>
+    <target />
+    <definition>Translate, always the same way -- Cryptographic hash value</definition>
+  </phrase>
+  <phrase>
+    <source>timestamp</source>
+    <target />
+    <definition>Translate, always the same way -- Date and time value</definition>
+  </phrase>
+  <phrase>
+    <source>epoch</source>
+    <target />
+    <definition>Translate, always the same way -- Starting point of a timestamp format</definition>
+  </phrase>
+  <phrase>
+    <source>temp directory</source>
+    <target />
+    <definition>Translate, always the same way -- Where Crush puts temporary files (Tools → Temp Directory…)</definition>
+  </phrase>
+  <phrase>
+    <source>analyzer</source>
+    <target />
+    <definition>Translate, always the same way -- A crush-analyze module run on a source</definition>
+  </phrase>
+</QPH>

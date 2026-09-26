@@ -1,0 +1,86 @@
+term,rule,note
+SQLite,do-not-translate,Format name
+SQLCipher,do-not-translate,Format/library name
+Realm,do-not-translate,Format name
+LevelDB,do-not-translate,Format name
+MMKV,do-not-translate,Format name
+SEGB,do-not-translate,Format name (Apple)
+Biome,do-not-translate,Apple's name for the SEGB-based data store
+Protobuf,do-not-translate,Format name (Protocol Buffers)
+.proto,do-not-translate,Protobuf schema file extension
+wire type,do-not-translate,Protobuf spec term
+varint,do-not-translate,Protobuf spec term
+plist,do-not-translate,Apple property list
+bplist,do-not-translate,Apple binary property list
+NSKeyedArchiver,do-not-translate,Apple class name
+ABX,do-not-translate,Android Binary XML
+EWF,do-not-translate,Expert Witness Format
+E01,do-not-translate,EWF file extension
+UFDR,do-not-translate,Cellebrite container format
+iTunes,do-not-translate,Product name
+Play Store,do-not-translate,Product name
+Unified Log,do-not-translate,Apple logging system
+tracev3,do-not-translate,Apple Unified Log file type
+logarchive,do-not-translate,Apple Unified Log bundle type
+APFS,do-not-translate,File system name
+NTFS,do-not-translate,File system name
+FAT,do-not-translate,File system name
+exFAT,do-not-translate,File system name
+ext4,do-not-translate,File system name
+HFS+,do-not-translate,File system name
+QNX,do-not-translate,Operating system name
+Android,do-not-translate,Platform name
+iOS,do-not-translate,Platform name
+macOS,do-not-translate,Platform name
+Windows,do-not-translate,Platform name
+Linux,do-not-translate,Platform name
+Chrome,do-not-translate,Browser (timestamp format name)
+WebKit,do-not-translate,Browser engine (timestamp format name)
+Cocoa,do-not-translate,Apple framework (timestamp format name)
+FILETIME,do-not-translate,Windows timestamp format
+Unix,do-not-translate,Timestamp format name
+UTC,do-not-translate,Time standard; timestamps are always shown in UTC
+UTF-8,do-not-translate,Text encoding
+Base64,do-not-translate,Encoding
+LZFSE,do-not-translate,Compression format
+SHA-256,do-not-translate,Hash algorithm
+MD5,do-not-translate,Hash algorithm
+WAL,do-not-translate,SQLite write-ahead log (spec term)
+-wal,do-not-translate,SQLite companion file suffix
+-journal,do-not-translate,SQLite companion file suffix
+WAL slack,do-not-translate,Term of art (Sanderson) for frames from an earlier WAL generation
+BLOB,do-not-translate,SQLite data type
+PRAGMA,do-not-translate,SQLite statement
+rowid,do-not-translate,SQLite spec term
+freelist,do-not-translate,SQLite spec term
+freeblock,do-not-translate,SQLite spec term
+B-tree,do-not-translate,Data structure (SQLite spec term)
+VFS,do-not-translate,Crush's virtual file system layer
+tmpfs,do-not-translate,Linux RAM-backed file system
+hex,do-not-translate,Hexadecimal (as in hex view / hex dump)
+crush-analyze,do-not-translate,Program name
+peach,do-not-translate,Program name
+Hex View,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+Value Inspector,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+BLOB Inspector,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+Multi-Log Studio,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+Format Reference,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+Feature Reference,do-not-translate,Crush documentation name
+Paste & Decode,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+Integrity Mode,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+Run Analyzer,do-not-translate,Crush feature name -- stays English so it matches the Feature Reference
+deleted,translate,Deleted records/files -- one wording everywhere
+recovered,translate,Data brought back from deleted/unallocated areas
+carved,translate,Recovered by carving (found by content in free space)
+unallocated space,translate,Space not assigned to any live file or record
+superseded,translate,WAL status: an older page version overwritten by a newer frame
+uncommitted,translate,WAL status: written in a transaction that never committed
+active,translate,WAL status: the version SQLite reads now
+journal,translate,Rollback journal (SQLite) -- or keep the English term
+magic bytes,translate,File signature at a fixed offset
+schema,translate,Database schema / Protobuf schema
+hash,translate,Cryptographic hash value
+timestamp,translate,Date and time value
+epoch,translate,Starting point of a timestamp format
+temp directory,translate,Where Crush puts temporary files (Tools → Temp Directory…)
+analyzer,translate,A crush-analyze module run on a source

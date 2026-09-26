@@ -424,6 +424,13 @@ The UI is translated with Qt Linguist; English is the source language. Catalogs 
 - Check with the pseudo locale: `python scripts/i18n.py pseudo`, then
   `python -m crush --language pseudo`. Every text still in plain English isn't translatable
   yet; a missing closing `]` means the text is cut off.
+- Changing an English text (even only a placeholder's name) sends its translations back to
+  English until they are redone — change wording when it's wrong, not in passing. A new
+  recurring term (a format name, a spec term, a feature name) goes into
+  `crush/i18n/glossary.csv` (then run `python scripts/i18n.py update`, which also writes
+  the phrase book `glossary.qph`). Translators download the catalogs from GitHub, so after
+  changing texts run `update` and commit the catalogs — at the latest before a release. How
+  translators work: [TRANSLATING.md](../../TRANSLATING.md).
 
 ## The Feature Reference
 

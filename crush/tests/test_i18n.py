@@ -281,3 +281,118 @@ def test_count_messages(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert script.count_messages(ts) == (1, 4)
+
+
+# -- Translation check (placeholders) ---------------------------------------------
+
+@pytest.mark.parametrize(("source", "translation"), [
+    ("{count:,} rows", "{count:,} Zeilen"),
+    ("{a} of {b}", "{b} von {a}"),                       # reordered
+    ("Open %1", "%1 öffnen"),
+    ("<b>Note</b>: {x}", "<b>Hinweis</b>: {x}"),
+    ("leading '{' character", "führendes '{'-Zeichen"),  # literal brace, not a template
+    ("Use {{ and }}", "Nutze {{ und }}"),
+])
+def test_translation_fits(source: str, translation: str) -> None:
+    assert script.translation_problems(source, translation) == []
+
+
+@pytest.mark.parametrize(("source", "translation", "why"), [
+    ("{count:,} rows", "{anzahl:,} Zeilen", "placeholders differ"),
+    ("{count:,} rows", "{count} Zeilen", "placeholders differ"),   # spec changed
+    ("{count:,} rows", "Zeilen", "placeholders differ"),           # a fact dropped
+    ("{count:,} rows", "{count:,} Zeilen {", "unbalanced"),
+    ("Open %1", "Öffnen", "%1/%n"),
+    ("<b>Note</b>", "Hinweis", "HTML tags"),
+    ("leading '{' character", "führendes Zeichen", "braces"),
+])
+def test_translation_problems_found(source: str, translation: str, why: str) -> None:
+    problems = script.translation_problems(source, translation)
+    assert any(why in p for p in problems), problems
+
+
+def _catalog(tmp_path: Path, entries: list[tuple[str, str, bool]]) -> Path:
+    root = ET.Element("TS", version="2.1", language="de")
+    ctx = ET.SubElement(root, "context")
+    ET.SubElement(ctx, "name").text = "MainWindow"
+    for source, text, finished in entries:
+        message = ET.SubElement(ctx, "message")
+        ET.SubElement(message, "source").text = source
+        translation = ET.SubElement(message, "translation")
+        translation.text = text
+        if not finished:
+            translation.set("type", "unfinished")
+    ts = tmp_path / "crush_de.ts"
+    ET.ElementTree(root).write(ts, encoding="utf-8", xml_declaration=True)
+    return ts
+
+
+def test_catalog_problems_only_for_finished_translations(tmp_path: Path) -> None:
+    ts = _catalog(tmp_path, [
+        ("{n} files", "{n} Dateien", True),
+        ("{n} rows", "{anzahl} Zeilen", True),
+        ("{n} pages", "Seiten", False),   # a draft is never shipped, not checked
+    ])
+    problems = script.catalog_problems(ts)
+    assert len(problems) == 1 and "'{n} rows'" in problems[0]
+
+
+def test_release_leaves_out_a_broken_translation(clean_translators, tmp_path: Path) -> None:
+    """A translation that would crash .format() ships as English instead."""
+    _compile(tmp_path, "de", {
+        ("exif.present", "Present"): ("Vorhanden", True),
+        ("json.not_utf8", MESSAGES["json.not_utf8"]): ("Kein UTF-8 ({kaputt})", True),
+    })
+    assert i18n.load_language(clean_translators, "de", directory=tmp_path) is None
+    issue = ParseIssue("json.not_utf8", {"offset": 7}, detail="d")
+    assert render(issue, localized=True) == render(issue)
+    assert render(ParseIssue("exif.present"), localized=True) == "Vorhanden"
+
+
+def test_release_counts_a_left_out_translation_as_untranslated(tmp_path: Path) -> None:
+    _compile(tmp_path, "de", {
+        ("exif.present", "Present"): ("Vorhanden", True),
+        ("json.not_utf8", MESSAGES["json.not_utf8"]): ("Kein UTF-8 ({kaputt})", True),
+    })
+    translated, _total = script.compile_catalog(tmp_path / "crush_de.ts", tmp_path / "x.qm")
+    assert translated == 1
+
+
+def test_glossary_is_well_formed() -> None:
+    """crush/i18n/glossary.csv: term,rule,note -- rule do-not-translate or translate,
+    each term once."""
+    import csv
+
+    with (ROOT / "crush" / "i18n" / "glossary.csv").open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert rows and list(rows[0]) == ["term", "rule", "note"]
+    terms = [r["term"] for r in rows]
+    assert len(terms) == len(set(terms))
+    for row in rows:
+        assert row["rule"] in ("do-not-translate", "translate"), row
+        assert row["term"].strip() and row["note"].strip(), row
+
+
+def test_glossary_phrasebook_is_up_to_date() -> None:
+    csv_text = (ROOT / "crush" / "i18n" / "glossary.csv").read_text(encoding="utf-8")
+    assert (ROOT / "crush" / "i18n" / "glossary.qph").read_text(
+        encoding="utf-8"
+    ) == script.glossary_phrasebook(csv_text), (
+        "crush/i18n/glossary.qph is out of date -- run: python scripts/i18n.py update"
+    )
+
+
+def test_glossary_phrasebook_content() -> None:
+    qph = script.glossary_phrasebook(
+        "term,rule,note\nBLOB,do-not-translate,SQLite data type\n"
+        "carved,translate,Found by content\n"
+    )
+    root = ET.fromstring(qph.split("\n", 1)[1])
+    phrases = {
+        p.findtext("source"): (p.findtext("target") or "", p.findtext("definition"))
+        for p in root.iter("phrase")
+    }
+    assert phrases == {
+        "BLOB": ("BLOB", "Do not translate -- SQLite data type"),
+        "carved": ("", "Translate, always the same way -- Found by content"),
+    }

@@ -37,6 +37,10 @@ To add support for a new file format, see the [Developer Guide](crush/docs/devel
 It covers the full parser and viewer architecture, step-by-step implementation, the `VFS` API,
 the `ParseResult` contract, registration, and a checklist of every file you need to touch.
 
+## Translating
+
+To translate Crush's user interface into another language, see [TRANSLATING.md](TRANSLATING.md).
+
 ## Submitting changes
 
 - Open an issue first for significant changes so we can agree on the approach before you write code.

@@ -75,6 +75,7 @@ Every release runs the suite fresh on its own commit and attaches the result: �
 
 → [Feature Reference](crush/docs/feature-reference.md)
 → [Format Support & Parser Limitations](crush/docs/format-support.md)
+→ [Translating Crush](TRANSLATING.md)
 
 ## Blog & Deep Dives
 
