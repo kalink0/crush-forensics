@@ -3,9 +3,10 @@
 .E01) acquisition reading, backed by the vendored `crush.third_party.qnxprobe`
 (+ `ewfprobe`) readers.
 
-qnxprobe reads MBR/GPT partition tables and then NTFS, FAT32, exFAT,
-ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS and QNX IFS directly from a
-raw image or a bare partition — no mounting, no admin rights. ewfprobe reads
+qnxprobe reads MBR/GPT partition tables (512- and 4096-byte sectors) and then
+NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX
+IFS, SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2 directly from a raw image,
+a bare partition or a flash dump — no mounting, no admin rights. ewfprobe reads
 an EWF (.E01) acquisition, joining its numbered segments, as an ordinary
 seekable stream that qnxprobe reads exactly like a raw image.
 
@@ -211,32 +212,43 @@ def build_volume_node(vol: dict[str, Any], read_map: dict[str, _Entry]) -> "VFSN
         return VFSNode(name=name, path=path, is_dir=False, size=size)
 
     node = VFSNode(name=name, path=path, is_dir=True)
+    # A walker that was built but can't read its volume here says why (a
+    # zstd SquashFS on a Python without zstd lists nothing); without this
+    # the volume would look like an empty filesystem.
+    if vol.get("note"):
+        node.status = ParseIssue("entry.raw_volume_note", detail=str(vol["note"]))
     _walk_into(walker, walker.root, node, read_map, path, set())
     if hasattr(walker, "deleted_files"):
         _add_deleted_files_node(walker, node, read_map, path)
+    elif hasattr(walker, "recover_deleted"):
+        _add_deleted_files_node(walker, node, read_map, path, walker.recover_deleted)
     return node
 
 
 def _add_deleted_files_node(
     walker: Any, volume_node: "VFSNode", read_map: dict[str, _Entry], base_path: str,
+    enumerate_deleted: Callable[[], Any] | None = None,
 ) -> None:
-    """A flat `$Recovered` child of the volume, one leaf per entry
-    walker.deleted_files() yields (NTFS/FAT32/exFAT only -- the only
-    filesystems qnxprobe has this for). Not reassembled into the deleted
-    files' original folders: that needs mapping each entry's `parent`
-    handle back onto a live directory that may itself be gone, which is
-    real additional complexity for a placement detail, not for whether the
-    data is recoverable and visible at all -- flat is enough for that.
+    """A flat `$Recovered` child of the volume, one leaf per entry the
+    walker's deleted-file enumeration yields: deleted_files() on NTFS/FAT32/
+    exFAT, recover_deleted() on YAFFS2/JFFS2/UBIFS (and UBI, for the UBIFS
+    volumes it holds) -- the filesystems qnxprobe has this for. Not
+    reassembled into the deleted files' original folders: that needs
+    mapping each entry's `parent` handle back onto a live directory that
+    may itself be gone, which is real additional complexity for a placement
+    detail, not for whether the data is recoverable and visible at all --
+    flat is enough for that. Where the record names the original folder
+    (the flash records' `parent_path`), volume_info() shows it.
 
     Every entry is listed, including ones qnxprobe itself judged not
-    recoverable (clusters reused, attributes overflowed, etc.) -- with an
-    explicit reason available via read(), never silently absent, matching
-    every other unsupported/partial case in this module.
+    recoverable (clusters reused, attributes overflowed, pages erased,
+    etc.) -- with an explicit reason available via read(), never silently
+    absent, matching every other unsupported/partial case in this module.
     """
     from crush.core.vfs import VFSNode, join_notes
 
     try:
-        entries = list(walker.deleted_files())
+        entries = list((enumerate_deleted or walker.deleted_files)())
     except Exception as exc:
         # Must not break the live tree -- but must not look like "no deleted
         # files" either.
@@ -256,9 +268,13 @@ def _add_deleted_files_node(
         seen_names[name] = count + 1
         unique_name = name if count == 0 else f"{name} ({count})"
         child_path = f"{recovered_path}/{unique_name}"
-        recovered.children.append(
-            VFSNode(name=unique_name, path=child_path, is_dir=False, size=entry.size or 0)
-        )
+        # The flash records carry the file's last mtime (Unix seconds, as
+        # stored); NTFS/FAT records keep theirs in other fields.
+        mtime = getattr(entry, "mtime", None)
+        recovered.children.append(VFSNode(
+            name=unique_name, path=child_path, is_dir=False, size=entry.size or 0,
+            modified=float(mtime) if isinstance(mtime, (int, float)) else 0.0,
+        ))
         read_map[child_path] = _Entry(walker=walker, node=None, size=entry.size or 0, deleted=entry)
 
     recovered.children.sort(key=lambda n: n.name.lower())
@@ -510,7 +526,8 @@ def peek_deleted_file(walker: Any, entry: Any, size: int, n: int) -> bytes:
     NTFS's read_deleted() chunks the same way read_file() does, so this
     stays cheap there; FAT32/exFAT's read_deleted() builds the whole file
     in memory before its one yield regardless, so this saves nothing for
-    those two -- but a deleted-files listing is normally far smaller than
+    those two (nor for the flash filesystems, whose read_deleted() rebuilds
+    the file from its pages or nodes first) -- but a deleted-files listing is normally far smaller than
     a volume's live tree, so that's an acceptable, not a silent, cost.
     """
     if not entry.recoverable:

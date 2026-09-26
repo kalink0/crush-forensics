@@ -337,11 +337,12 @@ def _offered_new_window(
     return seen[0]
 
 
-def test_guard_offers_new_window_for_on_disk_image_by_content(
+def test_guard_does_not_probe_on_disk_image(
     qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A large .bin may be a disk image -- open_vfs() recognises one by its
-    content -- so an on-disk file is probed, whatever its name."""
+    """A disk image opens only via Open Disk Image in New Window; the guard
+    doesn't probe for one, so a plain new window (which would show it as a
+    single file) isn't offered for it."""
     import gzip
 
     from crush.tests.conftest import FIXTURES_DIR
@@ -351,7 +352,7 @@ def test_guard_offers_new_window_for_on_disk_image_by_content(
     )
     vfs = DirectoryVFS(tmp_path)
     node = next(c for c in vfs.root().children if c.name == "acquisition.bin")
-    assert _offered_new_window(node, vfs, monkeypatch) is True
+    assert _offered_new_window(node, vfs, monkeypatch) is False
 
 
 def test_guard_hides_new_window_for_on_disk_non_image(

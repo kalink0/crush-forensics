@@ -175,9 +175,9 @@ def test_member_zip_hint_by_content_not_name(tmp_path: Path) -> None:
     nodes = {c.name: c for c in vfs.root().children}
 
     assert _can_open_as_source(nodes["inner.bin"], vfs) is True
-    assert _open_as_source_hint(nodes["inner.bin"], vfs, probe_disk_image=False)
+    assert _open_as_source_hint(nodes["inner.bin"], vfs, probe_archive=False)
     assert _can_open_as_source(nodes["fake.zip"], vfs) is None
-    assert _open_as_source_hint(nodes["fake.zip"], vfs, probe_disk_image=False) == ""
+    assert _open_as_source_hint(nodes["fake.zip"], vfs, probe_archive=False) == ""
     vfs.close()
 
 
@@ -188,4 +188,4 @@ def test_on_disk_file_with_leading_zip_gets_hint(tmp_path: Path) -> None:
     vfs = DirectoryVFS(tmp_path)
     node = next(c for c in vfs.root().children if c.name == "setup.exe")
     assert _can_open_as_source(node, vfs) is True
-    assert "after 100 leading bytes" in _open_as_source_hint(node, vfs, probe_disk_image=False)
+    assert "after 100 leading bytes" in _open_as_source_hint(node, vfs, probe_archive=False)

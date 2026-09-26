@@ -10,13 +10,16 @@ All notable changes to Crush will be documented in this file.
 - **SQLite rollback-journal (`-journal`) support** — the legacy (pre-WAL) companion file, previously invisible to the SQLite parser and shown as raw hex when opened on its own. A valid, fully-checksummed journal is now rolled back automatically (in memory only, never touching any file) so the table grid shows the correct current state by default, same as `-wal`; a "Show pre-rollback state" toggle and a new "Rollback Journal" tab expose every recovered entry — including deleted rows — with full hex provenance.
 - Opening a `-journal` or `-wal` file directly (no companion database in the same open) now shows a structured record view instead of falling back to hex.
 - Added to the command line -> Support for `--language CODE` to try a UI translation for one session.
+- Added to raw disk images -> Support for SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2, including bare flash dumps without a partition table.
+- Added to raw disk images -> Support for deleted-file recovery on YAFFS2, JFFS2 and UBIFS, into `$Recovered` with each file's original folder.
+- Added to raw disk images -> Support for GPT disks with 4096-byte sectors (4Kn drives, UFS storage).
 - Every release now carries a forensic integrity audit report (`crush-forensic-audit.html` + `.json`): the forensic test suite runs fresh on the release commit on Linux, macOS and Windows, and the result is attached and summarised in the release notes, even on failure. Each check links to its test code at that commit.
 
 ### Bug Fixes
 
 - Fixed the text viewer's search stopping after 5,000 hits: later hits weren't highlighted, listed or reachable with Up/Down; every hit is now counted and reachable.
 - Fixed the BLOB Inspector silently cutting its hex view at 200,000 bytes and decoded text at 500,000 characters; the hex view now pages through the whole blob.
-- Fixed a raw disk image opening only as hex unless named `.img`/`.dd`/`.raw` (e.g. `.bin` or no extension): images are now recognised by partition table or filesystem, whatever they're called. A file named or signed as an image that still can't be opened as one now says why in the status bar instead of silently falling back to hex.
+- Fixed a raw disk image opening only as hex unless named `.img`/`.dd`/`.raw` (e.g. `.bin` or no extension): opened via Open Disk Image…, images are now recognised by partition table or filesystem, whatever they're called, and one that can't be read as an image says why instead of silently falling back to hex.
 - Fixed opening any file that isn't an archive reading it whole into memory until its first newline byte (the Android-backup check), which for a disk image starting with zeros could take several GB of RAM.
 - Fixed "Open as Hex" (and the Hex tab) silently showing only the first 256 KB of every file while the status line reported that cut size as the file's total; the whole file is now loaded.
 - Fixed the window freezing for minutes (and the type indexing taking as long) when browsing a large `.tar.gz`/`.tar.xz`/`.tar.bz2`: the tree's type detection peeked into each file, and reaching a member of a compressed tar means decompressing everything before it. The first bytes of every file are now kept during the one pass that builds the tree, so peeking never touches the archive again.
@@ -68,7 +71,9 @@ All notable changes to Crush will be documented in this file.
 - Images always show an `EXIF` and `XMP` status row (present, not present, not checked for this format, or why parsing failed), a `Frames` row when only the first of several is shown, and a `Block order` row marking the ATX Morton-orientation choice as a heuristic with both scores. PDFs list pages whose text extraction failed and say why a revision chain stopped early.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.30 (from v1.29). No change in behaviour for Crush: the release adds a faster whole-volume listing (`walk_all()`) that Crush does not use yet.
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.36 (from v1.29).
+- Disk images are opened only via File → Open disk image…, the start screen, `--image PATH` or right-click → Open Disk Image in New Window; a normal open, drag & drop or Open in New Window no longer probes a file for one. Open Recent reopens an image the way it was opened.
+- GPT partition tables are only used when their header and entry CRCs are valid (UEFI 2.10), falling back to the backup header.
 - The former "Log Temp Directory" setting is now Tools → Temp Directory… and applies to every temporary file Crush creates, not just log conversion (existing values carry over).
 
 ## v0.20.0 - 2026-09-18
