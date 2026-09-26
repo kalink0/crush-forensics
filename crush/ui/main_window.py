@@ -17,7 +17,9 @@ import logging
 import shutil
 import tempfile
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal, QUrl, QSettings, QTimer
+from PySide6.QtCore import (
+    QCoreApplication, QObject, QThread, Qt, Signal, QUrl, QSettings, QTimer,
+)
 from PySide6.QtGui import (
     QCloseEvent,
     QDragEnterEvent,
@@ -25,6 +27,7 @@ from PySide6.QtGui import (
     QPalette,
     QColor,
     QAction,
+    QActionGroup,
     QFontMetrics,
     QGuiApplication,
 )
@@ -57,7 +60,7 @@ import crush
 from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
 from crush.parsers.hex_fallback import HexFallbackParser
-from crush.ui import extract_dialog
+from crush.ui import extract_dialog, i18n
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
 from crush.core.issues import ParseIssue
@@ -816,6 +819,7 @@ class MainWindow(QMainWindow):
         theme_menu.addSeparator()
         self._custom_theme_action = theme_menu.addAction("", self._set_theme_custom)
         self._custom_theme_action.setVisible(False)
+        self._build_language_menu(view_menu)
 
         tools_menu = menu.addMenu("Tools")
         tools_menu.addAction("Paste & Decode…", self._paste_decode)
@@ -837,6 +841,39 @@ class MainWindow(QMainWindow):
         help_menu.addAction("Format Reference…", self._show_format_reference)
         help_menu.addSeparator()
         help_menu.addAction("About Crush", self._about)
+
+    def _build_language_menu(self, view_menu: QMenu) -> None:
+        """View → Language: English plus every language complete enough to
+        be offered (and the saved one, so the check mark is truthful). No
+        menu while English is the only choice."""
+        saved = i18n.saved_language(self._settings)
+        codes = [lang.code for lang in i18n.available_languages()
+                 if lang.offered or lang.code == saved]
+        if not codes:
+            return
+        language_menu = view_menu.addMenu(
+            QCoreApplication.translate("MainWindow", "Language")
+        )
+        group = QActionGroup(language_menu)
+        for code in [i18n.SOURCE_LANGUAGE, *codes]:
+            action = QAction(i18n.display_name(code), language_menu, checkable=True)
+            action.setChecked(code == saved)
+            action.triggered.connect(lambda _checked=False, c=code: self._set_language(c))
+            group.addAction(action)
+            language_menu.addAction(action)
+
+    def _set_language(self, code: str) -> None:
+        if code == i18n.saved_language(self._settings):
+            return
+        i18n.save_language(self._settings, code)
+        self._logger.info("UI language set to %s (applies after restart)", code)
+        QMessageBox.information(
+            self,
+            QCoreApplication.translate("MainWindow", "Language"),
+            QCoreApplication.translate(
+                "MainWindow", "The new language applies after Crush is restarted."
+            ),
+        )
 
     def _new_window(self) -> None:
         window = MainWindow()
