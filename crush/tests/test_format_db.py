@@ -27,6 +27,19 @@ def test_format_db_all_formats_have_names() -> None:
         assert fmt.name, f"Format with empty name: {fmt}"
 
 
+# The category values documented in build_formats_db.py -- one spelling each,
+# so the Format Reference never lists the same category twice.
+_CATEGORIES = {
+    "database", "configuration", "log", "execution", "document", "filesystem",
+    "disk_image", "archive", "serialization", "memory", "network", "uncategorized",
+}
+
+
+def test_format_db_categories_are_documented_values() -> None:
+    for fmt in FormatDatabase.get().all_formats():
+        assert fmt.category in _CATEGORIES, f"{fmt.name}: category {fmt.category!r}"
+
+
 # ---------------------------------------------------------------------------
 # FormatDatabase.identify() — magic bytes
 # ---------------------------------------------------------------------------

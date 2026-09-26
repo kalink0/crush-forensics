@@ -2763,7 +2763,7 @@ FORMATS: list[dict[str, Any]] = [
     {
         "name": "EWF Acquisition",
         "short_name": "EWF",
-        "category": "disk image",
+        "category": "disk_image",
         "forensic_relevance": (
             "Expert Witness Format (EWF) — the .E01 forensic disk image format "
             "written and read by many acquisition tools (EnCase, FTK Imager, "
