@@ -52,6 +52,7 @@ CONVERTED: list[str] = [
     "viewers/leveldb_viewer.py",
     "viewers/media_viewer.py",
     "viewers/mmkv_viewer.py",
+    "viewers/multi_log_viewer.py",
     "viewers/pdf_viewer.py",
     "viewers/protobuf_viewer.py",
     "viewers/realm_viewer.py",
@@ -75,7 +76,7 @@ UI_CALLS = {
     "setPlaceholderText", "setPrefix", "setSpecialValueText", "setStatusTip", "setSuffix",
     "setTabText", "setTabToolTip", "setText", "setTitle", "setToolTip",
     "setVerticalHeaderLabels", "setWhatsThis", "setWindowTitle", "showMessage", "warning",
-    "getOpenFileNames", "setPlainText", "QListWidgetItem",
+    "getOpenFileNames", "setPlainText", "QListWidgetItem", "QMenu",
     # Crush's own helpers that show the text they're given.
     "FolderDiscoveryDialog", "LoadingDialog", "_with_reason", "busy_call",
     "run_with_busy_dialog", "set_text",
