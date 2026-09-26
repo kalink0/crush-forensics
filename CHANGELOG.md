@@ -17,6 +17,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed the window freezing ("not responding") when expanding a folder of a large 7z archive: type detection extracted every entry whole just to read its first bytes. It now reads only each entry's head, one solid block at a time in the background, and gives way to files being opened. Opening a file from a 7z, a compressed TAR (`.tar.gz`/`.bz2`/`.xz`) or a large `.gz` decompresses it once behind a "please wait" dialog instead of on the UI thread.
 - Fixed the text viewer's search stopping after 5,000 hits: later hits weren't highlighted, listed or reachable with Up/Down; every hit is now counted and reachable.
 - Fixed the BLOB Inspector silently cutting its hex view at 200,000 bytes and decoded text at 500,000 characters; the hex view now pages through the whole blob.
 - Fixed a raw disk image opening only as hex unless named `.img`/`.dd`/`.raw` (e.g. `.bin` or no extension): opened via Open Disk Image…, images are now recognised by partition table or filesystem, whatever they're called, and one that can't be read as an image says why instead of silently falling back to hex.

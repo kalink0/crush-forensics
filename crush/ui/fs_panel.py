@@ -9,6 +9,7 @@ import logging
 import os
 import threading
 import time
+from typing import overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
 from PySide6.QtGui import QGuiApplication, QStandardItem, QStandardItemModel
@@ -49,6 +50,10 @@ def _type_matches(type_filter: str, type_label: str) -> bool:
     if type_filter == "media":
         return label_lower in _MEDIA_TYPE_LABELS
     return type_filter in label_lower
+
+# Shown in the Type column until the background type scan has read the head
+# of an entry that can't be read without waiting on its source.
+_TYPE_PENDING = "…"
 
 _ROLE_NODE = Qt.ItemDataRole.UserRole + 1
 _ROLE_VFS  = Qt.ItemDataRole.UserRole + 2
@@ -173,6 +178,11 @@ class FilesystemPanel(QWidget):
         self._type_timer = QTimer(self)
         self._type_timer.setInterval(0)
         self._type_timer.timeout.connect(self._process_type_queue)
+        # Rows whose type label waits for the background type scan.
+        self._type_pending: list[tuple[QStandardItem, VFSNode, VFS]] = []
+        self._type_pending_timer = QTimer(self)
+        self._type_pending_timer.setInterval(1000)
+        self._type_pending_timer.timeout.connect(self._retry_pending_types)
         self._activities: set[str] = set()
         self.background_status.emit("")
         self._build_ui()
@@ -251,6 +261,7 @@ class FilesystemPanel(QWidget):
         self._type_timer.stop()
         self._type_queue.clear()
         self._type_cache.clear()
+        self._type_pending.clear()
         self._activities.clear()
         self.background_status.emit("")
         self._prescan_gen += 1
@@ -291,7 +302,9 @@ class FilesystemPanel(QWidget):
         if root_node.children:
             self._add_placeholder(row[0])
         self._prescan_gen += 1
-        self._start_prescan([vfs], self._prescan_gen)
+        # A new scan cancels the running one, which may not have finished an
+        # earlier source yet: scan them all (labels already found are cached).
+        self._start_prescan(list(self._vfs_list), self._prescan_gen)
         self.load_finished.emit()
         self._logger.debug("FilesystemPanel.append_vfs: emitted load_finished")
 
@@ -307,6 +320,7 @@ class FilesystemPanel(QWidget):
         self._type_timer.stop()
         self._type_queue.clear()
         self._type_cache.clear()
+        self._type_pending.clear()
         self._activities.clear()
         self.background_status.emit("")
         self._prescan_gen += 1
@@ -1000,7 +1014,15 @@ class FilesystemPanel(QWidget):
         processed = 0
         while self._type_queue and processed < 300:
             type_item, node, vfs = self._type_queue.popleft()
-            label = self._detect_type_label(node, vfs)
+            label = self._detect_type_label(node, vfs, wait=False)
+            if label is None:
+                # Its head isn't at hand without waiting on the source; the
+                # background type scan reads it, and the pending timer fills
+                # the label in then.
+                label = _TYPE_PENDING
+                self._type_pending.append((type_item, node, vfs))
+                if not self._type_pending_timer.isActive():
+                    self._type_pending_timer.start()
             try:
                 type_item.setText(label)
             except RuntimeError:
@@ -1010,7 +1032,27 @@ class FilesystemPanel(QWidget):
             self._type_timer.stop()
             self._activity_end("Type detection")
 
-    def _detect_type_label(self, node: VFSNode, vfs: VFS) -> str:
+    def _retry_pending_types(self) -> None:
+        """Give every pending type label another go (cheap: cache lookups),
+        until none is left."""
+        pending, self._type_pending = self._type_pending, []
+        if not pending:
+            self._type_pending_timer.stop()
+            return
+        self._type_queue.extend(pending)
+        if not self._type_timer.isActive():
+            self._activity_start("Type detection")
+            self._type_timer.start()
+
+    @overload
+    def _detect_type_label(self, node: VFSNode, vfs: VFS) -> str: ...
+    @overload
+    def _detect_type_label(self, node: VFSNode, vfs: VFS, *, wait: bool) -> str | None: ...
+
+    def _detect_type_label(self, node: VFSNode, vfs: VFS, *, wait: bool = True) -> str | None:
+        """The type label for *node*. With wait=False (the UI thread) only
+        what is at hand without waiting on the source is used, and None
+        means "not known yet"."""
         if node.is_dir:
             return "DIR"
         cache_key = (id(vfs), node.path)
@@ -1018,7 +1060,13 @@ class FilesystemPanel(QWidget):
             return self._type_cache[cache_key]
         label = ""
         try:
-            peek = vfs.peek(node, 2048)
+            if wait:
+                peek = vfs.peek(node, 2048)
+            else:
+                cached = vfs.peek_if_cached(node, 2048)
+                if cached is None:
+                    return None
+                peek = cached
             label = detect_fast_label(peek, node.path)
             if not label:
                 try:
@@ -1072,16 +1120,26 @@ class FilesystemPanel(QWidget):
 
         # Collect all file nodes up-front so we can split them evenly.
         # For ZIP sources use storage order so reads are sequential (no random seeks).
-        # For 7z, batch-extract every entry in one archive pass first (bounded by
-        # size — see SevenZipVFS.prefetch_all) so the per-file peek() below hits
-        # an in-memory cache instead of re-decompressing shared solid blocks.
+        # For 7z, read every entry in one archive pass first -- whole up to
+        # SevenZipVFS.prefetch_all's size bound, else only each entry's head
+        # (prefetch_heads) -- so the per-file peek() below hits a cache
+        # instead of re-decompressing shared solid blocks.
         all_nodes: list[tuple[VFSNode, VFS]] = []
         for vfs in vfs_list:
             if isinstance(vfs, ZipVFS):
                 all_nodes.extend((node, vfs) for node in vfs.storage_ordered_files())
                 continue
             if isinstance(vfs, SevenZipVFS):
-                vfs.prefetch_all()
+                # Too large to hold whole: one pass keeping only each
+                # entry's head, instead of one extraction per peek.
+                try:
+                    if not vfs.prefetch_all():
+                        vfs.prefetch_heads(cancelled=lambda: self._prescan_gen != gen)
+                except Exception as exc:  # noqa: BLE001 -- per-entry peeks still run
+                    self._logger.warning("7z type pre-read failed: %s", exc)
+                if self._prescan_gen != gen:
+                    self._logger.info("Type pre-scan cancelled")
+                    return
             stack: deque[VFSNode] = deque([vfs.root()])
             while stack:
                 node = stack.popleft()

@@ -304,11 +304,44 @@ class SearchPanel(QWidget):
             else:
                 out.append(child)
 
+    def _peeks(self, nodes: list[VFSNode]) -> dict[str, bytes]:
+        """The first bytes of every node, for the type column and its filter.
+        Those not at hand without waiting on the source (an entry deep in a
+        7z, say) are read on a background thread behind a "please wait"
+        dialog -- never on the UI thread, and never left out, since the type
+        filter would then silently drop them."""
+        vfs = self._vfs
+        if vfs is None:
+            return {}
+        peeks: dict[str, bytes] = {}
+        missing: list[VFSNode] = []
+        for node in nodes:
+            cached = vfs.peek_if_cached(node, 20)
+            if cached is None:
+                missing.append(node)
+            else:
+                peeks[node.path] = cached
+        if missing:
+            from crush.ui.busy_dialog import busy_call
+
+            def _read() -> dict[str, bytes]:
+                return {node.path: vfs.peek(node, 20) for node in missing}
+
+            peeks.update(busy_call(
+                self,
+                translate("SearchPanel", "Reading the file types of {count:,} files…").format(
+                    count=len(missing)
+                ),
+                _read,
+            ))
+        return peeks
+
     def _populate(self, nodes: list[VFSNode]) -> None:
         self._model.removeRows(0, self._model.rowCount())
+        peeks = self._peeks(nodes)
         for node in nodes:
             ext = Path(node.name).suffix.lower()
-            peek = self._vfs.peek(node, 20) if self._vfs else b""
+            peek = peeks.get(node.path, b"")
             detected_type = _detect_type(peek, ext)
             size_str = _fmt_size(node.size)
             ts_str = _fmt_ts(node.modified)

@@ -5,6 +5,7 @@ through a single interface so viewers never need to know the origin.
 """
 from __future__ import annotations
 
+import contextlib
 import gzip
 import io
 import logging
@@ -17,6 +18,7 @@ import stat
 import sys
 import tarfile
 import threading
+import time
 import zipfile
 import zlib
 from abc import ABC, abstractmethod
@@ -259,6 +261,29 @@ class VFS(ABC):
         with self.open(node) as src:
             return src.read(n)
 
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        """The first n bytes when they can be had without waiting -- already
+        in memory, or a bounded read that never queues behind a long
+        extraction -- else None. For the UI thread (type labels): a source
+        whose peek() may decompress a lot or wait on a lock held by a
+        background pass returns None here, and the caller shows the entry
+        as pending until the background type scan has read it."""
+        return None
+
+    def needs_prepare(self, node: VFSNode) -> bool:
+        """True when opening *node* may first have to wait on the source
+        (decompress, extract, or queue behind a background read) -- the UI
+        then runs prepare() behind a "please wait" dialog first."""
+        try:
+            return self.peek_if_cached(node, SNIFF_BYTES) is None
+        except Exception:  # noqa: BLE001 -- prepare()/the open itself reports it
+            return True
+
+    def prepare(self, node: VFSNode) -> None:
+        """Do the waiting part of opening *node* ahead, off the UI thread:
+        by default read its head (which the opening sniffs first)."""
+        self.peek(node, SNIFF_BYTES)
+
 
 def _atime_note(root: Path, not_owned: int) -> str | ParseIssue:
     """Why reading this source may update the evidence files' access
@@ -416,6 +441,9 @@ class DirectoryVFS(VFS):
         if stored is not None:
             return BytesIO(stored)
         return _open_noatime(Path(node.path))
+
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        return self.peek(node, n)  # a short read of a file on disk
 
     def file_count(self, node: VFSNode) -> int:
         return self._file_counts.get(node.path, 0)
@@ -582,6 +610,19 @@ class ZipVFS(VFS):
             except RuntimeError as exc:
                 raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
 
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # A member decompresses from its own start, so a peek is a short
+        # read -- unless another thread holds the archive for a long read.
+        if not self._zf_lock.acquire(blocking=False):
+            return None
+        try:
+            with self._open_entry(self._zip_entry(node)) as f:
+                return f.read(n)
+        except RuntimeError as exc:
+            raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
+        finally:
+            self._zf_lock.release()
+
     def read(self, node: VFSNode) -> bytes:
         with self._zf_lock:
             try:
@@ -661,7 +702,12 @@ class TarVFS(VFS):
         self._tf = tarfile.open(str(self._tar_path), "r:*")
         self._tf_lock = threading.Lock()
         self._members: dict[str, tarfile.TarInfo] = {}
-        self._tree = self._build_tree(self._read_compressed_heads(self._tar_path, self._tf))
+        # The member last brought within reach by prepare() (compressed TAR
+        # only): (virtual path, its bytes, or a spool for a large one).
+        self._staged: tuple[str, bytes | _SharedSpool] | None = None
+        heads = self._read_compressed_heads(self._tar_path, self._tf)
+        self._compressed = heads is not None
+        self._tree = self._build_tree(heads)
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
         self._compute_file_counts(self._tree)
@@ -762,10 +808,19 @@ class TarVFS(VFS):
     def root(self) -> VFSNode:
         return self._tree
 
+    def _staged_content(self, vpath: str) -> bytes | _SharedSpool | None:
+        staged = self._staged
+        return staged[1] if staged is not None and staged[0] == vpath else None
+
     def read(self, node: VFSNode) -> bytes:
         stored = self._stored_content.get(node.path)
         if stored is not None:
             return stored
+        staged = self._staged_content(node.path)
+        if isinstance(staged, bytes):
+            return staged
+        if staged is not None:
+            return staged.pread(0, staged.size)
         member = self._members.get(node.path)
         if member is None:
             raise FileNotFoundError(f"Not in TAR: {node.path}")
@@ -774,6 +829,34 @@ class TarVFS(VFS):
             if f is None:
                 raise OSError(f"Cannot extract (symlink or special file): {node.path}")
             return f.read()
+
+    def needs_prepare(self, node: VFSNode) -> bool:
+        # Reaching a member of a compressed TAR means decompressing all that
+        # precedes it; a plain one is read in place.
+        return (
+            self._compressed
+            and node.path in self._members
+            and self._staged_content(node.path) is None
+        )
+
+    def prepare(self, node: VFSNode) -> None:
+        """Decompress *node* once, so that opening it right after doesn't
+        decompress the archive up to it again: into memory, or a spool file
+        for a large member. Only the last prepared member is kept."""
+        if not self.needs_prepare(node):
+            return
+        member = self._members[node.path]
+        with self._tf_lock:
+            f = self._tf.extractfile(member)
+            if f is None:
+                raise OSError(f"Cannot extract (symlink or special file): {node.path}")
+            with f:
+                if node.size <= STREAM_THRESHOLD:
+                    self._staged = (node.path, f.read())
+                    return
+                spool = tempdir.spool_file("crush-tar-")
+                shutil.copyfileobj(f, spool, COPY_CHUNK)
+        self._staged = (node.path, _SharedSpool(spool, spool.tell()))
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
         stored = self._stored_content.get(node.path)
@@ -792,8 +875,36 @@ class TarVFS(VFS):
             with f:
                 return f.read(n)
 
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # Reaching a member of a compressed TAR means decompressing what
+        # precedes it; only the heads kept while building the tree are free.
+        # A plain TAR is read in place -- unless another thread holds it.
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return stored[:n]
+        member = self._members.get(node.path)
+        head = self._head_cache.get(node.path)
+        if member is not None and head is not None and (n <= len(head) or len(head) >= member.size):
+            return head[:n]
+        staged = self._staged_content(node.path)
+        if staged is not None:
+            return staged[:n] if isinstance(staged, bytes) else staged.pread(0, n)
+        if self._compressed or member is None or not self._tf_lock.acquire(blocking=False):
+            return None
+        try:
+            f = self._tf.extractfile(member)
+            if f is None:
+                return None
+            with f:
+                return f.read(n)
+        finally:
+            self._tf_lock.release()
+
     def open(self, node: VFSNode) -> IO[bytes]:
-        if node.size <= STREAM_THRESHOLD or node.path in self._stored_content:
+        staged = self._staged_content(node.path)
+        if isinstance(staged, _SharedSpool):
+            return staged.reader()
+        if node.size <= STREAM_THRESHOLD or node.path in self._stored_content or staged is not None:
             return BytesIO(self.read(node))
         member = self._members.get(node.path)
         if member is None:
@@ -867,6 +978,8 @@ class GzipVFS(VFS):
                         kept = None
         if kept is not None:
             self._data = b"".join(kept)
+        # A large member, once decompressed into a spool by prepare().
+        self._staged: _SharedSpool | None = None
         self._member_path = f"/{member_name}"
         self._root = VFSNode(name=self._gz_path.name, path="/", is_dir=True)
         self._root.children.append(
@@ -922,6 +1035,8 @@ class GzipVFS(VFS):
             raise FileNotFoundError(f"Not in gzip: {node.path}")
         if self._data is not None:
             return self._data
+        if self._staged is not None:
+            return self._staged.pread(0, self._staged.size)
         with gzip.open(self._gz_path, "rb") as f:
             return f.read()
 
@@ -930,7 +1045,26 @@ class GzipVFS(VFS):
             raise FileNotFoundError(f"Not in gzip: {node.path}")
         if self._data is not None:
             return BytesIO(self._data)
+        if self._staged is not None:
+            return self._staged.reader()
         return cast(IO[bytes], gzip.open(self._gz_path, "rb"))
+
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # The member starts at the start of the stream: a short read.
+        return self.peek(node, n)
+
+    def needs_prepare(self, node: VFSNode) -> bool:
+        # A member too large to keep in memory is decompressed again on
+        # every read; prepare() does that once, into a spool file.
+        return node.path == self._member_path and self._data is None and self._staged is None
+
+    def prepare(self, node: VFSNode) -> None:
+        if not self.needs_prepare(node):
+            return
+        spool = tempdir.spool_file("crush-gz-")
+        with gzip.open(self._gz_path, "rb") as f:
+            shutil.copyfileobj(f, spool, COPY_CHUNK)
+        self._staged = _SharedSpool(spool, spool.tell())
 
     def file_count(self, node: VFSNode) -> int:
         return 1
@@ -966,6 +1100,8 @@ class AndroidBackupVFS(TarVFS):
             raise
         self._tf_lock = threading.Lock()
         self._members: dict[str, tarfile.TarInfo] = {}
+        self._staged = None
+        self._compressed = False  # the tar stream now sits uncompressed in the spool
         self._tree = self._build_tree()
         self._file_counts: dict[str, int] = {}
         self._total_sizes: dict[str, int] = {}
@@ -1227,6 +1363,20 @@ class ITunesBackupVFS(VFS):
 
         return ios_keybag.aes_cbc_decrypt_and_unpad(file_key, raw)
 
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # A plain backup file is a short read on disk; an encrypted one is
+        # decrypted first (whole, up to STREAM_THRESHOLD).
+        stored = self._stored_content.get(node.path)
+        if stored is not None:
+            return stored[:n]
+        located = self._file_locations.get(node.path)
+        if located is None:
+            return None
+        if self._file_protection.get(node.path) is not None and self._keybag is not None:
+            return None
+        with _open_noatime(located) as f:
+            return f.read(n)
+
     def open(self, node: VFSNode) -> IO[bytes]:
         stored = self._stored_content.get(node.path)
         if stored is not None:
@@ -1338,6 +1488,107 @@ def _make_7z_spool_factory() -> Any:
     return _SpoolFactory()
 
 
+class _SharedSpool:
+    """One extracted entry in an unlinked temp file, read by any number of
+    independent readers (each with its own position). The file closes when
+    the last reference -- the owner's or a reader's -- goes away."""
+
+    def __init__(self, fh: IO[bytes], size: int) -> None:
+        self._fh = fh
+        self._lock = threading.Lock()
+        self.size = size
+
+    def pread(self, offset: int, n: int) -> bytes:
+        with self._lock:
+            self._fh.seek(offset)
+            return self._fh.read(n)
+
+    def reader(self) -> IO[bytes]:
+        return io.BufferedReader(_SharedSpoolReader(self), buffer_size=1 << 20)
+
+
+class _SharedSpoolReader(io.RawIOBase):
+    def __init__(self, spool: _SharedSpool) -> None:
+        self._spool = spool
+        self._pos = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def readinto(self, b: Any) -> int:
+        data = self._spool.pread(self._pos, len(b))
+        b[: len(data)] = data
+        self._pos += len(data)
+        return len(data)
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        base = {0: 0, 1: self._pos, 2: self._spool.size}[whence]
+        self._pos = max(0, base + offset)
+        return self._pos
+
+    def tell(self) -> int:
+        return self._pos
+
+
+# How much of each 7z entry peek() extracts and keeps: enough for every
+# caller's sniff (type labels read 2048, archive sniffing SNIFF_BYTES).
+_SEVENZIP_HEAD_BYTES = 4096
+
+
+class _SevenZipStop(Exception):
+    """Raised from a head writer to end a py7zr extraction early: the
+    wanted heads are in, or the caller cancelled."""
+
+
+def _make_7z_head_factory(n: int, stop_when: Callable[[list[Any]], bool]) -> Any:
+    """A py7zr WriterFactory that keeps only the first *n* bytes of every
+    product, in creation order, and discards the rest -- nothing is held in
+    memory or spooled beyond that. After every write *stop_when(products)*
+    decides whether to end the extraction there (_SevenZipStop), so a
+    single peek doesn't decompress the rest of its solid block."""
+    from py7zr.io import Py7zIO, WriterFactory
+
+    class _HeadIO(Py7zIO):
+        def __init__(self) -> None:
+            self.head = bytearray()
+            self.total = 0
+
+        def write(self, s: bytes | bytearray) -> int:
+            self.total += len(s)
+            if len(self.head) < n:
+                self.head += s[: n - len(self.head)]
+            if stop_when(factory.products):
+                raise _SevenZipStop
+            return len(s)
+
+        def read(self, size: int | None = None) -> bytes:
+            return b""
+
+        def seek(self, offset: int, whence: int = 0) -> int:
+            return 0
+
+        def flush(self) -> None:
+            pass
+
+        def size(self) -> int:
+            return self.total
+
+    class _HeadFactory(WriterFactory):
+        def __init__(self) -> None:
+            self.products: list[_HeadIO] = []
+
+        def create(self, filename: str) -> Py7zIO:
+            product = _HeadIO()
+            self.products.append(product)
+            return product
+
+    factory = _HeadFactory()
+    return factory
+
+
 def _make_7z_sequence_factory(spool: bool) -> Any:
     """A py7zr WriterFactory that keeps every product in creation order
     (see SevenZipVFS._extract_entries): in memory, or each in an unlinked
@@ -1420,7 +1671,19 @@ class SevenZipVFS(VFS):
         # extracts them in archive order (see _extract_entries).
         self._entry_names: dict[str, str] = {}
         self._entry_order: dict[str, int] = {}
+        self._entry_sizes: dict[str, int] = {}
+        self._entry_block: dict[str, int | None] = {}
+        # Foreground reads waiting for (or holding) the archive: the
+        # background head pass steps aside for them (prefetch_heads).
+        self._foreground = 0
+        self._foreground_lock = threading.Lock()
         self._read_cache: dict[str, bytes] = {}  # by virtual path
+        # First _SEVENZIP_HEAD_BYTES of entries peeked at, by virtual path.
+        self._head_cache: dict[str, bytes] = {}
+        # The large entry last brought within reach by prepare(): (virtual
+        # path, unlinked spool file). Replacing it drops this reference;
+        # the file closes once no reader still holds it.
+        self._staged: tuple[str, _SharedSpool] | None = None
         self._tree = self._build_tree()
         self._validate_password_against_content()
         self._file_counts: dict[str, int] = {}
@@ -1471,6 +1734,16 @@ class SevenZipVFS(VFS):
 
         infos = self._zf.list()
         self._zf.reset()
+        # Which solid block (py7zr "folder") holds each entry: the head pass
+        # works block by block (see prefetch_heads). files and list() come
+        # from the same header, in the same order.
+        files = list(self._zf.files)
+        folders = (
+            [id(f.folder) if f.folder is not None else None for f in files]
+            if len(files) == len(infos)
+            and all(f.filename == i.filename for f, i in zip(files, infos))
+            else [None] * len(infos)
+        )
 
         # Archive order, so same-named entries are numbered as stored.
         for order, info in enumerate(infos):
@@ -1507,6 +1780,8 @@ class SevenZipVFS(VFS):
             occurrences.setdefault(stored_path, []).append(node)
             self._entry_names[virtual_path] = info.filename
             self._entry_order[virtual_path] = order
+            self._entry_sizes[virtual_path] = info.uncompressed or 0
+            self._entry_block[virtual_path] = folders[order]
         _mark_duplicates(occurrences)
 
         for node in nodes.values():
@@ -1553,13 +1828,20 @@ class SevenZipVFS(VFS):
     def _extract_bytes(self, vpaths: list[str]) -> dict[str, bytes]:
         return {vp: product.read() for vp, product in self._extract_entries(vpaths, spool=False).items()}
 
+    def _staged_spool(self, vpath: str) -> _SharedSpool | None:
+        staged = self._staged
+        return staged[1] if staged is not None and staged[0] == vpath else None
+
     def read(self, node: VFSNode) -> bytes:
         if node.path not in self._entry_names:
             raise FileNotFoundError(f"Not in 7z: {node.path}")
         cached = self._read_cache.get(node.path)
         if cached is not None:
             return cached
-        with self._zf_lock:
+        spool = self._staged_spool(node.path)
+        if spool is not None:
+            return spool.pread(0, spool.size)
+        with self._foreground_hold():
             extracted = self._extract_bytes([node.path])
         for vp, data in extracted.items():
             if len(data) <= STREAM_THRESHOLD:
@@ -1571,9 +1853,12 @@ class SevenZipVFS(VFS):
             return BytesIO(self.read(node))
         if node.path not in self._entry_names:
             raise FileNotFoundError(f"Not in 7z: {node.path}")
+        spool = self._staged_spool(node.path)
+        if spool is not None:
+            return spool.reader()
         # py7zr can only decompress a member front to back, so a large one is
         # staged once in an unlinked temp file (bounded RAM, seekable).
-        with self._zf_lock:
+        with self._foreground_hold():
             spools = self._extract_entries([node.path], spool=True)
         for vp, fh in spools.items():
             if vp != node.path:
@@ -1581,6 +1866,156 @@ class SevenZipVFS(VFS):
         fh = spools[node.path]
         fh.seek(0)
         return cast(IO[bytes], fh)
+
+    def prepare(self, node: VFSNode) -> None:
+        """Extract *node* once, so that opening it right after doesn't
+        extract again: a small entry into the read cache, a large one into
+        a spool file that stays staged until the next prepare(). Only the
+        last prepared large entry is kept, so the temp directory holds at
+        most one of them."""
+        if node.path not in self._entry_names or node.path in self._read_cache:
+            return
+        if self._staged_spool(node.path) is not None:
+            return
+        if node.size <= STREAM_THRESHOLD:
+            self.read(node)
+            return
+        with self._foreground_hold():
+            spools = self._extract_entries([node.path], spool=True)
+        for vp, fh in spools.items():
+            if vp != node.path:
+                fh.close()
+        spool = _SharedSpool(spools[node.path], node.size)
+        self._head_cache.setdefault(node.path, spool.pread(0, _SEVENZIP_HEAD_BYTES))
+        self._staged = (node.path, spool)
+
+    def needs_prepare(self, node: VFSNode) -> bool:
+        # Every read of an entry not held yet extracts it, which may mean
+        # decompressing all of its solid block that precedes it.
+        return (
+            node.path in self._entry_names
+            and node.path not in self._read_cache
+            and self._staged_spool(node.path) is None
+        )
+
+    def peek(self, node: VFSNode, n: int = 32) -> bytes:
+        """The first *n* bytes, extracting no more of the archive than it
+        takes to reach them: the extraction stops once they're in, and
+        nothing beyond the head is held or spooled."""
+        if node.path not in self._entry_names:
+            raise FileNotFoundError(f"Not in 7z: {node.path}")
+        cached = self.peek_if_cached(node, n)
+        if cached is not None:
+            return cached
+        with self._foreground_hold():
+            self._extract_heads([node.path], max(n, _SEVENZIP_HEAD_BYTES))
+        return self._head_cache[node.path][:n]
+
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        data = self._read_cache.get(node.path)
+        if data is not None:
+            return data[:n]
+        head = self._head_cache.get(node.path)
+        if head is not None and (n <= len(head) or len(head) >= node.size):
+            return head[:n]
+        return None
+
+    def _extract_heads(
+        self, vpaths: list[str], n: int, cancelled: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Put the first *n* bytes of each of *vpaths* into the head cache
+        in one pass, ending the extraction as soon as they're all in.
+        Returns False when *cancelled* ended it first. Caller holds
+        _zf_lock."""
+        names = {self._entry_names[vp] for vp in vpaths}
+        expected = sorted(
+            (vp for vp, name in self._entry_names.items() if name in names),
+            key=self._entry_order.__getitem__,
+        )
+        targets = set(vpaths)
+        remaining = {i for i, vp in enumerate(expected) if vp in targets}
+        need = [min(n, self._entry_sizes.get(vp, 0)) for vp in expected]
+        state = {"cancelled": False, "swept": 0}
+
+        def stop_when(products: list[Any]) -> bool:
+            # Called on every write: only the product being written (and
+            # any finished since the last call, e.g. empty ones) is looked at.
+            if cancelled is not None and cancelled():
+                state["cancelled"] = True
+                return True
+            current = len(products) - 1
+            for i in range(state["swept"], current + 1):
+                if i in remaining and len(products[i].head) >= need[i]:
+                    remaining.discard(i)
+            state["swept"] = current
+            return not remaining
+
+        factory = _make_7z_head_factory(n, stop_when)
+        stopped = False
+        try:
+            self._extract(sorted(names), factory)
+        except _SevenZipStop:
+            stopped = True
+        if not stopped and len(factory.products) != len(expected):
+            raise OSError(
+                f"7z extraction returned {len(factory.products)} entries, "
+                f"expected {len(expected)} for {sorted(names)}"
+            )
+        for i, product in enumerate(factory.products):
+            # A head is only kept once it's complete: the product being
+            # written when the extraction stopped may be cut short.
+            if len(product.head) >= need[i]:
+                self._head_cache[expected[i]] = bytes(product.head)
+        return not state["cancelled"]
+
+    def prefetch_heads(self, cancelled: Callable[[], bool] | None = None) -> bool:
+        """The heads of every entry not yet cached -- for the type scan of
+        an archive too large for prefetch_all(). One extraction per solid
+        block, ended as soon as that block's heads are in: a block is
+        decompressed at most up to the head of its last entry, once,
+        instead of once per entry (and a block holding one 46 GB file costs
+        its first few KB, not 46 GB). Only _SEVENZIP_HEAD_BYTES per entry
+        are kept.
+
+        Background work: between blocks, and within one, it steps aside
+        whenever a foreground read waits for the archive, and carries on
+        with what's left after. Returns False when *cancelled* ended it."""
+        blocks: dict[int | None, list[str]] = {}
+        for vp in sorted(self._entry_names, key=self._entry_order.__getitem__):
+            if vp not in self._read_cache and vp not in self._head_cache:
+                blocks.setdefault(self._entry_block.get(vp), []).append(vp)
+
+        def interrupted() -> bool:
+            return (cancelled is not None and cancelled()) or self._foreground > 0
+
+        for block in blocks.values():
+            while True:
+                if cancelled is not None and cancelled():
+                    return False
+                if self._foreground > 0:
+                    time.sleep(0.05)
+                    continue
+                with self._zf_lock:
+                    todo = [
+                        vp for vp in block
+                        if vp not in self._read_cache and vp not in self._head_cache
+                    ]
+                    if not todo or self._extract_heads(todo, _SEVENZIP_HEAD_BYTES, interrupted):
+                        break
+        return True
+
+    @contextlib.contextmanager
+    def _foreground_hold(self) -> Iterator[None]:
+        """The archive, for a read someone is waiting on: the background
+        head pass sees it and steps aside (prefetch_heads)."""
+        with self._foreground_lock:
+            self._foreground += 1
+        try:
+            with self._zf_lock:
+                yield
+        finally:
+            with self._foreground_lock:
+                self._foreground -= 1
 
     def prefetch_all(self) -> bool:
         """Batch-extract every not-yet-cached entry in a single archive pass.
@@ -1724,6 +2159,26 @@ class RawImageVFS(VFS):
                 return peek_raw_region(self._handle.image, entry.base, entry.size, n)
             return peek_walker_file(entry.walker, entry.node, entry.size, n)
 
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # A live file's or a region's head is a short read; a recovered
+        # deleted file may be rebuilt whole first (FAT, flash), and another
+        # thread may hold the image for a long read.
+        from crush.core.raw_image import peek_raw_region, peek_walker_file
+
+        entry = self._read_map.get(node.path)
+        if entry is None or entry.deleted is not None:
+            return None
+        if entry.stored is not None:
+            return bytes(entry.stored[:n])
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            if entry.walker is None:
+                return peek_raw_region(self._handle.image, entry.base, entry.size, n)
+            return peek_walker_file(entry.walker, entry.node, entry.size, n)
+        finally:
+            self._lock.release()
+
     def close(self) -> None:
         self._handle.close()
 
@@ -1849,6 +2304,18 @@ class UFDRVFS(VFS):
             with self._handle.zf.open(info) as f:
                 return f.read(n)
 
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # A ZIP member decompresses from its own start: a short read, unless
+        # another thread holds the container for a long one.
+        info = self._handle.resolve(node)
+        if not self._zf_lock.acquire(blocking=False):
+            return None
+        try:
+            with self._handle.zf.open(info) as f:
+                return f.read(n)
+        finally:
+            self._zf_lock.release()
+
     def node_info(self, node: VFSNode) -> dict[str, str] | None:
         """Cellebrite's own recorded MD5/SHA-256/category for *node*, plus an
         explicit "not located" status if its bytes couldn't be found in the
@@ -1908,6 +2375,9 @@ class BytesVFS(VFS):
 
     def open(self, node: VFSNode) -> IO[bytes]:
         return BytesIO(self._data)
+
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        return self._data[:n]
 
     def file_count(self, node: VFSNode) -> int:
         return 1
@@ -2393,6 +2863,9 @@ class FileVFS(VFS):
 
     def open(self, node: VFSNode) -> IO[bytes]:
         return _open_noatime(Path(node.path))
+
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        return self.peek(node, n)  # a short read of a file on disk
 
     def file_count(self, node: VFSNode) -> int:
         return 1

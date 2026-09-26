@@ -1479,9 +1479,30 @@ class MainWindow(QMainWindow):
             self._export_node(node, vfs)
         return False
 
+    def _prepare_entry(self, node: VFSNode, vfs: VFS) -> None:
+        """Before an entry is opened (size check, parser choice, parsing --
+        all on the UI thread), do whatever waiting on its source that takes
+        on a background thread behind a "please wait" dialog: decompressing
+        a 7z up to the entry, say, can take minutes, and the window must not
+        freeze meanwhile. Nothing to do for a file on disk."""
+        if node.is_dir or not vfs.needs_prepare(node):
+            return
+        try:
+            busy_call(
+                self,
+                translate("MainWindow", "Reading {name} from {source}…").format(
+                    name=node.name, source=vfs.root().name
+                ),
+                lambda: vfs.prepare(node),
+            )
+        except RuntimeError as exc:
+            # Opening it reads it again and reports the failure there.
+            self._logger.warning("Could not read %s ahead of opening it: %s", node.path, exc)
+
     def _open_node(self, node: VFSNode, vfs: VFS) -> None:
         """Called when the user double-clicks a file in the FS panel."""
         with window_log_scope(self._window_id):
+            self._prepare_entry(node, vfs)
             if not self._guard_large_open(node, vfs):
                 return
             self._open_node_impl(node, vfs)
@@ -1544,9 +1565,14 @@ class MainWindow(QMainWindow):
         {"hex", "text", "protobuf", "mmkv", "mmkv_encrypted",
          "realm_encrypted", "sqlcipher", "pdf_encrypted"}
     )
+    # Modes that read one file's content on the UI thread: its source is
+    # read ahead behind a "please wait" dialog first (_prepare_entry).
+    _PREPARED_MODES = _RAM_LOADING_MODES | {"multi_log", "multi_log_add"}
 
     def _open_node_mode(self, node: VFSNode, vfs: VFS, mode: str) -> None:
         with window_log_scope(self._window_id):
+            if mode in self._PREPARED_MODES:
+                self._prepare_entry(node, vfs)
             if mode in self._RAM_LOADING_MODES and not self._guard_large_open(node, vfs):
                 return
             self._open_node_mode_impl(node, vfs, mode)
@@ -3320,6 +3346,7 @@ class MainWindow(QMainWindow):
 
     def _show_format_info(self, node: VFSNode, vfs: VFS) -> None:
         """Show a format info popup and also update the Properties panel."""
+        self._prepare_entry(node, vfs)
         try:
             from crush.core.format_db import FormatDatabase
             from crush.ui.format_info_dialog import FormatInfoDialog
