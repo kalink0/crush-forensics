@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from crush.core.format_db import FormatMatch
 from crush.core.vfs import VFSNode
 from crush.ui.i18n import translate
+from crush.ui.knowledge_toggle import follow_knowledge_original, knowledge_original_checkbox
 
 
 class FormatInfoDialog(QDialog):
@@ -36,7 +37,10 @@ class FormatInfoDialog(QDialog):
         layout.setSpacing(12)
 
         # Header — file name when opened from file tree, format name when from reference
-        title = node.name if node is not None else (fmt.name if fmt else "Format Info")
+        if node is not None:
+            title = node.name
+        else:
+            title = fmt.name if fmt else translate("FormatInfoDialog", "Format Info")
         header = QLabel(f"<b>{title}</b>")  # i18n: keep -- markup/layout only
         header.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(header)
@@ -50,9 +54,10 @@ class FormatInfoDialog(QDialog):
             if fmt.short_name and fmt.short_name != fmt.name:
                 self._add_row(form, translate("FormatInfoDialog", "Short name"), fmt.short_name)
             if fmt.category:
-                self._add_row(
-                    form, translate("FormatInfoDialog", "Category"), fmt.category.capitalize()
-                )
+                category = fmt.category_text().localized()
+                if category == fmt.category:  # untranslated: shown as it always was
+                    category = category.capitalize()
+                self._add_row(form, translate("FormatInfoDialog", "Category"), category)
             if fmt.platforms:
                 self._add_row(
                     form,
@@ -72,18 +77,10 @@ class FormatInfoDialog(QDialog):
             form.addRow(translate("FormatInfoDialog", "Analysis:"), support_lbl)
 
             if fmt.magic:
-                lines = []
-                for offset, pattern, description in fmt.magic:
-                    hex_str = " ".join(f"{b:02X}" for b in pattern)
-                    if offset is None:
-                        offset_label = "offset unknown"
-                    else:
-                        offset_label = f"offset {offset} (0x{offset:X})"
-                    if description:
-                        lines.append(f"{hex_str}  —  {description} [{offset_label}]")
-                    else:
-                        lines.append(f"{hex_str}  [{offset_label}]")
-                magic_lbl = QLabel("\n".join(lines))
+                magic_lbl = QLabel(_magic_text(fmt))
+                follow_knowledge_original(
+                    magic_lbl, lambda: magic_lbl.setText(_magic_text(fmt))
+                )
                 magic_lbl.setWordWrap(True)
                 magic_lbl.setTextInteractionFlags(
                     Qt.TextInteractionFlag.TextSelectableByMouse
@@ -92,7 +89,11 @@ class FormatInfoDialog(QDialog):
                 form.addRow(translate("FormatInfoDialog", "Magic bytes:"), magic_lbl)
 
             if fmt.forensic_relevance:
-                relevance = QLabel(fmt.forensic_relevance)
+                relevance_text = fmt.relevance_text()
+                relevance = QLabel(relevance_text.localized())
+                follow_knowledge_original(
+                    relevance, lambda: relevance.setText(relevance_text.localized())
+                )
                 relevance.setWordWrap(True)
                 relevance.setTextInteractionFlags(
                     Qt.TextInteractionFlag.TextSelectableByMouse
@@ -128,6 +129,11 @@ class FormatInfoDialog(QDialog):
 
         layout.addLayout(form)
 
+        if fmt and (fmt.forensic_relevance or any(d for _o, _p, d in fmt.magic)):
+            toggle = knowledge_original_checkbox(self)
+            if toggle is not None:
+                layout.addWidget(toggle)
+
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
@@ -137,3 +143,24 @@ class FormatInfoDialog(QDialog):
         lbl.setWordWrap(True)
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         form.addRow(translate("FormatInfoDialog", "{label}:").format(label=label), lbl)
+
+
+def _magic_text(fmt: FormatMatch) -> str:
+    """One line per magic-byte pattern: hex, description (a knowledge
+    text, in the UI language unless the English original is chosen) and
+    offset."""
+    lines = []
+    for offset, pattern, description in fmt.magic:
+        hex_str = " ".join(f"{b:02X}" for b in pattern)
+        if offset is None:
+            offset_label = translate("FormatInfoDialog", "offset unknown")
+        else:
+            offset_label = translate("FormatInfoDialog", "offset {offset} (0x{offset_hex})").format(
+                offset=offset, offset_hex=f"{offset:X}"
+            )
+        if description:
+            shown = fmt.magic_description_text(description).localized()
+            lines.append(f"{hex_str}  —  {shown} [{offset_label}]")
+        else:
+            lines.append(f"{hex_str}  [{offset_label}]")
+    return "\n".join(lines)

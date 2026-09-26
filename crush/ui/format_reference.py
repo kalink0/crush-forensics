@@ -17,15 +17,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crush.core.format_db import FormatDatabase
+from crush.core.format_db import FormatDatabase, FormatMatch
 from crush.ui.format_info_dialog import FormatInfoDialog
 from crush.ui.i18n import translate
+from crush.ui.knowledge_toggle import follow_knowledge_original, knowledge_original_checkbox
 
 _COL_NAME = 0
 _COL_CAT = 1
 _COL_PLAT = 2
 _COL_PARSER = 3
 _COL_RELEVANCE = 4
+
+# What the search matches: the shown text and, where it is a translation,
+# the English original too.
+_SEARCH_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 class FormatReferenceDialog(QDialog):
@@ -70,6 +75,7 @@ class FormatReferenceDialog(QDialog):
         self._proxy.setSourceModel(self._model)
         self._proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._proxy.setFilterKeyColumn(-1)
+        self._proxy.setFilterRole(_SEARCH_ROLE)
 
         self._table = QTableView()
         self._table.setModel(self._proxy)
@@ -95,6 +101,9 @@ class FormatReferenceDialog(QDialog):
         self._count_label = QLabel("")
         bl.addWidget(self._count_label)
         bl.addStretch()
+        toggle = knowledge_original_checkbox(self)
+        if toggle is not None:
+            bl.addWidget(toggle)
         self._details_btn = QPushButton(translate("FormatReferenceDialog", "View Details…"))
         self._details_btn.setEnabled(False)
         self._details_btn.clicked.connect(self._open_details)
@@ -111,20 +120,40 @@ class FormatReferenceDialog(QDialog):
             parser_text = fmt.parser_class or "—"
             items = [
                 QStandardItem(fmt.name),
-                QStandardItem(fmt.category),
+                QStandardItem(),
                 QStandardItem(fmt.platforms.replace(",", ", ")),
                 QStandardItem(parser_text),
-                QStandardItem(fmt.forensic_relevance),
+                QStandardItem(),
             ]
             for item in items:
                 item.setEditable(False)
+                item.setData(item.text(), _SEARCH_ROLE)
             # Grey out unsupported formats slightly
             if not fmt.parser_class:
                 for item in items:
                     item.setForeground(Qt.GlobalColor.gray)
             items[0].setData(fmt, Qt.ItemDataRole.UserRole)
             self._model.appendRow(items)
+        self._set_catalog_texts()
+        follow_knowledge_original(self, self._set_catalog_texts)
 
+        self._update_count()
+
+    def _set_catalog_texts(self) -> None:
+        """Category and forensic relevance in the UI language (relevance in
+        English while the English original is chosen)."""
+        for row in range(self._model.rowCount()):
+            fmt: FormatMatch = self._model.item(row, _COL_NAME).data(Qt.ItemDataRole.UserRole)
+            for col, text in (
+                (_COL_CAT, fmt.category_text()),
+                (_COL_RELEVANCE, fmt.relevance_text()),
+            ):
+                item = self._model.item(row, col)
+                shown = text.localized()
+                item.setText(shown)
+                item.setData(
+                    shown if shown == text.text else f"{shown}\n{text.text}", _SEARCH_ROLE
+                )
         self._update_count()
 
     def _apply_filter(self, text: str) -> None:

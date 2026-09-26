@@ -38,8 +38,10 @@ from PySide6.QtCore import (
     QCoreApplication,
     QLibraryInfo,
     QLocale,
+    QObject,
     QSettings,
     QTranslator,
+    Signal,
 )
 
 from crush.core import issues
@@ -154,6 +156,41 @@ def saved_language(settings: QSettings) -> str:
 
 def save_language(settings: QSettings, code: str) -> None:
     settings.setValue(SETTINGS_KEY, code)
+
+
+# "English original": knowledge texts (a format's forensic relevance, magic
+# byte descriptions, analyzer module relevance -- see issues.CatalogText)
+# shown in English while the rest of the UI stays translated. One setting,
+# saved, shared by every place that offers the checkbox (knowledge_toggle).
+KNOWLEDGE_ORIGINAL_KEY = "knowledge_english_original"
+
+
+class _KnowledgeOriginal(QObject):
+    changed = Signal(bool)
+
+
+_knowledge_original_signal: _KnowledgeOriginal | None = None
+
+
+def knowledge_original_signal() -> _KnowledgeOriginal:
+    """Emits changed(on) whenever the setting is switched, so every open
+    view with knowledge text re-renders."""
+    global _knowledge_original_signal
+    if _knowledge_original_signal is None:
+        _knowledge_original_signal = _KnowledgeOriginal()
+    return _knowledge_original_signal
+
+
+def load_knowledge_original(settings: QSettings) -> None:
+    issues.set_knowledge_original(bool(settings.value(KNOWLEDGE_ORIGINAL_KEY, False, type=bool)))
+
+
+def set_knowledge_original(settings: QSettings, on: bool) -> None:
+    if on == issues.knowledge_original():
+        return
+    issues.set_knowledge_original(on)
+    settings.setValue(KNOWLEDGE_ORIGINAL_KEY, on)
+    knowledge_original_signal().changed.emit(on)
 
 
 def _qt_translate(context: str, source: str, disambiguation: str) -> str:

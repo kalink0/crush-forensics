@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from crush.core.format_db import FormatDatabase, FormatMatch
+from crush.core.format_db import FORMAT_CATEGORIES, FormatDatabase, FormatMatch
 
 # ---------------------------------------------------------------------------
 # FormatDatabase — singleton
@@ -25,6 +25,13 @@ def test_format_db_all_formats_nonempty() -> None:
 def test_format_db_all_formats_have_names() -> None:
     for fmt in FormatDatabase.get().all_formats():
         assert fmt.name, f"Format with empty name: {fmt}"
+
+
+# One spelling per category (so the Format Reference never lists the same
+# category twice), and each one in the translation catalog.
+def test_format_db_categories_are_documented_values() -> None:
+    for fmt in FormatDatabase.get().all_formats():
+        assert fmt.category in FORMAT_CATEGORIES, f"{fmt.name}: category {fmt.category!r}"
 
 
 # ---------------------------------------------------------------------------

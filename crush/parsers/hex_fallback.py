@@ -51,11 +51,11 @@ class HexFallbackParser(AbstractParser):
         if fmt:
             meta["Format (identified)"] = fmt.name
             if fmt.category:
-                meta["Category"] = fmt.category
+                meta["Category"] = fmt.category_text()
             if fmt.platforms:
                 meta["Platforms"] = fmt.platforms.replace(",", ", ")
             if fmt.forensic_relevance:
-                meta["Forensic relevance"] = fmt.forensic_relevance
+                meta["Forensic relevance"] = fmt.relevance_text()
             if fmt.links:
                 meta["Reference"] = "\n".join(url for _label, url in fmt.links)
             meta["Parser support"] = _parser_support(fmt.parser_class)

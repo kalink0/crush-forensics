@@ -31,6 +31,7 @@ CONVERTED: list[str] = [
     "ui/format_reference.py",
     "ui/fs_panel.py",
     "ui/i18n.py",
+    "ui/knowledge_toggle.py",
     "ui/large_open.py",
     "ui/loading_dialog.py",
     "ui/log_scope.py",
@@ -78,7 +79,7 @@ UI_CALLS = {
     "setVerticalHeaderLabels", "setWhatsThis", "setWindowTitle", "showMessage", "warning",
     "getOpenFileNames", "setPlainText", "QListWidgetItem", "QMenu",
     # Crush's own helpers that show the text they're given.
-    "FolderDiscoveryDialog", "LoadingDialog", "_with_reason", "busy_call",
+    "FolderDiscoveryDialog", "LoadingDialog", "_add_row", "_row", "_with_reason", "busy_call",
     "run_with_busy_dialog", "set_text",
     # Generated-view texts (crush/viewers/generated_text): marked
     # QT_TRANSLATE_NOOP at the call.
