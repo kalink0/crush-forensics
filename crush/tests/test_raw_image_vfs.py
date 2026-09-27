@@ -145,6 +145,7 @@ class TestRawImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
+        subject="NTFS",
         desc="raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes",
     )
     def test_single_volume_content_matches(self, raw_ntfs_image: Path) -> None:
@@ -258,6 +259,7 @@ class TestEwf:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
+        subject="EWF acquisition (.E01)",
         desc="raw_ntfs.E01's files must read back identically through the EWF path as through raw .img",
     )
     def test_content_matches(self, raw_ntfs_e01: Path) -> None:
@@ -271,6 +273,7 @@ class TestEwf:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
+        subject="EWF acquisition (.E01)",
         desc="verify_ewf() must report MATCH against a real ewfacquire-created acquisition's own stored hash",
     )
     def test_verify_matches_stored_hash(self, raw_ntfs_e01: Path) -> None:
@@ -518,6 +521,7 @@ class TestDeletedFileRecovery:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
+        subject="NTFS",
         desc="Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes",
     )
     def test_ntfs_recovers_known_deleted_files(self, raw_ntfs_image: Path) -> None:
@@ -550,6 +554,7 @@ class TestDeletedFileRecovery:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
+        subject="exFAT",
         desc="Three deliberately deleted exFAT test files must recover, names and content, to their reference hashes",
     )
     def test_exfat_recovers_all_three_with_intact_names(self, tmp_path: Path) -> None:
@@ -574,6 +579,7 @@ class TestDeletedFileRecovery:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
+        subject="FAT32",
         desc="Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes",
     )
     def test_fat32_recovers_content_with_first_character_lost(self, tmp_path: Path) -> None:

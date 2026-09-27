@@ -447,6 +447,22 @@ and `crush/docs/reference/<lang>/` folders are ready for when that changes; it w
 never count towards the 90 % a language needs to be offered under View → Language (that
 is the application's catalog alone).
 
+## Forensic tests and their coverage page
+
+A forensic check is a test marked `@pytest.mark.forensic(category=..., subject=...,
+desc=...)` (mostly in `crush/tests/test_forensic.py`). `category` is one of the report's
+categories, `subject` what the check is about — both from `crush/tests/forensic_report.py`
+(`CATEGORY_ORDER`, `SUBJECT_GROUPS`); an unknown one stops the test run. `desc` says what
+the check verifies, in one sentence.
+
+`python scripts/forensic_coverage.py build` regenerates
+`crush/docs/forensic-test-coverage.md` from these markers: per subject and category, which
+checks exist and where there are none (a test fails while it is out of date).
+`crush/tests/test_forensic_coverage.py` holds `SUBJECT_GROUPS` against the code: a new
+parser, source type (VFS) or disk-image filesystem needs a subject there, and shows up on
+the page as "not tested" until it has checks. A category that can't apply to a subject goes
+in `NOT_APPLICABLE`, with the reason.
+
 ---
 
 ## Checklist
@@ -458,6 +474,7 @@ is the application's catalog alone).
 - [ ] `crush/viewers/__init__.py` — `ViewerRegistry.register("myformat", ...)` (only for new viewer types)
 - [ ] `crush/parsers/base.py` — extend `ViewerType` literal (only for new viewer types)
 - [ ] `crush/docs/format-support.md` — document the new format in the support matrix
+- [ ] `crush/tests/forensic_report.py` — a subject for the new format in `SUBJECT_GROUPS` (+ its mapping in `crush/tests/test_forensic_coverage.py`); forensic checks in `crush/tests/test_forensic.py`; then `python scripts/forensic_coverage.py build`
 
 ---
 

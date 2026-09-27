@@ -64,6 +64,84 @@ CATEGORY_INTROS: dict[str, str] = {
     ),
 }
 
+# What a forensic check is about: every @pytest.mark.forensic names one of these
+# as its subject. Listed in the order crush/docs/forensic-test-coverage.md shows
+# them. test_forensic_coverage holds the list against the code -- every source
+# type, disk-image filesystem and parser must be here -- so something new that
+# Crush reads shows up on the coverage page, as "not tested" until it has checks.
+SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
+    "Sources": (
+        "Folder",
+        "Single file",
+        "ZIP archive",
+        "7z archive",
+        "TAR archive",
+        "gzip file",
+        "Android backup (.ab)",
+        "iTunes backup",
+        "Cellebrite UFDR",
+        "Raw disk image",
+        "EWF acquisition (.E01)",
+    ),
+    "Disk image filesystems": (
+        "NTFS",
+        "FAT32",
+        "exFAT",
+        "ext2/3/4",
+        "F2FS",
+        "HFS+",
+        "APFS",
+        "QNX6",
+        "QNX4",
+        "QNX IFS",
+        "ETFS",
+        "EFS",
+        "SquashFS",
+        "JFFS2",
+        "UBI",
+        "UBIFS",
+        "YAFFS1/YAFFS2",
+    ),
+    "File formats": (
+        "SQLite database",
+        "SQLite WAL",
+        "SQLite rollback journal",
+        "Realm database",
+        "LevelDB",
+        "MMKV",
+        "Property list (plist)",
+        "Android Binary XML (ABX)",
+        "SEGB",
+        "XML",
+        "JSON",
+        "Protobuf",
+        "Protobuf with .proto schema",
+        "PDF",
+        "Image",
+        "Apple ATX",
+        "Apple KTX",
+        "Audio/video",
+        "Log file",
+        "Hex view (any file)",
+    ),
+    "Tools": (
+        "BLOB Inspector",
+        "Value Inspector",
+        "Multi-Log Studio",
+    ),
+}
+SUBJECTS: tuple[str, ...] = tuple(s for group in SUBJECT_GROUPS.values() for s in group)
+
+# (subject, category) pairs a check cannot exist for, with the reason the
+# coverage page shows -- so "no check" there reads as not applicable rather
+# than as a gap.
+_NO_FILE = "decodes values typed or pasted by the analyst; reads no file"
+NOT_APPLICABLE: dict[tuple[str, str], str] = {
+    ("Value Inspector", "Source Immutability"): _NO_FILE,
+    ("Value Inspector", "No Side Effects"): _NO_FILE,
+    ("Value Inspector", "Read-only Media"): _NO_FILE,
+}
+
 
 # ---------------------------------------------------------------------------
 # Run data

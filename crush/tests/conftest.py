@@ -53,7 +53,7 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the forensic marker and abort if any fixture file was tampered with."""
     config.addinivalue_line(
         "markers",
-        "forensic(category, desc): mark test as a forensic integrity check",
+        "forensic(category, subject, desc): mark test as a forensic integrity check",
     )
 
     checksums_path = FIXTURES_DIR / "checksums.json"
@@ -864,10 +864,20 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     for item in session.items:
         marker = item.get_closest_marker("forensic")
         if marker is not None:
+            category = marker.kwargs.get("category")
+            subject = marker.kwargs.get("subject")
+            if category not in forensic_report.CATEGORY_ORDER:
+                raise pytest.UsageError(f"{item.nodeid}: unknown forensic category {category!r}")
+            if subject not in forensic_report.SUBJECTS:
+                raise pytest.UsageError(
+                    f"{item.nodeid}: unknown forensic subject {subject!r} "
+                    "(see SUBJECT_GROUPS in crush/tests/forensic_report.py)"
+                )
             path, lineno, _ = item.location
             _forensic_items[item.nodeid] = {
                 "nodeid": item.nodeid,
-                "category": str(marker.kwargs.get("category", "Uncategorized")),
+                "category": str(category),
+                "subject": str(subject),
                 "desc": str(marker.kwargs.get("desc", item.name)),
                 "name": item.name,
                 "path": path,

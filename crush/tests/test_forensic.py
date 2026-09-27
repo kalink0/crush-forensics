@@ -99,6 +99,7 @@ def _file_nodes(node: VFSNode) -> list[VFSNode]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Folder",
     desc="DirectoryVFS read/peek must leave source file bytes unchanged",
 )
 def test_directory_vfs_does_not_modify_source(tmp_path: Path) -> None:
@@ -118,6 +119,7 @@ def test_directory_vfs_does_not_modify_source(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Folder",
     desc="DirectoryVFS read/peek must not change mtime or ctime of source files",
 )
 def test_directory_vfs_does_not_change_timestamps(tmp_path: Path) -> None:
@@ -139,6 +141,7 @@ def test_directory_vfs_does_not_change_timestamps(tmp_path: Path) -> None:
 )
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Folder",
     desc="DirectoryVFS read/peek must not update atime (Linux: O_NOATIME, Windows: utime restore)",
 )
 def test_directory_vfs_does_not_change_atime(tmp_path: Path) -> None:
@@ -162,6 +165,7 @@ def test_directory_vfs_does_not_change_atime(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="ZIP archive",
     desc="Exhaustively reading every entry of a ZIP archive must leave it byte-identical",
 )
 def test_zip_vfs_does_not_modify_archive(zip_fixture: Path) -> None:
@@ -177,6 +181,7 @@ def test_zip_vfs_does_not_modify_archive(zip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="ZIP archive",
     desc="ZipVFS must not change mtime or ctime of the archive file",
 )
 def test_zip_vfs_does_not_change_timestamps(zip_fixture: Path) -> None:
@@ -192,6 +197,7 @@ def test_zip_vfs_does_not_change_timestamps(zip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="TAR archive",
     desc="Exhaustively reading every entry of a TAR archive must leave it byte-identical",
 )
 def test_tar_vfs_does_not_modify_archive(tar_fixture: Path) -> None:
@@ -207,6 +213,7 @@ def test_tar_vfs_does_not_modify_archive(tar_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="TAR archive",
     desc="TarVFS must not change mtime or ctime of the archive file",
 )
 def test_tar_vfs_does_not_change_timestamps(tar_fixture: Path) -> None:
@@ -222,6 +229,7 @@ def test_tar_vfs_does_not_change_timestamps(tar_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Android backup (.ab)",
     desc="Exhaustively reading every entry of an Android backup (.ab) must leave it byte-identical",
 )
 def test_android_backup_vfs_does_not_modify_archive(android_backup_fixture: Path) -> None:
@@ -237,6 +245,7 @@ def test_android_backup_vfs_does_not_modify_archive(android_backup_fixture: Path
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Android backup (.ab)",
     desc="AndroidBackupVFS must not change mtime or ctime of the archive file",
 )
 def test_android_backup_vfs_does_not_change_timestamps(android_backup_fixture: Path) -> None:
@@ -252,6 +261,7 @@ def test_android_backup_vfs_does_not_change_timestamps(android_backup_fixture: P
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Android backup (.ab)",
     desc="Decrypting a password-protected Android backup must leave the source .ab byte-identical",
 )
 def test_android_backup_vfs_encrypted_does_not_modify_source(
@@ -275,6 +285,7 @@ def test_android_backup_vfs_encrypted_does_not_modify_source(
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="7z archive",
     desc="Decrypting a password-protected 7z archive must leave the source file byte-identical",
 )
 def test_sevenzip_encrypted_does_not_modify_source(
@@ -298,6 +309,7 @@ def test_sevenzip_encrypted_does_not_modify_source(
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="ZIP archive",
     desc="Decrypting a legacy-ZipCrypto-encrypted ZIP must leave the source file byte-identical",
 )
 def test_zip_legacy_encrypted_does_not_modify_source(legacy_encrypted_zip_fixture: Path) -> None:
@@ -319,6 +331,7 @@ def test_zip_legacy_encrypted_does_not_modify_source(legacy_encrypted_zip_fixtur
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="ZIP archive",
     desc="Decrypting a WinZip-AES-encrypted ZIP must leave the source file byte-identical",
 )
 def test_zip_aes_encrypted_does_not_modify_source(aes_encrypted_zip_fixture: Path) -> None:
@@ -340,6 +353,7 @@ def test_zip_aes_encrypted_does_not_modify_source(aes_encrypted_zip_fixture: Pat
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="iTunes backup",
     desc="Reading every entry of an iTunes backup must leave the backed file bytes unchanged",
 )
 def test_itunes_backup_vfs_does_not_modify_source(itunes_backup_fixture: Path) -> None:
@@ -355,6 +369,7 @@ def test_itunes_backup_vfs_does_not_modify_source(itunes_backup_fixture: Path) -
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="iTunes backup",
     desc="Reading every entry of an iTunes backup must not change mtime or ctime of the backed file",
 )
 def test_itunes_backup_vfs_does_not_change_timestamps(itunes_backup_fixture: Path) -> None:
@@ -370,6 +385,7 @@ def test_itunes_backup_vfs_does_not_change_timestamps(itunes_backup_fixture: Pat
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="iTunes backup",
     desc="Decrypting a per-file-encrypted entry must leave the encrypted-on-disk bytes unchanged",
 )
 def test_itunes_backup_vfs_per_file_decrypt_does_not_modify_source(
@@ -391,6 +407,7 @@ def test_itunes_backup_vfs_per_file_decrypt_does_not_modify_source(
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="iTunes backup",
     desc="Opening a zip-wrapped iTunes backup must leave the source ZIP byte-identical "
          "(extraction happens in a temp directory, never in place)",
 )
@@ -417,6 +434,7 @@ def test_open_itunes_backup_from_zip_does_not_modify_source(itunes_backup_zip_fi
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="SQLite database",
     desc="SQLiteParser must preserve the WAL companion intact — parsing must not checkpoint or truncate it",
 )
 def test_sqlite_parser_preserves_wal_companion(tmp_path: Path) -> None:
@@ -456,6 +474,7 @@ def test_sqlite_parser_preserves_wal_companion(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="SQLite database",
     desc="SQLiteParser must not create -wal, -journal, or any sibling file next to the evidence",
 )
 def test_sqlite_parse_creates_no_sibling_files(tmp_path: Path) -> None:
@@ -475,6 +494,7 @@ def test_sqlite_parse_creates_no_sibling_files(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="SQLite database",
     desc="SQLiteParser must not change mtime or ctime of source files",
 )
 def test_sqlite_parser_does_not_change_timestamps(tmp_path: Path) -> None:
@@ -491,6 +511,7 @@ def test_sqlite_parser_does_not_change_timestamps(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="SQLite rollback journal",
     desc="SQLiteJournalParser (standalone -journal open) must not create any file next to the evidence",
 )
 def test_sqlite_journal_parse_creates_no_sibling_files(tmp_path: Path) -> None:
@@ -523,6 +544,7 @@ def test_sqlite_journal_parse_creates_no_sibling_files(tmp_path: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="SQLite database",
     desc="SQLiteParser must succeed when the evidence directory is 0o555 and file is 0o444",
 )
 def test_sqlite_parser_works_on_readonly_media(tmp_path: Path) -> None:
@@ -548,6 +570,7 @@ def test_sqlite_parser_works_on_readonly_media(tmp_path: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="ZIP archive",
     desc="ZipVFS must read all entries when the archive file is chmod 0o444",
 )
 def test_zip_vfs_works_on_readonly_media(zip_fixture: Path) -> None:
@@ -564,6 +587,7 @@ def test_zip_vfs_works_on_readonly_media(zip_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="TAR archive",
     desc="TarVFS must read all entries when the archive file is chmod 0o444",
 )
 def test_tar_vfs_works_on_readonly_media(tar_fixture: Path) -> None:
@@ -583,6 +607,7 @@ def test_tar_vfs_works_on_readonly_media(tar_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="SQLite database",
     desc="minimal.sqlite must parse to exactly: table 'evidence', columns [id, note], row (1, 'test_entry')",
 )
 def test_sqlite_fixture_known_output(sqlite_fixture: Path) -> None:
@@ -601,6 +626,7 @@ def test_sqlite_fixture_known_output(sqlite_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Property list (plist)",
     desc="minimal_binary.plist must parse to exactly: {application, version=1, verified=True}, format=binary",
 )
 def test_plist_fixture_known_output(plist_fixture: Path) -> None:
@@ -619,6 +645,7 @@ def test_plist_fixture_known_output(plist_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="ZIP archive",
     desc="minimal.zip must contain exactly: evidence/minimal.sqlite and evidence/minimal_binary.plist",
 )
 def test_zip_fixture_contains_expected_entries(zip_fixture: Path) -> None:
@@ -630,6 +657,7 @@ def test_zip_fixture_contains_expected_entries(zip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="TAR archive",
     desc="minimal.tar.gz must contain exactly: evidence/minimal.sqlite and evidence/minimal_binary.plist",
 )
 def test_tar_fixture_contains_expected_entries(tar_fixture: Path) -> None:
@@ -645,6 +673,7 @@ def test_tar_fixture_contains_expected_entries(tar_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="SQLite database",
     desc="Parsing the same SQLite file twice must produce structurally identical results",
 )
 def test_sqlite_parse_is_reproducible(sqlite_fixture: Path) -> None:
@@ -666,6 +695,7 @@ def test_sqlite_parse_is_reproducible(sqlite_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Property list (plist)",
     desc="Parsing the same binary plist twice must produce identical results",
 )
 def test_plist_parse_is_reproducible(plist_fixture: Path) -> None:
@@ -684,6 +714,7 @@ def test_plist_parse_is_reproducible(plist_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="ZIP archive",
     desc="Reading the same ZIP archive entry twice must return byte-identical data",
 )
 def test_zip_vfs_read_is_reproducible(zip_fixture: Path) -> None:
@@ -700,6 +731,7 @@ def test_zip_vfs_read_is_reproducible(zip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Realm database",
     desc="RealmParser read must leave source file bytes unchanged",
 )
 def test_realm_parser_does_not_modify_source(realm_fixture: Path) -> None:
@@ -715,6 +747,7 @@ def test_realm_parser_does_not_modify_source(realm_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Realm database",
     desc="RealmParser must not change mtime or ctime of source files",
 )
 def test_realm_parser_does_not_change_timestamps(realm_fixture: Path) -> None:
@@ -729,6 +762,7 @@ def test_realm_parser_does_not_change_timestamps(realm_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Realm database",
     desc="RealmParser must not create any sibling files next to the evidence",
 )
 def test_realm_parse_creates_no_sibling_files(realm_fixture: Path) -> None:
@@ -746,6 +780,7 @@ def test_realm_parse_creates_no_sibling_files(realm_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Realm database",
     desc="RealmParser must succeed when evidence directory is 0o555 and file is 0o444",
 )
 def test_realm_parser_works_on_readonly_media(tmp_path: Path) -> None:
@@ -769,6 +804,7 @@ def test_realm_parser_works_on_readonly_media(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="minimal.realm must parse to exactly: schema ['metadata', 'class_Evidence'], Tables found=2",
 )
 def test_realm_fixture_known_output(realm_fixture: Path) -> None:
@@ -786,6 +822,7 @@ def test_realm_fixture_known_output(realm_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="minimal_format9.realm (file format 9) must parse to exactly: "
     "schema ['metadata', 'class_LegacyRecord'], missing table structure explicitly flagged",
 )
@@ -809,6 +846,7 @@ def test_realm_format9_fixture_known_output(realm_format9_fixture: Path) -> None
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="streaming_form.realm (genuine realm-js writeCopyTo() output, real "
     "streaming-form file, not a hand-rebuilt header) must resolve the real "
     "top ref from the footer and decode its one user table correctly",
@@ -833,6 +871,7 @@ def test_realm_streaming_form_fixture_known_output(realm_streaming_form_fixture:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="ifttt_v9_data.realm (real file format 9 sample, DFRWS/Magnet CTF dataset) "
     "must fully decode: 21 classes, no unsupported columns, correct row values",
 )
@@ -884,6 +923,7 @@ def test_realm_ifttt_v9_fixture_known_output(realm_ifttt_v9_fixture: Path) -> No
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="mcdonalds_v9_data.realm (real file format 9 sample, DFRWS 2021 Challenge "
     "dataset) must fully decode: 5 classes, no unsupported columns, correct row values",
 )
@@ -920,6 +960,7 @@ def test_realm_mcdonalds_v9_fixture_known_output(realm_mcdonalds_v9_fixture: Pat
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="all_types_v24.realm (real file format 24, actual realm-js SDK output) "
     "must decode every modern column type correctly, including Decimal128, Link, "
     "LinkList, and nested Mixed collections",
@@ -975,6 +1016,7 @@ def test_realm_all_types_v24_fixture_known_output(realm_all_types_v24_fixture: P
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Realm database",
     desc="format9_alltypes.realm (real file format 9, realm-core v5.23.9's own public "
     "API output, donated by the issue #55 reporter) must decode every old ColumnType "
     "correctly against the accompanying expected.json, including Mixed and a populated "
@@ -1049,6 +1091,7 @@ def test_realm_format9_alltypes_fixture_known_output(realm_format9_alltypes_fixt
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Realm database",
     desc="Parsing the same Realm file twice must produce structurally identical results",
 )
 def test_realm_parse_is_reproducible(realm_fixture: Path) -> None:
@@ -1100,6 +1143,7 @@ def _sha256_dir(path: Path) -> dict[str, str]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="LevelDB",
     desc="LevelDB directory files must be byte-identical after parsing",
 )
 def test_leveldb_does_not_modify_source(tmp_path: Path) -> None:
@@ -1116,6 +1160,7 @@ def test_leveldb_does_not_modify_source(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="LevelDB",
     desc="LevelDB parser must not change mtime or ctime of source directory files",
 )
 def test_leveldb_does_not_change_timestamps(tmp_path: Path) -> None:
@@ -1133,6 +1178,7 @@ def test_leveldb_does_not_change_timestamps(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="LevelDB",
     desc="LevelDB parsing must not create files next to the evidence directory",
 )
 def test_leveldb_no_sibling_files(tmp_path: Path) -> None:
@@ -1150,6 +1196,7 @@ def test_leveldb_no_sibling_files(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="LevelDB",
     desc="LevelDB parser must succeed when directory and files are read-only (0o555/0o444)",
 )
 def test_leveldb_read_only_media(tmp_path: Path) -> None:
@@ -1172,6 +1219,7 @@ def test_leveldb_read_only_media(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="LevelDB",
     desc="Parsing the same LevelDB directory twice must produce identical results",
 )
 def test_leveldb_parse_is_reproducible(tmp_path: Path) -> None:
@@ -1200,6 +1248,7 @@ def test_leveldb_parse_is_reproducible(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="SEGB",
     desc="SegbParser must not alter the content of the source file",
 )
 def test_segb_parser_does_not_modify_source(segb_fixture: Path) -> None:
@@ -1214,6 +1263,7 @@ def test_segb_parser_does_not_modify_source(segb_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="SEGB",
     desc="SegbParser must not change mtime or ctime of source files",
 )
 def test_segb_parser_does_not_change_timestamps(segb_fixture: Path) -> None:
@@ -1228,6 +1278,7 @@ def test_segb_parser_does_not_change_timestamps(segb_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="SEGB",
     desc="SegbParser must not create any sibling files next to the evidence",
 )
 def test_segb_parse_creates_no_sibling_files(segb_fixture: Path) -> None:
@@ -1244,6 +1295,7 @@ def test_segb_parse_creates_no_sibling_files(segb_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="SEGB",
     desc="SegbParser must succeed when evidence directory is 0o555 and file is 0o444",
 )
 def test_segb_parser_works_on_readonly_media(tmp_path: Path) -> None:
@@ -1266,6 +1318,7 @@ def test_segb_parser_works_on_readonly_media(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="SEGB",
     desc="minimal.segb2 must parse to at least one record with a non-empty payload",
 )
 def test_segb_fixture_known_output(segb_fixture: Path) -> None:
@@ -1278,6 +1331,7 @@ def test_segb_fixture_known_output(segb_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="SEGB",
     desc="Parsing the same SEGB file twice must produce structurally identical results",
 )
 def test_segb_parse_is_reproducible(segb_fixture: Path) -> None:
@@ -1312,6 +1366,7 @@ def _blob_row(label: str) -> bytes:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="BLOB Inspector",
     desc="Reading blob_samples.db must leave the fixture file byte-identical",
 )
 def test_blob_samples_db_not_modified() -> None:
@@ -1322,6 +1377,7 @@ def test_blob_samples_db_not_modified() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="BLOB Inspector",
     desc="blob_samples.db 'b64url_json': Base64url decode must yield JSON starting with {\"sub\"",
 )
 def test_blob_b64url_json_known_output() -> None:
@@ -1332,6 +1388,7 @@ def test_blob_b64url_json_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="BLOB Inspector",
     desc="blob_samples.db 'b64url_plist': Base64url decode must yield an XML plist",
 )
 def test_blob_b64url_plist_known_output() -> None:
@@ -1342,6 +1399,7 @@ def test_blob_b64url_plist_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="BLOB Inspector",
     desc="blob_samples.db 'lzfse_json': lzfse decompress must yield JSON with 'bundleId'",
 )
 def test_blob_lzfse_json_known_output() -> None:
@@ -1352,6 +1410,7 @@ def test_blob_lzfse_json_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="BLOB Inspector",
     desc="blob_samples.db 'b64url_lzfse_json': two-step Base64url→lzfse pipeline must yield JSON",
 )
 def test_blob_b64url_lzfse_pipeline_known_output() -> None:
@@ -1364,6 +1423,7 @@ def test_blob_b64url_lzfse_pipeline_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="BLOB Inspector",
     desc="Blob Inspector decode functions must produce byte-identical output on repeated calls",
 )
 def test_blob_decode_functions_are_reproducible() -> None:
@@ -1395,6 +1455,7 @@ def test_blob_decode_functions_are_reproducible() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Value Inspector",
     desc="Unix timestamp 1718000000 must always decode to 2024-06-10 06:13:20 UTC",
 )
 def test_value_inspector_unix_timestamp_known_output() -> None:
@@ -1406,6 +1467,7 @@ def test_value_inspector_unix_timestamp_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Value Inspector",
     desc="Cocoa timestamp 760000000 must always decode to a date in 2025",
 )
 def test_value_inspector_cocoa_timestamp_known_output() -> None:
@@ -1417,6 +1479,7 @@ def test_value_inspector_cocoa_timestamp_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Value Inspector",
     desc="Hex bytes 'c0 a8 01 01' must always decode to IPv4 192.168.1.1 (big-endian)",
 )
 def test_value_inspector_ipv4_known_output() -> None:
@@ -1428,6 +1491,7 @@ def test_value_inspector_ipv4_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Value Inspector",
     desc="Hex bytes 'f7 f8 f9 fa fb fc' must always decode to MAC f7:f8:f9:fa:fb:fc",
 )
 def test_value_inspector_mac_known_output() -> None:
@@ -1439,6 +1503,7 @@ def test_value_inspector_mac_known_output() -> None:
 
 @pytest.mark.forensic(
     category="Completeness",
+    subject="Value Inspector",
     desc="Value Inspector must never silently drop any interpretation group for a multi-type value",
 )
 def test_value_inspector_no_silent_group_omission() -> None:
@@ -1452,6 +1517,7 @@ def test_value_inspector_no_silent_group_omission() -> None:
 
 @pytest.mark.forensic(
     category="Completeness",
+    subject="Value Inspector",
     desc="Value Inspector must always show both big-endian and little-endian integer for hex-byte input",
 )
 def test_value_inspector_both_endians_present() -> None:
@@ -1464,6 +1530,7 @@ def test_value_inspector_both_endians_present() -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Value Inspector",
     desc="Value Inspector must produce identical ordered output on repeated calls for the same input",
 )
 def test_value_inspector_is_reproducible() -> None:
@@ -1486,6 +1553,7 @@ def test_value_inspector_is_reproducible() -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Audio/video",
     desc="MediaParser read must leave source file bytes unchanged",
 )
 def test_media_parser_does_not_modify_source(tmp_path: Path) -> None:
@@ -1502,6 +1570,7 @@ def test_media_parser_does_not_modify_source(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Audio/video",
     desc="MediaParser must not change mtime or ctime of source files",
 )
 def test_media_parser_does_not_change_timestamps(tmp_path: Path) -> None:
@@ -1518,6 +1587,7 @@ def test_media_parser_does_not_change_timestamps(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Audio/video",
     desc="MediaParser must not create any sibling files next to the evidence",
 )
 def test_media_parser_creates_no_sibling_files(tmp_path: Path) -> None:
@@ -1534,6 +1604,7 @@ def test_media_parser_creates_no_sibling_files(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Audio/video",
     desc="MediaParser OGG/AMR path (PyAV decode attempt) must not create files next to evidence",
 )
 def test_media_parser_pyav_path_creates_no_sibling_files(tmp_path: Path) -> None:
@@ -1551,6 +1622,7 @@ def test_media_parser_pyav_path_creates_no_sibling_files(tmp_path: Path) -> None
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Audio/video",
     desc="MediaParser must succeed when evidence directory is 0o555 and file is 0o444",
 )
 def test_media_parser_works_on_readonly_media(tmp_path: Path) -> None:
@@ -1573,6 +1645,7 @@ def test_media_parser_works_on_readonly_media(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Audio/video",
     desc="MP3 stub must always parse to viewer_type='media' with 'File size' in metadata",
 )
 def test_media_parser_mp3_known_output(tmp_path: Path) -> None:
@@ -1588,6 +1661,7 @@ def test_media_parser_mp3_known_output(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Audio/video",
     desc="OGG stub (invalid codec data) must parse without crash and return raw bytes intact",
 )
 def test_media_parser_ogg_stub_known_output(tmp_path: Path) -> None:
@@ -1602,6 +1676,7 @@ def test_media_parser_ogg_stub_known_output(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Audio/video",
     desc="Parsing the same media file twice must produce byte-identical results",
 )
 def test_media_parse_is_reproducible(tmp_path: Path) -> None:
@@ -1620,6 +1695,7 @@ def test_media_parse_is_reproducible(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Audio/video",
     desc="Parsing the same OGG file twice (PyAV metadata path) must produce identical results",
 )
 def test_media_parse_ogg_is_reproducible(tmp_path: Path) -> None:
@@ -1642,6 +1718,7 @@ def test_media_parse_ogg_is_reproducible(tmp_path: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Property list (plist)",
     desc="PlistParser read must leave source file bytes unchanged",
 )
 def test_plist_parser_does_not_modify_source(plist_fixture: Path) -> None:
@@ -1656,6 +1733,7 @@ def test_plist_parser_does_not_modify_source(plist_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Property list (plist)",
     desc="PlistParser must not change mtime or ctime of source files",
 )
 def test_plist_parser_does_not_change_timestamps(plist_fixture: Path) -> None:
@@ -1670,6 +1748,7 @@ def test_plist_parser_does_not_change_timestamps(plist_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Property list (plist)",
     desc="PlistParser must not create any sibling files next to the evidence",
 )
 def test_plist_parse_creates_no_sibling_files(plist_fixture: Path) -> None:
@@ -1686,6 +1765,7 @@ def test_plist_parse_creates_no_sibling_files(plist_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Property list (plist)",
     desc="PlistParser must succeed when evidence directory is 0o555 and file is 0o444",
 )
 def test_plist_parser_works_on_readonly_media(tmp_path: Path) -> None:
@@ -1739,6 +1819,7 @@ def _live_file_nodes(volume: VFSNode) -> list[VFSNode]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Raw disk image",
     desc="RawImageVFS read/peek must leave the image file's bytes unchanged",
 )
 def test_raw_image_vfs_does_not_modify_source(raw_image_fixture: Path) -> None:
@@ -1759,6 +1840,7 @@ def test_raw_image_vfs_does_not_modify_source(raw_image_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Raw disk image",
     desc="RawImageVFS read/peek must not change mtime or ctime of the image file",
 )
 def test_raw_image_vfs_does_not_change_timestamps(raw_image_fixture: Path) -> None:
@@ -1778,6 +1860,7 @@ def test_raw_image_vfs_does_not_change_timestamps(raw_image_fixture: Path) -> No
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Raw disk image",
     desc="RawImageVFS must not create any sibling files next to the image",
 )
 def test_raw_image_vfs_creates_no_sibling_files(raw_image_fixture: Path) -> None:
@@ -1799,6 +1882,7 @@ def test_raw_image_vfs_creates_no_sibling_files(raw_image_fixture: Path) -> None
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Raw disk image",
     desc="RawImageVFS must read all files when the image file is chmod 0o444",
 )
 def test_raw_image_vfs_works_on_readonly_media(raw_image_fixture: Path) -> None:
@@ -1818,6 +1902,7 @@ def test_raw_image_vfs_works_on_readonly_media(raw_image_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Raw disk image",
     desc="Reading the same file from a raw image twice must return byte-identical data",
 )
 def test_raw_image_vfs_read_is_reproducible(raw_image_fixture: Path) -> None:
@@ -1837,6 +1922,7 @@ def test_raw_image_vfs_read_is_reproducible(raw_image_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="gzip file",
     desc="GzipVFS read must leave the .gz file's bytes unchanged",
 )
 def test_gzip_vfs_does_not_modify_source(gzip_fixture: Path) -> None:
@@ -1852,6 +1938,7 @@ def test_gzip_vfs_does_not_modify_source(gzip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="gzip file",
     desc="GzipVFS must not change mtime or ctime of the .gz file",
 )
 def test_gzip_vfs_does_not_change_timestamps(gzip_fixture: Path) -> None:
@@ -1867,6 +1954,7 @@ def test_gzip_vfs_does_not_change_timestamps(gzip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="gzip file",
     desc="GzipVFS must not create any sibling files next to the .gz file",
 )
 def test_gzip_vfs_creates_no_sibling_files(gzip_fixture: Path) -> None:
@@ -1884,6 +1972,7 @@ def test_gzip_vfs_creates_no_sibling_files(gzip_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="gzip file",
     desc="GzipVFS must decompress and read the member when the .gz file is chmod 0o444",
 )
 def test_gzip_vfs_works_on_readonly_media(gzip_fixture: Path) -> None:
@@ -1899,6 +1988,7 @@ def test_gzip_vfs_works_on_readonly_media(gzip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="gzip file",
     desc="minimal.sqlite.gz must decompress to exactly minimal.sqlite's bytes, member name 'minimal.sqlite'",
 )
 def test_gzip_fixture_known_output(gzip_fixture: Path) -> None:
@@ -1914,6 +2004,7 @@ def test_gzip_fixture_known_output(gzip_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="gzip file",
     desc="Reading the same gzip member twice must return byte-identical data",
 )
 def test_gzip_vfs_read_is_reproducible(gzip_fixture: Path) -> None:
@@ -1936,6 +2027,7 @@ def _mmkv_node(mmkv_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="MMKV",
     desc="MMKVParser.parse must leave the store file's bytes unchanged",
 )
 def test_mmkv_parser_does_not_modify_source(mmkv_fixture: Path) -> None:
@@ -1949,6 +2041,7 @@ def test_mmkv_parser_does_not_modify_source(mmkv_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="MMKV",
     desc="MMKVParser.parse must not change mtime or ctime of the store file",
 )
 def test_mmkv_parser_does_not_change_timestamps(mmkv_fixture: Path) -> None:
@@ -1962,6 +2055,7 @@ def test_mmkv_parser_does_not_change_timestamps(mmkv_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="MMKV",
     desc="MMKVParser.parse must not create any sibling files next to the store (its scratch copy for "
     "the third-party mmkv reader lives in a separate temp directory)",
 )
@@ -1978,6 +2072,7 @@ def test_mmkv_parse_creates_no_sibling_files(mmkv_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="MMKV",
     desc="MMKVParser.parse must work when the store file is chmod 0o444",
 )
 def test_mmkv_parser_works_on_readonly_media(mmkv_fixture: Path) -> None:
@@ -1992,6 +2087,7 @@ def test_mmkv_parser_works_on_readonly_media(mmkv_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="MMKV",
     desc="Synthetic MMKV store must parse to exactly one live string entry: channel='googleplay'",
 )
 def test_mmkv_fixture_known_output(mmkv_fixture: Path) -> None:
@@ -2008,6 +2104,7 @@ def test_mmkv_fixture_known_output(mmkv_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="MMKV",
     desc="Parsing the same MMKV store twice must produce identical records",
 )
 def test_mmkv_parse_is_reproducible(mmkv_fixture: Path) -> None:
@@ -2035,6 +2132,7 @@ def _abx_node(abx_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Android Binary XML (ABX)",
     desc="AbxParser.parse must leave the source file's bytes unchanged",
 )
 def test_abx_parser_does_not_modify_source(abx_fixture: Path) -> None:
@@ -2048,6 +2146,7 @@ def test_abx_parser_does_not_modify_source(abx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Android Binary XML (ABX)",
     desc="AbxParser.parse must not change mtime or ctime of the source file",
 )
 def test_abx_parser_does_not_change_timestamps(abx_fixture: Path) -> None:
@@ -2061,6 +2160,7 @@ def test_abx_parser_does_not_change_timestamps(abx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Android Binary XML (ABX)",
     desc="AbxParser.parse must not create any sibling files next to the source",
 )
 def test_abx_parse_creates_no_sibling_files(abx_fixture: Path) -> None:
@@ -2076,6 +2176,7 @@ def test_abx_parse_creates_no_sibling_files(abx_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Android Binary XML (ABX)",
     desc="AbxParser.parse must work when the source file is chmod 0o444",
 )
 def test_abx_parser_works_on_readonly_media(abx_fixture: Path) -> None:
@@ -2090,6 +2191,7 @@ def test_abx_parser_works_on_readonly_media(abx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Android Binary XML (ABX)",
     desc='Synthetic ABX <root attr="value"/> must decode to tag "root" with attribute attr="value"',
 )
 def test_abx_fixture_known_output(abx_fixture: Path) -> None:
@@ -2106,6 +2208,7 @@ def test_abx_fixture_known_output(abx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Android Binary XML (ABX)",
     desc="Parsing the same ABX file twice must produce identical results",
 )
 def test_abx_parse_is_reproducible(abx_fixture: Path) -> None:
@@ -2134,6 +2237,7 @@ def _image_node(fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Apple ATX",
     desc="ImageParser.parse on an ATX file must leave the source file's bytes unchanged",
 )
 def test_atx_parser_does_not_modify_source(atx_fixture: Path) -> None:
@@ -2147,6 +2251,7 @@ def test_atx_parser_does_not_modify_source(atx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Apple ATX",
     desc="ImageParser.parse on an ATX file must not change mtime or ctime of the source file",
 )
 def test_atx_parser_does_not_change_timestamps(atx_fixture: Path) -> None:
@@ -2160,6 +2265,7 @@ def test_atx_parser_does_not_change_timestamps(atx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Apple ATX",
     desc="ImageParser.parse on an ATX file must not create any sibling files next to the source",
 )
 def test_atx_parse_creates_no_sibling_files(atx_fixture: Path) -> None:
@@ -2175,6 +2281,7 @@ def test_atx_parse_creates_no_sibling_files(atx_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Apple ATX",
     desc="ImageParser.parse on an ATX file must work when the source file is chmod 0o444",
 )
 def test_atx_parser_works_on_readonly_media(atx_fixture: Path) -> None:
@@ -2189,6 +2296,7 @@ def test_atx_parser_works_on_readonly_media(atx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Apple ATX",
     desc="Synthetic 32x16 ATX HEAD chunk must report Width=32, Height=16, ASTC 4x4, metadata-only",
 )
 def test_atx_fixture_known_output(atx_fixture: Path) -> None:
@@ -2206,6 +2314,7 @@ def test_atx_fixture_known_output(atx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Apple ATX",
     desc="Parsing the same ATX file twice must produce identical results",
 )
 def test_atx_parse_is_reproducible(atx_fixture: Path) -> None:
@@ -2222,6 +2331,7 @@ def test_atx_parse_is_reproducible(atx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Apple KTX",
     desc="ImageParser.parse on a KTX file must leave the source file's bytes unchanged",
 )
 def test_ktx_parser_does_not_modify_source(ktx_fixture: Path) -> None:
@@ -2235,6 +2345,7 @@ def test_ktx_parser_does_not_modify_source(ktx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Apple KTX",
     desc="ImageParser.parse on a KTX file must not change mtime or ctime of the source file",
 )
 def test_ktx_parser_does_not_change_timestamps(ktx_fixture: Path) -> None:
@@ -2248,6 +2359,7 @@ def test_ktx_parser_does_not_change_timestamps(ktx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Apple KTX",
     desc="ImageParser.parse on a KTX file must not create any sibling files next to the source",
 )
 def test_ktx_parse_creates_no_sibling_files(ktx_fixture: Path) -> None:
@@ -2263,6 +2375,7 @@ def test_ktx_parse_creates_no_sibling_files(ktx_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Apple KTX",
     desc="ImageParser.parse on a KTX file must work when the source file is chmod 0o444",
 )
 def test_ktx_parser_works_on_readonly_media(ktx_fixture: Path) -> None:
@@ -2277,6 +2390,7 @@ def test_ktx_parser_works_on_readonly_media(ktx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Apple KTX",
     desc="Synthetic 8x8 KTX with an unsupported glInternalFormat must be reported metadata-only",
 )
 def test_ktx_fixture_known_output(ktx_fixture: Path) -> None:
@@ -2292,6 +2406,7 @@ def test_ktx_fixture_known_output(ktx_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Apple KTX",
     desc="Parsing the same KTX file twice must produce identical results",
 )
 def test_ktx_parse_is_reproducible(ktx_fixture: Path) -> None:
@@ -2319,6 +2434,7 @@ def _protobuf_node(protobuf_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Protobuf",
     desc="ProtobufParser.parse must leave the source file's bytes unchanged",
 )
 def test_protobuf_parser_does_not_modify_source(protobuf_fixture: Path) -> None:
@@ -2332,6 +2448,7 @@ def test_protobuf_parser_does_not_modify_source(protobuf_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Protobuf",
     desc="ProtobufParser.parse must not change mtime or ctime of the source file",
 )
 def test_protobuf_parser_does_not_change_timestamps(protobuf_fixture: Path) -> None:
@@ -2345,6 +2462,7 @@ def test_protobuf_parser_does_not_change_timestamps(protobuf_fixture: Path) -> N
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Protobuf",
     desc="ProtobufParser.parse must not create any sibling files next to the source",
 )
 def test_protobuf_parse_creates_no_sibling_files(protobuf_fixture: Path) -> None:
@@ -2360,6 +2478,7 @@ def test_protobuf_parse_creates_no_sibling_files(protobuf_fixture: Path) -> None
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Protobuf",
     desc="ProtobufParser.parse must work when the source file is chmod 0o444",
 )
 def test_protobuf_parser_works_on_readonly_media(protobuf_fixture: Path) -> None:
@@ -2374,6 +2493,7 @@ def test_protobuf_parser_works_on_readonly_media(protobuf_fixture: Path) -> None
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Protobuf",
     desc="Synthetic message (field 1 varint=42, field 2 string='evidence') must decode exactly",
 )
 def test_protobuf_fixture_known_output(protobuf_fixture: Path) -> None:
@@ -2395,6 +2515,7 @@ def test_protobuf_fixture_known_output(protobuf_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Protobuf",
     desc="Parsing the same protobuf message twice must produce identical results",
 )
 def test_protobuf_parse_is_reproducible(protobuf_fixture: Path) -> None:
@@ -2422,6 +2543,7 @@ def _xml_node(xml_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="XML",
     desc="XmlParser.parse must leave the source file's bytes unchanged",
 )
 def test_xml_parser_does_not_modify_source(xml_fixture: Path) -> None:
@@ -2435,6 +2557,7 @@ def test_xml_parser_does_not_modify_source(xml_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="XML",
     desc="XmlParser.parse must not change mtime or ctime of the source file",
 )
 def test_xml_parser_does_not_change_timestamps(xml_fixture: Path) -> None:
@@ -2448,6 +2571,7 @@ def test_xml_parser_does_not_change_timestamps(xml_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="XML",
     desc="XmlParser.parse must not create any sibling files next to the source",
 )
 def test_xml_parse_creates_no_sibling_files(xml_fixture: Path) -> None:
@@ -2463,6 +2587,7 @@ def test_xml_parse_creates_no_sibling_files(xml_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="XML",
     desc="XmlParser.parse must work when the source file is chmod 0o444",
 )
 def test_xml_parser_works_on_readonly_media(xml_fixture: Path) -> None:
@@ -2477,6 +2602,7 @@ def test_xml_parser_works_on_readonly_media(xml_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="XML",
     desc='Synthetic <root attr="value"><child>text</child></root> must decode to that exact tree',
 )
 def test_xml_fixture_known_output(xml_fixture: Path) -> None:
@@ -2493,6 +2619,7 @@ def test_xml_fixture_known_output(xml_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="XML",
     desc="Parsing the same XML file twice must produce identical results",
 )
 def test_xml_parse_is_reproducible(xml_fixture: Path) -> None:
@@ -2520,6 +2647,7 @@ def _json_node(json_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="JSON",
     desc="JsonParser.parse must leave the source file's bytes unchanged",
 )
 def test_json_parser_does_not_modify_source(json_fixture: Path) -> None:
@@ -2533,6 +2661,7 @@ def test_json_parser_does_not_modify_source(json_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="JSON",
     desc="JsonParser.parse must not change mtime or ctime of the source file",
 )
 def test_json_parser_does_not_change_timestamps(json_fixture: Path) -> None:
@@ -2546,6 +2675,7 @@ def test_json_parser_does_not_change_timestamps(json_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="JSON",
     desc="JsonParser.parse must not create any sibling files next to the source",
 )
 def test_json_parse_creates_no_sibling_files(json_fixture: Path) -> None:
@@ -2561,6 +2691,7 @@ def test_json_parse_creates_no_sibling_files(json_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="JSON",
     desc="JsonParser.parse must work when the source file is chmod 0o444",
 )
 def test_json_parser_works_on_readonly_media(json_fixture: Path) -> None:
@@ -2575,6 +2706,7 @@ def test_json_parser_works_on_readonly_media(json_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="JSON",
     desc='Synthetic {"application": "crush-forensics", "count": 3} must decode to exactly that dict',
 )
 def test_json_fixture_known_output(json_fixture: Path) -> None:
@@ -2589,6 +2721,7 @@ def test_json_fixture_known_output(json_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="JSON",
     desc="Parsing the same JSON file twice must produce identical results",
 )
 def test_json_parse_is_reproducible(json_fixture: Path) -> None:
@@ -2616,6 +2749,7 @@ def _pdf_node(pdf_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="PDF",
     desc="PDFParser.parse must leave the source file's bytes unchanged",
 )
 def test_pdf_parser_does_not_modify_source(pdf_fixture: Path) -> None:
@@ -2629,6 +2763,7 @@ def test_pdf_parser_does_not_modify_source(pdf_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="PDF",
     desc="PDFParser.parse must not change mtime or ctime of the source file",
 )
 def test_pdf_parser_does_not_change_timestamps(pdf_fixture: Path) -> None:
@@ -2642,6 +2777,7 @@ def test_pdf_parser_does_not_change_timestamps(pdf_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="PDF",
     desc="PDFParser.parse must not create any sibling files next to the source",
 )
 def test_pdf_parse_creates_no_sibling_files(pdf_fixture: Path) -> None:
@@ -2657,6 +2793,7 @@ def test_pdf_parse_creates_no_sibling_files(pdf_fixture: Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="PDF",
     desc="PDFParser.parse must work when the source file is chmod 0o444",
 )
 def test_pdf_parser_works_on_readonly_media(pdf_fixture: Path) -> None:
@@ -2671,6 +2808,7 @@ def test_pdf_parser_works_on_readonly_media(pdf_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="PDF",
     desc="Synthetic 1-page PDF with Title/Author metadata must report exactly those known fields",
 )
 def test_pdf_fixture_known_output(pdf_fixture: Path) -> None:
@@ -2692,6 +2830,7 @@ def test_pdf_fixture_known_output(pdf_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="PDF",
     desc="Parsing the same PDF file twice must produce identical results",
 )
 def test_pdf_parse_is_reproducible(pdf_fixture: Path) -> None:
@@ -2719,6 +2858,7 @@ def _image_exif_node(image_exif_fixture: Path) -> tuple[VFSNode, DirectoryVFS]:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Image",
     desc="ImageParser.parse on a JPEG with EXIF must leave the source file's bytes unchanged",
 )
 def test_image_exif_parser_does_not_modify_source(image_exif_fixture: Path) -> None:
@@ -2732,6 +2872,7 @@ def test_image_exif_parser_does_not_modify_source(image_exif_fixture: Path) -> N
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Image",
     desc="ImageParser.parse on a JPEG with EXIF must not change mtime or ctime of the source file",
 )
 def test_image_exif_parser_does_not_change_timestamps(image_exif_fixture: Path) -> None:
@@ -2745,6 +2886,7 @@ def test_image_exif_parser_does_not_change_timestamps(image_exif_fixture: Path) 
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Image",
     desc="ImageParser.parse on a JPEG with EXIF must not create any sibling files next to the source",
 )
 def test_image_exif_parse_creates_no_sibling_files(image_exif_fixture: Path) -> None:
@@ -2760,6 +2902,7 @@ def test_image_exif_parse_creates_no_sibling_files(image_exif_fixture: Path) -> 
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Image",
     desc="ImageParser.parse on a JPEG with EXIF must work when the source file is chmod 0o444",
 )
 def test_image_exif_parser_works_on_readonly_media(image_exif_fixture: Path) -> None:
@@ -2774,6 +2917,7 @@ def test_image_exif_parser_works_on_readonly_media(image_exif_fixture: Path) -> 
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Image",
     desc="Synthetic JPEG with Make/Model/DateTime EXIF tags must report exactly those known values",
 )
 def test_image_exif_fixture_known_output(image_exif_fixture: Path) -> None:
@@ -2789,6 +2933,7 @@ def test_image_exif_fixture_known_output(image_exif_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Image",
     desc="Parsing the same JPEG with EXIF twice must produce identical results",
 )
 def test_image_exif_parse_is_reproducible(image_exif_fixture: Path) -> None:
@@ -2814,6 +2959,7 @@ def test_image_exif_parse_is_reproducible(image_exif_fixture: Path) -> None:
 
 @pytest.mark.forensic(
     category="Source Immutability",
+    subject="Protobuf with .proto schema",
     desc="compile_proto/decode_message_with_schema must leave the .proto and .pb source files unchanged",
 )
 def test_protobuf_schema_does_not_modify_source(protobuf_schema_fixture: dict) -> None:
@@ -2831,6 +2977,7 @@ def test_protobuf_schema_does_not_modify_source(protobuf_schema_fixture: dict) -
 
 @pytest.mark.forensic(
     category="No Side Effects",
+    subject="Protobuf with .proto schema",
     desc="compile_proto must not create any sibling files next to the .proto/.pb sources "
     "(its FileDescriptorSet output goes to a separate temp directory)",
 )
@@ -2847,6 +2994,7 @@ def test_protobuf_schema_creates_no_sibling_files(protobuf_schema_fixture: dict)
 @pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 @pytest.mark.forensic(
     category="Read-only Media",
+    subject="Protobuf with .proto schema",
     desc="The schema-based decode pipeline must work when the .proto and .pb source files are chmod 0o444",
 )
 def test_protobuf_schema_works_on_readonly_media(protobuf_schema_fixture: dict) -> None:
@@ -2867,6 +3015,7 @@ def test_protobuf_schema_works_on_readonly_media(protobuf_schema_fixture: dict) 
 
 @pytest.mark.forensic(
     category="Known-output Verification",
+    subject="Protobuf with .proto schema",
     desc="protobuf_basic_wire_types.pb decoded against its real protoc-compiled schema must match "
     "the committed .expected.json ground truth field-for-field",
 )
@@ -2906,6 +3055,7 @@ def test_protobuf_schema_fixture_known_output(protobuf_schema_fixture: dict) -> 
 
 @pytest.mark.forensic(
     category="Reproducibility",
+    subject="Protobuf with .proto schema",
     desc="Decoding the same protobuf message against the same schema twice must produce identical results",
 )
 def test_protobuf_schema_decode_is_reproducible(protobuf_schema_fixture: dict) -> None:

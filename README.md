@@ -71,6 +71,8 @@ The reference files themselves are SHA-256-pinned; the suite refuses to run if a
 
 Every release runs the suite fresh on its own commit and attaches the result: → [Forensic audit report of the latest release](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.html) (HTML, downloads; raw data as [JSON](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.json)). It lists every check with its result per OS and a link to the exact test code, and is attached even when a check fails.
 
+Which checks exist for which source, filesystem, file format and tool — and where there are none yet: → [Forensic test coverage](crush/docs/forensic-test-coverage.md)
+
 ## Documentation
 
 → [Feature Reference](crush/docs/feature-reference.md)
