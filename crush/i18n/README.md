@@ -18,7 +18,9 @@ language's own choices for the `translate` terms, kept by its translators.
 
 Maintainer: translators download the catalogs from GitHub, so run `update` and commit the
 catalogs whenever texts have changed, at least before each release; a new language is
-started on request with `update --add <code>`.
+started on request with `update --add <code>`. A catalog sent in an issue (or a pull
+request) may be older than the one in git: put it in place, run `update` (brings it up to
+the current texts, keeps its translations) and `check`, then commit it.
 
 Run `crush --language <code>` to try a catalog before it is complete enough
 (90 %) to be offered under View → Language.

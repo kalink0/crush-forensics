@@ -25,8 +25,8 @@ and can be compared or exchanged):
 Each language is **one file**: `crush/i18n/crush_<code>.ts` — `crush_es.ts` for Spanish,
 `crush_pt_BR.ts` for Brazilian Portuguese. It holds every English text of Crush and, next to
 it, its translation. You edit that file in **Qt Linguist**, a free translation editor, and send
-it back through GitHub. A check runs automatically on what you send, and once it's accepted,
-the next nightly build of Crush contains your translation.
+it back by attaching it to a GitHub issue. Once it's checked and accepted, the next nightly
+build of Crush contains your translation.
 
 One person or team can own a language independently of all others.
 
@@ -53,6 +53,15 @@ pip install pyside6
 ```
 
 Start it with `pyside6-linguist`.
+
+Other ways to get it:
+
+- **Windows:** the official
+  [Qt Linguist installer](https://download.qt.io/linguist_releases/) (Qt 5.12, from 2019), or
+  a current standalone build, [thurask/Qt-Linguist](https://github.com/thurask/Qt-Linguist) —
+  built from the Qt sources by a third party, not published by Qt or by Crush.
+- **Linux:** your distribution's Qt tools package, or
+  [Qt Linguist on Flathub](https://flathub.org/apps/io.qt.Linguist).
 
 ### 3. Download the files
 
@@ -85,19 +94,19 @@ translated differently there.
 
 ### 5. Send it back
 
-On GitHub (you need a free account):
+Open an [issue](https://github.com/kalink0/crush-forensics/issues) "Translation: &lt;language&gt;
+(&lt;code&gt;)" (you need a free GitHub account) and attach your `crush_<code>.ts` — and
+`glossary_<code>.qph`, if you made one (see [Glossary](#glossary)). If GitHub doesn't accept
+the file type, put it in a `.zip` first.
 
-1. Open [`crush/i18n/`](crush/i18n/) and choose **Add file → Upload files**. GitHub offers to
-   make your own copy of the project ("fork") — accept.
-2. Drop in your `crush_<code>.ts` (and `glossary_<code>.qph`, if you made one — see
-   [Glossary](#glossary)).
-3. Choose **Propose changes**, then **Create pull request**.
+Every finished translation is then checked: placeholders, `%1`, HTML tags and braces must be
+exactly as in the English (see [Rules](#rules)). If something is wrong, you're told in the
+issue which text.
 
-An automatic check then looks at every finished translation: placeholders, `%1`, HTML tags and
-braces must be exactly as in the English (see [Rules](#rules)). If something is wrong, the
-pull request shows which text — fix it in Qt Linguist and upload the file again the same way.
+If you're used to GitHub, a pull request that changes the files in `crush/i18n/` works too;
+the check then runs on it automatically. One language per pull request.
 
-One language per pull request. Contributors are credited in the changelog.
+Contributors are credited in the changelog.
 
 ### 6. See it in Crush
 
