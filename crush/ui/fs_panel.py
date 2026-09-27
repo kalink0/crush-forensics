@@ -647,12 +647,14 @@ class FilesystemPanel(QWidget):
         format_info_action = menu.addAction(translate("FilesystemPanel", "Show Format Info"))
         menu.addSeparator()
         export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
-        verify_ewf_action = None
+        verify_acquisition_action = None
         close_source_action = None
         if node is vfs.root():
             menu.addSeparator()
-            if isinstance(vfs, RawImageVFS) and vfs.is_ewf():
-                verify_ewf_action = menu.addAction(translate("FilesystemPanel", "Verify EWF Hash…"))
+            if isinstance(vfs, RawImageVFS) and vfs.acquisition():
+                verify_acquisition_action = menu.addAction(
+                    translate("FilesystemPanel", "Verify Acquisition Hash…")
+                )
             close_source_action = menu.addAction(translate("FilesystemPanel", "Close Source"))
         action = menu.exec(global_pos)
         if action is None:
@@ -713,8 +715,8 @@ class FilesystemPanel(QWidget):
             self.export_requested.emit(node, vfs)
         elif action == export_logarchive_action:
             self.export_logarchive_requested.emit(node, vfs)
-        elif action == verify_ewf_action:
-            self.open_requested.emit(node, vfs, "verify_ewf")
+        elif action == verify_acquisition_action:
+            self.open_requested.emit(node, vfs, "verify_acquisition")
         elif action == close_source_action:
             self.close_source_requested.emit(vfs)
 

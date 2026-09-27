@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-156 checks in total.
+166 checks in total.
 
 ### Sources
 
@@ -35,12 +35,15 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [Cellebrite UFDR](#cellebrite-ufdr) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [EWF acquisition (.E01)](#ewf-acquisition-e01) | not tested | not tested | not tested | 2 | not tested | not tested |
+| [SMART acquisition (.s01)](#smart-acquisition-s01) | 1 | not tested | not tested | 2 | not tested | not tested |
+| [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
+| [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 2 | not tested | not tested |
 
 ### Disk image filesystems
 
 | | Source Immutability | No Side Effects | Read-only Media | Known-output Verification | Completeness | Reproducibility |
 |---|---|---|---|---|---|---|
-| [NTFS](#ntfs) | not tested | not tested | not tested | 2 | not tested | not tested |
+| [NTFS](#ntfs) | not tested | not tested | not tested | 3 | not tested | not tested |
 | [FAT32](#fat32) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [exFAT](#exfat) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -171,8 +174,29 @@ No forensic checks.
 #### EWF acquisition (.E01)
 
 - **Known-output Verification** — raw_ntfs.E01's files must read back identically through the EWF path as through raw .img ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_content_matches`)
-- **Known-output Verification** — verify_ewf() must report MATCH against a real ewfacquire-created acquisition's own stored hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches_stored_hash`)
+- **Known-output Verification** — verify_acquisition() must report MATCH against a real ewfacquire-created acquisition's own stored hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches_stored_hash`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### SMART acquisition (.s01)
+
+- **Source Immutability** — Reading the whole disk of smart-fast.s01 and verifying it must leave the file byte-identical, with an unchanged mtime ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_source_unmodified`)
+- **Known-output Verification** — smart-fast.s01 must open as a SMART acquisition whose disk reads back to the SHA-256 of the source disk it was made from ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_disk_matches_source`)
+- **Known-output Verification** — Verify Acquisition Hash must report MATCH against smart-fast.s01's stored MD5 ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### EWF2 acquisition (.Ex01)
+
+- **Source Immutability** — Reading the whole disk of ex01-fast.Ex01 and verifying it must leave the file byte-identical, with an unchanged mtime ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_source_unmodified`)
+- **Known-output Verification** — ex01-fast.Ex01 must open as an EWF2 acquisition whose disk reads back to the SHA-256 of the source disk it was made from ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_disk_matches_source`)
+- **Known-output Verification** — Verify Acquisition Hash must report MATCH against ex01-fast.Ex01's stored hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### AFF acquisition (.aff/.afd)
+
+- **Source Immutability** — Reading the whole disk of aff-zlib.aff and of the AFD aff-afd.afd and verifying them must leave every file byte-identical, with an unchanged mtime ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_source_unmodified`)
+- **Known-output Verification** — aff-zlib.aff, and the five-file AFD aff-afd.afd opened from any of its files, must read back to the SHA-256 of the source disk they were made from ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_disk_matches_source`)
+- **Known-output Verification** — Verify Acquisition Hash must report MATCH against the stored hashes of aff-zlib.aff and of the AFD aff-afd.afd ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
 
 ### Disk image filesystems
 
@@ -180,6 +204,7 @@ No forensic checks.
 
 - **Known-output Verification** — raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_single_volume_content_matches`)
 - **Known-output Verification** — Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_recovers_known_deleted_files`)
+- **Known-output Verification** — Every alternate data stream of raw_ntfs_streams.img.gz that stores data must be listed beside its file and read back to The Sleuth Kit's reference hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_every_stream_matches_the_sleuth_kit`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### FAT32

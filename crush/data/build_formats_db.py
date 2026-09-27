@@ -3150,8 +3150,10 @@ FORMATS: list[dict[str, Any]] = [
             "numbered segments (.E01, .E02, ...), optionally compressed and "
             "hashed at acquisition time. "
             "This EWF-E01 (version 1) format is the one EnCase 6/7 and FTK "
-            "Imager write and by far the most common in the field; the newer "
-            "EWF2 (.Ex01) and logical .L01/.Lx01 variants are not covered here. "
+            "Imager write and by far the most common in the field. SMART (.s01) "
+            "acquisitions carry the same signature and are read the same way; "
+            "the newer EWF2 (.Ex01) and the logical .L01/.Lx01 variants have "
+            "entries of their own. "
             "The acquisition stores its own MD5/SHA1 of the media in a dedicated "
             "hash section, written by the acquisition tool — recomputing and "
             "comparing against it verifies the acquisition has not been altered "
@@ -3166,12 +3168,12 @@ FORMATS: list[dict[str, Any]] = [
                 "value": b"\x45\x56\x46\x09\x0d\x0a\xff\x00",
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
-                    "EWF-E01 signature ('EVF' + control bytes)",
+                    "EWF-E01 / SMART signature ('EVF' + control bytes)",
                     "EWF Acquisition",
                 ),
             }
         ],
-        "extensions": [".e01"],
+        "extensions": [".e01", ".s01"],
         "links": [
             (
                 "EnCase image file format — history and format versions (Forensics Wiki)",
@@ -3182,12 +3184,146 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc",
             ),
             (
-                "abrignoni/ewfprobe — pure-Python EWF-E01 reader",
+                "abrignoni/ewfprobe — pure-Python EWF, EWF2, SMART and AFF reader",
                 "https://github.com/abrignoni/ewfprobe",
             ),
             (
                 "abrignoni/qnxprobe — raw image / partition reader used alongside ewfprobe",
                 "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "EWF2 Acquisition",
+        "short_name": "Ex01",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "EWF2 (.Ex01) — the second version of the Expert Witness Format, "
+            "introduced with EnCase 7. Like EWF-E01 it holds a bit-for-bit disk "
+            "acquisition in numbered segments (.Ex01, .Ex02, ...), compressed in "
+            "chunks, with the MD5/SHA1 the acquisition tool computed stored "
+            "alongside; recomputing and comparing against it verifies the "
+            "acquisition has not been altered since it was made. EnCase can also "
+            "encrypt an Ex01; that encryption is not publicly documented, and an "
+            "encrypted Ex01 is refused with that reason rather than read.",
+            "EWF2 Acquisition",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"EVF2\x0d\x0a\x81\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "EWF2 signature ('EVF2' + control bytes)",
+                    "EWF2 Acquisition",
+                ),
+            }
+        ],
+        "extensions": [".ex01"],
+        "links": [
+            (
+                "EWF2 format specification — libewf project",
+                "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%202%20(EWF2).asciidoc",
+            ),
+            (
+                "abrignoni/ewfprobe — pure-Python EWF, EWF2, SMART and AFF reader",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "AFF Acquisition",
+        "short_name": "AFF",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Advanced Forensic Format (AFF) — an open disk acquisition format "
+            "from AFFLIB, written by tools such as affconvert and FTK Imager. The "
+            "disk is stored in compressed pages beside named metadata segments, "
+            "which can hold the acquisition's own MD5/SHA1 of the disk and a "
+            "count of bad sectors. An AFD is the same acquisition split over "
+            "several .aff files in a folder whose name ends in .afd. A page the "
+            "acquisition declares but doesn't hold reads as the image's "
+            "bad-sector marker, not as data from the device. AFF4, the later "
+            "successor, is a different format.",
+            "AFF Acquisition",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"AFF10\x0d\x0a\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AFF signature ('AFF10' + control bytes), in every file of an AFD",
+                    "AFF Acquisition",
+                ),
+            }
+        ],
+        "extensions": [".aff"],
+        "links": [
+            (
+                "Advanced Forensics Format (Forensics Wiki)",
+                "https://forensics.wiki/aff/",
+            ),
+            (
+                "AFFLIB — the reference implementation",
+                "https://github.com/sshock/AFFLIBv3",
+            ),
+            (
+                "abrignoni/ewfprobe — pure-Python EWF, EWF2, SMART and AFF reader",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "EnCase Logical Evidence",
+        "short_name": "L01",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "EnCase logical evidence (.L01, and .Lx01 in the EWF2 format) — "
+            "copies of selected files and folders, collected by EnCase, with "
+            "their names, times and stored MD5/SHA1, rather than a disk. It "
+            "holds no partition table or filesystem. Crush doesn't open logical "
+            "evidence yet: opened as a disk image it is refused with that "
+            "reason, and a normal open shows the file's own bytes.",
+            "EnCase Logical Evidence",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"LVF\x09\x0d\x0a\xff\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "L01 signature ('LVF' + control bytes)",
+                    "EnCase Logical Evidence",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"LEF2\x0d\x0a\x81\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Lx01 signature ('LEF2' + control bytes)",
+                    "EnCase Logical Evidence",
+                ),
+            },
+        ],
+        "extensions": [".l01", ".lx01"],
+        "links": [
+            (
+                "Expert Witness Compression Format (EWF) — libewf project (L01 section)",
+                "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc",
             ),
         ],
         "status": "reviewed",

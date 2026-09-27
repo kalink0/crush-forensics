@@ -193,7 +193,7 @@ class TestRawImage:
         vfs = open_vfs(misnamed, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
-            assert vfs.is_ewf() is False
+            assert vfs.acquisition() is None
             _assert_all_files_match(vfs, vfs.root().children[0])
         finally:
             vfs.close()
@@ -253,7 +253,7 @@ class TestEwf:
         vfs = open_vfs(raw_ntfs_e01, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
-            assert vfs.is_ewf()
+            assert vfs.acquisition() == "EWF-E01"
         finally:
             vfs.close()
 
@@ -274,13 +274,13 @@ class TestEwf:
     @pytest.mark.forensic(
         category="Known-output Verification",
         subject="EWF acquisition (.E01)",
-        desc="verify_ewf() must report MATCH against a real ewfacquire-created acquisition's own stored hash",
+        desc="verify_acquisition() must report MATCH against a real ewfacquire-created acquisition's own stored hash",
     )
     def test_verify_matches_stored_hash(self, raw_ntfs_e01: Path) -> None:
         vfs = open_vfs(raw_ntfs_e01, as_disk_image=True)
         try:
             assert isinstance(vfs, RawImageVFS)
-            result = vfs.verify_ewf()
+            result = vfs.verify_acquisition()
             assert result["match"] is True
             assert result["stored"]
             assert result["computed"] == result["stored"]
@@ -907,7 +907,7 @@ class TestOnlyOpenedWhenAskedFor:
         vfs = open_vfs(dst)
         try:
             assert isinstance(vfs, FileVFS)
-            assert "EWF signature" in str(vfs.fallback_note)
+            assert "acquisition signature" in str(vfs.fallback_note)
         finally:
             vfs.close()
 
@@ -955,3 +955,305 @@ def test_source_sniff_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.undo()
     vfs.close()
     assert reads and max(reads) <= 64 * 1024
+
+
+# ---------------------------------------------------------------------------
+# NTFS alternate data streams (raw_ntfs_streams.img.gz, from qnxprobe, with
+# The Sleuth Kit's hashes as the known answers -- see its README)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def raw_ntfs_streams(tmp_path: Path) -> Path:
+    dst = tmp_path / "ntfs_streams.img"
+    dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_ntfs_streams.img.gz").read_bytes()))
+    return dst
+
+
+def _stream_answers() -> tuple[dict[str, str], list[str]]:
+    """(hash per `path:stream`, the streams the file names as all hole)."""
+    answers: dict[str, str] = {}
+    hollow: list[str] = []
+    text = (FIXTURES_DIR / "raw_ntfs_streams.sha256").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if line.startswith("# Not listed, because every cluster is sparse:"):
+            hollow = [s.strip() for s in line.split(":", 1)[1].split(",")]
+        elif line and not line.startswith("#"):
+            digest, _, name = line.partition("  ")
+            answers[name] = digest
+    return answers, hollow
+
+
+class TestNtfsStreams:
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="NTFS",
+        desc="Every alternate data stream of raw_ntfs_streams.img.gz that stores data must be "
+             "listed beside its file and read back to The Sleuth Kit's reference hash",
+    )
+    def test_every_stream_matches_the_sleuth_kit(self, raw_ntfs_streams: Path) -> None:
+        import hashlib
+
+        answers, _ = _stream_answers()
+        assert answers
+        vfs = open_vfs(raw_ntfs_streams, as_disk_image=True)
+        try:
+            volume = vfs.root().children[0]
+            for name, digest in answers.items():
+                node = _find(volume, name.split("/"))
+                assert node is not None, f"stream missing from tree: {name}"
+                assert hashlib.sha256(vfs.read(node)).hexdigest() == digest, name
+        finally:
+            vfs.close()
+
+    def test_streams_that_store_nothing_are_shown_and_say_so(
+        self, raw_ntfs_streams: Path
+    ) -> None:
+        _, hollow = _stream_answers()
+        assert hollow
+        vfs = open_vfs(raw_ntfs_streams, as_disk_image=True)
+        try:
+            volume = vfs.root().children[0]
+            for name in hollow:
+                node = _find(volume, name.split("/"))
+                assert node is not None, f"stream missing from tree: {name}"
+                assert node.size == 0
+                assert "nothing is stored" in str(node.status)
+                assert vfs.read(node) == b""
+        finally:
+            vfs.close()
+
+    def test_front_hole_is_stated(self, raw_ntfs_streams: Path) -> None:
+        vfs = open_vfs(raw_ntfs_streams, as_disk_image=True)
+        try:
+            node = _find(vfs.root().children[0], ["journal.bin:$J"])
+            assert node is not None
+            assert "1,048,576 bytes of hole" in str(node.status)
+        finally:
+            vfs.close()
+
+    def test_the_file_itself_is_unchanged(self, raw_ntfs_image: Path) -> None:
+        """A stream is its own node: the file beside it still reads as its
+        unnamed $DATA alone (raw_ntfs has ads.txt:hidden)."""
+        vfs = open_vfs(raw_ntfs_image, as_disk_image=True)
+        try:
+            volume = vfs.root().children[0]
+            assert _find(volume, ["ads.txt:hidden"]) is not None
+            _assert_all_files_match(vfs, volume)
+        finally:
+            vfs.close()
+
+
+# ---------------------------------------------------------------------------
+# Acquisitions beside EWF-E01: SMART, EWF2 (Ex01), AFF/AFD (from ewfprobe;
+# see fixtures/acquisition/README.md). The disk inside has no filesystem.
+# ---------------------------------------------------------------------------
+
+_ACQUIRED_DISK_SHA256 = "770be732aafc4962c6940a2076c35471419621d9d6ca57cda60cbd6e82a8b36f"
+_ACQUIRED_DISK_SIZE = 3_145_728
+
+
+def _copy_acquisition(tmp_path: Path, name: str) -> Path:
+    """A copy to open -- the file itself, or for an AFD member its whole folder."""
+    import shutil
+
+    src = FIXTURES_DIR / "acquisition" / name
+    if src.parent.name.endswith(".afd"):
+        folder = tmp_path / src.parent.name
+        shutil.copytree(src.parent, folder)
+        return folder / src.name
+    dst = tmp_path / src.name
+    shutil.copy(src, dst)
+    return dst
+
+
+def _files_of(path: Path) -> list[Path]:
+    return sorted(path.parent.iterdir()) if path.parent.name.endswith(".afd") else [path]
+
+
+def _assert_acquired_disk(path: Path, container: str) -> None:
+    import hashlib
+
+    vfs = open_vfs(path, as_disk_image=True)
+    try:
+        assert isinstance(vfs, RawImageVFS)
+        assert vfs.acquisition() == container
+        (region,) = vfs.root().children
+        assert region.size == _ACQUIRED_DISK_SIZE
+        assert vfs.volume_info(region) == {
+            "kind": "not recognised", "note": "not a filesystem this tool reads",
+        }
+        assert hashlib.sha256(vfs.read(region)).hexdigest() == _ACQUIRED_DISK_SHA256
+    finally:
+        vfs.close()
+
+
+def _assert_verifies(path: Path) -> None:
+    vfs = open_vfs(path, as_disk_image=True)
+    try:
+        assert isinstance(vfs, RawImageVFS)
+        result = vfs.verify_acquisition()
+        assert result["stored"]
+        assert result["match"] is True
+        assert result["checksum_errors"] == []
+        assert result["missing_page_count"] == 0
+    finally:
+        vfs.close()
+
+
+def _assert_unmodified(path: Path, container: str) -> None:
+    import hashlib
+
+    files = _files_of(path)
+    before = {f: (hashlib.sha256(f.read_bytes()).hexdigest(), f.stat().st_mtime_ns) for f in files}
+    _assert_acquired_disk(path, container)
+    _assert_verifies(path)
+    after = {f: (hashlib.sha256(f.read_bytes()).hexdigest(), f.stat().st_mtime_ns) for f in files}
+    assert after == before
+
+
+class TestSmartAcquisition:
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="SMART acquisition (.s01)",
+        desc="smart-fast.s01 must open as a SMART acquisition whose disk reads back to the "
+             "SHA-256 of the source disk it was made from",
+    )
+    def test_disk_matches_source(self, tmp_path: Path) -> None:
+        _assert_acquired_disk(_copy_acquisition(tmp_path, "smart-fast.s01"), "EWF-S01")
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="SMART acquisition (.s01)",
+        desc="Verify Acquisition Hash must report MATCH against smart-fast.s01's stored MD5",
+    )
+    def test_verify_matches(self, tmp_path: Path) -> None:
+        _assert_verifies(_copy_acquisition(tmp_path, "smart-fast.s01"))
+
+    @pytest.mark.forensic(
+        category="Source Immutability",
+        subject="SMART acquisition (.s01)",
+        desc="Reading the whole disk of smart-fast.s01 and verifying it must leave the file "
+             "byte-identical, with an unchanged mtime",
+    )
+    def test_source_unmodified(self, tmp_path: Path) -> None:
+        _assert_unmodified(_copy_acquisition(tmp_path, "smart-fast.s01"), "EWF-S01")
+
+
+class TestEwf2Acquisition:
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="EWF2 acquisition (.Ex01)",
+        desc="ex01-fast.Ex01 must open as an EWF2 acquisition whose disk reads back to the "
+             "SHA-256 of the source disk it was made from",
+    )
+    def test_disk_matches_source(self, tmp_path: Path) -> None:
+        _assert_acquired_disk(_copy_acquisition(tmp_path, "ex01-fast.Ex01"), "EWF2-Ex01")
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="EWF2 acquisition (.Ex01)",
+        desc="Verify Acquisition Hash must report MATCH against ex01-fast.Ex01's stored hashes",
+    )
+    def test_verify_matches(self, tmp_path: Path) -> None:
+        _assert_verifies(_copy_acquisition(tmp_path, "ex01-fast.Ex01"))
+
+    @pytest.mark.forensic(
+        category="Source Immutability",
+        subject="EWF2 acquisition (.Ex01)",
+        desc="Reading the whole disk of ex01-fast.Ex01 and verifying it must leave the file "
+             "byte-identical, with an unchanged mtime",
+    )
+    def test_source_unmodified(self, tmp_path: Path) -> None:
+        _assert_unmodified(_copy_acquisition(tmp_path, "ex01-fast.Ex01"), "EWF2-Ex01")
+
+
+class TestAffAcquisition:
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="AFF acquisition (.aff/.afd)",
+        desc="aff-zlib.aff, and the five-file AFD aff-afd.afd opened from any of its files, "
+             "must read back to the SHA-256 of the source disk they were made from",
+    )
+    def test_disk_matches_source(self, tmp_path: Path) -> None:
+        _assert_acquired_disk(_copy_acquisition(tmp_path, "aff-zlib.aff"), "AFF")
+        for i in range(5):
+            member = _copy_acquisition(tmp_path / str(i), f"aff-afd.afd/file_00{i}.aff")
+            _assert_acquired_disk(member, "AFD")
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="AFF acquisition (.aff/.afd)",
+        desc="Verify Acquisition Hash must report MATCH against the stored hashes of "
+             "aff-zlib.aff and of the AFD aff-afd.afd",
+    )
+    def test_verify_matches(self, tmp_path: Path) -> None:
+        _assert_verifies(_copy_acquisition(tmp_path, "aff-zlib.aff"))
+        _assert_verifies(_copy_acquisition(tmp_path, "aff-afd.afd/file_000.aff"))
+
+    @pytest.mark.forensic(
+        category="Source Immutability",
+        subject="AFF acquisition (.aff/.afd)",
+        desc="Reading the whole disk of aff-zlib.aff and of the AFD aff-afd.afd and verifying "
+             "them must leave every file byte-identical, with an unchanged mtime",
+    )
+    def test_source_unmodified(self, tmp_path: Path) -> None:
+        _assert_unmodified(_copy_acquisition(tmp_path, "aff-zlib.aff"), "AFF")
+        _assert_unmodified(_copy_acquisition(tmp_path, "aff-afd.afd/file_002.aff"), "AFD")
+
+    def test_missing_pages_are_stated_and_fail_verification(self, tmp_path: Path) -> None:
+        """The AFD member that records the image size, opened outside its
+        folder: the pages in the other four files are missing and read as
+        the bad-sector marker -- which must be said, not shown as data."""
+        import shutil
+
+        lone = tmp_path / "file_004.aff"
+        shutil.copy(FIXTURES_DIR / "acquisition" / "aff-afd.afd" / "file_004.aff", lone)
+        vfs = open_vfs(lone, as_disk_image=True)
+        try:
+            assert isinstance(vfs, RawImageVFS)
+            assert "pages of this acquisition are not in its files" in str(vfs.load_note)
+            assert vfs.root().status == vfs.load_note
+            result = vfs.verify_acquisition()
+            assert result["missing_page_count"] > 0
+            assert result["match"] is False
+        finally:
+            vfs.close()
+
+
+class TestLogicalEvidence:
+    """L01/Lx01 hold copies of files, not a disk: refused as a disk image
+    with Crush's own reason, and named as what they are on a normal open."""
+
+    @pytest.mark.parametrize("head", [b"LVF\x09\x0d\x0a\xff\x00", b"LEF2\x0d\x0a\x81\x00"])
+    def test_refused_as_disk_image(self, tmp_path: Path, head: bytes) -> None:
+        path = tmp_path / "evidence.L01"
+        path.write_bytes(head + bytes(4096))
+        vfs = open_vfs(path, as_disk_image=True)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "logical evidence" in str(vfs.fallback_note)
+            assert "ewfprobe" not in str(vfs.fallback_note)
+        finally:
+            vfs.close()
+
+    def test_named_on_a_normal_open(self, tmp_path: Path) -> None:
+        path = tmp_path / "no_extension"
+        path.write_bytes(b"LVF\x09\x0d\x0a\xff\x00" + bytes(4096))
+        vfs = open_vfs(path)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "logical evidence" in str(vfs.fallback_note)
+        finally:
+            vfs.close()
+
+
+def test_raw_image_without_a_filesystem_still_falls_back(tmp_path: Path) -> None:
+    """Only an acquisition stays open without a filesystem: a raw file's
+    own bytes are the disk, so its hex view already shows them."""
+    path = tmp_path / "blank.img"
+    path.write_bytes(bytes(1024 * 1024))
+    vfs = open_vfs(path, as_disk_image=True)
+    try:
+        assert isinstance(vfs, FileVFS)
+    finally:
+        vfs.close()

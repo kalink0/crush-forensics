@@ -48,7 +48,10 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
     "AndroidBackupVFS": ("Android backup (.ab)",),
     "ITunesBackupVFS": ("iTunes backup",),
     "UFDRVFS": ("Cellebrite UFDR",),
-    "RawImageVFS": ("Raw disk image", "EWF acquisition (.E01)"),
+    "RawImageVFS": (
+        "Raw disk image", "EWF acquisition (.E01)", "SMART acquisition (.s01)",
+        "EWF2 acquisition (.Ex01)", "AFF acquisition (.aff/.afd)",
+    ),
 }
 # VFS classes that aren't a source of evidence, and why.
 NOT_A_SOURCE: dict[str, str] = {

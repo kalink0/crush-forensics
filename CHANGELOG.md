@@ -13,11 +13,15 @@ All notable changes to Crush will be documented in this file.
 - Added to raw disk images -> Support for SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2, including bare flash dumps without a partition table.
 - Added to raw disk images -> Support for deleted-file recovery on YAFFS2, JFFS2 and UBIFS, into `$Recovered` with each file's original folder.
 - Added to raw disk images -> Support for GPT disks with 4096-byte sectors (4Kn drives, UFS storage).
+- Added to raw disk images -> Support for SMART (`.s01`), EWF2 (`.Ex01`) and AFF/AFD acquisitions.
+- Added to raw disk images -> Support for NTFS alternate data streams, listed and readable beside their files.
 - Every release now carries a forensic integrity audit report (`crush-forensic-audit.html` + `.json`): the forensic test suite runs fresh on the release commit on Linux, macOS and Windows, and the result is attached and summarised in the release notes, even on failure. Each check links to its test code at that commit.
 - Added to the documentation -> Support for a forensic test coverage page: which checks exist per source, filesystem, file format and tool, and where there are none.
 
 ### Bug Fixes
 
+- Fixed an EWF acquisition without a recognised filesystem opening as the `.E01` file's own bytes instead of the acquired disk; it now opens with the disk as one unrecognised region, readable and verifiable.
+- Fixed Verify EWF Hash… not reporting chunks that fail their own checksum.
 - Fixed the Format Reference listing EWF under its own category "disk image" instead of "disk_image" with the other disk image formats.
 - Fixed the window freezing ("not responding") when expanding a folder of a large 7z archive: type detection extracted every entry whole just to read its first bytes. It now reads only each entry's head, one solid block at a time in the background, and gives way to files being opened. Opening a file from a 7z, a compressed TAR (`.tar.gz`/`.bz2`/`.xz`) or a large `.gz` decompresses it once behind a "please wait" dialog instead of on the UI thread.
 - Fixed the text viewer's search stopping after 5,000 hits: later hits weren't highlighted, listed or reachable with Up/Down; every hit is now counted and reachable.
@@ -74,7 +78,8 @@ All notable changes to Crush will be documented in this file.
 - Images always show an `EXIF` and `XMP` status row (present, not present, not checked for this format, or why parsing failed), a `Frames` row when only the first of several is shown, and a `Block order` row marking the ATX Morton-orientation choice as a heuristic with both scores. PDFs list pages whose text extraction failed and say why a revision chain stopped early.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.36 (from v1.29).
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.38 (from v1.29) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.2.0.
+- **Verify EWF Hash…** is now **Verify Acquisition Hash…** and also covers SMART, EWF2 and AFF acquisitions.
 - Disk images are opened only via File → Open disk image…, the start screen, `--image PATH` or right-click → Open Disk Image in New Window; a normal open, drag & drop or Open in New Window no longer probes a file for one. Open Recent reopens an image the way it was opened.
 - GPT partition tables are only used when their header and entry CRCs are valid (UEFI 2.10), falling back to the backup header.
 - The former "Log Temp Directory" setting is now Tools → Temp Directory… and applies to every temporary file Crush creates, not just log conversion (existing values carry over).

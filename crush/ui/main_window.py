@@ -650,8 +650,8 @@ class MainWindow(QMainWindow):
         open_image_button = QPushButton(translate("MainWindow", "Open Disk Image…"))
         open_image_button.setToolTip(translate(
             "MainWindow",
-            "Raw/dd image, split .001 set, EWF (.E01) acquisition or flash dump — "
-            "a disk image is only read as one when opened this way",
+            "Raw/dd image, split .001 set, acquisition (EWF .E01, SMART .s01, EWF2 .Ex01, "
+            "AFF/AFD) or flash dump — a disk image is only read as one when opened this way",
         ))
         open_image_button.clicked.connect(self._open_disk_image)
         button_row.addWidget(open_image_button)
@@ -996,7 +996,7 @@ class MainWindow(QMainWindow):
 
     def _open_disk_image(self) -> None:
         """The only way a file is read as a disk image: the analyst says it
-        is one. Split sets and EWF segments are joined from whichever
+        is one. Split sets and acquisition segments are joined from whichever
         segment is picked."""
         paths, _ = QFileDialog.getOpenFileNames(
             self,
@@ -1607,8 +1607,8 @@ class MainWindow(QMainWindow):
             self._show_result(node, result, vfs)
             self._props_panel.update_properties(node, result.metadata, vfs)
             return
-        if mode == "verify_ewf":
-            self._verify_ewf(node, vfs)
+        if mode == "verify_acquisition":
+            self._verify_acquisition(node, vfs)
             return
         if mode == "multi_log":
             self._hash_node_if_integrity(node, vfs)
@@ -1783,53 +1783,74 @@ class MainWindow(QMainWindow):
             return
         self._open_node(node, vfs)
 
-    def _verify_ewf(self, node: VFSNode, vfs: VFS) -> None:
-        """Recompute an EWF acquisition's MD5/SHA1 and compare them to the
-        acquisition's own stored hashes. Not run automatically on load: an
-        acquisition can be tens to hundreds of GB, and re-reading all of it
-        on every open would defeat the point of reading it on demand in the
-        first place — this is an explicit, examiner-triggered action.
+    def _verify_acquisition(self, node: VFSNode, vfs: VFS) -> None:
+        """Recompute an acquisition's hashes and compare them to the ones it
+        stored itself. Not run automatically on load: an acquisition can be
+        tens to hundreds of GB, and re-reading all of it on every open would
+        defeat the point of reading it on demand in the first place — this is
+        an explicit, examiner-triggered action.
         """
         from crush.core.vfs import RawImageVFS
         from crush.ui.busy_dialog import run_with_busy_dialog
 
         if not isinstance(vfs, RawImageVFS):
             return
+        title = translate("MainWindow", "Verify Acquisition Hash")
 
         def _work() -> object:
-            return vfs.verify_ewf()
+            return vfs.verify_acquisition()
 
         def _on_done(result: object) -> None:
             stored: dict[str, str] = result.get("stored") or {}  # type: ignore[attr-defined]
             computed: dict[str, str] = result.get("computed") or {}  # type: ignore[attr-defined]
-            match = result.get("match")
+            match = result.get("match")  # type: ignore[attr-defined]
+            checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
+            missing_pages = result.get("missing_page_count") or 0  # type: ignore[attr-defined]
+            # Found while reading, whether or not a hash was stored: chunks whose
+            # own checksum fails, pages the acquisition declares but doesn't hold.
+            findings = []
+            if checksum_errors:
+                findings.append(translate(
+                    "MainWindow", "{count} chunk(s) fail their own checksum."
+                ).format(count=f"{len(checksum_errors):,}"))
+            if missing_pages:
+                findings.append(translate(
+                    "MainWindow",
+                    "{count} page(s) are not in the acquisition's files; they read as the "
+                    "bad-sector marker.",
+                ).format(count=f"{missing_pages:,}"))
+            extra = ("\n\n" + "\n".join(findings)) if findings else ""
             if not stored:
                 # This project's standing rule: never let an unverifiable
                 # result look like a silent success — say plainly that
                 # there was nothing to compare against.
-                QMessageBox.information(
-                    self, translate("MainWindow", "Verify EWF Hash"),
-                    translate("MainWindow", "This acquisition recorded no hash to verify against."),
+                show = QMessageBox.warning if findings else QMessageBox.information
+                show(
+                    self, title,
+                    translate("MainWindow", "This acquisition recorded no hash to verify against.")
+                    + extra,
                 )
                 self._status.showMessage(
-                    translate("MainWindow", "{path}  [EWF verify: no stored hash]").format(
+                    translate("MainWindow", "{path}  [verify: no stored hash]").format(
                         path=node.path
                     )
                 )
                 return
             lines = [f"{name}: {digest}" for name, digest in sorted(stored.items())]
             if match:
-                QMessageBox.information(
-                    self, translate("MainWindow", "Verify EWF Hash"),
+                show = QMessageBox.warning if findings else QMessageBox.information
+                show(
+                    self, title,
                     translate(
                         "MainWindow",
                         "MATCH — the acquisition's own recorded hash matches its data:",
                     )
                     + "\n\n"
-                    + "\n".join(lines),
+                    + "\n".join(lines)
+                    + extra,
                 )
                 self._status.showMessage(
-                    translate("MainWindow", "{path}  [EWF verify: MATCH]").format(path=node.path)
+                    translate("MainWindow", "{path}  [verify: MATCH]").format(path=node.path)
                 )
             else:
                 mismatches = [
@@ -1840,28 +1861,29 @@ class MainWindow(QMainWindow):
                     if stored.get(name) != computed.get(name)
                 ]
                 QMessageBox.warning(
-                    self, translate("MainWindow", "Verify EWF Hash"),
+                    self, title,
                     translate(
                         "MainWindow",
                         "MISMATCH — the acquisition's data does not match its own recorded "
                         "hash:",
                     )
                     + "\n\n"
-                    + "\n".join(mismatches),
+                    + "\n".join(mismatches)
+                    + extra,
                 )
                 self._status.showMessage(
-                    translate("MainWindow", "{path}  [EWF verify: MISMATCH]").format(path=node.path)
+                    translate("MainWindow", "{path}  [verify: MISMATCH]").format(path=node.path)
                 )
 
         def _on_error(message: str) -> None:
             QMessageBox.warning(
-                self,
-                translate("MainWindow", "Verify EWF Hash"),
+                self, title,
                 translate("MainWindow", "Could not verify: {message}").format(message=message),
             )
 
         run_with_busy_dialog(
-            self, translate("MainWindow", "Verifying EWF hash…"), _work, _on_done, _on_error
+            self, translate("MainWindow", "Verifying acquisition hash…"), _work, _on_done,
+            _on_error,
         )
 
     def _open_encrypted_sqlite(
@@ -3431,7 +3453,7 @@ class MainWindow(QMainWindow):
         # replaces it — nothing drag & drop specific to decide here. A drop
         # can't say "this is a disk image", so it never opens one; that
         # takes Open Disk Image… (the dropped file's status line says so
-        # when its name or EWF signature suggests one).
+        # when its name or acquisition signature suggests one).
         paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
         if not paths:
             return
@@ -4584,7 +4606,7 @@ def _peeked_archive_kind(node: VFSNode, vfs: VFS) -> str | None:
 def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_archive: bool) -> str:
     """Status-bar hint that this file can be browsed via Open in New Window
     (decided by content), or read via Open Disk Image in New Window (a
-    hint from its name or EWF signature); "" when there is nothing to say.
+    hint from its name or acquisition signature); "" when there is nothing to say.
     *probe_archive* runs the (costlier) bzip2/xz-TAR check on an on-disk
     file."""
     if node.is_dir or isinstance(vfs, FileVFS):
@@ -4608,13 +4630,20 @@ def _open_as_source_hint(node: VFSNode, vfs: VFS, *, probe_archive: bool) -> str
 
 def _disk_image_hint(node: VFSNode, vfs: VFS) -> str:
     """A disk image is never probed for (see open_vfs); a file whose name or
-    EWF signature says it is one gets pointed at the explicit action."""
-    from crush.core.vfs import SNIFF_BYTES, looks_like_disk_image
+    acquisition signature says it is one gets pointed at the explicit
+    action. EnCase logical evidence isn't one, and says so."""
+    from crush.core.vfs import SNIFF_BYTES, is_logical_evidence, looks_like_disk_image
 
     try:
         head = vfs.peek(node, SNIFF_BYTES)
     except (OSError, ValueError):
         head = b""
+    if is_logical_evidence(head):
+        return translate(
+            "MainWindow",
+            "EnCase logical evidence (L01/Lx01) — holds copies of files, not a disk; "
+            "Crush doesn't open logical evidence yet",
+        )
     if looks_like_disk_image(node.name, head):
         return translate(
             "MainWindow",

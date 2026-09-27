@@ -1724,8 +1724,21 @@ MESSAGES: dict[str, str] = {
     "vfs.disk_image_hint_name": QT_TRANSLATE_NOOP(
         "ParseIssue", "name", "vfs.disk_image_hint_name",
     ),
-    "vfs.disk_image_hint_ewf": QT_TRANSLATE_NOOP(
-        "ParseIssue", "EWF signature", "vfs.disk_image_hint_ewf",
+    "vfs.disk_image_hint_acquisition": QT_TRANSLATE_NOOP(
+        "ParseIssue", "acquisition signature (EWF, EWF2 or AFF)",
+        "vfs.disk_image_hint_acquisition",
+    ),
+    "vfs.logical_evidence": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Opened as a single file: it is EnCase logical evidence (L01/Lx01), which holds "
+        "copies of files, not a disk — Crush doesn't open logical evidence yet",
+        "vfs.logical_evidence",
+    ),
+    "vfs.acquisition_missing_pages": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} pages of this acquisition are not in its files; they read as the image's "
+        "bad-sector marker, not as data from the device",
+        "vfs.acquisition_missing_pages",
     ),
     "vfs.atime_platform": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -1778,6 +1791,35 @@ MESSAGES: dict[str, str] = {
         "entry.symlink_raw",
     ),
     "entry.hard_link": QT_TRANSLATE_NOOP("ParseIssue", "Hard link to {target}", "entry.hard_link"),
+    "entry.stream": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Named stream of {owner} — not part of its size or content",
+        "entry.stream",
+    ),
+    "entry.stream_front_hole": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Named stream of {owner} — read from its first stored cluster: the {skipped} bytes "
+        "of hole before it (recorded size {recorded} bytes) are not included, so an offset "
+        "here is {skipped} bytes less than in the stream",
+        "entry.stream_front_hole",
+    ),
+    "entry.stream_nothing_stored": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Named stream of {owner} — recorded size {recorded} bytes, all of it hole: nothing "
+        "is stored",
+        "entry.stream_nothing_stored",
+    ),
+    "entry.stream_no_reader": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Named stream of {owner} — recorded size {recorded} bytes; its content is not read "
+        "(the filesystem reader lists it but has no reader for it)",
+        "entry.stream_no_reader",
+    ),
+    "entry.streams_unlisted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The named streams of this entry could not be listed — {detail}",
+        "entry.streams_unlisted",
+    ),
     "entry.special_stored": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Special file ({kind}) — no content stored",

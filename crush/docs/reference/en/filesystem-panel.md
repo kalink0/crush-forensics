@@ -7,7 +7,7 @@ The left panel shows the loaded archive or folder as a tree.
 - **Right-click** a file or folder for options:
   - **Open** — best viewer for the format
   - **Open in New Window** — loads the file into a fresh Crush window without affecting the current session. Works for any file, including ones nested inside an already-open ZIP/TAR/7z/gzip archive, Android/iTunes backup, or raw disk image/EWF acquisition — the file is extracted to the [temp directory](opening-evidence.md#large-files-memory-and-the-temp-directory) for the new window, behind a progress dialog with **Cancel** (free space is checked first). The new window's title names where it came from, and its temp copy is deleted when that window closes. A ZIP that follows other data in a file (a self-extracting executable, a ZIP appended to an image) is only noted in the status bar when the file itself is opened; **Open in New Window** opens that ZIP
-  - **Open Disk Image in New Window** — the same, but reads the file as a disk image (see [Raw Disk Images & EWF Acquisitions](raw-disk-images-ewf-acquisitions.md)); the only way to open a disk image that sits inside an opened folder, archive or image.
+  - **Open Disk Image in New Window** — the same, but reads the file as a disk image (see [Raw Disk Images & Forensic Acquisitions](raw-disk-images-ewf-acquisitions.md)); the only way to open a disk image that sits inside an opened folder, archive or image.
   - **Open as** — submenu to force a specific viewer regardless of auto-detection:
     - **Hex** — force raw hex view
     - **Text** — force text view

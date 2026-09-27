@@ -2092,6 +2092,14 @@ class RawImageVFS(VFS):
         for vol in self._handle.volumes:
             root.children.append(build_volume_node(vol, self._read_map))
         root.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
+        if self._handle.missing_pages:
+            # Their bytes read as the bad-sector marker, which a file inside
+            # would otherwise show as though the device had held it.
+            missing = ParseIssue(
+                "vfs.acquisition_missing_pages", {"count": f"{self._handle.missing_pages:,}"}
+            )
+            root.status = missing
+            self.load_note = missing
         self._tree = root
 
         self._file_counts: dict[str, int] = {}
@@ -2220,18 +2228,20 @@ class RawImageVFS(VFS):
             return None
         return {"kind": entry.kind, "note": entry.note}
 
-    def is_ewf(self) -> bool:
-        """True when this source is an EWF (.E01) acquisition."""
-        return self._handle.is_ewf
+    def acquisition(self) -> str | None:
+        """ewfprobe's name for the acquisition container this source is
+        ("EWF-E01", "EWF-S01", "EWF2-Ex01", "AFF", "AFD"), None for a raw
+        image or split set."""
+        return self._handle.acquisition
 
-    def verify_ewf(
+    def verify_acquisition(
         self, progress: Callable[[int, int], None] | None = None
     ) -> dict[str, Any]:
-        """Recompute this EWF acquisition's MD5/SHA1 and compare them to the
-        acquisition's own stored hashes. Only valid when is_ewf() is True."""
-        from crush.core.raw_image import verify_ewf
+        """Recompute this acquisition's hashes and compare them to its own
+        stored ones. Only valid when acquisition() is not None."""
+        from crush.core.raw_image import verify_acquisition
 
-        return verify_ewf(self._handle, progress=progress)
+        return verify_acquisition(self._handle, progress=progress)
 
     def file_count(self, node: VFSNode) -> int:
         return self._file_counts.get(node.path, 0)
@@ -2672,21 +2682,39 @@ def _tar_suffix(p: Path) -> str:
 # flash filesystems qnxprobe reads. `.bin` is left out: too many other files
 # carry it. A numbered split-set segment (FTK-style `.001`..`.999`) counts too.
 DISK_IMAGE_SUFFIXES = (
-    ".img", ".dd", ".raw", ".e01",
+    ".img", ".dd", ".raw", ".e01", ".s01", ".ex01", ".aff",
     ".nand", ".ubi", ".ubifs", ".squashfs", ".sqsh", ".jffs2", ".yaffs2",
 )
 
-# The EWF-E01 signature, as qnxprobe.looks_like_ewf() checks it.
-EWF_SIGNATURE = b"EVF\x09\x0d\x0a\xff\x00"
+# The signatures of the acquisition containers Open Disk Image… reads, as
+# qnxprobe.acquisition_format() checks them.
+ACQUISITION_SIGNATURES = (
+    b"EVF\x09\x0d\x0a\xff\x00",   # EWF-E01, and SMART .s01
+    b"EVF2\x0d\x0a\x81\x00",      # EWF2-Ex01
+    b"AFF10\x0d\x0a\x00",         # AFF, and every file of an AFD
+)
+# EnCase logical evidence (L01, Lx01): copies of files, not a disk.
+LOGICAL_EVIDENCE_SIGNATURES = (
+    b"LVF\x09\x0d\x0a\xff\x00",
+    b"LEF2\x0d\x0a\x81\x00",
+)
+
+
+def is_logical_evidence(head: bytes) -> bool:
+    """True when the first bytes are an L01/Lx01 signature -- a container
+    Crush doesn't open yet, and not a disk image either."""
+    return head.startswith(LOGICAL_EVIDENCE_SIGNATURES)
 
 
 def looks_like_disk_image(name: str, head: bytes) -> ParseIssue | None:
-    """What suggests that a file is a disk image -- its EWF signature, an
-    image extension, or a numbered segment of a split set -- as the hint's
-    "what", or None. Only the name and the first bytes already read are
-    looked at: a hint, never a probe."""
-    if head.startswith(EWF_SIGNATURE):
-        return ParseIssue("vfs.disk_image_hint_ewf")
+    """What suggests that a file is a disk image -- an acquisition's
+    signature, an image extension, or a numbered segment of a split set --
+    as the hint's "what", or None. Only the name and the first bytes already
+    read are looked at: a hint, never a probe."""
+    if head.startswith(ACQUISITION_SIGNATURES):
+        return ParseIssue("vfs.disk_image_hint_acquisition")
+    if is_logical_evidence(head):
+        return None
     suffix = Path(name).suffix.lower()
     is_segment = len(suffix) == 4 and suffix[1:].isascii() and suffix[1:].isdigit()
     if suffix in DISK_IMAGE_SUFFIXES or is_segment:
@@ -2697,7 +2725,10 @@ def looks_like_disk_image(name: str, head: bytes) -> ParseIssue | None:
 def _disk_image_hint(path: Path, head: bytes) -> ParseIssue | None:
     """A note for a file opened as a single file that announces itself as
     a disk image (looks_like_disk_image), so the analyst knows Open Disk
-    Image… exists for it. None otherwise."""
+    Image… exists for it -- or, for EnCase logical evidence, that it isn't
+    opened as what it is. None otherwise."""
+    if is_logical_evidence(head):
+        return ParseIssue("vfs.logical_evidence")
     what = looks_like_disk_image(path.name, head)
     return ParseIssue("vfs.disk_image_hint", {"what": what}) if what else None
 

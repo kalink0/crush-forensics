@@ -82,6 +82,9 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "Cellebrite UFDR",
         "Raw disk image",
         "EWF acquisition (.E01)",
+        "SMART acquisition (.s01)",
+        "EWF2 acquisition (.Ex01)",
+        "AFF acquisition (.aff/.afd)",
     ),
     "Disk image filesystems": (
         "NTFS",

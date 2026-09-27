@@ -31,5 +31,17 @@
   "raw_fat32_deleted.sha256": "3c7ebc6eb1cd59fb84a80cb21563e334708ecad43f02ff02a12e96be005423cf",
   "raw_exfat_deleted.img.gz": "77814a9c262a2a7edb57af23f132f520ca581448dae734fe765554e9aa9fcbe0",
   "raw_exfat_deleted.sha256": "3c7ebc6eb1cd59fb84a80cb21563e334708ecad43f02ff02a12e96be005423cf",
-  "raw_ntfs.deleted.sha256": "345aac3513a72bd9efb9b47d6ac23b2dadb109b2b6865eae0d5332032580a230"
+  "raw_ntfs.deleted.sha256": "345aac3513a72bd9efb9b47d6ac23b2dadb109b2b6865eae0d5332032580a230",
+  "raw_ntfs_streams.img.gz": "2452a5b8e901f246287a129feefc85660711db9447895cbef785486f601ace56",
+  "raw_ntfs_streams.sha256": "25415fc71ccdd78a0558722dc6e38383305617d654730410f61fb132f664f555",
+  "raw_ntfs_streams_README.md": "34bb38269a8d2b9444cbb384d0d001aece63e3514ce18ec8397ec16bbfb40c64",
+  "acquisition/README.md": "4d76a763f0bb75e13a442fcd8cdecbcd212808faf24e01a79f6ae41710177929",
+  "acquisition/ex01-fast.Ex01": "39c49aa6223c96188c716864ce22256ba714b77640788c35c2a232e7e309705e",
+  "acquisition/smart-fast.s01": "7434e35ee799c809aa7df67ba45ad6ea76a30006a85750283cebade956468ba6",
+  "acquisition/aff-zlib.aff": "75fb91d9630172fdccb743b7e6d68e5b795286e3f0d0f9640e5be6783de19e22",
+  "acquisition/aff-afd.afd/file_000.aff": "5ef137fc60fac407334d8cdc18e16e3ef069763f09b14a87017ba30cd1ad82eb",
+  "acquisition/aff-afd.afd/file_001.aff": "3656cec56d827de13f20625859f0367482151d86d917716db2c8c1c9d6017970",
+  "acquisition/aff-afd.afd/file_002.aff": "b9cc35d6b412cbdb110496ae9fc52ce7c71158b7a520805a57f97941899fa4f3",
+  "acquisition/aff-afd.afd/file_003.aff": "3583b964a8276d5cc73f2e574c5bc4a0bc8261f938048eb6cc6e3798280df60f",
+  "acquisition/aff-afd.afd/file_004.aff": "16377ceac1ed09ac86e344de57121a5ab52c8fddd767f33342a77939e8600f7b"
 }

@@ -54,13 +54,21 @@ class RawImageFileUnreadableError(OSError):
 
 @dataclass
 class RawImageHandle:
-    """An opened raw image or EWF acquisition, with its volume list."""
+    """An opened raw image or forensic acquisition, with its volume list."""
 
     path: Path
     image: Any  # a plain file object, qnxprobe.SegmentedImage, or ewfprobe.EwfImage
     size: int
     volumes: list[dict[str, Any]]
-    is_ewf: bool
+    # ewfprobe's name for the container ("EWF-E01", "EWF-S01", "EWF2-Ex01",
+    # "AFF", "AFD"), None for a raw image or split set.
+    acquisition: str | None = None
+
+    @property
+    def missing_pages(self) -> int:
+        """Pages of an AFF/AFD the acquisition declares but doesn't hold:
+        ewfprobe reads each as the image's bad-sector marker, as AFFLIB does."""
+        return int(getattr(self.image, "missing_page_count", 0) or 0)
 
     def close(self) -> None:
         try:
@@ -69,20 +77,21 @@ class RawImageHandle:
             pass
 
 
-def verify_ewf(
+def verify_acquisition(
     handle: RawImageHandle, progress: Callable[[int, int], None] | None = None
 ) -> dict[str, Any]:
-    """Recompute an EWF acquisition's MD5/SHA1 and compare them to the
-    acquisition's own stored hashes (written by the tool that made it).
+    """Recompute an acquisition's hashes and compare them to the ones it
+    stored itself (written by the tool that made it).
 
     Returns ewfprobe's own result dict: `computed`, `stored`, `match` (True,
     False, or None when the acquisition recorded no hash to compare against),
-    `bytes`, `checksum_errors`. Only valid for an EWF source — raw images
-    have no built-in hash of their own to verify against, which is exactly
-    why this is separate from (and not a substitute for) that case.
+    `bytes`, `checksum_errors`, `missing_page_count`. Only valid for an
+    acquisition -- raw images have no built-in hash of their own to verify
+    against, which is exactly why this is separate from (and not a
+    substitute for) that case.
     """
-    if not handle.is_ewf:
-        raise ValueError(f"{handle.path.name} is not an EWF acquisition")
+    if handle.acquisition is None:
+        raise ValueError(f"{handle.path.name} is not a forensic acquisition")
     return handle.image.verify(progress=progress)  # type: ignore[no-any-return]
 
 
@@ -112,20 +121,29 @@ class _Entry:
 
 
 def open_raw_image(path: Path) -> RawImageHandle:
-    """Open `path` as a raw disk image or EWF acquisition and list its volumes.
+    """Open `path` as a raw disk image or forensic acquisition (EWF .E01,
+    SMART .s01, EWF2 .Ex01, AFF/AFD) and list its volumes.
 
     Raises RawImageOpenError when the path isn't actually a readable image:
-    a split set with a numbering gap, a bad EWF header, or a file in which no
+    a split set with a numbering gap, a bad acquisition header, logical
+    evidence (L01/Lx01, which holds files, not a disk), or a file in which no
     partition table or bare filesystem could be found at all.
     """
-    is_ewf = qnxprobe.looks_like_ewf(str(path))  # type: ignore[no-untyped-call]
+    kind = qnxprobe.acquisition_format(str(path))  # type: ignore[no-untyped-call]
+    if kind in ("L01", "Lx01"):
+        # qnxprobe refuses these too, but points to its own command line.
+        raise RawImageOpenError(
+            f"{path.name}: EnCase logical evidence ({kind}) holds copies of files, "
+            "not a disk, so there is no partition table or filesystem to read; "
+            "Crush doesn't open logical evidence yet"
+        )
     try:
         image = qnxprobe.open_image(str(path))  # type: ignore[no-untyped-call]
     except qnxprobe.SplitImageError as exc:
         raise RawImageOpenError(f"{path.name}: {exc}") from exc
     except Exception as exc:
         raise RawImageOpenError(
-            f"{path.name}: not a readable raw image or EWF acquisition ({exc})"
+            f"{path.name}: not a readable raw image or acquisition ({exc})"
         ) from exc
 
     try:
@@ -140,15 +158,21 @@ def open_raw_image(path: Path) -> RawImageHandle:
     # partition table or filesystem it knows at all — so an empty list alone
     # never actually happens for a normal file. What matters is whether any
     # volume has something to browse; if not, a plain hex view of the same
-    # bytes is strictly more useful than an empty RawImageVFS tree.
-    if not any(vol.get("walker") is not None for vol in vols):
+    # bytes is strictly more useful than an empty RawImageVFS tree. Not for an
+    # acquisition: its file holds the container (compressed chunks, headers),
+    # not the acquired disk, so it stays open and the disk shows as the
+    # unrecognised region qnxprobe reports -- readable, and verifiable.
+    if not kind and not any(vol.get("walker") is not None for vol in vols):
         image.close()
         raise RawImageOpenError(
             f"{path.name}: no partition table or recognized filesystem found"
         )
 
     vols = vols + _compute_unallocated_gaps(vols, size)
-    return RawImageHandle(path=path, image=image, size=size, volumes=vols, is_ewf=is_ewf)
+    acquisition = getattr(image, "format", None) if kind else None
+    return RawImageHandle(
+        path=path, image=image, size=size, volumes=vols, acquisition=acquisition,
+    )
 
 
 def _compute_unallocated_gaps(vols: list[dict[str, Any]], total_size: int) -> list[dict[str, Any]]:
@@ -218,6 +242,10 @@ def build_volume_node(vol: dict[str, Any], read_map: dict[str, _Entry]) -> "VFSN
     if vol.get("note"):
         node.status = ParseIssue("entry.raw_volume_note", detail=str(vol["note"]))
     _walk_into(walker, walker.root, node, read_map, path, set())
+    # The root folder can carry named streams too; they sit beside its
+    # entries as ":name", the way the root's own name is empty.
+    _add_stream_nodes(walker, walker.root, "", path, node.children, read_map)
+    node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
     if hasattr(walker, "deleted_files"):
         _add_deleted_files_node(walker, node, read_map, path)
     elif hasattr(walker, "recover_deleted"):
@@ -338,12 +366,14 @@ def _walk_into(
             child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime or 0.0)
             children.append(child_node)
             _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1)
+            _add_stream_nodes(walker, child, name, base_path, children, read_map)
         elif (mode & 0o170000) == 0o100000:  # regular files only
             child_node = VFSNode(
                 name=name, path=child_path, is_dir=False, size=size or 0, modified=mtime or 0.0,
             )
             children.append(child_node)
             read_map[child_path] = _Entry(walker=walker, node=child, size=size or 0)
+            _add_stream_nodes(walker, child, name, base_path, children, read_map)
         else:
             # Symbolic links and special files stay visible: the walkers
             # don't decode link targets, and specials hold no content.
@@ -360,6 +390,72 @@ def _walk_into(
 
     children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
     vfs_node.children = children
+
+
+def _add_stream_nodes(
+    walker: Any,
+    wnode: Any,
+    owner: str,
+    base_path: str,
+    children: list["VFSNode"],
+    read_map: dict[str, _Entry],
+) -> None:
+    """One `owner:stream` leaf beside a file or folder for every named stream
+    the walker reports on it: NTFS alternate data streams, HFS+ resource
+    forks, APFS extended attributes kept in a stream of their own. Their
+    bytes are not part of the file's own size or content, so without a node
+    of their own they would not be seen at all.
+
+    Only NTFS streams are readable (walker.streams() gives each a node that
+    read_file() takes). qnxprobe reads an NTFS stream from its first stored
+    cluster and does not list a stream that stores nothing; both are said on
+    the node. Where the walker names a stream but has no reader for it, the
+    node has no content and says so -- its recorded size is in the status,
+    never shown as the size of bytes that aren't there.
+    """
+    from crush.core.vfs import VFSNode
+
+    named_streams = getattr(walker, "named_streams", None)
+    if named_streams is None:
+        return
+    try:
+        named = named_streams(wnode) or []
+        readable = (
+            {sname: (ref, size) for sname, ref, size in walker.streams(wnode)}
+            if named and hasattr(walker, "streams") else {}
+        )
+    except Exception as exc:
+        # The file itself is listed; only its streams could not be named.
+        children.append(VFSNode(
+            name=f"{owner}:?", path=f"{base_path}/{owner}:?", is_dir=False,
+            status=ParseIssue("entry.streams_unlisted", detail=str(exc)),
+        ))
+        read_map[f"{base_path}/{owner}:?"] = _Entry(walker=None, node=None, size=0, stored=b"")
+        return
+    shown_owner = owner or "/"  # the root folder's own name is empty
+    for sname, recorded in named:
+        stream_name = f"{owner}:{sname}"
+        stream_path = f"{base_path}/{stream_name}"
+        if sname in readable:
+            ref, size = readable[sname]
+            hole = walker.front_hole(ref) if hasattr(walker, "front_hole") else 0
+            status = (
+                ParseIssue("entry.stream_front_hole", {
+                    "owner": shown_owner, "skipped": f"{hole:,}", "recorded": f"{recorded:,}",
+                }) if hole else ParseIssue("entry.stream", {"owner": shown_owner})
+            )
+            children.append(VFSNode(
+                name=stream_name, path=stream_path, is_dir=False, size=size or 0, status=status,
+            ))
+            read_map[stream_path] = _Entry(walker=walker, node=ref, size=size or 0)
+            continue
+        status = (
+            ParseIssue("entry.stream_nothing_stored", {"owner": shown_owner, "recorded": f"{recorded:,}"})
+            if hasattr(walker, "streams")
+            else ParseIssue("entry.stream_no_reader", {"owner": shown_owner, "recorded": f"{recorded:,}"})
+        )
+        children.append(VFSNode(name=stream_name, path=stream_path, is_dir=False, status=status))
+        read_map[stream_path] = _Entry(walker=None, node=None, size=0, stored=b"")
 
 
 def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
