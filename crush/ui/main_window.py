@@ -2359,7 +2359,10 @@ class MainWindow(QMainWindow):
                 return None
             tmp_dir = tempdir.mkdtemp(prefix="crush-open-")
             suffix = node.extension or ""
-            tmp_path = tmp_dir / (node.name or f"file{suffix}")
+            # A name the OS can't hold (an NTFS stream's "file:stream", which
+            # Windows would write into a stream of "file") gets the export's
+            # replacements; the copy is only a working file.
+            tmp_path = tmp_dir / _safe_name(node.name or f"file{suffix}")[0]
             outcome = extract_dialog.copy_node_with_progress(
                 self,
                 vfs,
@@ -2429,7 +2432,7 @@ class MainWindow(QMainWindow):
             ):
                 return None
             tmp_dir = tempdir.mkdtemp(prefix="crush-open-")
-            source_path = tmp_dir / node.name
+            source_path = tmp_dir / _safe_name(node.name or "export")[0]
             self._export_vfs_tree(node, vfs, source_path)
             return source_path, tmp_dir
         except Exception as exc:

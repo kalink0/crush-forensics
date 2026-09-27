@@ -22,6 +22,7 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed an EWF acquisition without a recognised filesystem opening as the `.E01` file's own bytes instead of the acquired disk; it now opens with the disk as one unrecognised region, readable and verifiable.
 - Fixed Verify EWF Hash… not reporting chunks that fail their own checksum.
+- Fixed Open External, Open in New Window and Send to Peach copying a file whose name holds a character Windows doesn't allow (e.g. `:`) under that name, which on Windows failed or wrote into a stream of another file; the temp copy now gets the same replacements as an export.
 - Fixed the Format Reference listing EWF under its own category "disk image" instead of "disk_image" with the other disk image formats.
 - Fixed the window freezing ("not responding") when expanding a folder of a large 7z archive: type detection extracted every entry whole just to read its first bytes. It now reads only each entry's head, one solid block at a time in the background, and gives way to files being opened. Opening a file from a 7z, a compressed TAR (`.tar.gz`/`.bz2`/`.xz`) or a large `.gz` decompresses it once behind a "please wait" dialog instead of on the UI thread.
 - Fixed the text viewer's search stopping after 5,000 hits: later hits weren't highlighted, listed or reachable with Up/Down; every hit is now counted and reachable.

@@ -17,6 +17,7 @@ media from Linux or macOS. Every rename must be logged and recorded in a
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import IO
 
 import pytest
@@ -179,5 +180,32 @@ def test_export_multi_nodes_sanitizes_virtual_path_components(qapp, qtbot, tmp_p
 
         renames = (export_root / "crush-export-renames.txt").read_text()
         assert 'weird"dir/pipe|name.txt' in renames
+    finally:
+        win.close()
+
+
+def test_temp_copies_use_names_every_os_can_hold(qapp, tmp_path: Path, monkeypatch) -> None:
+    """Open External / Open in New Window and the folder hand-offs copy a
+    node into the temp directory under its name; an NTFS stream's
+    "file:stream" (or any name with a character Windows rejects) must get
+    the export's replacements there too, not become a stream of "file"."""
+    import shutil
+
+    from crush.core.vfs import BytesVFS
+    from crush.ui import extract_dialog
+    from crush.ui.main_window import MainWindow
+
+    monkeypatch.setattr(extract_dialog, "confirm_temp_space", lambda *a, **k: True)
+    vfs = BytesVFS(b"[ZoneTransfer]\r\nZoneId=3\r\n", name="report.pdf:Zone.Identifier")
+    node = vfs.root()
+    win = MainWindow()
+    try:
+        result = win._materialize_directory_node_for_external(node, vfs)
+        assert result is not None
+        path, cleanup = result
+        assert path.name == "report.pdf_Zone.Identifier"
+        assert path.read_bytes() == b"[ZoneTransfer]\r\nZoneId=3\r\n"
+        if cleanup is not None:
+            shutil.rmtree(cleanup, ignore_errors=True)
     finally:
         win.close()
