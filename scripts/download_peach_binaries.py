@@ -14,6 +14,7 @@ which version is actually bundled (About dialog).
 """
 from __future__ import annotations
 
+import hashlib
 import stat
 import sys
 import tarfile
@@ -22,18 +23,33 @@ import zipfile
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Configuration — bump VERSION when upgrading
+# Configuration — bump VERSION and update SHA256 when upgrading
 # ---------------------------------------------------------------------------
 
-VERSION = "0.8.0"
+# The only place the bundled version is set: the release and nightly
+# workflows run this script too.
+VERSION = "0.9.1"
 
-# (release_asset_name, target_filename_in_bin_dir)
+# (release_asset_name, target_filename_in_bin_dir, sha256)
+# sha256 of the release asset (GitHub shows it as the asset's digest).
 # macOS is a single universal (arm64+x86_64) binary as of v0.2.1 -- peach used
 # to ship two arch-specific downloads (peach-macos-arm / peach-macos-intel).
-_ASSETS: list[tuple[str, str]] = [
-    (f"peach-linux-v{VERSION}.tar.gz", "peach-linux"),
-    (f"peach-macos-v{VERSION}.tar.gz", "peach-macos"),
-    (f"peach-windows-v{VERSION}.zip", "peach-windows.exe"),
+_ASSETS: list[tuple[str, str, str]] = [
+    (
+        f"peach-linux-v{VERSION}.tar.gz",
+        "peach-linux",
+        "896a912242e3f0485d477a7036dd5a33131b12deb2c4fa78562e453ca5f88324",
+    ),
+    (
+        f"peach-macos-v{VERSION}.tar.gz",
+        "peach-macos",
+        "ddd050fd4441095cf86557068f60ab182f2f8f0ca913aac2149925efc5b602de",
+    ),
+    (
+        f"peach-windows-v{VERSION}.zip",
+        "peach-windows.exe",
+        "012cdf73d3e58f834b35890b258c8ee803c1a231199b112fe3814cec00b7ac42",
+    ),
 ]
 
 _BASE_URL = f"https://github.com/kalink0/peach-forensics/releases/download/v{VERSION}"
@@ -49,6 +65,16 @@ def _download(url: str, dest: Path) -> None:
     print(f"  Downloading {url.split('/')[-1]} …", end="", flush=True)
     urllib.request.urlretrieve(url, dest)
     print(f" {dest.stat().st_size // 1024} KB")
+
+
+def _verify_sha256(path: Path, expected: str) -> None:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != expected:
+        raise ValueError(
+            f"SHA-256 mismatch for {path.name}\n"
+            f"  expected: {expected}\n"
+            f"  got:      {digest}"
+        )
 
 
 def _extract_single_file(archive: Path, target: Path) -> None:
@@ -85,7 +111,7 @@ def main() -> None:
     downloaded: list[str] = []
     skipped: list[str] = []
 
-    for asset_name, target_name in _ASSETS:
+    for asset_name, target_name, expected_sha256 in _ASSETS:
         target = _BIN_DIR / target_name
         archive = _BIN_DIR / asset_name
         url = f"{_BASE_URL}/{asset_name}"
@@ -99,6 +125,8 @@ def main() -> None:
 
         try:
             _download(url, archive)
+            _verify_sha256(archive, expected_sha256)
+            print("  SHA-256 OK")
             _extract_single_file(archive, target)
             archive.unlink(missing_ok=True)
 

@@ -85,6 +85,7 @@ All notable changes to Crush will be documented in this file.
 - Opening a file that could exhaust free memory (Open, or any Open as… mode) now asks first: open anyway (only offered while it can plausibly fit), open in a new window (unless the file is known to hold nothing to browse), export, or cancel. Large reads, hashes and hex searches run behind a wait dialog so the window stays responsive.
 - "Open in New Window" (and Open External) on an archive member now shows a progress dialog with Cancel while the member is extracted, and checks free space first, warning before filling RAM-backed storage such as a tmpfs `/tmp`.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.38 (from v1.29) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.2.0.
+- Bundled [peach](https://github.com/kalink0/peach-forensics) updated to v0.9.1 (from v0.8.0): Remote Desktop / Terminal Services rules for EVTX and corrected AUL rules, see its [v0.9.0 release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.9.0).
 - **Verify EWF Hash…** is now **Verify Acquisition Hash…** and also covers SMART, EWF2 and AFF acquisitions.
 - Disk images are opened only via File → Open disk image…, the start screen, `--image PATH` or right-click → Open Disk Image in New Window; a normal open, drag & drop or Open in New Window no longer probes a file for one. Open Recent reopens an image the way it was opened.
 - GPT partition tables are only used when their header and entry CRCs are valid (UEFI 2.10), falling back to the backup header.
