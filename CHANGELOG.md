@@ -74,8 +74,9 @@ All notable changes to Crush will be documented in this file.
 - Fixed UFDR trees leaving out Nodes rows with an unreadable type, and a path collision or a `database.json` device missing from the dump only being logged; they're now shown as entry statuses.
 - Fixed SQLite Freelist Recovery and Freeblocks showing "No … found" when the file or a page couldn't be read, and a freelist or freeblock chain that stopped early, or cells that couldn't be decoded (also in WAL history and the Rollback Journal), leaving no trace; a status line above the table now says so.
 - Fixed SQLite overflow values larger than 10,000 overflow pages being cut short in WAL Frames, Freelist Recovery and File Structure, and File Structure cutting cell values at 120 characters.
-- Fixed an NSKeyedArchiver plist that references a missing object opening as hex with "Parse error"; it now opens unresolved and says why.
+- Fixed an NSKeyedArchiver plist that references a missing object, or whose objects refer to each other in a cycle, opening as hex with "Parse error"; it now opens unresolved and says why.
 - Fixed the plist tree showing an empty `$class` row above the fields of a resolved NSKeyedArchiver object.
+- Fixed JSON, XML, plist and other tree views hiding keys named `$class`, `$classes` or `$classname` and taking the Type from them; only a tree resolved from an NSKeyedArchiver archive folds them into its Type column.
 - Fixed large XML, JSON and plist files (e.g. a 15 MB XML) freezing the window for tens of seconds when opened. Addresses [#127](https://github.com/kalink0/crush-forensics/issues/127).
 - Fixed the Linux AppImage not starting on systems without `libfuse2` installed (e.g. a fresh Ubuntu 24.04).
 

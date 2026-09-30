@@ -44,7 +44,7 @@ class PlistParser(AbstractParser):
         try:
             raw = vfs.read(node)
             raw_text: str | bytes
-            nska_issue: ParseIssue | None = None
+            nska_issue: ParseIssue | list[ParseIssue] | None = None
             fmt: str | ParseIssue
             if raw[:6] == _BPLIST_MAGIC:
                 fmt = "binary"
@@ -57,16 +57,22 @@ class PlistParser(AbstractParser):
                 text_index: str | None = None
                 raw_text = ""
                 stats = archive_stats(data) if is_keyed_archive(data) else None
+                # ccl_bplist resolves lazily, so a UID past the end of
+                # $objects fails only when something reaches it -- a later
+                # step, or expanding Decoded -- and a cycle never ends (Text
+                # tab, Expand All, the filter). Not resolving such an archive
+                # at all is the one deterministic way to keep that from
+                # surfacing halfway; Decoded then shows the archive as stored.
+                unresolvable: list[ParseIssue] = []
                 if stats is not None and stats.missing_references:
-                    # ccl_bplist resolves lazily, so a UID past the end of
-                    # $objects fails only when something reaches it -- a
-                    # later step, or expanding Decoded. Not resolving at all
-                    # is the one deterministic way to keep that from surfacing
-                    # halfway; Decoded then shows the archive as stored.
-                    fmt = ParseIssue("plist.format_nska_unresolved")
-                    nska_issue = ParseIssue(
+                    unresolvable.append(ParseIssue(
                         "plist.nska_missing_refs", {"count": stats.missing_references}
-                    )
+                    ))
+                if stats is not None and stats.has_cycle:
+                    unresolvable.append(ParseIssue("plist.nska_cycle"))
+                if unresolvable:
+                    fmt = ParseIssue("plist.format_nska_unresolved")
+                    nska_issue = unresolvable[0] if len(unresolvable) == 1 else unresolvable
                 elif is_keyed_archive(data):
                     try:
                         resolved = _deserialize(data)

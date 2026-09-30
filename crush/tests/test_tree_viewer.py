@@ -175,7 +175,7 @@ def test_expand_all_builds_every_row(qapp, no_initial_expand) -> None:
 
 def test_class_metadata_rows_stay_hidden_when_built_on_demand(qapp, no_initial_expand) -> None:
     obj = {"$class": {"$classname": "NSDate"}, "time": 1.5}
-    widget = TreeViewer({"outer": {"date": obj}})
+    widget = TreeViewer({"outer": {"date": obj}}, fold_class_meta=True)
     outer = widget._model.index(0, 0)
     _expand(qapp, widget, outer)
     date = widget._model.index(0, 0, outer)

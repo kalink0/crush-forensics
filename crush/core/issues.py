@@ -1059,6 +1059,12 @@ MESSAGES: dict[str, str] = {
         "so the tree shows the archive's undecoded object table",
         "plist.nska_missing_refs",
     ),
+    "plist.nska_cycle": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not resolved: an object reaches itself through its references (a cycle), "
+        "so the tree shows the archive's undecoded object table",
+        "plist.nska_cycle",
+    ),
     "plist.nska_root_none": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "none ($top has no root key)",
@@ -1073,6 +1079,11 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "unknown (root or its class points past the end of $objects)",
         "plist.nska_root_missing",
+    ),
+    "plist.nska_root_no_classname": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unknown (the root object's class definition has no $classname)",
+        "plist.nska_root_no_classname",
     ),
     "plist.nska_top_empty": QT_TRANSLATE_NOOP(
         "ParseIssue",

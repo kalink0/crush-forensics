@@ -30,20 +30,20 @@ class TreeTextViewer(QWidget):
         layout.setSpacing(0)
 
         self._tabs = QTabWidget()
-        # Decoded is the archive itself when it wasn't resolved (XML form,
-        # or resolving failed): then it's a stored view too and keeps the
-        # class references a resolved tree folds into its Type column.
-        unresolved = archive is not None and data is archive
+        # Only a tree resolved from an NSKeyedArchiver archive folds its class
+        # metadata into the Type column. Decoded is the archive itself when it
+        # wasn't resolved (XML form, missing references, resolving failed),
+        # and any other plist, JSON or XML is plain data: every key shown.
+        resolved_archive = archive is not None and data is not archive
         self._tabs.addTab(
-            TreeViewer(data, self._tabs, show_class_meta=unresolved),
+            TreeViewer(data, self._tabs, fold_class_meta=resolved_archive),
             translate("TreeTextViewer", "Decoded"),
         )
         if archive is not None:
             # An NSKeyedArchiver archive as stored, before resolving: $top,
             # every $objects entry by index, references as UIDs.
             self._tabs.addTab(
-                TreeViewer(archive, self._tabs, show_class_meta=True),
-                translate("TreeTextViewer", "Stored archive"),
+                TreeViewer(archive, self._tabs), translate("TreeTextViewer", "Stored archive")
             )
         # The Text tab is built when first shown: laying out and highlighting
         # a large file takes seconds that shouldn't delay the tree.

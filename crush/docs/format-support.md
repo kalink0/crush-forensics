@@ -43,7 +43,7 @@ Limitations
 Limitations
 - NSKeyedArchiver decoding is best-effort and may fall back to raw structures.
 - When `$top` has a `root` key, the resolved tree follows `root` only; any other `$top` key is listed under `Top keys` and shown in the Stored archive tab. Without `root`, all of `$top` is resolved. An object referenced from several places appears in the resolved tree once per reference.
-- An archive with `Missing references` is not resolved (resolving would fail partway, the moment the tree reached such a reference): `Format` and `Status` say so and the tree shows the stored object table.
+- An archive with `Missing references`, or with an object that reaches itself through its references (a cycle), is never resolved, wherever in `$objects` that is — resolving would fail partway if the tree reached it, or never end: `Format` and `Status` say so and the tree shows the stored object table.
 - NSKeyedArchiver archives in XML form are not resolved: the tree shows the stored object table (like the Stored archive tab), and `Format` says so.
 - UIDs in the Stored archive tab are not clickable; follow a reference by its `$objects` index.
 - Parse failures fall back to Hex Viewer.

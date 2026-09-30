@@ -85,7 +85,10 @@ def root_class(archive: dict[str, Any]) -> str | ParseIssue:
     if not isinstance(top, dict) or "root" not in top:
         return ParseIssue("plist.nska_root_none")
     index = _uid_index(top["root"])
-    if index is None or not isinstance(objects, list) or not 0 <= index < len(objects):
+    if index is None:
+        # Stored in $top itself rather than referenced: a plain value.
+        return ParseIssue("plist.nska_root_plain", {"type": type(top["root"]).__name__})
+    if not isinstance(objects, list) or not 0 <= index < len(objects):
         return ParseIssue("plist.nska_root_missing")
     entry = objects[index]
     class_index = _uid_index(entry.get("$class")) if isinstance(entry, dict) else None
@@ -96,7 +99,7 @@ def root_class(archive: dict[str, Any]) -> str | ParseIssue:
         return ParseIssue("plist.nska_root_missing")
     definition = objects[class_index]
     name = definition.get("$classname") if isinstance(definition, dict) else None
-    return str(name) if name is not None else ParseIssue("plist.nska_root_missing")
+    return str(name) if name is not None else ParseIssue("plist.nska_root_no_classname")
 
 
 @dataclass(frozen=True)
@@ -106,7 +109,38 @@ class ArchiveStats:
     shared_classes: int       # class definitions referenced by more than one UID
     unreachable: int          # objects no UID path from $top reaches
     missing_references: int   # UIDs pointing past the end of $objects
+    has_cycle: bool           # an object reaches itself through its UIDs
     top_keys: tuple[str, ...]
+
+
+def _has_cycle(objects: list[Any]) -> bool:
+    """Whether any `$objects` entry reaches itself by following UIDs (e.g. a
+    child pointing back at its parent) -- anywhere in the table, reachable
+    from `$top` or not. A resolved tree of such a graph has no end."""
+    count = len(objects)
+
+    def targets(index: int) -> list[int]:
+        return [i for i in _uids_in(objects[index]) if 0 <= i < count]
+
+    # Depth-first, without recursion: 1 = on the current path, 2 = done.
+    state = [0] * count
+    for start in range(count):
+        if state[start]:
+            continue
+        state[start] = 1
+        path = [(start, iter(targets(start)))]
+        while path:
+            index, pending = path[-1]
+            target = next(pending, None)
+            if target is None:
+                state[index] = 2
+                path.pop()
+            elif state[target] == 1:
+                return True
+            elif state[target] == 0:
+                state[target] = 1
+                path.append((target, iter(targets(target))))
+    return False
 
 
 def archive_stats(archive: dict[str, Any]) -> ArchiveStats | None:
@@ -154,5 +188,6 @@ def archive_stats(archive: dict[str, Any]) -> ArchiveStats | None:
         shared_classes=shared_classes,
         unreachable=unreachable,
         missing_references=missing,
+        has_cycle=_has_cycle(objects),
         top_keys=tuple(str(k) for k in top),
     )

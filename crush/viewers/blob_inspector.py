@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import gzip
+import html
 import json as _json
 import zlib
 from collections.abc import Callable
@@ -46,6 +47,10 @@ from crush.viewers.hex_viewer import HexViewer
 from crush.ui.i18n import translate
 
 _HEX_VIEW = "Hex view"
+
+# Metadata fields on the first line above the Plist page's tree (what the
+# data is, whether it was resolved); every other field goes on the second.
+_PLIST_SUMMARY_FIRST_LINE = ("Format", "Status")
 
 # Crush's own names for interpretations and pipeline steps: the English name
 # is the key everywhere (item data, _cached_results, _INTERMEDIATE); only the
@@ -495,6 +500,7 @@ class _BlobPanel(QWidget):
         plist_layout = QVBoxLayout(self._plist_page)
         plist_layout.setContentsMargins(0, 0, 0, 0)
         self._plist_summary = QLabel()
+        self._plist_summary.setTextFormat(Qt.TextFormat.RichText)
         self._plist_summary.setWordWrap(True)
         self._plist_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         plist_layout.addWidget(self._plist_summary)
@@ -812,11 +818,21 @@ class _BlobPanel(QWidget):
             self._plist_view.deleteLater()
         self._plist_view = TreeTextViewer(result.data, self._plist_page, **result.viewer_hints)
         self._plist_page.layout().addWidget(self._plist_view)
-        self._plist_summary.setText("  ·  ".join(
-            f"{translate('MetadataLabel', key)}: {render_value(value, localized=True)}"  # i18n: keep -- marked in metadata_labels
-            for key, value in result.metadata.items()
-            if key != "File size"
-        ))
+        # What the plist is and whether it was resolved on the first line,
+        # the archive's counts on the second; field names in bold. Values
+        # come from the blob (e.g. Top keys), so they're escaped.
+        lines: list[list[str]] = [[], []]
+        for key, value in result.metadata.items():
+            if key == "File size":
+                continue
+            label = html.escape(translate("MetadataLabel", key))  # i18n: keep -- marked in metadata_labels
+            shown = html.escape(render_value(value, localized=True))
+            lines[0 if key in _PLIST_SUMMARY_FIRST_LINE else 1].append(f"<b>{label}:</b> {shown}")
+        self._plist_summary.setText(
+            # Only the space after "·" can break: a wrapped line starts
+            # with a field, not a blank.
+            "<br>".join("&nbsp;&nbsp;·&nbsp; ".join(parts) for parts in lines if parts)
+        )
         self._plist_view_data = data
         return True
 

@@ -6,6 +6,8 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
+import pytest
+
 from crush.core.issues import ParseIssue
 from crush.core.vfs import DirectoryVFS
 from crush.parsers.nska_archive import archive_stats
@@ -86,6 +88,28 @@ def test_cycles_terminate_and_count_as_reachable() -> None:
     assert stats is not None
     assert stats.unreachable == 0
     assert stats.shared == 1  # object 1: from $top and from object 2
+    assert stats.has_cycle
+
+
+def test_cycle_is_found_also_self_reference_and_unreachable() -> None:
+    def has_cycle(objects: list) -> bool:
+        stats = archive_stats(_archive(objects))
+        assert stats is not None
+        return stats.has_cycle
+
+    assert has_cycle(["$null", {"self": UID(1)}])
+    # Not reachable from $top -- still in the table, still a cycle.
+    assert has_cycle(["$null", "root", {"a": UID(3)}, {"b": UID(2)}])
+
+
+def test_shared_objects_without_a_cycle_are_no_cycle() -> None:
+    """Two paths to one object (shared) is a diamond, not a cycle."""
+    stats = archive_stats(_graph())
+    assert stats is not None and stats.shared == 1
+    assert not stats.has_cycle
+    diamond = _archive(["$null", {"l": UID(2), "r": UID(3)}, {"x": UID(4)}, {"x": UID(4)}, "leaf"])
+    stats = archive_stats(diamond)
+    assert stats is not None and not stats.has_cycle
 
 
 def test_xml_uid_form_is_recognised_exactly() -> None:
@@ -238,6 +262,37 @@ def test_root_class_row(tmp_path: Path) -> None:
     assert root_class(_archive(["$null"], top={"root": UID(5)})) == ParseIssue(
         "plist.nska_root_missing"
     )
+    # The class definition is there but names no class: not "missing".
+    no_name = _archive(["$null", {"$class": UID(2)}, {"$classes": ["X"]}])
+    assert root_class(no_name) == ParseIssue("plist.nska_root_no_classname")
+    # root stored in $top itself, not referenced.
+    assert root_class(_archive(["$null"], top={"root": "inline"})) == ParseIssue(
+        "plist.nska_root_plain", {"type": "str"}
+    )
+
+
+def test_cyclic_archive_is_not_resolved_and_says_why(tmp_path: Path) -> None:
+    """A parent <-> child cycle used to fail in the Text tab's JSON and read
+    "deserialization failed"; it's a valid archive, only not resolvable."""
+    cls = {"$classname": "Node", "$classes": ["Node", "NSObject"]}
+    archive = _archive(["$null", {"$class": UID(3), "child": UID(2)},
+                        {"$class": UID(3), "parent": UID(1)}, cls])
+    result = _parse(tmp_path, "a.plist", plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+
+    meta = result.metadata
+    assert meta["Format"] == ParseIssue("plist.format_nska_unresolved")
+    assert meta["Status"] == ParseIssue("plist.nska_cycle")
+    assert meta["Root class"] == "Node"
+    assert meta["Objects"] == "4"
+    assert result.data is result.viewer_hints["archive"]  # Decoded shows it as stored
+
+
+def test_missing_reference_and_cycle_are_both_named(tmp_path: Path) -> None:
+    archive = _archive(["$null", {"self": UID(1), "gone": UID(9)}])
+    result = _parse(tmp_path, "a.plist", plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+
+    status = result.metadata["Status"]
+    assert [issue.code for issue in status] == ["plist.nska_missing_refs", "plist.nska_cycle"]
 
 
 def test_decoded_top_level_hides_the_root_class_reference(qapp, tmp_path: Path) -> None:  # noqa: ARG001
@@ -325,13 +380,75 @@ def test_unresolved_archive_keeps_class_rows_in_decoded_too(qapp, tmp_path: Path
 def test_decoded_tree_still_hides_class_metadata(qapp) -> None:  # noqa: ARG001
     from crush.viewers.tree_viewer import TreeViewer
 
-    tree = TreeViewer({"obj": {"a": 1, "$class": {"$classname": "NSDate"}}})
+    tree = TreeViewer({"obj": {"a": 1, "$class": {"$classname": "NSDate"}}}, fold_class_meta=True)
     obj = tree._model.index(0, 0)
     assert set(_rows(tree, obj)) == {"a"}
     assert obj.siblingAtColumn(2).data() == "NSDate"
 
 
+def test_resolved_archive_folds_class_metadata_in_decoded(qapp, tmp_path: Path) -> None:  # noqa: ARG001
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    # A root object of an app's own class keeps its $class after resolving.
+    archive = _archive([
+        "$null",
+        {"$class": UID(2), "body": "hi"},
+        {"$classname": "ChatMessage", "$classes": ["ChatMessage", "NSObject"]},
+    ])
+    result = _parse(tmp_path, "a.bplist", plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+    assert result.metadata["Format"] == "binary (NSKeyedArchiver)"
+    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    decoded = viewer._tabs.widget(0)
+    top = [decoded._model.index(r, 0).data() for r in range(decoded._model.rowCount())]
+    assert top == ["body"]
+
+
+def test_class_meta_keys_are_ordinary_data_outside_a_resolved_archive(qapp, tmp_path: Path) -> None:  # noqa: ARG001
+    """JSON, XML or a plain plist may hold keys named $class / $classes /
+    $classname: they're data there and must be shown, counted and typed as
+    such -- only a tree resolved from an NSKeyedArchiver archive folds them."""
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+    from crush.viewers.tree_viewer import TreeViewer
+
+    data = {"$class": "Evidence", "id": 7, "nested": {"$classname": "X", "$class": {"$classname": "Y"}, "v": 1}}
+    plain = TreeViewer(data)
+    top = {plain._model.index(r, 0).data(): plain._model.index(r, 0) for r in range(plain._model.rowCount())}
+    assert set(top) == {"$class", "id", "nested"}
+    nested = top["nested"]
+    assert set(_rows(plain, nested)) == {"$classname", "$class", "v"}
+    assert nested.siblingAtColumn(1).data() == "(3 keys)"
+    assert nested.siblingAtColumn(2).data() == "dict"  # no class name taken from data
+
+    plain._apply_filter("evidence")
+    assert not plain._tree.isRowHidden(top["$class"].row(), top["$class"].parent())
+
+    result = _parse(tmp_path, "plain.plist", plistlib.dumps(data, fmt=plistlib.FMT_BINARY))
+    assert "archive" not in result.viewer_hints
+    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    decoded = viewer._tabs.widget(0)
+    assert "$class" in [decoded._model.index(r, 0).data() for r in range(decoded._model.rowCount())]
+
+
 # --- BLOB Inspector: same view as a plist file ---
+
+
+@pytest.fixture
+def blob_panel():  # noqa: ANN201
+    """A _BlobPanel for *data*, deleted at the end of the test: left to the
+    garbage collector, a panel's pending signals reached a later test."""
+    import shiboken6
+
+    from crush.viewers.blob_inspector import _BlobPanel
+
+    panels: list = []
+
+    def make(data: bytes):  # noqa: ANN202
+        panels.append(_BlobPanel(data))
+        return panels[-1]
+
+    yield make
+    for panel in panels:
+        shiboken6.delete(panel)
 
 
 def _plist_page_tabs(panel) -> list[str]:  # noqa: ANN001
@@ -339,43 +456,59 @@ def _plist_page_tabs(panel) -> list[str]:  # noqa: ANN001
     return [tabs.tabText(i) for i in range(tabs.count())]
 
 
-def test_blob_inspector_shows_an_archive_like_a_plist_file(qapp) -> None:  # noqa: ARG001
-    from crush.viewers.blob_inspector import _BlobPanel
+def _summary_lines(panel) -> list[str]:  # noqa: ANN001
+    """The summary above the Plist page as the user reads it, line by line."""
+    from PySide6.QtGui import QTextDocument
 
-    panel = _BlobPanel(plistlib.dumps(_resolvable_graph(), fmt=plistlib.FMT_BINARY))
+    doc = QTextDocument()
+    doc.setHtml(panel._plist_summary.text())
+    return doc.toPlainText().replace(" ", "\n").splitlines()
+
+
+def test_blob_inspector_shows_an_archive_like_a_plist_file(qapp, blob_panel) -> None:  # noqa: ARG001, ANN001
+    panel = blob_panel(plistlib.dumps(_resolvable_graph(), fmt=plistlib.FMT_BINARY))
     panel._select_format("Plist / bplist")
 
     assert panel._stack.currentWidget() is panel._plist_page
     assert _plist_page_tabs(panel) == ["Decoded", "Stored archive", "Text"]
-    summary = panel._plist_summary.text()
-    for part in ("Format: binary (NSKeyedArchiver)", "Objects: 7", "Unreachable objects: 1",
+    first, counts = _summary_lines(panel)
+    assert first == "Format: binary (NSKeyedArchiver)"
+    for part in ("Objects: 7", "Unreachable objects: 1",
                  "Shared objects: 2 (plus 0 class definitions)", "Top keys: extra, root"):
-        assert part in summary
+        assert part in counts
+    assert "<b>Format:</b>" in panel._plist_summary.text()
     # Copy keeps taking the interpretation's text.
     assert panel._viewer.toPlainText() == panel._cached_results["Plist / bplist"]
 
 
-def test_blob_inspector_states_a_failed_resolution(qapp) -> None:  # noqa: ARG001
-    from crush.viewers.blob_inspector import _BlobPanel
-
+def test_blob_inspector_states_a_failed_resolution(qapp, blob_panel) -> None:  # noqa: ARG001, ANN001
     archive = _resolvable_graph()
     archive["$version"] = 1
-    panel = _BlobPanel(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+    panel = blob_panel(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
     panel._select_format("Plist / bplist")
 
-    assert "NSKeyedArchiver deserialization failed" in panel._plist_summary.text()
+    first, _counts = _summary_lines(panel)
+    assert first.startswith("Format: ") and "Status: NSKeyedArchiver deserialization failed" in first
     assert "Stored archive" in _plist_page_tabs(panel)
 
 
-def test_blob_inspector_plain_plist_gets_the_tree_without_archive_rows(qapp) -> None:  # noqa: ARG001
-    from crush.viewers.blob_inspector import _BlobPanel
+def test_blob_inspector_summary_shows_file_values_as_text(qapp, blob_panel) -> None:  # noqa: ARG001, ANN001
+    """Values come from the blob: markup in them is shown, not rendered."""
+    archive = _archive(["$null", "x"], top={"root": UID(1), "<i>k</i>": UID(1)})
+    panel = blob_panel(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+    panel._select_format("Plist / bplist")
 
-    panel = _BlobPanel(plistlib.dumps({"k": 1}, fmt=plistlib.FMT_BINARY))
+    _first, counts = _summary_lines(panel)
+    assert "Top keys: <i>k</i>, root" in counts
+
+
+def test_blob_inspector_plain_plist_gets_the_tree_without_archive_rows(qapp, blob_panel) -> None:  # noqa: ARG001, ANN001
+    panel = blob_panel(plistlib.dumps({"k": 1}, fmt=plistlib.FMT_BINARY))
     panel._select_format("Plist / bplist")
 
     assert panel._stack.currentWidget() is panel._plist_page
     assert _plist_page_tabs(panel) == ["Decoded", "Text"]
-    assert "Objects" not in panel._plist_summary.text()
+    assert _summary_lines(panel) == ["Format: binary"]  # one line: no archive counts
 
 
 def test_viewer_adds_the_archive_tab_only_when_given(qapp) -> None:  # noqa: ARG001

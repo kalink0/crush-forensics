@@ -33,9 +33,10 @@ _BYTE_HIGHLIGHT_RANGES_ROLE = Qt.ItemDataRole.UserRole + 2
 # Set on a container row whose child rows aren't built yet (see _LazyTreeModel).
 _PENDING_ROLE = Qt.ItemDataRole.UserRole + 3
 
-# NSKeyedArchiver class metadata: in a resolved tree not shown as rows, the
-# classname goes to the Type column instead. A view of an archive as stored
-# shows them (TreeViewer(show_class_meta=True)).
+# NSKeyedArchiver class metadata: in a tree resolved from an archive not
+# shown as rows, the classname goes to the Type column instead
+# (TreeViewer(fold_class_meta=True)). Every other tree shows these keys like
+# any other: in JSON, XML or a plain plist they're ordinary data.
 _CLASS_META_KEYS: tuple[str, ...] = ("$class", "$classes", "$classname")
 
 # Rows the initial expansion may build (see TreeViewer._expand_initially):
@@ -236,16 +237,18 @@ class TreeViewer(QWidget):
             Mapping[str, tuple[int, int] | list[tuple[int, int]]],
         ] | None = None,
         hex_visible: bool = False,
-        show_class_meta: bool = False,
+        fold_class_meta: bool = False,
     ) -> None:
-        """*show_class_meta*: list NSKeyedArchiver's $class / $classes /
-        $classname keys as rows -- for an archive as stored, where they're
-        part of what's shown, not metadata of a resolved object."""
+        """*fold_class_meta*: *data* was resolved from an NSKeyedArchiver
+        archive -- its $class / $classes / $classname keys are class metadata
+        of the resolved objects: not listed as rows, the classname shown in
+        the Type column. Only for such a tree; anywhere else they're data."""
         super().__init__(parent)
         self._raw = raw
         self._initial_hex_visible = hex_visible
         self._byte_ranges_by_path = byte_ranges_by_path or {}
-        self._hidden_keys: tuple[str, ...] = () if show_class_meta else _CLASS_META_KEYS
+        self._fold_class_meta = fold_class_meta
+        self._hidden_keys: tuple[str, ...] = _CLASS_META_KEYS if fold_class_meta else ()
         self._build_ui()
         self._load(data)
 
@@ -424,7 +427,7 @@ class TreeViewer(QWidget):
         """Append the row for *obj*. A container's own child rows are built
         later, when first needed (_populate_children)."""
         node_path = parent_path + (key,)
-        if isinstance(obj, dict):
+        if isinstance(obj, dict) and self._fold_class_meta:
             # Surface the NSKeyedArchiver classname in the Type column
             class_meta = obj.get("$class")
             classname = (
