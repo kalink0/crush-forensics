@@ -1032,6 +1032,32 @@ MESSAGES: dict[str, str] = {
         "undecoded object table: {detail}",
         "plist.nska_failed",
     ),
+    "plist.format_nska_xml": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "XML (NSKeyedArchiver — not resolved)",
+        "plist.format_nska_xml",
+    ),
+    "plist.nska_xml_unresolved": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "NSKeyedArchiver archives in XML form are not resolved into an object "
+        "tree; the tree shows the archive's undecoded object table",
+        "plist.nska_xml_unresolved",
+    ),
+    "plist.nska_shared": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} (plus {classes:,} class definitions)",
+        "plist.nska_shared",
+    ),
+    "plist.nska_top_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "none ($top is empty)",
+        "plist.nska_top_empty",
+    ),
+    "plist.nska_no_graph": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not counted: $objects is not a list or $top is not a dictionary",
+        "plist.nska_no_graph",
+    ),
     # -- XML --------------------------------------------------------------
     "xml.syntax_error": QT_TRANSLATE_NOOP(
         "ParseIssue",

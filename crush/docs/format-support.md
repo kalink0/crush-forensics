@@ -38,9 +38,13 @@ Limitations
 ### Property List (plist)
 - Parses binary and XML plists into the Tree Viewer.
 - Attempts to decode NSKeyedArchiver plists when possible.
+- NSKeyedArchiver archives (binary and XML) get object-graph counts in the Properties panel, taken from the archive as stored: `Objects`, `Shared objects` (referenced by more than one UID; class definitions, which every instance of a class refers to, counted separately), `Unreachable objects` (no UID path from any `$top` key reaches them), `Missing references` (UIDs past the end of `$objects`) and `Top keys`. Every row is shown, also when 0. The `$null` placeholder at index 0, which every nil reference points to, is not counted as shared or unreachable. Every archive also gets an **Object table** tab with the stored structure — also where the tree shows the same (XML, or resolving failed), so it is always in one place. Layout per Apple's open-source Foundation (swift-corelibs-foundation `NSKeyedArchiver.swift`, `CFPropertyList.c`).
 
 Limitations
 - NSKeyedArchiver decoding is best-effort and may fall back to raw structures.
+- The resolved tree follows `$top`'s `root` only; other `$top` keys are listed under `Top keys` and shown in the Object table tab. An object referenced from several places appears in the resolved tree once per reference.
+- NSKeyedArchiver archives in XML form are not resolved: the tree shows the stored object table, and `Format` says so.
+- UIDs in the Object table tab are not clickable; follow a reference by its `$objects` index.
 - Parse failures fall back to Hex Viewer.
 
 ### XML
