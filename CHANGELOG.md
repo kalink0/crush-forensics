@@ -2,7 +2,9 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.21.0 - 2026-09-30
+
+**Focus: Forensic integrity audit report attached to every release; Cellebrite UFDR filesystem browsing; SQLite rollback journals; flash filesystems (SquashFS, JFFS2, UBI/UBIFS, YAFFS) with deleted-file recovery, and SMART, EWF2 and AFF acquisitions; NSKeyedArchiver stored-archive view; a translatable user interface; many values, entries and errors that were cut or dropped without notice now shown or stated; bundled peach updated to v0.9.1.**
 
 ### New Features
 
@@ -10,6 +12,7 @@ All notable changes to Crush will be documented in this file.
 - **SQLite rollback-journal (`-journal`) support** — the legacy (pre-WAL) companion file, previously invisible to the SQLite parser and shown as raw hex when opened on its own. A valid, fully-checksummed journal is now rolled back automatically (in memory only, never touching any file) so the table grid shows the correct current state by default, same as `-wal`; a "Show pre-rollback state" toggle and a new "Rollback Journal" tab expose every recovered entry — including deleted rows — with full hex provenance.
 - Opening a `-journal` or `-wal` file directly (no companion database in the same open) now shows a structured record view instead of falling back to hex.
 - Added to the command line -> Support for `--language CODE` to try a UI translation for one session.
+- Added to the user interface -> Support for translations with Qt Linguist; no language ships yet, contributions are welcome (see [TRANSLATING.md](TRANSLATING.md)).
 - Added to raw disk images -> Support for SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2, including bare flash dumps without a partition table.
 - Added to raw disk images -> Support for deleted-file recovery on YAFFS2, JFFS2 and UBIFS, into `$Recovered` with each file's original folder.
 - Added to raw disk images -> Support for GPT disks with 4096-byte sectors (4Kn drives, UFS storage).
@@ -24,7 +27,6 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed the search panel's Modified column showing the examiner's local time without saying so, and leaving pre-1970 or unreadable times blank; it now shows UTC, marked as such, and an out-of-range value as the raw number.
 - Fixed the Properties panel and Multi-Log Studio failing on Windows for a time before 1970 or far in the future; such times now show the same on every OS.
-
 - Fixed an EWF acquisition without a recognised filesystem opening as the `.E01` file's own bytes instead of the acquired disk; it now opens with the disk as one unrecognised region, readable and verifiable.
 - Fixed Verify EWF Hash… not reporting chunks that fail their own checksum.
 - Fixed Open External, Open in New Window and Send to Peach copying a file whose name holds a character Windows doesn't allow (e.g. `:`) under that name, which on Windows failed or wrote into a stream of another file; the temp copy now gets the same replacements as an export.
@@ -37,11 +39,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed "Open as Hex" (and the Hex tab) silently showing only the first 256 KB of every file while the status line reported that cut size as the file's total; the whole file is now loaded.
 - Fixed the window freezing for minutes (and the type indexing taking as long) when browsing a large `.tar.gz`/`.tar.xz`/`.tar.bz2`: the tree's type detection peeked into each file, and reaching a member of a compressed tar means decompressing everything before it. The first bytes of every file are now kept during the one pass that builds the tree, so peeking never touches the archive again.
 - Fixed Crush running out of memory (and taking the whole system down) when opening a member of an archive or disk image that is itself large, e.g. a multi-GB `.tar` inside a `.zip`: ZIP, TAR, 7z, gzip, Android/iTunes backup and raw-image/EWF members are now streamed in bounded memory instead of being decompressed whole into RAM, for the Hex tab, hashing, export and Open in New Window.
-
 - Fixed the MMKV Hex pane showing only the isolated value instead of the whole file with the entry highlighted whenever an unencrypted store had a `.crc` next to it (an all-zero AES vector was mistaken for an encrypted one). Also fixed the Overview tab saying "Encrypted: yes" for a store proven to be plaintext, and "MMKV (Encrypted)…" claiming "decrypted" when the key was ignored.
-
 - Fixed the Table Viewer's "Decode column as timestamp" silently doing nothing for numbers stored as text (e.g. `'1713884690406'` in a `TEXT` column) while still showing the format in the column header. Such values are now decoded too, and cells that can't be decoded are marked with the reason instead of looking decoded. Addresses [#104](https://github.com/kalink0/crush-forensics/issues/104).
-
 - Fixed invalid JSON showing only its first 500 characters instead of the part around the error; non-UTF-8 JSON is now flagged.
 - Fixed password and key prompts hiding why the previous attempt was rejected (e.g. a Realm key of the wrong length read as "Incorrect key"); the reason is now shown above the retry prompt.
 - Fixed a SQLite `-wal`/`-shm`/`-journal` companion that exists but can't be read being skipped silently; it's now listed under "Companion files not loaded" with the error.
@@ -81,6 +80,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed the Value field of the Tree, Protobuf and Analyzer result views cutting values past 32,767 characters without notice, and MMKV's showing only the table's shortened preview; it now holds the whole value.
 - Fixed large XML, JSON and plist files (e.g. a 15 MB XML) freezing the window for tens of seconds when opened. Addresses [#127](https://github.com/kalink0/crush-forensics/issues/127).
 - Fixed the Linux AppImage not starting on systems without `libfuse2` installed (e.g. a fresh Ubuntu 24.04).
+- Fixed v0.20.0 builds bundling unifiedlog_iterator v0.6.0 although its release notes said v0.7.0 (the About dialog showed the real v0.6.0); builds now bundle v0.7.0.
 
 ### Changed
 
