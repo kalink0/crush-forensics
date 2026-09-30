@@ -105,20 +105,17 @@ def test_csv_export_uses_full_value_not_truncated_preview(tmp_path, qapp, monkey
     assert long_text in content
 
 
-def test_value_bar_never_silently_truncates_past_its_own_explicit_note(qapp) -> None:
-    """QLineEdit.setText() silently truncates at its 32,767-char maxLength with
-    no indication anything was cut — a real bug found on an 8 MB real-world
-    value. The value bar must use the already-bounded display text (which
-    carries its own explicit "(N chars total)" note) rather than feeding the
-    untruncated full text straight into a widget with a hidden length cap."""
+def test_value_bar_shows_the_whole_value(qapp) -> None:
+    """QLineEdit.setText() silently truncates at its maxLength (32,767 by
+    default) — a real bug found on an 8 MB real-world value. The value bar
+    now lifts that limit (value_field.show_value) and holds the complete
+    value, not the table cell's shortened preview."""
     huge_text = "q" * 50_000  # comfortably past QLineEdit's 32,767 default maxLength
     records = [_rec(0, "k", huge_text, huge_text.encode())]
     widget = MMKVRecordsWidget(records)
     widget._table.selectRow(0)
 
-    shown = widget._value_field.text()
-    assert len(shown) < 32_767
-    assert "50,000 chars total" in shown
+    assert widget._value_field.text() == huge_text
 
 
 def test_size_column_shows_raw_container_byte_count(qapp) -> None:

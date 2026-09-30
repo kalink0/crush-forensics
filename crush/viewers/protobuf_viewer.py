@@ -579,13 +579,7 @@ class ProtobufTreeWidget(QWidget):
             return
         _, val_item = items
         full_text = val_item.data(_FULLTEXT_ROLE)
-        raw = val_item.data(_RAW_ROLE)
-        if isinstance(raw, bytes) and full_text == raw.hex(" "):
-            # Shown as its bytes: past the field's length, cut with a note
-            # instead of setText() silently dropping the rest.
-            show_value(self._value_field, raw)
-        else:
-            show_value(self._value_field, full_text if full_text is not None else val_item.text())
+        show_value(self._value_field, full_text if full_text is not None else val_item.text())
 
     def _on_context_menu(self, pos: object) -> None:
         index = self._tree.indexAt(pos)

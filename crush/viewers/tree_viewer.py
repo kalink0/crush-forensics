@@ -26,7 +26,7 @@ from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 from crush.core.issues import ParseIssue, render
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_text
-from crush.viewers.value_field import show_value
+from crush.viewers.value_field import show_value, value_text
 
 _USER_ROLE = Qt.ItemDataRole.UserRole
 _BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -544,8 +544,9 @@ class TreeViewer(QWidget):
         super().keyPressEvent(event)  # type: ignore[arg-type]
 
     def _current_key_value(self, for_copy: bool = False) -> tuple[str, str]:
-        """Key and value text of the current row. *for_copy*: the English
-        original of Crush's own words (e.g. "(3 keys)"), as copy writes it."""
+        """Key and value text of the current row. *for_copy*: as copy writes
+        it -- a blob's bytes as hex (the cell only says "<BLOB n B>"), and
+        the English original of Crush's own words (e.g. "(3 keys)")."""
         index = self._tree.currentIndex()
         if not index.isValid():
             return "", ""
@@ -557,13 +558,17 @@ class TreeViewer(QWidget):
             return "", ""
         key = key_item.text()
         val = val_item.text() if val_item is not None else ""
-        if for_copy and val_item is not None:
-            val = val_item.data(EXPORT_TEXT_ROLE) or val
+        if for_copy:
+            ref = key_item.data(_USER_ROLE)
+            if isinstance(ref, _ObjRef) and isinstance(ref.obj, bytes):
+                val = value_text(ref.obj)
+            elif val_item is not None:
+                val = val_item.data(EXPORT_TEXT_ROLE) or val
         return key, val
 
     def _update_value_field(self) -> None:
         # A blob's cell says only "<BLOB n B>"; the field below shows its
-        # bytes (as the Protobuf viewer does), complete or with a note.
+        # bytes (as the Protobuf viewer does), whole -- as Copy value takes it.
         obj, _ = self._current_obj_and_key()
         _, val = self._current_key_value()
         show_value(self._value_field, obj if isinstance(obj, bytes) else val)

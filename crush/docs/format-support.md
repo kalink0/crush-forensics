@@ -234,7 +234,7 @@ Limitations
 
 ### Tree Viewer
 - Hierarchical view for plist/XML/JSON structures with search and copy.
-- The Value field below the tree shows a blob's bytes as hex (its cell only says `<BLOB n B>`). A value longer than the field can hold (32,767 characters, ~10,900 bytes as hex) is shown up to that point with a note of its total size, as in the Protobuf and Analyzer result views; Copy value and Inspect BLOB take all of it.
+- The Value field below the tree shows the whole value, a blob as its bytes in hex (its cell only says `<BLOB n B>`); Copy value copies the same. The Protobuf, MMKV and Analyzer result views' Value fields also hold the whole value.
 - Rows below the top level are built the first time their parent is expanded. On opening, the first two levels are expanded as long as that shows at most 1,000 rows (checked a whole level at a time); a larger structure opens collapsed, every row still one click away. The search covers the whole structure, including rows not built yet.
 - A plist, XML or JSON file over 8 MiB is parsed in the background behind a "please wait" dialog.
 
@@ -242,6 +242,7 @@ Limitations
 - Read-only; no inline editing or advanced type casting.
 - The top-level rows are always built when the file opens: a structure with hundreds of thousands of top-level entries (e.g. a JSON export that is one large array) takes several seconds to show.
 - Expand All, and a search that matches most rows (e.g. a single letter), build every matching row at once: on a very large structure (over a million rows) that takes tens of seconds, during which the window doesn't respond.
+- Selecting a very large value fills the Value field with all of it, on the UI thread: a 1 MiB blob takes about half a second, a 10 MiB blob several seconds.
 
 ### Text Viewer
 - Line numbers, search, and lightweight syntax highlighting.
@@ -288,7 +289,7 @@ Limitations
 ### MMKV Viewer
 - Tabbed view: **Overview** (the `.crc` companion's version/sequence/CRC fields and the encryption verdict derived from its AES vector, with the reason when a non-zero vector was overridden as a false positive) and **Records** (every entry in file order, tagged Live/Superseded/Removed — see MMKV parser above).
 - Records table columns: Index, Key, State, Type, Size, Value; Superseded/Removed rows are colour-coded. A search box and a Live/Superseded/Removed state filter narrow the list.
-- Long values are truncated on screen (hex preview capped at 64 bytes, text preview capped at 256 characters) purely for render performance — the full value is always reachable via search, **Copy Value**, CSV export, and **Inspect Value…**, never actually discarded.
+- Long values are truncated in the table cell (hex preview capped at 64 bytes, text preview capped at 256 characters) purely for render performance — the full value is always reachable via the Value field below the table, search, **Copy Value**, CSV export, and **Inspect Value…**, never actually discarded.
 - **Inspect Value…** opens the value's raw bytes in the Blob Inspector. CSV export is also available.
 - Selecting a row shows the real store file in the embedded hex pane below the table, with that entry's own on-disk bytes highlighted — real byte provenance in context, not just the entry's own bytes shown in isolation. Falls back to showing just the entry's own bytes when its on-disk span couldn't be computed.
 

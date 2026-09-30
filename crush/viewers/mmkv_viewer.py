@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector
 from crush.viewers.tree_viewer import TreeViewer
+from crush.viewers.value_field import show_value
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import (
@@ -297,13 +298,14 @@ class MMKVRecordsWidget(QWidget):
                 # value's own bytes in isolation rather than showing nothing.
                 self._hex_val.set_data(item.data(_RAW_ROLE) or b"")
             value_item = self._model.item(row, _VALUE_COL)
-            # QLineEdit.setText() silently truncates at its 32,767-char maxLength —
-            # use the already-bounded display text (with its own explicit "(N chars
-            # total)" note when truncated) rather than the untruncated full text,
-            # which risks a *silent* cut with no indication anything was lost.
-            # The complete value is still reachable via Copy Value / Inspect Value.
-            self._value_field.setText(value_item.text() if value_item else "")
-            self._value_field.setCursorPosition(0)
+            # The whole value, as Copy Value takes it -- not the cell's
+            # shortened display text (show_value lifts QLineEdit's length
+            # limit, so nothing is cut).
+            full_value = value_item.data(_FULLTEXT_ROLE) if value_item else None
+            show_value(
+                self._value_field,
+                full_value if full_value is not None else (value_item.text() if value_item else ""),
+            )
 
     def _on_context_menu(self, pos) -> None:
         proxy_index = self._table.indexAt(pos)
