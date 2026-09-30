@@ -43,7 +43,8 @@ Limitations
 Limitations
 - NSKeyedArchiver decoding is best-effort and may fall back to raw structures.
 - When `$top` has a `root` key, the resolved tree follows `root` only; any other `$top` key is listed under `Top keys` and shown in the Object table tab. Without `root`, all of `$top` is resolved. An object referenced from several places appears in the resolved tree once per reference.
-- NSKeyedArchiver archives in XML form are not resolved: the tree shows the stored object table, and `Format` says so.
+- NSKeyedArchiver archives in XML form are not resolved: the tree shows the stored object table (like the Object table tab), and `Format` says so.
+- The BLOB Inspector and Value Inspector resolve NSKeyedArchiver data (e.g. a SQLite BLOB) without these counts or an Object table; a table cell's **Open as new tab** opens it in the Tree Viewer with both.
 - UIDs in the Object table tab are not clickable; follow a reference by its `$objects` index.
 - Parse failures fall back to Hex Viewer.
 

@@ -244,7 +244,7 @@ def test_subtree_search_answers_each_container_once_per_pass(
     assert tree_viewer._subtree_matches(outer, fp)
     assert fp.seen[id(middle)] and fp.seen[id(inner)]
 
-    def fail(obj):  # noqa: ANN001, ANN202
+    def fail(*_args):  # noqa: ANN002, ANN202
         raise AssertionError("walked again")
 
     monkeypatch.setattr(tree_viewer, "_child_entries", fail)

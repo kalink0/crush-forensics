@@ -199,6 +199,73 @@ def test_empty_top_says_so(tmp_path: Path) -> None:
 # --- viewer ---
 
 
+def _object_table(viewer):  # noqa: ANN001, ANN202
+    tabs = viewer._tabs
+    return tabs.widget([tabs.tabText(i) for i in range(tabs.count())].index("Object table"))
+
+
+def _rows(tree, index) -> dict[str, object]:  # noqa: ANN001
+    """key -> index of each child row of *index*, building it first."""
+    item = tree._model.itemFromIndex(index)
+    tree._populate_children(item)
+    model = tree._model
+    return {model.index(r, 0, index).data(): model.index(r, 0, index) for r in range(model.rowCount(index))}
+
+
+def test_object_table_keeps_class_references_and_definitions(qapp) -> None:  # noqa: ARG001
+    """The stored view shows $class on every object and $classname/$classes
+    in each class definition -- the resolved tree hides them as metadata."""
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    archive = _archive([
+        "$null",
+        {"NS.string": "hello", "$class": UID(2)},
+        {"$classname": "NSString", "$classes": ["NSString", "NSObject"]},
+    ])
+    viewer = TreeTextViewer({"decoded": 1}, raw_text="", archive=archive)
+    tree = _object_table(viewer)
+    top = {tree._model.index(r, 0).data(): tree._model.index(r, 0)
+           for r in range(tree._model.rowCount())}
+
+    objects = _rows(tree, top["$objects"])
+    assert set(_rows(tree, objects["1"])) == {"NS.string", "$class"}
+    definition = _rows(tree, objects["2"])
+    assert set(definition) == {"$classname", "$classes"}
+    assert definition["$classname"].siblingAtColumn(1).data() == "NSString"
+    assert objects["2"].siblingAtColumn(1).data() == "(2 keys)"
+
+    tree._apply_filter("nsstring")  # the filter sees those rows too
+    assert not tree._tree.isRowHidden(objects["2"].row(), objects["2"].parent())
+
+
+def test_unresolved_archive_keeps_class_rows_in_decoded_too(qapp, tmp_path: Path) -> None:  # noqa: ARG001
+    """An XML archive isn't resolved: Decoded shows the stored archive, so it
+    must be as complete as the Object table."""
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    archive = _archive([
+        "$null",
+        {"NS.string": "hello", "$class": UID(2)},
+        {"$classname": "NSString", "$classes": ["NSString", "NSObject"]},
+    ])
+    result = _parse(tmp_path, "a.plist", _xml(archive))
+    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    decoded = viewer._tabs.widget(0)
+    top = {decoded._model.index(r, 0).data(): decoded._model.index(r, 0)
+           for r in range(decoded._model.rowCount())}
+    objects = _rows(decoded, top["$objects"])
+    assert set(_rows(decoded, objects["1"])) == {"NS.string", "$class"}
+
+
+def test_decoded_tree_still_hides_class_metadata(qapp) -> None:  # noqa: ARG001
+    from crush.viewers.tree_viewer import TreeViewer
+
+    tree = TreeViewer({"obj": {"a": 1, "$class": {"$classname": "NSDate"}}})
+    obj = tree._model.index(0, 0)
+    assert set(_rows(tree, obj)) == {"a"}
+    assert obj.siblingAtColumn(2).data() == "NSDate"
+
+
 def test_viewer_adds_the_archive_tab_only_when_given(qapp) -> None:  # noqa: ARG001
     from crush.viewers.tree_text_viewer import TreeTextViewer
 
