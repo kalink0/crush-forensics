@@ -381,12 +381,11 @@ class TreeViewer(QWidget):
         self._value_field.clear()
         self._model.removeRows(0, self._model.rowCount())
         root = self._model.invisibleRootItem()
-        if isinstance(data, dict):
-            for key, value in data.items():
-                self._build_items(root, value, str(key), ())
-        elif isinstance(data, (list, tuple)):
-            for i, value in enumerate(data):
-                self._build_items(root, value, str(i), ())
+        if isinstance(data, (dict, list, tuple)):
+            # The top level follows the same rows rule as every level below
+            # (a resolved NSKeyedArchiver root would otherwise show "$class").
+            for key, value in _child_entries(data, self._hidden_keys):
+                self._build_items(root, value, key, ())
         else:
             self._build_items(root, data, "value", ())
         self._expand_initially()

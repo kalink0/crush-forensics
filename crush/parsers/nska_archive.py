@@ -30,6 +30,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from crush.core.issues import ParseIssue
 from crush.third_party.ccl_bplist.ccl_bplist import BplistUID
 
 ARCHIVERS = ("NSKeyedArchiver", "NRKeyedArchiver")
@@ -74,6 +75,28 @@ def _uids_in(value: Any) -> list[int]:
         elif isinstance(item, (list, tuple)):
             stack.extend(item)
     return found
+
+
+def root_class(archive: dict[str, Any]) -> str | ParseIssue:
+    """`$classname` of the object `$top["root"]` points to -- the resolved
+    tree starts at that object and has no row of its own to show it in."""
+    top = archive.get("$top")
+    objects = archive.get("$objects")
+    if not isinstance(top, dict) or "root" not in top:
+        return ParseIssue("plist.nska_root_none")
+    index = _uid_index(top["root"])
+    if index is None or not isinstance(objects, list) or not 0 <= index < len(objects):
+        return ParseIssue("plist.nska_root_missing")
+    entry = objects[index]
+    class_index = _uid_index(entry.get("$class")) if isinstance(entry, dict) else None
+    if class_index is None:
+        # Strings, numbers and data are stored as plain values, without a class.
+        return ParseIssue("plist.nska_root_plain", {"type": type(entry).__name__})
+    if not 0 <= class_index < len(objects):
+        return ParseIssue("plist.nska_root_missing")
+    definition = objects[class_index]
+    name = definition.get("$classname") if isinstance(definition, dict) else None
+    return str(name) if name is not None else ParseIssue("plist.nska_root_missing")
 
 
 @dataclass(frozen=True)

@@ -175,14 +175,79 @@ def test_xml_archive_is_marked_unresolved_and_counted(tmp_path: Path) -> None:
 
 
 def test_failed_resolution_still_counts(tmp_path: Path) -> None:
-    archive = _graph()
+    archive = _resolvable_graph()
     archive["$version"] = 1  # ccl_bplist resolves $version 100000 only
     result = _parse(tmp_path, "a.plist", plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
 
     meta = result.metadata
     assert meta["Status"].code == "plist.nska_failed"
-    assert meta["Missing references"] == "1"
+    assert meta["Unreachable objects"] == "1"
     assert result.viewer_hints["archive"] == result.data
+
+
+def _chat(sender) -> dict:  # noqa: ANN001
+    cls = {"$classname": "ChatMessage", "$classes": ["ChatMessage", "NSObject"]}
+    return _archive(["$null", {"body": UID(2), "sender": sender, "$class": UID(3)},
+                     "see you at 9", cls])
+
+
+def test_reference_past_the_end_is_not_resolved_but_shown(tmp_path: Path) -> None:
+    """ccl_bplist resolves lazily: a dangling UID under root used to pass
+    the resolve and fail later, dropping the whole plist to hex."""
+    result = _parse(tmp_path, "a.plist", plistlib.dumps(_chat(UID(99)), fmt=plistlib.FMT_BINARY))
+
+    assert result.viewer_type == "tree_text"
+    meta = result.metadata
+    assert meta["Format"] == ParseIssue("plist.format_nska_unresolved")
+    assert meta["Status"] == ParseIssue("plist.nska_missing_refs", {"count": 1})
+    assert meta["Missing references"] == "1"
+    assert meta["Root class"] == "ChatMessage"
+    assert result.data == result.viewer_hints["archive"]  # Decoded shows it as stored
+
+
+def test_a_failure_while_building_the_views_is_a_failed_resolve(
+    tmp_path: Path, monkeypatch
+) -> None:  # noqa: ANN001
+    """Anything that goes wrong walking the resolved tree is reported as a
+    failed resolve, not as a failed plist (hex, counts lost)."""
+    from crush.parsers import plist_parser
+
+    original = plist_parser._flatten_text
+
+    def boom_on_the_resolved_tree(data):  # noqa: ANN001, ANN202
+        if not plist_parser.is_keyed_archive(data):  # the resolved tree, not the stored archive
+            raise IndexError("list index out of range")
+        return original(data)
+
+    monkeypatch.setattr(plist_parser, "_flatten_text", boom_on_the_resolved_tree)
+    result = _parse(tmp_path, "a.plist", plistlib.dumps(_chat(UID(2)), fmt=plistlib.FMT_BINARY))
+
+    assert result.viewer_type == "tree_text"
+    assert result.metadata["Status"].code == "plist.nska_failed"
+    assert result.metadata["Objects"] == "4"
+
+
+def test_root_class_row(tmp_path: Path) -> None:
+    from crush.parsers.nska_archive import root_class
+
+    assert root_class(_chat(UID(2))) == "ChatMessage"
+    assert root_class(_archive(["$null"], top={"x": UID(0)})) == ParseIssue("plist.nska_root_none")
+    assert root_class(_archive(["$null", "text"])) == ParseIssue(
+        "plist.nska_root_plain", {"type": "str"}
+    )
+    assert root_class(_archive(["$null"], top={"root": UID(5)})) == ParseIssue(
+        "plist.nska_root_missing"
+    )
+
+
+def test_decoded_top_level_hides_the_root_class_reference(qapp, tmp_path: Path) -> None:  # noqa: ARG001
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    result = _parse(tmp_path, "a.plist", plistlib.dumps(_chat(UID(2)), fmt=plistlib.FMT_BINARY))
+    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    decoded = viewer._tabs.widget(0)
+    keys = [decoded._model.index(r, 0).data() for r in range(decoded._model.rowCount())]
+    assert keys == ["body", "sender"]
 
 
 def test_plain_plist_has_no_archive_rows(tmp_path: Path) -> None:
@@ -293,7 +358,7 @@ def test_blob_inspector_shows_an_archive_like_a_plist_file(qapp) -> None:  # noq
 def test_blob_inspector_states_a_failed_resolution(qapp) -> None:  # noqa: ARG001
     from crush.viewers.blob_inspector import _BlobPanel
 
-    archive = _graph()
+    archive = _resolvable_graph()
     archive["$version"] = 1
     panel = _BlobPanel(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
     panel._select_format("Plist / bplist")

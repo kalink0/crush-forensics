@@ -1048,6 +1048,32 @@ MESSAGES: dict[str, str] = {
         "{count:,} (plus {classes:,} class definitions)",
         "plist.nska_shared",
     ),
+    "plist.format_nska_unresolved": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "binary (NSKeyedArchiver — not resolved)",
+        "plist.format_nska_unresolved",
+    ),
+    "plist.nska_missing_refs": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not resolved: {count:,} reference(s) point past the end of $objects, "
+        "so the tree shows the archive's undecoded object table",
+        "plist.nska_missing_refs",
+    ),
+    "plist.nska_root_none": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "none ($top has no root key)",
+        "plist.nska_root_none",
+    ),
+    "plist.nska_root_plain": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "none (root is a plain {type} value)",
+        "plist.nska_root_plain",
+    ),
+    "plist.nska_root_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unknown (root or its class points past the end of $objects)",
+        "plist.nska_root_missing",
+    ),
     "plist.nska_top_empty": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "none ($top is empty)",

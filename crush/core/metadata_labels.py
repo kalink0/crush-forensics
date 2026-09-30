@@ -101,6 +101,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Revision chain"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Revisions"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Rollback journal"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Root class"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Row data"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Row limit"),
     QT_TRANSLATE_NOOP("MetadataLabel", "SQL"),
