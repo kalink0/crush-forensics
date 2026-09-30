@@ -14,6 +14,7 @@ _OPEN_AS_ONLY = {"ProtobufParser": "Protobuf", "MMKVParser": "MMKV"}
 
 class HexFallbackParser(AbstractParser):
     DISPLAY_NAME = "Hex viewer (fallback)"
+    PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         return True  # Always matches — must be registered last

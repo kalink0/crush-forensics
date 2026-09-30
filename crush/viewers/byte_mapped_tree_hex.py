@@ -147,6 +147,11 @@ class ByteMappedTreeHex(QWidget):
             rng = self._range_for_item(item)
             if rng is None or not (rng[0] <= offset < rng[1]):
                 continue
+            # A model that builds child rows on demand: build them on the
+            # path to the offset only.
+            index = self._model.indexFromItem(item)
+            if self._model.canFetchMore(index):
+                self._model.fetchMore(index)
             child_match = self._find_deepest_item_for_offset(item, offset)
             match = child_match or item
         return match

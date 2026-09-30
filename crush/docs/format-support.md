@@ -229,9 +229,11 @@ Limitations
 
 ### Tree Viewer
 - Hierarchical view for plist/XML/JSON structures with search and copy.
+- Opens with the top level expanded; deeper rows are built the first time their parent is expanded, so a large file (e.g. a 15 MB XML) opens in seconds. A plist, XML or JSON file over 8 MiB is parsed in the background behind a "please wait" dialog. The search still covers the whole structure, including rows not built yet.
 
 Limitations
 - Read-only; no inline editing or advanced type casting.
+- Expand All builds every row at once: on a very large structure (over a million rows) that takes tens of seconds, during which the window doesn't respond.
 
 ### Text Viewer
 - Line numbers, search, and lightweight syntax highlighting.

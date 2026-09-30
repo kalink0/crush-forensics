@@ -17,6 +17,7 @@ _EXCERPT_RADIUS = 250
 class JsonParser(AbstractParser):
     SUPPORTED_EXTENSIONS = [".json", ".geojson"]
     DISPLAY_NAME = "JSON document"
+    PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         if any(path.lower().endswith(ext) for ext in self.SUPPORTED_EXTENSIONS):

@@ -1520,10 +1520,10 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            if isinstance(parser, HexFallbackParser) and node.size > _BUSY_BYTES:
-                # Plain byte read: safe off the UI thread. Other parsers hand
-                # back thread-bound state (sqlite handles, Qt objects) and
-                # stay on the UI thread.
+            if parser.PARSE_OFF_UI_THREAD and node.size > _BUSY_BYTES:
+                # Bytes in, plain data out: safe off the UI thread. Other
+                # parsers hand back thread-bound state (sqlite handles, Qt
+                # objects) and stay on the UI thread.
                 result = busy_call(
                     self,
                     translate("MainWindow", "Loading {name}…").format(name=node.name),

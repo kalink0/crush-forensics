@@ -14,6 +14,7 @@ _EXCERPT_RADIUS = 250
 class XmlParser(AbstractParser):
     SUPPORTED_EXTENSIONS = [".xml"]
     DISPLAY_NAME = "XML document"
+    PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         stripped = peek_bytes.lstrip()

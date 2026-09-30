@@ -24,6 +24,9 @@ _XML_PLIST_SIG = b"<?xml"
 class PlistParser(AbstractParser):
     SUPPORTED_EXTENSIONS = [".plist", ".sfl", ".archive"]
     DISPLAY_NAME = "Property list (plist)"
+    # Only ever sets the same bplist converter (module-global), so parsing
+    # on a background thread can't race with another plist parse.
+    PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         if peek_bytes[:6] == _BPLIST_MAGIC:

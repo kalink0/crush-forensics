@@ -197,6 +197,45 @@ def test_double_click_on_unknown_big_file_uses_worker_thread_and_shows_all(
         win.close()
 
 
+def test_double_click_on_big_xml_parses_on_worker_thread(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #127: a large XML froze the window while it was parsed."""
+    import crush.ui.main_window as main_window
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    records = "".join(f'<r id="{i}"><v>value {i}</v></r>' for i in range(250_000))
+    (tmp_path / "big.xml").write_text(f"<root>{records}</root>", encoding="utf-8")
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "big.xml")
+    assert node.size > main_window._BUSY_BYTES
+
+    calls: list[str] = []
+
+    def spy(owner, text, fn):  # noqa: ANN001, ANN202
+        calls.append(text)
+        return busy_call(owner, text, fn)
+
+    monkeypatch.setattr(main_window, "busy_call", spy)
+    win = main_window.MainWindow()
+    try:
+        win._open_node(node, vfs)
+        assert calls == ["Loading big.xml…"]
+        assert win.findChildren(TreeTextViewer)
+    finally:
+        win.close()
+
+
+def test_only_plain_data_parsers_run_off_the_ui_thread() -> None:
+    """The flag is a promise that parse() hands back no Qt objects or
+    thread-bound handles -- never set it on e.g. the SQLite parser."""
+    import crush.parsers  # noqa: F401 -- registers every parser
+    from crush.core.registry import ParserRegistry
+
+    off_thread = {type(p).__name__ for p in ParserRegistry._parsers if p.PARSE_OFF_UI_THREAD}
+    assert off_thread == {"HexFallbackParser", "JsonParser", "XmlParser", "PlistParser"}
+
+
 @pytest.mark.parametrize(
     "decision,expected",
     [

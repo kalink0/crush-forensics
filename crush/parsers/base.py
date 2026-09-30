@@ -59,6 +59,13 @@ class AbstractParser(ABC):
     # base parse() signature doesn't force every parser to accept it.
     SUPPORTS_PASSWORD: bool = False
 
+    # Set True on a parser whose parse() only reads bytes and builds plain
+    # Python data -- no Qt objects, no thread-bound handles (sqlite
+    # connections, open files kept in the result). The UI then runs it on a
+    # background thread behind a "please wait" dialog for a large file,
+    # instead of freezing the window while it parses.
+    PARSE_OFF_UI_THREAD: bool = False
+
     @abstractmethod
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         """Return True if this parser can handle the file.

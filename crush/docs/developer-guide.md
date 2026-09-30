@@ -307,6 +307,12 @@ thread-bound handles such as sqlite connections. Copying a VFS member to
 disk has its own dialog with progress and Cancel:
 `crush.ui.extract_dialog.copy_node_with_progress()`.
 
+A parser whose `parse()` meets the same rule (bytes in, plain Python data
+out) sets `PARSE_OFF_UI_THREAD = True`; opening a file over 8 MiB with it
+then runs `parse()` through `busy_call` (JSON, XML, plist and the hex
+fallback do). A tree built from that data is still made on the UI thread,
+so `TreeViewer` builds rows only when their parent is first expanded.
+
 ---
 
 ## VFS API
