@@ -201,7 +201,7 @@ def test_empty_top_says_so(tmp_path: Path) -> None:
 
 def _object_table(viewer):  # noqa: ANN001, ANN202
     tabs = viewer._tabs
-    return tabs.widget([tabs.tabText(i) for i in range(tabs.count())].index("Object table"))
+    return tabs.widget([tabs.tabText(i) for i in range(tabs.count())].index("Stored archive"))
 
 
 def _rows(tree, index) -> dict[str, object]:  # noqa: ANN001
@@ -240,7 +240,7 @@ def test_object_table_keeps_class_references_and_definitions(qapp) -> None:  # n
 
 def test_unresolved_archive_keeps_class_rows_in_decoded_too(qapp, tmp_path: Path) -> None:  # noqa: ARG001
     """An XML archive isn't resolved: Decoded shows the stored archive, so it
-    must be as complete as the Object table."""
+    must be as complete as the Stored archive tab."""
     from crush.viewers.tree_text_viewer import TreeTextViewer
 
     archive = _archive([
@@ -271,7 +271,7 @@ def test_viewer_adds_the_archive_tab_only_when_given(qapp) -> None:  # noqa: ARG
 
     with_archive = TreeTextViewer({"a": 1}, raw_text="", archive=_graph())
     labels = [with_archive._tabs.tabText(i) for i in range(with_archive._tabs.count())]
-    assert labels == ["Decoded", "Object table", "Text"]
+    assert labels == ["Decoded", "Stored archive", "Text"]
 
     without = TreeTextViewer({"a": 1}, raw_text="")
     assert [without._tabs.tabText(i) for i in range(without._tabs.count())] == ["Decoded", "Text"]

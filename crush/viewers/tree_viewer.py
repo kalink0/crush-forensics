@@ -56,7 +56,9 @@ class _ObjRef:
 
 
 # Every helper below takes *hidden*, the dict keys not shown as rows, so the
-# rows, their count, the Value text and the filter always agree.
+# rows, their count, the Value text and the filter always agree. No default
+# on purpose: a call that leaves it out is a type error, not a silent
+# fallback to hiding.
 
 
 def _child_entries(obj: Any, hidden: tuple[str, ...]) -> list[tuple[str, Any]]:
@@ -101,7 +103,7 @@ def _generated_value(obj: Any, hidden: tuple[str, ...]) -> tuple[str, dict[str, 
     return None
 
 
-def _value_texts(obj: Any, hidden: tuple[str, ...] = _CLASS_META_KEYS) -> tuple[str, str]:
+def _value_texts(obj: Any, hidden: tuple[str, ...]) -> tuple[str, str]:
     """(English original, display text) of *obj*'s Value cell."""
     generated = _generated_value(obj, hidden)
     if generated is not None:
@@ -114,9 +116,7 @@ def _value_texts(obj: Any, hidden: tuple[str, ...] = _CLASS_META_KEYS) -> tuple[
     return str(obj), str(obj)
 
 
-def _display_value_text(
-    obj: Any, translated: dict[str, str], hidden: tuple[str, ...] = _CLASS_META_KEYS
-) -> str:
+def _display_value_text(obj: Any, translated: dict[str, str], hidden: tuple[str, ...]) -> str:
     """_value_texts(obj)[1], with each template translated once per filter
     pass (kept in *translated*) instead of once per row: the filter asks for
     every row's text, built or not."""
@@ -139,7 +139,7 @@ class _FilterPass:
     asks again at every level it builds on the way down to a hit) and each
     translated template."""
 
-    def __init__(self, text: str, hidden: tuple[str, ...] = _CLASS_META_KEYS) -> None:
+    def __init__(self, text: str, hidden: tuple[str, ...]) -> None:
         self.text = text
         self.hidden = hidden
         self.seen: dict[int, bool] = {}

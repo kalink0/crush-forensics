@@ -43,7 +43,7 @@ class TreeTextViewer(QWidget):
             # every $objects entry by index, references as UIDs.
             self._tabs.addTab(
                 TreeViewer(archive, self._tabs, show_class_meta=True),
-                translate("TreeTextViewer", "Object table"),
+                translate("TreeTextViewer", "Stored archive"),
             )
         # The Text tab is built when first shown: laying out and highlighting
         # a large file takes seconds that shouldn't delay the tree.
