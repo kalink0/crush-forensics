@@ -50,6 +50,38 @@ def test_only_visible_hits_are_drawn(qapp) -> None:
     assert 0 < drawn < _HITS
 
 
+def test_highlight_update_survives_its_own_update_request(qapp, monkeypatch) -> None:
+    """setExtraSelections() emits updateRequest synchronously when the view
+    paints, before the editor holds the new selections; that re-entered the
+    highlight update, which set them again -- endless recursion, a crash,
+    e.g. typing "NS" (hits) then "NSK" (none). Modelled here without a
+    display: every setExtraSelections first calls the update handler."""
+    view = _viewer(qapp)
+    editor = view._editor
+    original = editor.setExtraSelections
+    depth = {"now": 0, "max": 0}
+
+    def emits_update_request_first(selections):  # noqa: ANN001, ANN202
+        depth["now"] += 1
+        depth["max"] = max(depth["max"], depth["now"])
+        try:
+            view._update_visible_highlights()  # as the updateRequest slot does
+            original(selections)
+        finally:
+            depth["now"] -= 1
+
+    monkeypatch.setattr(editor, "setExtraSelections", emits_update_request_first)
+
+    for query in ("needle", "needleX"):  # hits, then none
+        view._search_input.setText(query)
+        view._refresh_search()
+        qapp.processEvents()
+
+    assert depth["max"] == 1
+    assert view._search_count.text() == "0"
+    assert editor.extraSelections() == []
+
+
 def test_enter_right_after_typing_uses_the_new_search(qapp) -> None:
     view = _viewer(qapp)
     view._search_input.setText("the end")  # search is still waiting (debounce)

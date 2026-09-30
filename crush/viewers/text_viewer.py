@@ -190,6 +190,9 @@ class TextView(QWidget):
         self._current_hit_index: int = -1
         # (first, last visible position, hit count) the highlights were drawn for.
         self._highlighted_range: tuple[int, int, int] | None = None
+        # True while _update_visible_highlights sets the editor's highlights:
+        # that emits updateRequest synchronously, which calls it again.
+        self._applying_highlights = False
         self._build_ui()
 
         if isinstance(data, bytes):
@@ -398,10 +401,16 @@ class TextView(QWidget):
     def _update_visible_highlights(self) -> None:
         """Mark the hits in the visible part of the text (all hits are
         found; drawing them all at once would slow the editor down)."""
+        if self._applying_highlights:
+            # Re-entered from the updateRequest our own setExtraSelections()
+            # emits -- before the editor has taken the new selections, so
+            # this call would set them again, endlessly (crash when a search
+            # went from hits to none). The next regular update redraws.
+            return
         if not self._hit_starts:
             if self._highlighted_range is not None or self._editor.extraSelections():
                 self._highlighted_range = None
-                self._editor.setExtraSelections([])
+                self._set_highlights([])
             return
         first = self._editor.firstVisibleBlock().position()
         last_block = self._editor.cursorForPosition(
@@ -424,7 +433,14 @@ class TextView(QWidget):
             sel.cursor = cursor
             sel.format = fmt
             selections.append(sel)
-        self._editor.setExtraSelections(selections)
+        self._set_highlights(selections)
+
+    def _set_highlights(self, selections: list[QTextEdit.ExtraSelection]) -> None:
+        self._applying_highlights = True
+        try:
+            self._editor.setExtraSelections(selections)
+        finally:
+            self._applying_highlights = False
 
     def _ensure_search_current(self) -> None:
         if self._search_timer.isActive():
