@@ -24,8 +24,12 @@ _XML_PLIST_SIG = b"<?xml"
 class PlistParser(AbstractParser):
     SUPPORTED_EXTENSIONS = [".plist", ".sfl", ".archive"]
     DISPLAY_NAME = "Property list (plist)"
-    # Only ever sets the same bplist converter (module-global), so parsing
-    # on a background thread can't race with another plist parse.
+    # parse() sets ccl_bplist's module-global object converter, as do
+    # crush/core/ios_keybag.py (a different converter) and
+    # crush/core/formatters.py. Off the UI thread this is only safe because
+    # busy_call's dialog is ApplicationModal: nothing else can start a
+    # bplist decode meanwhile. Running any of those in the background too
+    # would race.
     PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:

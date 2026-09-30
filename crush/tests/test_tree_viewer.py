@@ -3,6 +3,9 @@
 """Tests for TreeViewer (crush/viewers/tree_viewer.py)."""
 from __future__ import annotations
 
+import pytest
+
+from crush.viewers import tree_viewer
 from crush.viewers.tree_viewer import TreeViewer
 
 _UINT64_MAX = (1 << 64) - 1
@@ -90,34 +93,75 @@ def _child_keys(widget: TreeViewer, index) -> list[str]:
     return [model.index(row, 0, index).data() for row in range(model.rowCount(index))]
 
 
+def _expand(qapp, widget: TreeViewer, index) -> None:
+    """Expand as a click does: the view builds the rows in its layout pass."""
+    widget.show()
+    widget._tree.expand(index)
+    qapp.processEvents()
+
+
 def _visible(widget: TreeViewer, index) -> bool:
     return not widget._tree.isRowHidden(index.row(), index.parent())
 
 
-def test_only_the_top_level_is_built_and_expanded_on_open(qapp) -> None:
-    widget = TreeViewer({"outer": {"inner": {"leaf": 1}}})
+@pytest.fixture
+def no_initial_expand(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Open trees fully collapsed, so every row below the top is unbuilt."""
+    monkeypatch.setattr(tree_viewer, "_INITIAL_EXPAND_ROWS", 0)
+
+
+def test_small_tree_opens_two_levels_expanded(qapp) -> None:
+    widget = TreeViewer({"outer": {"inner": {"deeper": {"leaf": 1}}}})
     outer = widget._model.index(0, 0)
+    inner = widget._model.index(0, 0, outer)
+    deeper = widget._model.index(0, 0, inner)
 
     assert widget._tree.isExpanded(outer)
-    assert _child_keys(widget, outer) == ["inner"]
-    inner = widget._model.index(0, 0, outer)
-    assert not widget._tree.isExpanded(inner)
-    assert widget._model.rowCount(inner) == 0  # not built yet ...
-    assert widget._model.hasChildren(inner)  # ... but shown as expandable
+    assert widget._tree.isExpanded(inner)
+    assert deeper.data() == "deeper"
+    assert not widget._tree.isExpanded(deeper)
+    assert widget._model.rowCount(deeper) == 0  # not built yet ...
+    assert widget._model.hasChildren(deeper)  # ... but shown as expandable
 
 
-def test_expanding_a_row_builds_its_children(qapp) -> None:
+def test_large_top_level_list_opens_collapsed_and_unbuilt(qapp) -> None:
+    records = [{"id": i, "v": f"value {i}"} for i in range(tree_viewer._INITIAL_EXPAND_ROWS)]
+    widget = TreeViewer(records)
+
+    assert widget._model.rowCount() == len(records)
+    first = widget._model.index(0, 0)
+    assert not widget._tree.isExpanded(first)
+    assert widget._model.rowCount(first) == 0
+    assert first.siblingAtColumn(1).data() == "(2 keys)"
+
+
+def test_second_level_over_the_budget_stays_collapsed(qapp) -> None:
+    records = [{"id": i, "v": i} for i in range(tree_viewer._INITIAL_EXPAND_ROWS // 2 + 1)]
+    widget = TreeViewer({"records": records})
+    top = widget._model.index(0, 0)
+
+    assert widget._tree.isExpanded(top)
+    assert widget._model.rowCount(top) == len(records)
+    first = widget._model.index(0, 0, top)
+    assert not widget._tree.isExpanded(first)
+    assert widget._model.rowCount(first) == 0
+
+
+def test_expanding_a_row_builds_its_children(qapp, no_initial_expand) -> None:
     widget = TreeViewer({"outer": {"inner": {"leaf": 1, "list": [7, 8]}}})
-    inner = widget._model.index(0, 0, widget._model.index(0, 0))
+    outer = widget._model.index(0, 0)
+    _expand(qapp, widget, outer)
+    inner = widget._model.index(0, 0, outer)
+    assert widget._model.rowCount(inner) == 0
 
-    widget._tree.expand(inner)
+    _expand(qapp, widget, inner)
 
     assert _child_keys(widget, inner) == ["leaf", "list"]
     assert widget._model.index(0, 1, inner).data() == "1"
     assert widget._model.index(1, 1, inner).data() == "(2 items)"
 
 
-def test_expand_all_builds_every_row(qapp) -> None:
+def test_expand_all_builds_every_row(qapp, no_initial_expand) -> None:
     widget = TreeViewer({"a": {"b": {"c": {"d": "deep"}}}})
 
     widget._expand_all()
@@ -129,27 +173,29 @@ def test_expand_all_builds_every_row(qapp) -> None:
     assert idx.siblingAtColumn(1).data() == "deep"
 
 
-def test_class_metadata_rows_stay_hidden_when_built_on_demand(qapp) -> None:
+def test_class_metadata_rows_stay_hidden_when_built_on_demand(qapp, no_initial_expand) -> None:
     obj = {"$class": {"$classname": "NSDate"}, "time": 1.5}
     widget = TreeViewer({"outer": {"date": obj}})
-    date = widget._model.index(0, 0, widget._model.index(0, 0))
+    outer = widget._model.index(0, 0)
+    _expand(qapp, widget, outer)
+    date = widget._model.index(0, 0, outer)
 
-    widget._tree.expand(date)
+    _expand(qapp, widget, date)
 
     assert date.siblingAtColumn(1).data() == "(1 keys)"
     assert date.siblingAtColumn(2).data() == "NSDate"
     assert _child_keys(widget, date) == ["time"]
 
 
-def test_filter_finds_a_hit_in_rows_not_built_yet(qapp) -> None:
+def test_filter_finds_a_hit_in_rows_not_built_yet(qapp, no_initial_expand) -> None:
     widget = TreeViewer({"root": {"a": {"deep": {"x": "needle"}}, "b": {"deep": {"x": "hay"}}}})
     root = widget._model.index(0, 0)
-    a = widget._model.index(0, 0, root)
-    b = widget._model.index(1, 0, root)
-    assert widget._model.rowCount(a) == 0
+    assert widget._model.rowCount(root) == 0
 
     widget._apply_filter("NEEDLE")
 
+    a = widget._model.index(0, 0, root)
+    b = widget._model.index(1, 0, root)
     deep = widget._model.index(0, 0, a)
     hit = widget._model.index(0, 0, deep)
     assert hit.siblingAtColumn(1).data() == "needle"
@@ -161,7 +207,7 @@ def test_filter_finds_a_hit_in_rows_not_built_yet(qapp) -> None:
     assert _visible(widget, b)
 
 
-def test_filter_matches_generated_value_text_in_rows_not_built_yet(qapp) -> None:
+def test_filter_matches_generated_value_text_in_rows_not_built_yet(qapp, no_initial_expand) -> None:
     widget = TreeViewer({"root": {"a": {"blob": b"\x00" * 3}, "b": {"n": 1}}})
 
     widget._apply_filter("<blob 3 b>")
@@ -171,24 +217,42 @@ def test_filter_matches_generated_value_text_in_rows_not_built_yet(qapp) -> None
     assert not _visible(widget, widget._model.index(1, 0, root))
 
 
-def test_rows_built_while_a_filter_is_active_are_filtered(qapp) -> None:
+def test_rows_built_while_a_filter_is_active_are_filtered(qapp, no_initial_expand) -> None:
     widget = TreeViewer({"root": {"match": {"keep": "x", "drop": "y"}}})
     widget._apply_filter("match")
-    match = widget._model.index(0, 0, widget._model.index(0, 0))
+    root = widget._model.index(0, 0)
+    match = widget._model.index(0, 0, root)
     assert widget._model.rowCount(match) == 0  # the hit is the row itself
 
-    widget.show()
-    widget._tree.expand(match)
-    # Hiding rows defers the view's layout; expand() then only records the
-    # row and the rows are built by that layout pass, as in the running app.
-    qapp.processEvents()
+    _expand(qapp, widget, root)
+    _expand(qapp, widget, match)
 
     assert _child_keys(widget, match) == ["keep", "drop"]
     assert not _visible(widget, widget._model.index(0, 0, match))
     assert not _visible(widget, widget._model.index(1, 0, match))
 
 
-def test_hex_offset_selects_a_row_not_built_yet(qapp) -> None:
+def test_subtree_search_answers_each_container_once_per_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On the way down to a hit the filter asks again at every level it
+    builds; the answers from the first walk are reused, not walked again."""
+    inner = {"x": "needle"}
+    middle = {"inner": inner}
+    outer = {"middle": middle}
+    seen: dict[int, bool] = {}
+    assert tree_viewer._subtree_matches(outer, "needle", seen)
+    assert seen[id(middle)] and seen[id(inner)]
+
+    def fail(obj):  # noqa: ANN001, ANN202
+        raise AssertionError("walked again")
+
+    monkeypatch.setattr(tree_viewer, "_child_entries", fail)
+    assert tree_viewer._subtree_matches(middle, "needle", seen)
+    assert tree_viewer._subtree_matches(inner, "needle", seen)
+
+
+def test_hex_offset_selects_a_row_not_built_yet(qapp, no_initial_expand) -> None:
     widget = TreeViewer(
         {"outer": {"inner": {"leaf": 42}}},
         raw=bytes(16),

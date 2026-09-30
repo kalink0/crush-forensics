@@ -73,7 +73,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed UFDR trees leaving out Nodes rows with an unreadable type, and a path collision or a `database.json` device missing from the dump only being logged; they're now shown as entry statuses.
 - Fixed SQLite Freelist Recovery and Freeblocks showing "No … found" when the file or a page couldn't be read, and a freelist or freeblock chain that stopped early, or cells that couldn't be decoded (also in WAL history and the Rollback Journal), leaving no trace; a status line above the table now says so.
 - Fixed SQLite overflow values larger than 10,000 overflow pages being cut short in WAL Frames, Freelist Recovery and File Structure, and File Structure cutting cell values at 120 characters.
-- Fixed large XML, JSON and plist files (e.g. a 15 MB XML) freezing the window for tens of seconds: files over 8 MiB are parsed in the background behind a "please wait" dialog, tree rows are built when their parent is first expanded, and the tree opens with only the top level expanded. Addresses [#127](https://github.com/kalink0/crush-forensics/issues/127).
+- Fixed large XML, JSON and plist files (e.g. a 15 MB XML) freezing the window for tens of seconds when opened. Addresses [#127](https://github.com/kalink0/crush-forensics/issues/127).
 
 ### Changed
 

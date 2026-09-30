@@ -37,6 +37,10 @@ _PENDING_ROLE = Qt.ItemDataRole.UserRole + 3
 # the Type column instead.
 _CLASS_META_KEYS = ("$class", "$classes", "$classname")
 
+# Rows the initial expansion may build (see TreeViewer._expand_initially):
+# a few screens' worth, so opening stays instant whatever the file's size.
+_INITIAL_EXPAND_ROWS = 1000
+
 
 class _ObjRef:
     """Keep the node's original decoded value opaque to Qt's QVariant
@@ -65,6 +69,17 @@ def _has_child_rows(obj: Any) -> bool:
     return isinstance(obj, (list, tuple)) and bool(obj)
 
 
+def _child_row_count(item: QStandardItem) -> int:
+    """Rows under *item*, built or not."""
+    ref = item.data(_USER_ROLE)
+    if not item.data(_PENDING_ROLE) or not isinstance(ref, _ObjRef):
+        return item.rowCount()
+    obj = ref.obj
+    if isinstance(obj, dict):
+        return sum(1 for k in obj if k not in _CLASS_META_KEYS)
+    return len(obj)
+
+
 def _value_texts(obj: Any) -> tuple[str, str]:
     """(English original, display text) of *obj*'s Value cell."""
     if isinstance(obj, dict):
@@ -82,15 +97,25 @@ def _value_texts(obj: Any) -> tuple[str, str]:
     return str(obj), str(obj)
 
 
-def _subtree_matches(obj: Any, text: str) -> bool:
+def _subtree_matches(obj: Any, text: str, seen: dict[int, bool]) -> bool:
     """Whether a row below *obj* would show *text* (lowercase) in its Key or
-    Value cell -- the filter's test, run on the data of rows not built yet."""
+    Value cell -- the filter's test, run on the data of rows not built yet.
+    *seen* keeps each container's answer for one filter pass: the filter asks
+    again at every level it builds on the way down to a hit."""
+    known = seen.get(id(obj))
+    if known is not None:
+        return known
+    found = False
     for key, value in _child_entries(obj):
-        if text in key.lower() or text in _value_texts(value)[1].lower():
-            return True
-        if _subtree_matches(value, text):
-            return True
-    return False
+        if (
+            text in key.lower()
+            or text in _value_texts(value)[1].lower()
+            or _subtree_matches(value, text, seen)
+        ):
+            found = True
+            break
+    seen[id(obj)] = found
+    return found
 
 
 class _LazyTreeModel(QStandardItemModel):
@@ -311,9 +336,31 @@ class TreeViewer(QWidget):
                 self._build_items(root, value, str(i), ())
         else:
             self._build_items(root, data, "value", ())
-        # Top-level rows only: each deeper level would be built up front, and
-        # one level down can already be ~500k rows (issue #127).
-        self._tree.expandToDepth(0)
+        self._expand_initially()
+
+    def _expand_initially(self) -> None:
+        """Expand the first levels (up to depth 1) as long as that builds at
+        most _INITIAL_EXPAND_ROWS rows in total, a whole level at a time: a
+        small tree opens as before, a large one (e.g. a JSON export's
+        top-level list of 500k records) opens collapsed instead of building
+        and expanding every record (issue #127). Nothing is left out: every
+        row stays one click away."""
+        budget = _INITIAL_EXPAND_ROWS
+        root = self._model.invisibleRootItem()
+        level = [root.child(row, 0) for row in range(root.rowCount())]
+        for _depth in range(2):
+            cost = sum(_child_row_count(item) for item in level)
+            if cost == 0 or cost > budget:
+                return
+            budget -= cost
+            # Build first, then expand: rows added under an expanded row
+            # cost the view per row.
+            for item in level:
+                self._populate_children(item)
+            for item in level:
+                if item.rowCount():
+                    self._tree.expand(self._model.indexFromItem(item))
+            level = [item.child(row, 0) for item in level for row in range(item.rowCount())]
 
     def _build_items(
         self,
@@ -393,10 +440,21 @@ class TreeViewer(QWidget):
         """Show/hide rows whose key or value contains the search text."""
         self._filter_timer.stop()
         self._filter_text = text.lower()
-        self._filter_items(self._model.invisibleRootItem(), self._filter_text)
+        # Builds the rows of every hit not built yet -- on the UI thread, so a
+        # short search text on a large tree takes a while: say so.
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self._filter_items(self._model.invisibleRootItem(), self._filter_text)
+        finally:
+            QApplication.restoreOverrideCursor()
 
-    def _filter_items(self, parent: QStandardItem, text: str) -> bool:
+    def _filter_items(
+        self, parent: QStandardItem, text: str, seen: dict[int, bool] | None = None
+    ) -> bool:
+        if seen is None:
+            seen = {}
         any_visible = False
+        parent_index = self._model.indexFromItem(parent)
         for row in range(parent.rowCount()):
             key_item = parent.child(row, 0)
             val_item = parent.child(row, 1)
@@ -405,17 +463,13 @@ class TreeViewer(QWidget):
             if text and key_item.data(_PENDING_ROLE):
                 # Rows not built yet: build them only where there's a hit.
                 ref = key_item.data(_USER_ROLE)
-                if isinstance(ref, _ObjRef) and _subtree_matches(ref.obj, text):
+                if isinstance(ref, _ObjRef) and _subtree_matches(ref.obj, text, seen):
                     self._populate_children(key_item, apply_filter=False)
-            child_visible = self._filter_items(key_item, text)
+            child_visible = self._filter_items(key_item, text, seen)
             key_match = not text or text in key_item.text().lower()
             val_match = val_item and text in val_item.text().lower()
             visible = key_match or bool(val_match) or child_visible
-            self._tree.setRowHidden(
-                row,
-                self._model.indexFromItem(parent),
-                not visible,
-            )
+            self._tree.setRowHidden(row, parent_index, not visible)
             any_visible = any_visible or visible
         return any_visible
 
