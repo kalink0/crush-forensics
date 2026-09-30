@@ -240,16 +240,47 @@ def test_subtree_search_answers_each_container_once_per_pass(
     inner = {"x": "needle"}
     middle = {"inner": inner}
     outer = {"middle": middle}
-    seen: dict[int, bool] = {}
-    assert tree_viewer._subtree_matches(outer, "needle", seen)
-    assert seen[id(middle)] and seen[id(inner)]
+    fp = tree_viewer._FilterPass("needle")
+    assert tree_viewer._subtree_matches(outer, fp)
+    assert fp.seen[id(middle)] and fp.seen[id(inner)]
 
     def fail(obj):  # noqa: ANN001, ANN202
         raise AssertionError("walked again")
 
     monkeypatch.setattr(tree_viewer, "_child_entries", fail)
-    assert tree_viewer._subtree_matches(middle, "needle", seen)
-    assert tree_viewer._subtree_matches(inner, "needle", seen)
+    assert tree_viewer._subtree_matches(middle, fp)
+    assert tree_viewer._subtree_matches(inner, fp)
+
+
+@pytest.mark.parametrize(
+    "translation",
+    [
+        None,  # UI in English
+        {"({count} keys)": "({count} Schlüssel)", "({count} items)": "({count} Einträge)",
+         "<BLOB {size:,} B>": "<BLOB {size:,} B>"},
+        {"({count} keys)": "({anzahl} Schlüssel)"},  # broken placeholder -> English
+    ],
+)
+def test_filter_sees_the_same_value_text_as_the_cell(
+    monkeypatch: pytest.MonkeyPatch, translation: dict[str, str] | None
+) -> None:
+    """The filter's text for rows not built yet must equal what the Value
+    cell will show, in the UI language, or a hit is missed or invented."""
+    from crush.viewers import generated_text
+
+    if translation is not None:
+        def fake(template: str) -> str:
+            return translation.get(template, template)
+
+        monkeypatch.setattr(generated_text, "gen_text", fake)
+        monkeypatch.setattr(tree_viewer, "gen_text", fake)
+
+    values = [
+        {"a": 1, "$class": {"$classname": "X"}}, [1, 2, 3], b"\x00" * 1234, "text", 42, None,
+    ]
+    translated: dict[str, str] = {}
+    for value in values:
+        assert tree_viewer._display_value_text(value, translated) == tree_viewer._value_texts(value)[1]
 
 
 def test_hex_offset_selects_a_row_not_built_yet(qapp, no_initial_expand) -> None:

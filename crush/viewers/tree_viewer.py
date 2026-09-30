@@ -25,7 +25,7 @@ from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 from crush.core.issues import ParseIssue, render
 from crush.ui.i18n import translate
-from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen
+from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_text
 
 _USER_ROLE = Qt.ItemDataRole.UserRole
 _BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -80,16 +80,28 @@ def _child_row_count(item: QStandardItem) -> int:
     return len(obj)
 
 
+_KEYS_TEXT = QT_TRANSLATE_NOOP("GeneratedView", "({count} keys)")
+_ITEMS_TEXT = QT_TRANSLATE_NOOP("GeneratedView", "({count} items)")
+_BLOB_TEXT = QT_TRANSLATE_NOOP("GeneratedView", "<BLOB {size:,} B>")
+
+
+def _generated_value(obj: Any) -> tuple[str, dict[str, int]] | None:
+    """(template, params) of a Value cell in Crush's own words; None for file data."""
+    if isinstance(obj, dict):
+        return _KEYS_TEXT, {"count": sum(1 for k in obj if k not in _CLASS_META_KEYS)}
+    if isinstance(obj, (list, tuple)):
+        return _ITEMS_TEXT, {"count": len(obj)}
+    if isinstance(obj, bytes):
+        return _BLOB_TEXT, {"size": len(obj)}
+    return None
+
+
 def _value_texts(obj: Any) -> tuple[str, str]:
     """(English original, display text) of *obj*'s Value cell."""
-    if isinstance(obj, dict):
-        return Gen(
-            QT_TRANSLATE_NOOP("GeneratedView", "({count} keys)"), count=len(_child_entries(obj))
-        ).pair()
-    if isinstance(obj, (list, tuple)):
-        return Gen(QT_TRANSLATE_NOOP("GeneratedView", "({count} items)"), count=len(obj)).pair()
-    if isinstance(obj, bytes):
-        return Gen(QT_TRANSLATE_NOOP("GeneratedView", "<BLOB {size:,} B>"), size=len(obj)).pair()
+    generated = _generated_value(obj)
+    if generated is not None:
+        template, params = generated
+        return Gen(template, **params).pair()
     if isinstance(obj, ParseIssue):
         # A parser's note (e.g. in the Realm File Structure tree): shown in
         # the UI language, copied in English.
@@ -97,24 +109,52 @@ def _value_texts(obj: Any) -> tuple[str, str]:
     return str(obj), str(obj)
 
 
-def _subtree_matches(obj: Any, text: str, seen: dict[int, bool]) -> bool:
-    """Whether a row below *obj* would show *text* (lowercase) in its Key or
-    Value cell -- the filter's test, run on the data of rows not built yet.
-    *seen* keeps each container's answer for one filter pass: the filter asks
-    again at every level it builds on the way down to a hit."""
-    known = seen.get(id(obj))
+def _display_value_text(obj: Any, translated: dict[str, str]) -> str:
+    """_value_texts(obj)[1], with each template translated once per filter
+    pass (kept in *translated*) instead of once per row: the filter asks for
+    every row's text, built or not."""
+    generated = _generated_value(obj)
+    if generated is None:
+        return _value_texts(obj)[1]
+    template, params = generated
+    display = translated.get(template)
+    if display is None:
+        display = translated[template] = gen_text(template)
+    try:
+        return display.format(**params)
+    except (KeyError, IndexError, ValueError):
+        # As Gen.pair(): a translation whose placeholders don't fit falls back to English.
+        return template.format(**params)
+
+
+class _FilterPass:
+    """What one filter pass remembers: each container's answer (the filter
+    asks again at every level it builds on the way down to a hit) and each
+    translated template."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.seen: dict[int, bool] = {}
+        self.translated: dict[str, str] = {}
+
+
+def _subtree_matches(obj: Any, fp: _FilterPass) -> bool:
+    """Whether a row below *obj* would show the filter text (lowercase) in
+    its Key or Value cell -- the filter's test, run on the data of rows not
+    built yet."""
+    known = fp.seen.get(id(obj))
     if known is not None:
         return known
     found = False
     for key, value in _child_entries(obj):
         if (
-            text in key.lower()
-            or text in _value_texts(value)[1].lower()
-            or _subtree_matches(value, text, seen)
+            fp.text in key.lower()
+            or fp.text in _display_value_text(value, fp.translated).lower()
+            or _subtree_matches(value, fp)
         ):
             found = True
             break
-    seen[id(obj)] = found
+    fp.seen[id(obj)] = found
     return found
 
 
@@ -449,12 +489,11 @@ class TreeViewer(QWidget):
             QApplication.restoreOverrideCursor()
 
     def _filter_items(
-        self, parent: QStandardItem, text: str, seen: dict[int, bool] | None = None
+        self, parent: QStandardItem, text: str, fp: _FilterPass | None = None
     ) -> bool:
-        if seen is None:
-            seen = {}
+        if fp is None:
+            fp = _FilterPass(text)
         any_visible = False
-        parent_index = self._model.indexFromItem(parent)
         for row in range(parent.rowCount()):
             key_item = parent.child(row, 0)
             val_item = parent.child(row, 1)
@@ -463,13 +502,15 @@ class TreeViewer(QWidget):
             if text and key_item.data(_PENDING_ROLE):
                 # Rows not built yet: build them only where there's a hit.
                 ref = key_item.data(_USER_ROLE)
-                if isinstance(ref, _ObjRef) and _subtree_matches(ref.obj, text, seen):
+                if isinstance(ref, _ObjRef) and _subtree_matches(ref.obj, fp):
                     self._populate_children(key_item, apply_filter=False)
-            child_visible = self._filter_items(key_item, text, seen)
+            child_visible = self._filter_items(key_item, text, fp)
             key_match = not text or text in key_item.text().lower()
             val_match = val_item and text in val_item.text().lower()
             visible = key_match or bool(val_match) or child_visible
-            self._tree.setRowHidden(row, parent_index, not visible)
+            # Taken after the rows below were built: a model index isn't
+            # guaranteed to survive a structural change.
+            self._tree.setRowHidden(row, self._model.indexFromItem(parent), not visible)
             any_visible = any_visible or visible
         return any_visible
 
