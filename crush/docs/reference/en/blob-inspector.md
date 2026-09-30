@@ -55,7 +55,7 @@ After the pipeline runs, the resulting bytes are tested against all available in
 | **Hex view** | baseline | Annotated hex dump with address / hex / ASCII columns |
 | **UTF-8 text** | ✓ | Only ✓ when all bytes are valid UTF-8; strict decode |
 | **JSON** | ✓ | Pretty-prints valid JSON; also detects escaped JSON embedded in a string |
-| **Plist / bplist** | ✓ | Decodes binary (`bplist00`) or XML property list. NSKeyedArchiver payloads are automatically deserialised and the object graph is rendered as a Python pprint |
+| **Plist / bplist** | ✓ | Decodes binary (`bplist00`) or XML property list and shows it as in the [Plist / Tree Viewer](plist-tree-viewer.md): a tree (Decoded), the text, and for an NSKeyedArchiver archive a **Stored archive** tab, with Format, Status and the archive's object counts in a line above. **Copy** copies the decoded structure as text |
 | **XML** | ✓ | Parses and pretty-prints well-formed XML (via lxml) |
 | **Android Binary XML (ABX)** | ✓ | Reconstructs XML from Android's compact binary XML format |
 | **Image** | ✓ | Renders the image inline — PNG, JPEG, GIF, BMP, WebP, HEIC, AVIF |
@@ -76,7 +76,7 @@ After the pipeline runs, the resulting bytes are tested against all available in
 Many iOS apps store serialised objects as Base64-encoded bplist BLOBs in SQLite. To inspect:
 1. Right-click the cell → *Inspect Cell…*
 2. Add step: **Base64 (decode)**
-3. The Interpretations list shows **✓ Plist / bplist** — click it to read the deserialised object graph, including NSKeyedArchiver structures.
+3. The Interpretations list shows **✓ Plist / bplist** — click it to browse the deserialised object graph; for NSKeyedArchiver data, the **Stored archive** tab and the counts above show the archive as stored.
 
 **JWT / OAuth token stored in a database**
 

@@ -371,6 +371,8 @@ class _BlobPanel(QWidget):
         # steps) -- shown complete in the paged Hex Viewer page.
         self._current_data = b""
         self._hex_view_data: bytes | None = None
+        # The data the Plist page currently shows (built once per data).
+        self._plist_view_data: bytes | None = None
         self._schema_pool = None
         self._schema_message: str | None = None
         self._build_panel()
@@ -484,6 +486,20 @@ class _BlobPanel(QWidget):
         # however large it is (a text dump of it would freeze the dialog).
         self._hex_view = HexViewer(b"", self)
         self._stack.addWidget(self._hex_view)
+
+        # "Plist / bplist": the plist file viewer on the blob (tree, Stored
+        # archive tab for an NSKeyedArchiver archive, text), with the plist
+        # parser's Format/Status/archive counts in a line above -- the same
+        # as a plist file or a cell opened as a new tab.
+        self._plist_page = QWidget()
+        plist_layout = QVBoxLayout(self._plist_page)
+        plist_layout.setContentsMargins(0, 0, 0, 0)
+        self._plist_summary = QLabel()
+        self._plist_summary.setWordWrap(True)
+        self._plist_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        plist_layout.addWidget(self._plist_summary)
+        self._plist_view: QWidget | None = None
+        self._stack.addWidget(self._plist_page)
 
         content_col.addWidget(self._stack, stretch=1)
 
@@ -607,6 +623,7 @@ class _BlobPanel(QWidget):
         self._cached_image_data = None
         self._current_data = data
         self._hex_view_data = None
+        self._plist_view_data = None
 
         confident: list[str] = []
         uncertain: list[str] = []
@@ -752,7 +769,10 @@ class _BlobPanel(QWidget):
         self._stack.setCurrentIndex(0)
         if name in self._cached_results:
             self._copy_btn.setEnabled(True)
+            # Stays the text Copy / Copy all take, also on the Plist page.
             self._viewer.setPlainText(self._cached_results[name])
+            if name == "Plist / bplist" and self._show_plist(self._current_data):
+                self._stack.setCurrentWidget(self._plist_page)
         else:
             self._copy_btn.setEnabled(False)
             self._viewer.setPlainText(
@@ -773,6 +793,32 @@ class _BlobPanel(QWidget):
             self._stack.setCurrentIndex(0)
             self._copy_btn.setEnabled(True)
             self._viewer.setPlainText(translate("BlobInspector", "[not a recognised image format]"))
+
+    def _show_plist(self, data: bytes) -> bool:
+        """Put the plist parser's result for *data* on the Plist page; False
+        if the parser doesn't read it as a plist (the text page stays)."""
+        if self._plist_view_data is data and self._plist_view is not None:
+            return True
+        from crush.core.issues import render_value
+        from crush.core.vfs import BytesVFS
+        from crush.parsers.plist_parser import PlistParser
+        from crush.viewers.tree_text_viewer import TreeTextViewer
+
+        vfs = BytesVFS(data, name="blob")
+        result = PlistParser().parse(vfs.root(), vfs)
+        if result.viewer_type != "tree_text":
+            return False
+        if self._plist_view is not None:
+            self._plist_view.deleteLater()
+        self._plist_view = TreeTextViewer(result.data, self._plist_page, **result.viewer_hints)
+        self._plist_page.layout().addWidget(self._plist_view)
+        self._plist_summary.setText("  ·  ".join(
+            f"{translate('MetadataLabel', key)}: {render_value(value, localized=True)}"  # i18n: keep -- marked in metadata_labels
+            for key, value in result.metadata.items()
+            if key != "File size"
+        ))
+        self._plist_view_data = data
+        return True
 
     def _copy_current(self) -> None:
         if self._stack.currentIndex() == 2:

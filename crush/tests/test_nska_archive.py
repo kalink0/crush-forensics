@@ -266,6 +266,53 @@ def test_decoded_tree_still_hides_class_metadata(qapp) -> None:  # noqa: ARG001
     assert obj.siblingAtColumn(2).data() == "NSDate"
 
 
+# --- BLOB Inspector: same view as a plist file ---
+
+
+def _plist_page_tabs(panel) -> list[str]:  # noqa: ANN001
+    tabs = panel._plist_view._tabs
+    return [tabs.tabText(i) for i in range(tabs.count())]
+
+
+def test_blob_inspector_shows_an_archive_like_a_plist_file(qapp) -> None:  # noqa: ARG001
+    from crush.viewers.blob_inspector import _BlobPanel
+
+    panel = _BlobPanel(plistlib.dumps(_resolvable_graph(), fmt=plistlib.FMT_BINARY))
+    panel._select_format("Plist / bplist")
+
+    assert panel._stack.currentWidget() is panel._plist_page
+    assert _plist_page_tabs(panel) == ["Decoded", "Stored archive", "Text"]
+    summary = panel._plist_summary.text()
+    for part in ("Format: binary (NSKeyedArchiver)", "Objects: 7", "Unreachable objects: 1",
+                 "Shared objects: 2 (plus 0 class definitions)", "Top keys: extra, root"):
+        assert part in summary
+    # Copy keeps taking the interpretation's text.
+    assert panel._viewer.toPlainText() == panel._cached_results["Plist / bplist"]
+
+
+def test_blob_inspector_states_a_failed_resolution(qapp) -> None:  # noqa: ARG001
+    from crush.viewers.blob_inspector import _BlobPanel
+
+    archive = _graph()
+    archive["$version"] = 1
+    panel = _BlobPanel(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+    panel._select_format("Plist / bplist")
+
+    assert "NSKeyedArchiver deserialization failed" in panel._plist_summary.text()
+    assert "Stored archive" in _plist_page_tabs(panel)
+
+
+def test_blob_inspector_plain_plist_gets_the_tree_without_archive_rows(qapp) -> None:  # noqa: ARG001
+    from crush.viewers.blob_inspector import _BlobPanel
+
+    panel = _BlobPanel(plistlib.dumps({"k": 1}, fmt=plistlib.FMT_BINARY))
+    panel._select_format("Plist / bplist")
+
+    assert panel._stack.currentWidget() is panel._plist_page
+    assert _plist_page_tabs(panel) == ["Decoded", "Text"]
+    assert "Objects" not in panel._plist_summary.text()
+
+
 def test_viewer_adds_the_archive_tab_only_when_given(qapp) -> None:  # noqa: ARG001
     from crush.viewers.tree_text_viewer import TreeTextViewer
 

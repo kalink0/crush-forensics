@@ -17,7 +17,7 @@ All notable changes to Crush will be documented in this file.
 - Added to raw disk images -> Support for NTFS alternate data streams, listed and readable beside their files.
 - Every release now carries a forensic integrity audit report (`crush-forensic-audit.html` + `.json`): the forensic test suite runs fresh on the release commit on Linux, macOS and Windows, and the result is attached and summarised in the release notes, even on failure. Each check links to its test code at that commit.
 - Added to the documentation -> Support for a forensic test coverage page: which checks exist per source, filesystem, file format and tool, and where there are none.
-- Added to the Plist viewer -> Support for NSKeyedArchiver archive structure: a Stored archive tab showing the archive as stored, and counts of shared, unreachable and missing objects in the Properties panel.
+- Added to the Plist viewer and BLOB Inspector -> Support for NSKeyedArchiver archive structure: a Stored archive tab showing the archive as stored, and counts of shared, unreachable and missing objects in the Properties panel.
 
 ### Bug Fixes
 
