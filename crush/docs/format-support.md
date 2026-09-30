@@ -42,7 +42,7 @@ Limitations
 
 Limitations
 - NSKeyedArchiver decoding is best-effort and may fall back to raw structures.
-- The resolved tree follows `$top`'s `root` only; other `$top` keys are listed under `Top keys` and shown in the Object table tab. An object referenced from several places appears in the resolved tree once per reference.
+- When `$top` has a `root` key, the resolved tree follows `root` only; any other `$top` key is listed under `Top keys` and shown in the Object table tab. Without `root`, all of `$top` is resolved. An object referenced from several places appears in the resolved tree once per reference.
 - NSKeyedArchiver archives in XML form are not resolved: the tree shows the stored object table, and `Format` says so.
 - UIDs in the Object table tab are not clickable; follow a reference by its `$objects` index.
 - Parse failures fall back to Hex Viewer.

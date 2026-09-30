@@ -19,8 +19,9 @@ Layout, as written by Apple's open-source Foundation
 
 Resolving the graph into a tree (ccl_bplist) copies a shared object into
 every place that refers to it, drops objects no UID path from `$top`
-reaches, and follows `$top["root"]` only. These counts say what the tree
-alone doesn't show.
+reaches, and -- when `$top` has a `root` -- follows `root` only, leaving
+any other `$top` key out (without `root` it resolves all of `$top`).
+These counts say what the tree alone doesn't show.
 """
 from __future__ import annotations
 
