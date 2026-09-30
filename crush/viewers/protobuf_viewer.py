@@ -34,6 +34,7 @@ from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 from crush.viewers.tree_viewer import TreeViewer
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_item
+from crush.viewers.value_field import show_value
 
 
 class ProtobufViewer(QWidget):
@@ -578,8 +579,13 @@ class ProtobufTreeWidget(QWidget):
             return
         _, val_item = items
         full_text = val_item.data(_FULLTEXT_ROLE)
-        self._value_field.setText(full_text if full_text is not None else val_item.text())
-        self._value_field.setCursorPosition(0)
+        raw = val_item.data(_RAW_ROLE)
+        if isinstance(raw, bytes) and full_text == raw.hex(" "):
+            # Shown as its bytes: past the field's length, cut with a note
+            # instead of setText() silently dropping the rest.
+            show_value(self._value_field, raw)
+        else:
+            show_value(self._value_field, full_text if full_text is not None else val_item.text())
 
     def _on_context_menu(self, pos: object) -> None:
         index = self._tree.indexAt(pos)

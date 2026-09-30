@@ -18,6 +18,7 @@ All notable changes to Crush will be documented in this file.
 - Every release now carries a forensic integrity audit report (`crush-forensic-audit.html` + `.json`): the forensic test suite runs fresh on the release commit on Linux, macOS and Windows, and the result is attached and summarised in the release notes, even on failure. Each check links to its test code at that commit.
 - Added to the documentation -> Support for a forensic test coverage page: which checks exist per source, filesystem, file format and tool, and where there are none.
 - Added to the Plist viewer and BLOB Inspector -> Support for NSKeyedArchiver archive structure: a Stored archive tab showing the archive as stored, its root class, and counts of shared, unreachable and missing objects.
+- Added to the Tree Viewer -> Support for showing a blob's bytes as hex in the Value field.
 
 ### Bug Fixes
 
@@ -77,6 +78,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed an NSKeyedArchiver plist that references a missing object, or whose objects refer to each other in a cycle, opening as hex with "Parse error"; it now opens unresolved and says why.
 - Fixed the plist tree showing an empty `$class` row above the fields of a resolved NSKeyedArchiver object.
 - Fixed JSON, XML, plist and other tree views hiding keys named `$class`, `$classes` or `$classname` and taking the Type from them; only a tree resolved from an NSKeyedArchiver archive folds them into its Type column.
+- Fixed the Value field of the Tree, Protobuf and Analyzer result views silently ending a long value early; it now says how much of the total it shows.
 - Fixed large XML, JSON and plist files (e.g. a 15 MB XML) freezing the window for tens of seconds when opened. Addresses [#127](https://github.com/kalink0/crush-forensics/issues/127).
 - Fixed the Linux AppImage not starting on systems without `libfuse2` installed (e.g. a fresh Ubuntu 24.04).
 

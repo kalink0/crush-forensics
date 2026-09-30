@@ -234,6 +234,7 @@ Limitations
 
 ### Tree Viewer
 - Hierarchical view for plist/XML/JSON structures with search and copy.
+- The Value field below the tree shows a blob's bytes as hex (its cell only says `<BLOB n B>`). A value longer than the field can hold (32,767 characters, ~10,900 bytes as hex) is shown up to that point with a note of its total size, as in the Protobuf and Analyzer result views; Copy value and Inspect BLOB take all of it.
 - Rows below the top level are built the first time their parent is expanded. On opening, the first two levels are expanded as long as that shows at most 1,000 rows (checked a whole level at a time); a larger structure opens collapsed, every row still one click away. The search covers the whole structure, including rows not built yet.
 - A plist, XML or JSON file over 8 MiB is parsed in the background behind a "please wait" dialog.
 

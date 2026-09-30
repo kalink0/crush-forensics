@@ -26,6 +26,7 @@ from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
 from crush.core.issues import ParseIssue, render
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_text
+from crush.viewers.value_field import show_value
 
 _USER_ROLE = Qt.ItemDataRole.UserRole
 _BYTE_RANGE_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -561,9 +562,11 @@ class TreeViewer(QWidget):
         return key, val
 
     def _update_value_field(self) -> None:
+        # A blob's cell says only "<BLOB n B>"; the field below shows its
+        # bytes (as the Protobuf viewer does), complete or with a note.
+        obj, _ = self._current_obj_and_key()
         _, val = self._current_key_value()
-        self._value_field.setText(val)
-        self._value_field.setCursorPosition(0)
+        show_value(self._value_field, obj if isinstance(obj, bytes) else val)
 
     def _current_obj_and_key(self) -> tuple[Any, str]:
         index = self._tree.currentIndex()

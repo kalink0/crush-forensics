@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from crush.ui.i18n import translate
+from crush.viewers.value_field import show_value
 
 _ROW_STATUS_COLORS = {
     "error": QColor(255, 205, 205),
@@ -183,7 +184,7 @@ class AnalyzerResultViewer(QWidget):
         # and copy just part of a long cell value (e.g. one path segment
         # out of a full app bundle path), which the row-level copy actions
         # above can't do since they always copy the whole cell/row.
-        self._value_field.setText(str(current.data() or "") if current.isValid() else "")
+        show_value(self._value_field, str(current.data() or "") if current.isValid() else "")
 
     def _apply_filter(self, text: str) -> None:
         self._proxy_model.setFilterFixedString(text)
