@@ -26,36 +26,38 @@ from pathlib import Path
 # Configuration — bump VERSION and update SHA256 when upgrading
 # ---------------------------------------------------------------------------
 
+# The only place the bundled version is set: the release and nightly
+# workflows run this script too.
 VERSION = "0.7.0"
 
 # (release_asset_name, target_filename_in_bin_dir, sha256_or_None)
-# sha256 is optional: set to None to skip verification, or fill in after
-# downloading once and running: sha256sum <file>
+# sha256 of the release asset (GitHub shows it as the asset's digest); None
+# skips verification. Update together with VERSION.
 _ASSETS: list[tuple[str, str, str | None]] = [
     (
         f"unifiedlog_iterator-v{VERSION}-x86_64-unknown-linux-gnu.tar.gz",
         "unifiedlog_iterator-x86_64-unknown-linux-gnu",
-        None,
+        "7192a187f93c6fb8eafdad9885522e73dc2ae7a9a5000f5957edd4fcd0ca1c82",
     ),
     (
         f"unifiedlog_iterator-v{VERSION}-aarch64-unknown-linux-gnu.tar.gz",
         "unifiedlog_iterator-aarch64-unknown-linux-gnu",
-        None,
+        "ab40daf464376a2e52c4b51fd82b003b7f360a4e2726501ba853889fa3a959f4",
     ),
     (
         f"unifiedlog_iterator-v{VERSION}-x86_64-apple-darwin.tar.gz",
         "unifiedlog_iterator-x86_64-apple-darwin",
-        None,
+        "32e23956c3ac6364f56e96243357cf02959f79a6e24a5afddba1047914bf7f1a",
     ),
     (
         f"unifiedlog_iterator-v{VERSION}-aarch64-apple-darwin.tar.gz",
         "unifiedlog_iterator-aarch64-apple-darwin",
-        None,
+        "bf5c4a3418b133fbd403ca7893a2280acb8c2c3605b4ad6f87f9fc75b35a20b7",
     ),
     (
         f"unifiedlog_iterator-v{VERSION}-x86_64-pc-windows-msvc.zip",
         "unifiedlog_iterator-x86_64-pc-windows-msvc.exe",
-        None,
+        "4776ac9c677ad3bdec6a0cee3e92e27308f7493a0ac4e4fedde65555eb36373d",
     ),
 ]
 

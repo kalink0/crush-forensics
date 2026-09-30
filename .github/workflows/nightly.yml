@@ -10,7 +10,6 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  UL_VERSION: "0.6.0"
 
 jobs:
   check:
@@ -67,7 +66,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || needs.check.outputs.should_run == 'true'
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
+        # Linux pinned: the AppImage needs the build system's glibc (2.39 on
+        # 24.04), so a moving ubuntu-latest would raise that floor unannounced.
+        os: [ubuntu-24.04, windows-latest, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -79,12 +80,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Version pinned inside scripts/download_peach_binaries.py itself. Downloads
-      # all 3 platforms regardless of runner OS, matching build.yml's approach.
-      # macOS is a single universal binary as of peach v0.2.1, so no
-      # arch-specific variable is needed for it (unlike unifiedlog_iterator).
+      # Bundled tool versions (and hashes) are pinned only inside these
+      # scripts, as in build.yml -- never a second copy here.
       - name: Download peach-forensics binaries
         run: python scripts/download_peach_binaries.py
+
+      - name: Download unifiedlog_iterator binaries
+        run: python scripts/download_unifiedlog_binaries.py
 
       # Set arch-specific variables for macOS builds
       - name: Set macOS build vars
@@ -148,49 +150,6 @@ jobs:
           python -m pip install pyinstaller Pillow
           python -m pip install .
           python -m pip install python-magic-bin
-
-      - name: Download unifiedlog_iterator binary (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          ASSET="unifiedlog_iterator-v${UL_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-          URL="https://github.com/mandiant/macos-UnifiedLogs/releases/download/v${UL_VERSION}/${ASSET}"
-          mkdir -p crush/bin/unifiedlog_iterator
-          mkdir -p /tmp/ul-extract
-          curl -fsSL "$URL" -o /tmp/ul.tar.gz
-          tar -xzf /tmp/ul.tar.gz -C /tmp/ul-extract
-          find /tmp/ul-extract -name 'unifiedlog_iterator' -type f \
-            | head -1 \
-            | xargs -I{} cp {} crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-unknown-linux-gnu
-          chmod +x crush/bin/unifiedlog_iterator/unifiedlog_iterator-x86_64-unknown-linux-gnu
-          echo "$UL_VERSION" > crush/bin/unifiedlog_iterator/VERSION.txt
-
-      - name: Download unifiedlog_iterator binary (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          ASSET="unifiedlog_iterator-v${UL_VERSION}-${MACOS_UL_BINARY#unifiedlog_iterator-}.tar.gz"
-          URL="https://github.com/mandiant/macos-UnifiedLogs/releases/download/v${UL_VERSION}/${ASSET}"
-          mkdir -p crush/bin/unifiedlog_iterator /tmp/ul-extract
-          curl -fsSL "$URL" -o /tmp/ul.tar.gz
-          tar -xzf /tmp/ul.tar.gz -C /tmp/ul-extract
-          find /tmp/ul-extract -name 'unifiedlog_iterator' -type f \
-            | head -1 \
-            | xargs -I{} cp {} crush/bin/unifiedlog_iterator/${MACOS_UL_BINARY}
-          chmod +x crush/bin/unifiedlog_iterator/${MACOS_UL_BINARY}
-          echo "$UL_VERSION" > crush/bin/unifiedlog_iterator/VERSION.txt
-
-      - name: Download unifiedlog_iterator binary (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ASSET = "unifiedlog_iterator-v$env:UL_VERSION-x86_64-pc-windows-msvc.zip"
-          $URL   = "https://github.com/mandiant/macos-UnifiedLogs/releases/download/v$env:UL_VERSION/$ASSET"
-          New-Item -ItemType Directory -Force -Path crush\bin\unifiedlog_iterator | Out-Null
-          Invoke-WebRequest -Uri $URL -OutFile "$env:TEMP\ul.zip"
-          Expand-Archive -Path "$env:TEMP\ul.zip" -DestinationPath "$env:TEMP\ul-extract" -Force
-          Get-ChildItem "$env:TEMP\ul-extract" -Recurse -Filter "unifiedlog_iterator.exe" `
-            | Select-Object -First 1 `
-            | Copy-Item -Destination "crush\bin\unifiedlog_iterator\unifiedlog_iterator-x86_64-pc-windows-msvc.exe"
-          Set-Content -Path "crush\bin\unifiedlog_iterator\VERSION.txt" -Value $env:UL_VERSION -NoNewline
 
       - name: Compile translations
         run: python scripts/i18n.py release
@@ -353,36 +312,10 @@ jobs:
             --add-data "crush/bin/peach/VERSION.txt;crush/bin/peach/" `
             crush/__main__.py
 
+      # Same script as the release build: tool versions pinned there only.
       - name: Package artifact (Linux → AppImage)
         if: runner.os == 'Linux'
-        run: |
-          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
-            -O /tmp/appimagetool
-          chmod +x /tmp/appimagetool
-
-          mkdir -p AppDir
-          cp -r dist/crush AppDir/crush
-
-          cat > AppDir/AppRun << 'EOF'
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "$0")")"
-          exec "$HERE/crush/crush" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-
-          cat > AppDir/crush.desktop << 'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Crush
-          Exec=crush
-          Icon=crush
-          Categories=Utility;Security;
-          EOF
-
-          cp crush_icon_256.png AppDir/crush.png
-
-          ARCH=x86_64 /tmp/appimagetool --appimage-extract-and-run AppDir \
-            crush-linux-${BUILD_ID}.AppImage
+        run: python scripts/package_appimage.py crush-linux-${BUILD_ID}.AppImage
 
       - name: Package artifact (macOS → ZIP)
         if: runner.os == 'macOS'

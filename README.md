@@ -20,7 +20,7 @@
 | macOS (Homebrew) | `brew tap kalink0/forensics && brew trust kalink0/forensics && brew install --cask crush-forensics` |
 | Windows (winget) | `winget install kalink0.Crush` |
 | Windows (Scoop) | `scoop bucket add forensics https://github.com/kalink0/scoop-forensics` then `scoop install forensics/crush-forensics` |
-| Linux | AppImage from [Releases](https://github.com/kalink0/crush-forensics/releases) |
+| Linux | AppImage from [Releases](https://github.com/kalink0/crush-forensics/releases); needs glibc 2.39 or newer (e.g. Ubuntu 24.04, Debian 13) |
 
 Running from source: see [Development setup](#development-setup).
 
