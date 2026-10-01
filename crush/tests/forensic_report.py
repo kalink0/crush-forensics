@@ -551,6 +551,107 @@ def render_markdown_summary(
     )
 
 
+# ---------------------------------------------------------------------------
+# GitHub Pages: release history + badge (scripts/build_audit_pages.py)
+# ---------------------------------------------------------------------------
+
+def release_summary(
+    combined: dict[str, Any], fallback_expected: int | None = None,
+) -> dict[str, Any]:
+    """Headline figures of one release's combined report, computed exactly as
+    render_html() computes them. `fallback_expected` stands in only for a
+    combined JSON written before expected_platforms was stored."""
+    runs = combined["runs"]
+    if not runs:
+        raise ValueError("combined report holds no runs")
+    expected = combined.get("expected_platforms", fallback_expected)
+    env0 = runs[0]["environment"]
+    return {
+        "verdict": overall_verdict(runs, expected),
+        "checks": len(_merged_tests(runs)),
+        "counts": counts([r for run in runs for r in run["results"]]),
+        "platforms": [_run_label(r["environment"]) for r in runs],
+        "expected_platforms": expected,
+        "missing_note": missing_runs_note(runs, expected),
+        "commit": env0.get("commit"),
+        "repository": env0.get("repository") or DEFAULT_REPOSITORY,
+        "crush_version": env0.get("crush_version"),
+    }
+
+
+def render_badge_json(summary: dict[str, Any]) -> str:
+    """shields.io endpoint badge (https://shields.io/badges/endpoint-badge)."""
+    passed = summary["verdict"] == "PASS"
+    return json.dumps({
+        "schemaVersion": 1,
+        "label": "forensic audit",
+        "message": f"{summary['verdict']} · {summary['checks']} checks",
+        "color": "brightgreen" if passed else "red",
+    })
+
+
+def render_history_html(entries: list[dict[str, Any]], latest: str) -> str:
+    """Overview of every release that has an audit report attached, in the
+    order given. Each entry: tag, published_at, release_url, summary."""
+    rows = ""
+    for e in entries:
+        s = e["summary"]
+        c = s["counts"]
+        tag = _html.escape(e["tag"])
+        verdict_cls = s["verdict"].lower()
+        commit = s["commit"]
+        commit_html = (
+            f'<a href="{_html.escape(s["repository"])}/tree/{_html.escape(commit)}">'
+            f"<code>{_html.escape(commit[:12])}</code></a>"
+            if commit else "unknown"
+        )
+        note = f"<br><small>{_html.escape(s['missing_note'])}</small>" if s["missing_note"] else ""
+        marker = " (latest)" if e["tag"] == latest else ""
+        rows += (
+            f'<tr class="{"row-failed" if verdict_cls == "fail" else ""}">'
+            f'<td><a href="{_html.escape(e["release_url"])}">{tag}</a>{marker}</td>'
+            f"<td>{_html.escape(str(e['published_at'] or ''))}</td>"
+            f'<td class="cell-fn">{commit_html}</td>'
+            f'<td class="cell-status status-{"passed" if verdict_cls == "pass" else "failed"}">'
+            f"{s['verdict']}</td>"
+            f"<td>{s['checks']} checks<br><small>{c['passed']} passed · {c['failed']} failed · "
+            f"{c['skipped']} skipped (across all platforms)</small>{note}</td>"
+            f"<td>{_html.escape(', '.join(s['platforms']))}</td>"
+            f'<td><a href="{tag}/">HTML</a> · <a href="{tag}/report.json">JSON</a></td>'
+            "</tr>\n"
+        )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crush Forensic Audit — All Releases</title>
+  <style>{_CSS}</style>
+</head>
+<body>
+<header>
+  <h1>Crush &mdash; Forensic Integrity Audit: All Releases</h1>
+  <div class="meta">
+    One row per release that has an audit report attached. Each report is the
+    file attached to that GitHub release, unchanged. Releases before v0.21.0
+    have no audit report. <a href="./">Latest report</a>
+  </div>
+</header>
+<main>
+<section>
+  <table>
+    <thead><tr>
+      <th>Release</th><th>Published (UTC)</th><th>Commit</th><th>Verdict</th>
+      <th>Checks</th><th>Platforms</th><th>Report</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</section>
+</main>
+</body>
+</html>"""
+
+
 def write_run(run: dict[str, Any], out_dir: Path) -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / "forensic_audit.json"

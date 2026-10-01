@@ -1,0 +1,79 @@
+name: Audit Pages
+
+# Publishes the forensic audit reports to GitHub Pages:
+#   /audit/            latest release's report (the attached file, unchanged)
+#   /audit/<tag>/      every release's report
+#   /audit/history.html, /audit/badge.json
+# Rebuilt from scratch on every run from the crush-forensic-audit.{html,json}
+# files attached to the releases -- the releases are the only source.
+# Called by build.yml after a release's report is attached; run it by hand
+# to rebuild the site (e.g. after deleting a release).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: audit-pages
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Every published (non-draft) release with an audit report, all pages
+      # of the API listing.
+      - name: Download audit reports of all releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/$REPO/releases" \
+            --jq '.[] | select(.draft | not)
+                      | select(any(.assets[]; .name == "crush-forensic-audit.json"))
+                      | {tag: .tag_name, published_at: .published_at, url: .html_url}' \
+            > releases.jsonl
+          gh api "repos/$REPO/releases/latest" --jq .tag_name > latest.txt
+          jq -r .tag releases.jsonl | while read -r tag; do
+            gh release download "$tag" -R "$REPO" -D "audit-releases/$tag" \
+              -p crush-forensic-audit.html -p crush-forensic-audit.json
+          done
+
+      # --expected 3: reports from before expected_platforms was stored in
+      # the JSON (v0.21.0) were combined with --expected 3 as well.
+      - name: Build site
+        run: |
+          python scripts/build_audit_pages.py --releases releases.jsonl \
+            --assets audit-releases --latest "$(cat latest.txt)" --out site --expected 3
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}audit/
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

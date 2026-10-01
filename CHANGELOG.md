@@ -2,6 +2,12 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- Added to the forensic audit report -> Support for viewing every release's report in the browser on GitHub Pages, with a release history and a README badge.
+
 ## v0.21.0 - 2026-09-30
 
 **Focus: Forensic integrity audit report attached to every release; Cellebrite UFDR filesystem browsing; SQLite rollback journals; flash filesystems (SquashFS, JFFS2, UBI/UBIFS, YAFFS) with deleted-file recovery, and SMART, EWF2 and AFF acquisitions; NSKeyedArchiver stored-archive view; a translatable user interface; many values, entries and errors that were cut or dropped without notice now shown or stated; bundled peach updated to v0.9.1.**

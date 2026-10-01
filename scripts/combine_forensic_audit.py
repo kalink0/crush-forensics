@@ -6,7 +6,8 @@
 Each CI platform writes its own reports/forensic_audit.json (see
 crush/tests/conftest.py). This merges them into one HTML report with a
 result column per OS, one combined JSON holding every run unchanged, and a
-Markdown summary for the release notes.
+Markdown summary for the release notes. scripts/build_audit_pages.py turns
+the files attached to all releases into the GitHub Pages site.
 
 Usage:
     python scripts/combine_forensic_audit.py RUN.json [RUN.json ...] \\
@@ -46,10 +47,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     args.html.write_text(forensic_report.render_html(runs, args.expected), encoding="utf-8")
-    args.json.write_text(
-        json.dumps({"schema_version": forensic_report.SCHEMA_VERSION, "runs": runs}, indent=2),
-        encoding="utf-8",
-    )
+    # expected_platforms is stored so the verdict can be recomputed from this
+    # file alone (a missing platform is a FAIL, see overall_verdict()).
+    combined = {
+        "schema_version": forensic_report.SCHEMA_VERSION,
+        "expected_platforms": args.expected,
+        "runs": runs,
+    }
+    args.json.write_text(json.dumps(combined, indent=2), encoding="utf-8")
     if args.notes:
         footer = (
             f"Full report: [{args.html.name}]({args.report_url}) — every check, "

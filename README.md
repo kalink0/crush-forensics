@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/kalink0/crush-forensics/actions/workflows/ci.yml/badge.svg)](https://github.com/kalink0/crush-forensics/actions/workflows/ci.yml)
 [![Nightly](https://github.com/kalink0/crush-forensics/actions/workflows/nightly.yml/badge.svg)](https://github.com/kalink0/crush-forensics/actions/workflows/nightly.yml)
+[![Forensic audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fkalink0.github.io%2Fcrush-forensics%2Faudit%2Fbadge.json)](https://kalink0.github.io/crush-forensics/audit/)
 [![Release](https://img.shields.io/github/v/release/kalink0/crush-forensics?display_name=tag)](https://github.com/kalink0/crush-forensics/releases)
 [![License](https://img.shields.io/github/license/kalink0/crush-forensics)](https://github.com/kalink0/crush-forensics/blob/main/LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-linux%20%7C%20windows%20%7C%20macOS-success)
@@ -71,7 +72,7 @@ Details for all features: [Feature Reference](crush/docs/feature-reference.md)
 - Completeness
 - Reproducibility
 
-Every release attaches its own audit result, including failures: [audit report (HTML)](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.html) · [JSON](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.json) · [test coverage per format/source](crush/docs/forensic-test-coverage.md)
+Every release attaches its own audit result, including failures: [latest audit report](https://kalink0.github.io/crush-forensics/audit/) · [all releases](https://kalink0.github.io/crush-forensics/audit/history.html) · [JSON](https://github.com/kalink0/crush-forensics/releases/latest/download/crush-forensic-audit.json) · [test coverage per format/source](crush/docs/forensic-test-coverage.md)
 
 ## Screenshots
 
