@@ -195,3 +195,13 @@ def test_combine_stores_expected_platforms(tmp_path):
     assert combine.main([str(run), "--html", str(tmp_path / "c.html"), "--json", str(out),
                          "--expected", "3"]) == 0
     assert json.loads(out.read_text(encoding="utf-8"))["expected_platforms"] == 3
+
+
+def test_report_links_to_history_only_when_given():
+    """The release report links to the overview of all releases; a local
+    test run belongs to no release and gets no such link."""
+    runs = [_run("Linux", ["passed"])]
+    url = "https://kalink0.github.io/crush-forensics/audit/history.html"
+    assert f'<a href="{url}">Audit reports of all releases</a>' in \
+        forensic_report.render_html(runs, 1, url)
+    assert "Audit reports of all releases" not in forensic_report.render_html(runs, 1)

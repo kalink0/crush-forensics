@@ -401,11 +401,15 @@ def _corpus_section(corpus: dict[str, dict[str, Any]]) -> str:
 </section>"""
 
 
-def render_html(runs: list[dict[str, Any]], expected: int | None = None) -> str:
+def render_html(
+    runs: list[dict[str, Any]], expected: int | None = None, history_url: str | None = None,
+) -> str:
     """Render one or more runs (one per OS) of the same commit as one report.
 
     `expected`: how many platforms should have reported; fewer is shown as a
     FAIL with a warning rather than as a clean report over fewer columns.
+    `history_url`: absolute link to the published overview of all releases'
+    reports (the file is also opened from a release download, so no relative link).
     """
     if not runs:
         raise ValueError("no runs to render")
@@ -416,6 +420,11 @@ def render_html(runs: list[dict[str, Any]], expected: int | None = None) -> str:
     ov_cls = verdict.lower()
     missing = missing_runs_note(runs, expected)
     warning = f'<div class="meta"><strong>{_html.escape(missing)}</strong></div>' if missing else ""
+    history = (
+        f'<div class="meta"><a href="{_html.escape(history_url)}">'
+        "Audit reports of all releases</a></div>"
+        if history_url else ""
+    )
     total = counts([r for run in runs for r in run["results"]])
 
     status_heads = "".join(
@@ -502,6 +511,7 @@ def render_html(runs: list[dict[str, Any]], expected: int | None = None) -> str:
     </span>
   </div>
   {warning}
+  {history}
 </header>
 <main>
 {_environment_table(runs)}

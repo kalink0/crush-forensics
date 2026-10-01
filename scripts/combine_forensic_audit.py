@@ -12,7 +12,7 @@ the files attached to all releases into the GitHub Pages site.
 Usage:
     python scripts/combine_forensic_audit.py RUN.json [RUN.json ...] \\
         --html crush-forensic-audit.html --json crush-forensic-audit.json \\
-        [--notes release-notes.md --report-url URL] [--expected N]
+        [--notes release-notes.md --report-url URL] [--expected N] [--history-url URL]
 """
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--notes", type=Path, help="Markdown summary for the release notes")
     ap.add_argument("--report-url", default="", help="report link to put in --notes")
     ap.add_argument("--expected", type=int, help="number of platforms that should have reported")
+    ap.add_argument("--history-url", help="link to the overview of all releases' reports")
     args = ap.parse_args(argv)
 
     runs = [json.loads(p.read_text(encoding="utf-8")) for p in args.runs]
@@ -46,7 +47,9 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
-    args.html.write_text(forensic_report.render_html(runs, args.expected), encoding="utf-8")
+    args.html.write_text(
+        forensic_report.render_html(runs, args.expected, args.history_url), encoding="utf-8",
+    )
     # expected_platforms is stored so the verdict can be recomputed from this
     # file alone (a missing platform is a FAIL, see overall_verdict()).
     combined = {
