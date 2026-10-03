@@ -85,6 +85,11 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "SMART acquisition (.s01)",
         "EWF2 acquisition (.Ex01)",
         "AFF acquisition (.aff/.afd)",
+        "AFF4 acquisition (.aff4)",
+        "Apple disk image (.dmg/.sparseimage/.sparsebundle)",
+        "VHD/VHDX virtual disk",
+        "VMDK virtual disk",
+        "QCOW virtual disk",
     ),
     "Disk image filesystems": (
         "NTFS",
@@ -104,6 +109,7 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "UBI",
         "UBIFS",
         "YAFFS1/YAFFS2",
+        "U-Boot environment / NVRAM store",
     ),
     "File formats": (
         "SQLite database",

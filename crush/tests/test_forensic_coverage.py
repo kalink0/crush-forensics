@@ -50,7 +50,10 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
     "UFDRVFS": ("Cellebrite UFDR",),
     "RawImageVFS": (
         "Raw disk image", "EWF acquisition (.E01)", "SMART acquisition (.s01)",
-        "EWF2 acquisition (.Ex01)", "AFF acquisition (.aff/.afd)",
+        "EWF2 acquisition (.Ex01)", "AFF acquisition (.aff/.afd)", "AFF4 acquisition (.aff4)",
+        "Apple disk image (.dmg/.sparseimage/.sparsebundle)", "VHD/VHDX virtual disk",
+        "VMDK virtual disk",
+        "QCOW virtual disk",
     ),
 }
 # VFS classes that aren't a source of evidence, and why.
@@ -75,6 +78,7 @@ WALKER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "UbiWalker": ("UBI",),
     "UbifsWalker": ("UBIFS",),
     "YaffsWalker": ("YAFFS1/YAFFS2",),
+    "ConfigStoreWalker": ("U-Boot environment / NVRAM store",),
 }
 PARSER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "SQLiteParser": ("SQLite database",),

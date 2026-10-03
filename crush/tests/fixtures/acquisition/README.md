@@ -20,3 +20,27 @@ Ex01 ones a SHA-1 as well) of that disk.
 
 `aff-afd.afd/file_004.aff` is the member that records the image size: opened on
 its own, outside its folder, it is an AFF whose other pages are missing.
+
+## From ewfprobe v0.12.0
+
+Copied from the same repository at commit `34c34b8496f0f3d57450d77b7f27a3247f4b08aa`
+(tag v0.12.0), at the same paths below `tests/fixtures/`, MIT License. The disk
+each one holds is recorded in ewfprobe's `tests/fixtures/manifest.json` and
+`tests/fixtures/virtual/manifest.json`.
+
+| File(s) | Container | Written by | Opens with |
+|---|---|---|---|
+| `dmg-udzo.dmg` | UDIF, zlib | hdiutil, macOS 26.6.2 | — |
+| `dmg-gpt-segmented.dmg`, `.002`–`.005.dmgpart` | UDIF in five segments | hdiutil, macOS 26.6.2 | — |
+| `dmg-enc-sparse-aes128.sparseimage` | sparse image, AES-128 | hdiutil, macOS 26.6.2 | password `ewfprobe-test-password` |
+| `dmg-cert-only-udzo-aes256.dmg` | UDIF, AES-256, certificate only | hdiutil, macOS 26.6.2 | `dmg-cert-test-key-2048.pem` |
+| `dmg-sparsebundle.sparsebundle/` | sparse bundle | hdiutil, macOS 26.6.2 | — |
+| `dmg-enc-sparsebundle-aes256.sparsebundle/` | sparse bundle, AES-256; band 0 removed and band 1 cut to 32 KiB upstream, hdiutil reads the same disk | hdiutil, macOS 26.6.2 | password `ewfprobe-test-password` |
+| `pyaff4-zlib.aff4` | AFF4, zlib | pyaff4 | — |
+| `aff-enc-pass.aff` | AFF, AES-256 | AFFLIB 3.7.22 | password `ewfprobe-aff-password` |
+| `ftk-ad-e01.E01`, `.E02` | EWF-E01, AD encryption | FTK Imager 4.7.3.61 | password `ewfprobe-ad-test` |
+| `virtual/windows/*.gz` | VHD, VHDX: dynamic, and differencing over it | Windows 11 diskpart | — |
+| `virtual/qemu-compact/*.gz` | VHD, VHDX, VMDK, QCOW (one LUKS-encrypted) | qemu-img 10.2.1 | — |
+
+`dmg-sparsebundle.sparsebundle/bands/*.gz` are gzip-compressed here; the tests
+decompress them into a copy of the bundle.

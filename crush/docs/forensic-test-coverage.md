@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-166 checks in total.
+194 checks in total.
 
 ### Sources
 
@@ -34,16 +34,21 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [iTunes backup](#itunes-backup) | 4 | not tested | not tested | not tested | not tested | not tested |
 | [Cellebrite UFDR](#cellebrite-ufdr) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | not tested | not tested | 1 |
-| [EWF acquisition (.E01)](#ewf-acquisition-e01) | not tested | not tested | not tested | 2 | not tested | not tested |
+| [EWF acquisition (.E01)](#ewf-acquisition-e01) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [SMART acquisition (.s01)](#smart-acquisition-s01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
-| [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 2 | not tested | not tested |
+| [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 3 | not tested | not tested |
+| [AFF4 acquisition (.aff4)](#aff4-acquisition-aff4) | 1 | not tested | not tested | 1 | not tested | not tested |
+| [Apple disk image (.dmg/.sparseimage/.sparsebundle)](#apple-disk-image-dmgsparseimagesparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
+| [VHD/VHDX virtual disk](#vhdvhdx-virtual-disk) | 1 | not tested | not tested | 4 | not tested | not tested |
+| [VMDK virtual disk](#vmdk-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
+| [QCOW virtual disk](#qcow-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
 
 ### Disk image filesystems
 
 | | Source Immutability | No Side Effects | Read-only Media | Known-output Verification | Completeness | Reproducibility |
 |---|---|---|---|---|---|---|
-| [NTFS](#ntfs) | not tested | not tested | not tested | 3 | not tested | not tested |
+| [NTFS](#ntfs) | not tested | not tested | not tested | 6 | not tested | not tested |
 | [FAT32](#fat32) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [exFAT](#exfat) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -60,6 +65,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [UBI](#ubi) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [UBIFS](#ubifs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [YAFFS1/YAFFS2](#yaffs1yaffs2) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [U-Boot environment / NVRAM store](#u-boot-environment--nvram-store) | not tested | not tested | not tested | not tested | not tested | not tested |
 
 ### File formats
 
@@ -173,9 +179,11 @@ No forensic checks.
 
 #### EWF acquisition (.E01)
 
+- **Source Immutability** — Decrypting and reading the whole disk of the AD-encrypted ftk-ad-e01.E01 set and verifying it must leave both segments byte-identical, with unchanged mtimes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_ad_encrypted_source_unmodified`)
+- **Known-output Verification** — The two-segment ftk-ad-e01.E01, AD-encrypted by FTK Imager, must ask for its password, and with it read back to the SHA-256 of the source FTK Imager acquired and verify as MATCH against the MD5 and SHA-1 FTK Imager recorded ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_ad_encrypted_e01_opens_with_its_password`)
 - **Known-output Verification** — raw_ntfs.E01's files must read back identically through the EWF path as through raw .img ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_content_matches`)
 - **Known-output Verification** — verify_acquisition() must report MATCH against a real ewfacquire-created acquisition's own stored hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches_stored_hash`)
-- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### SMART acquisition (.s01)
 
@@ -194,8 +202,51 @@ No forensic checks.
 #### AFF acquisition (.aff/.afd)
 
 - **Source Immutability** — Reading the whole disk of aff-zlib.aff and of the AFD aff-afd.afd and verifying them must leave every file byte-identical, with an unchanged mtime ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_source_unmodified`)
+- **Known-output Verification** — aff-enc-pass.aff, encrypted by AFFLIB with a passphrase, must ask for it, refuse a wrong one, and with the right one read back to the SHA-256 of its source disk and verify as MATCH against its stored hashes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_encrypted_aff_opens_with_its_passphrase`)
 - **Known-output Verification** — aff-zlib.aff, and the five-file AFD aff-afd.afd opened from any of its files, must read back to the SHA-256 of the source disk they were made from ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_disk_matches_source`)
 - **Known-output Verification** — Verify Acquisition Hash must report MATCH against the stored hashes of aff-zlib.aff and of the AFD aff-afd.afd ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_verify_matches`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### AFF4 acquisition (.aff4)
+
+- **Source Immutability** — Reading the whole stream of pyaff4-zlib.aff4 and verifying it must leave the file byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
+- **Known-output Verification** — pyaff4-zlib.aff4, written by pyaff4 (the AFF4 reference implementation), must open as an AFF4 acquisition whose stream reads back to the MD5 of the content pyaff4 was given ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_stream_matches_what_pyaff4_was_given`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### Apple disk image (.dmg/.sparseimage/.sparsebundle)
+
+- **Source Immutability** — Reading the whole disk of the segmented dmg-gpt-segmented.dmg and of the encrypted dmg-enc-sparse-aes128.sparseimage and verifying them must leave every file byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
+- **Source Immutability** — Reading the whole disk of the sparse bundle dmg-sparsebundle.sparsebundle and verifying it must leave every file of the bundle byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_sparse_bundle_source_unmodified`)
+- **Known-output Verification** — dmg-udzo.dmg (hdiutil, UDZO) must open as an Apple disk image whose disk reads back to the SHA-256 of the source disk it was made from ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_udif_matches_source`)
+- **Known-output Verification** — The five-file segmented dmg-gpt-segmented.dmg (hdiutil) must be joined from its .dmgpart files, say so, and read back to the SHA-256 of its GPT source disk ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_segmented_udif_is_joined_and_says_so`)
+- **Known-output Verification** — Verify Acquisition Hash on dmg-udzo.dmg must recompute the image's own data, block table and master checksums and find every one matching ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_verify_recomputes_the_images_own_checksums`)
+- **Known-output Verification** — The encrypted dmg-enc-sparse-aes128.sparseimage (hdiutil, AES-128) must ask for its password, refuse a wrong one, and with the right one read back to the SHA-256 of its source disk, saying it was decrypted ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_encrypted_sparse_image_opens_with_its_password`)
+- **Known-output Verification** — dmg-cert-only-udzo-aes256.dmg, sealed by hdiutil to a certificate only, must ask for a private key (not a password), and with its key read back to the SHA-256 of its source disk, saying it was opened with the key ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_certificate_only_image_opens_with_its_private_key`)
+- **Known-output Verification** — The sparse bundle dmg-sparsebundle.sparsebundle (hdiutil) must open as a disk image from its folder and from any file in it (Info.plist, a band), say it is read from the bundle's band files, and read back to the SHA-256 of its source disk ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_sparse_bundle_opens_whole_from_its_folder_or_any_file`)
+- **Known-output Verification** — The encrypted sparse bundle dmg-enc-sparsebundle-aes256.sparsebundle (hdiutil, AES-256) must ask for its password and with it read back to the SHA-256 of the disk hdiutil attach read from it ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_encrypted_sparse_bundle_opens_with_its_password`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### VHD/VHDX virtual disk
+
+- **Source Immutability** — Reading the whole disk of the differencing diff.vhd and verifying it must leave both it and its parent byte-identical, with unchanged mtimes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
+- **Known-output Verification** — dynamic.vhd and dynamicx.vhdx, written by Windows 11 diskpart, must read back to the SHA-256 of the disk as Windows itself presented it ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_windows_disk_matches_what_windows_presented`)
+- **Known-output Verification** — The differencing diff.vhd and diffx.vhdx (Windows 11) must be read over their parents, name the parent, read back to the SHA-256 of the disk Windows presented, and show the file only the child holds ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_differencing_disk_is_read_over_its_parent_and_says_so`)
+- **Known-output Verification** — vhd-fixed.vhd and vhdx-fixed.vhdx, written by qemu-img, must read back to the SHA-256 of the disk qemu-img was given ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_qemu_fixed_disks_match`)
+- **Known-output Verification** — Verify Acquisition Hash on dynamic.vhd, which records no hash of its disk, must report nothing to compare against, never a match ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_verify_has_nothing_to_compare`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### VMDK virtual disk
+
+- **Source Immutability** — Reading the whole disk of vmdk-delta.vmdk and verifying it must leave the delta and its base byte-identical, with unchanged mtimes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
+- **Known-output Verification** — The monolithicSparse, streamOptimized and monolithicFlat (descriptor + flat extent) VMDKs qemu-img wrote must read back to the SHA-256 of the disk qemu-img was given ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_disk_matches`)
+- **Known-output Verification** — The delta vmdk-delta.vmdk (qemu-img) must be read over its base, name it, and read back to the SHA-256 qemu-img's disk had after the delta's writes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_delta_is_read_over_its_base_and_says_so`)
+- *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### QCOW virtual disk
+
+- **Source Immutability** — Reading the whole disk of qcow2-overlay.qcow2 and verifying it must leave the overlay and its backing file byte-identical, with unchanged mtimes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
+- **Known-output Verification** — qcow2-v3.qcow2 and qcow1.qcow, written by qemu-img, must read back to the SHA-256 of the disk qemu-img was given ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_disk_matches`)
+- **Known-output Verification** — The overlay qcow2-overlay.qcow2 (qemu-img) must be read over its backing file, name it, and read back to the SHA-256 qemu-img's disk had after the overlay's writes ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_overlay_is_read_over_its_backing_file_and_says_so`)
 - *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
 
 ### Disk image filesystems
@@ -205,6 +256,9 @@ No forensic checks.
 - **Known-output Verification** — raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_single_volume_content_matches`)
 - **Known-output Verification** — Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_recovers_known_deleted_files`)
 - **Known-output Verification** — Every alternate data stream of raw_ntfs_streams.img.gz that stores data must be listed beside its file and read back to The Sleuth Kit's reference hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_every_stream_matches_the_sleuth_kit`)
+- **Known-output Verification** — Every file of raw_ntfs_windows.img.gz that Windows hashed and the reader decodes (sparse, NTFS-compressed, overlay-compressed with XPRESS) must read back to the SHA-256 Windows itself reported ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_content_matches_what_windows_hashed`)
+- **Known-output Verification** — The three online-only cloud placeholders of raw_ntfs_windows.img.gz, which Windows itself refused to read, must be listed at their recorded size and refuse to read with the reason, never read back as zeros ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_cloud_placeholders_are_listed_and_say_why_they_cannot_be_read`)
+- **Known-output Verification** — An NTFS-compressed file of raw_ntfs_windows.img.gz, with one compression unit changed to end at a zero chunk header, must read at its recorded length to the SHA-256 The Sleuth Kit gave for the same changed image, the rest of that unit as zeros ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_a_compression_unit_that_ends_early_reads_as_zeros_to_its_end`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### FAT32
@@ -270,6 +324,10 @@ No forensic checks.
 No forensic checks.
 
 #### YAFFS1/YAFFS2
+
+No forensic checks.
+
+#### U-Boot environment / NVRAM store
 
 No forensic checks.
 

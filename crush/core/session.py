@@ -43,10 +43,11 @@ class Session:
 
     def add_source(
         self, path: str | Path, *, password: str = "", embedded_zip: bool = False,
-        as_disk_image: bool = False,
+        as_disk_image: bool = False, private_key: str = "",
     ) -> VFS:
         vfs = open_vfs(
             path, password=password, embedded_zip=embedded_zip, as_disk_image=as_disk_image,
+            private_key=private_key,
         )
         self.sources.append(vfs)
         return vfs

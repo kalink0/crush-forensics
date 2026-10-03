@@ -7,8 +7,10 @@ qnxprobe reads MBR/GPT partition tables (512- and 4096-byte sectors) and then
 NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX
 IFS, SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2 directly from a raw image,
 a bare partition or a flash dump — no mounting, no admin rights. ewfprobe reads
-an EWF (.E01) acquisition, joining its numbered segments, as an ordinary
-seekable stream that qnxprobe reads exactly like a raw image.
+a container -- an EWF (.E01) or other forensic acquisition, an Apple disk image,
+a virtual machine disk -- joining its files and decrypting it when given what
+opens it, as an ordinary seekable stream that qnxprobe reads exactly like a raw
+image.
 
 `RawImageVFS` (crush/core/vfs.py) is the thin VFS-facing wrapper; this module
 holds everything specific to the two vendored readers.
@@ -39,6 +41,51 @@ if TYPE_CHECKING:
 
 _MAX_DEPTH = 64  # a directory this deep in a walk is a loop, not a directory
 
+# The first bytes of the containers the image reader opens, taken from the
+# reader's own constants so the hint never drifts from what it recognises.
+# Only for a hint on a file that can't be handed to the reader by path (a
+# member of an archive): a fixed VHD's footer, a UDIF trailer and an AFF4's
+# ZIP comment are not in the first bytes, and a file on disk is asked about
+# through container_format() instead.
+CONTAINER_HEAD_SIGNATURES: tuple[bytes, ...] = (
+    qnxprobe.EWF_SIGNATURE,
+    qnxprobe.EWF2_SIGNATURE,
+    qnxprobe.AFF_SIGNATURE,
+    qnxprobe.DMG_ENCRYPTED_SIGNATURE,
+    qnxprobe.ADCRYPT_SIGNATURE,
+    qnxprobe.SPARSEIMAGE_SIGNATURE,
+    qnxprobe.VHDX_SIGNATURE,
+    qnxprobe.VHD_COOKIE,          # a dynamic or differencing VHD's copy of its footer
+    qnxprobe.VMDK_SPARSE_MAGIC,
+    qnxprobe.VMDK_COWD_MAGIC,
+    qnxprobe.VMDK_DESCRIPTOR_START,
+    qnxprobe.QCOW_MAGIC,
+)
+# Logical evidence (EnCase L01/Lx01, FTK Imager AD1): copies of files, not a disk.
+LOGICAL_EVIDENCE_SIGNATURES: tuple[bytes, ...] = (
+    qnxprobe.L01_SIGNATURE,
+    qnxprobe.LX01_SIGNATURE,
+    qnxprobe.AD1_SIGNATURE,
+)
+
+# How a hint names what qnxprobe.acquisition_format() recognised.
+_CONTAINER_LABELS = {
+    "EWF": "EWF",
+    "EWF2": "EWF2",
+    "AFF": "AFF",
+    "AFD": "AFD",
+    "AFF4": "AFF4",
+    "UDIF": "Apple disk image",
+    "SPARSEIMAGE": "Apple sparse image",
+    "SPARSEBUNDLE": "Apple sparse bundle",
+    "DMG_ENCRYPTED": "encrypted Apple disk image",
+    "AD_ENCRYPTED": "FTK Imager AD-encrypted",
+    "VHD": "VHD",
+    "VHDX": "VHDX",
+    "VMDK": "VMDK",
+    "QCOW": "QCOW",
+}
+
 
 class RawImageOpenError(ValueError):
     """The path is not a raw image / EWF acquisition qnxprobe or ewfprobe can read."""
@@ -61,8 +108,15 @@ class RawImageHandle:
     size: int
     volumes: list[dict[str, Any]]
     # ewfprobe's name for the container ("EWF-E01", "EWF-S01", "EWF2-Ex01",
-    # "AFF", "AFD"), None for a raw image or split set.
+    # "AFF", "AFD", "AFM", and since ewfprobe 0.12 "AFF4", "UDIF",
+    # "SPARSEIMAGE", "UDRW" (an encrypted read-write Apple disk image), "RAW"
+    # (an AD-encrypted raw set), "VHD", "VHDX", "VMDK", "QCOW"), None for a
+    # raw image or split set.
     acquisition: str | None = None
+    # The reader's description of the container: the files it is read from
+    # (segments, a virtual disk's parents) and what opened it when encrypted.
+    # "" for a raw image or split set.
+    container: str = ""
 
     @property
     def missing_pages(self) -> int:
@@ -120,28 +174,76 @@ class _Entry:
     deleted: Any | None = None  # a *DeletedFile record, when this is a recovered entry
 
 
-def open_raw_image(path: Path) -> RawImageHandle:
-    """Open `path` as a raw disk image or forensic acquisition (EWF .E01,
-    SMART .s01, EWF2 .Ex01, AFF/AFD) and list its volumes.
+def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> RawImageHandle:
+    """Open `path` as a raw disk image, a forensic acquisition (EWF .E01,
+    SMART .s01, EWF2 .Ex01, AFF/AFD, AFF4), an Apple disk image (.dmg,
+    .sparseimage, or a .sparsebundle folder) or a virtual disk (VHD, VHDX,
+    VMDK, QCOW), and list its
+    volumes. *password* opens an encrypted container (an encrypted Apple disk
+    image, an AD-encrypted set, an encrypted AFF); *private_key* is the path
+    of the key file that opens one sealed to a certificate.
 
     Raises RawImageOpenError when the path isn't actually a readable image:
     a split set with a numbering gap, a bad acquisition header, logical
-    evidence (L01/Lx01, which holds files, not a disk), or a file in which no
-    partition table or bare filesystem could be found at all.
+    evidence (L01/Lx01/AD1, which holds files, not a disk), a file of an Apple
+    sparse bundle, or a file in which no partition table or bare filesystem
+    could be found at all. An encrypted container opened without what opens
+    it raises PasswordRequiredError (PrivateKeyRequiredError when only a
+    private key does), and with a password or key that doesn't open it
+    WrongPasswordError (WrongPrivateKeyError).
     """
+    from crush.core.passwords import (
+        PasswordRequiredError,
+        PrivateKeyRequiredError,
+        WrongPasswordError,
+        WrongPrivateKeyError,
+    )
+
     kind = qnxprobe.acquisition_format(str(path))  # type: ignore[no-untyped-call]
-    if kind in ("L01", "Lx01"):
+    if kind in ("L01", "Lx01", "AD1"):
         # qnxprobe refuses these too, but points to its own command line.
+        maker = "FTK Imager" if kind == "AD1" else "EnCase"
         raise RawImageOpenError(
-            f"{path.name}: EnCase logical evidence ({kind}) holds copies of files, "
+            f"{path.name}: {maker} logical evidence ({kind}) holds copies of files, "
             "not a disk, so there is no partition table or filesystem to read; "
             "Crush doesn't open logical evidence yet"
         )
+    bundle = sparse_bundle_of(path)
+    if bundle is not None:
+        # One file of a sparse bundle on its own is a piece of the disk (a
+        # band) or the bundle's bookkeeping, not a disk; open_vfs() opens the
+        # bundle folder instead.
+        raise RawImageOpenError(
+            f"{path.name} is part of the Apple sparse bundle {bundle.name} (a folder "
+            "whose band files together hold the disk); open the bundle itself"
+        )
     try:
-        image = qnxprobe.open_image(str(path))  # type: ignore[no-untyped-call]
+        image = qnxprobe.open_image(  # type: ignore[no-untyped-call]
+            str(path), password=password or None, private_key=private_key or None,
+        )
+    except qnxprobe.ImagePasswordError as exc:
+        by_key = exc.needs == "private key"
+        if exc.wrong:
+            wrong = WrongPrivateKeyError if private_key and not password else WrongPasswordError
+            raise wrong(ParseIssue(
+                "password.image_wrong_key" if wrong is WrongPrivateKeyError
+                else "password.image_wrong",
+                detail=str(exc),
+            )) from exc
+        required = PrivateKeyRequiredError if by_key else PasswordRequiredError
+        raise required(ParseIssue(
+            "password.image_key_required" if by_key else "password.image_required",
+            {"path": str(path)}, detail=str(exc),
+        )) from exc
     except qnxprobe.SplitImageError as exc:
         raise RawImageOpenError(f"{path.name}: {exc}") from exc
     except Exception as exc:
+        if private_key and _asks_for_a_secret(path):
+            # The key file itself could not be used (unreadable, not an RSA
+            # key): the image asks for one without it, so ask again.
+            raise WrongPrivateKeyError(
+                ParseIssue("password.image_wrong_key", detail=str(exc))
+            ) from exc
         raise RawImageOpenError(
             f"{path.name}: not a readable raw image or acquisition ({exc})"
         ) from exc
@@ -164,15 +266,80 @@ def open_raw_image(path: Path) -> RawImageHandle:
     # unrecognised region qnxprobe reports -- readable, and verifiable.
     if not kind and not any(vol.get("walker") is not None for vol in vols):
         image.close()
+        # A volume the reader names but cannot read says why in its note (a
+        # locked BitLocker volume: what would open it). Passing that on beats
+        # saying nothing was recognised, which would not be true.
+        reasons = [
+            f"{vol.get('name') or 'volume'} is {vol['kind']}: {vol['note']}"
+            for vol in vols
+            if vol.get("note") and vol.get("kind") not in (None, "", "not recognised")
+        ]
+        if reasons:
+            raise RawImageOpenError(f"{path.name}: no readable filesystem ({'; '.join(reasons)})")
         raise RawImageOpenError(
             f"{path.name}: no partition table or recognized filesystem found"
         )
 
     vols = vols + _compute_unallocated_gaps(vols, size)
     acquisition = getattr(image, "format", None) if kind else None
+    # Which files the disk is read from (every segment, a virtual disk's
+    # parents) and what opened an encrypted container, in the reader's words:
+    # a differencing disk's files come partly from its parent, which the
+    # analyst has to know to say where a file is stored.
+    container = qnxprobe.describe_acquisition(image) if kind else ""  # type: ignore[no-untyped-call]
     return RawImageHandle(
         path=path, image=image, size=size, volumes=vols, acquisition=acquisition,
+        container=container,
     )
+
+
+def _asks_for_a_secret(path: Path) -> bool:
+    """True when opening *path* with nothing given is refused for want of a
+    password or private key -- whether a failure with a key given lies with
+    the key rather than with the image."""
+    try:
+        qnxprobe.open_image(str(path)).close()  # type: ignore[no-untyped-call]
+    except qnxprobe.ImagePasswordError:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+def container_format(path: Path) -> str | None:
+    """The container the image reader recognises *path* as, by content
+    (qnxprobe.acquisition_format: "EWF", "AFF4", "UDIF", "VHDX", "L01", ...),
+    or None for anything else -- which Open Disk Image… reads as raw. Only
+    for hints and notes: a file the recognition itself fails on is not
+    named, and opening it is never stopped by that."""
+    try:
+        return qnxprobe.acquisition_format(str(path))  # type: ignore[no-untyped-call,no-any-return]
+    except Exception:
+        return None
+
+
+def container_label(kind: str) -> str:
+    """A container_format() answer as a hint names it."""
+    return _CONTAINER_LABELS.get(kind, kind)
+
+
+def sparse_bundle_of(path: Path) -> Path | None:
+    """The Apple sparse bundle folder *path* is a file of -- its Info.plist,
+    token or lock beside it, or a band in its bands/ folder -- recognised by
+    the bundle's Info.plist, not by names; None otherwise."""
+    for folder in (path.parent, path.parent.parent):
+        if folder == path or not folder.is_dir():
+            continue
+        if sparse_bundle_kind(folder):
+            return folder
+    return None
+
+
+def sparse_bundle_kind(folder: Path) -> str | None:
+    """"SPARSEBUNDLE" (or "DMG_ENCRYPTED" for an encrypted one) when *folder*
+    is an Apple sparse bundle, by its Info.plist; None otherwise."""
+    kind = container_format(folder)
+    return kind if kind in ("SPARSEBUNDLE", "DMG_ENCRYPTED") else None
 
 
 def _compute_unallocated_gaps(vols: list[dict[str, Any]], total_size: int) -> list[dict[str, Any]]:

@@ -252,3 +252,66 @@ def test_deleted_file_in_a_folder_that_is_gone(tmp_path: Path) -> None:
         assert gone and all(f.code == "entry.original_folder_gone" for f in gone)
     finally:
         vfs.close()
+
+
+def _uboot_env(strings: list[bytes], size: int) -> bytes:
+    """A U-Boot environment as it sits on flash: a CRC-32 of the data, then
+    NUL-separated name=value strings ending in an empty one, padded with NULs."""
+    import binascii
+    import struct
+
+    data = (b"\x00".join(strings) + b"\x00\x00").ljust(size - 4, b"\x00")
+    return struct.pack("<I", binascii.crc32(data)) + data
+
+
+def test_uboot_environment_is_a_volume_holding_one_file(tmp_path: Path) -> None:
+    """A device's U-Boot environment has no filesystem around it. The reader
+    finds it by its CRC-32 and shows it as a volume holding one file, the
+    store's bytes as they are on flash."""
+    env = _uboot_env([b"bootdelay=1", b"baudrate=57600", b"example_addr=192.0.2.1"], 0x2000)
+    img = tmp_path / "env.bin"
+    img.write_bytes(env)
+    vfs = RawImageVFS(img)
+    try:
+        assert [(v.get("kind"), v.get("walker") is not None) for v in vfs._handle.volumes] == [
+            ("uboot-env", True)
+        ]
+        (volume,) = vfs.root().children
+        (store,) = volume.children
+        assert (store.name, store.size) == ("uboot-env.bin", len(env))
+        assert vfs.read(store) == env
+    finally:
+        vfs.close()
+
+
+def test_nvram_store_is_a_volume_holding_one_file(tmp_path: Path) -> None:
+    """A Belkin libnvram store: the NVRM magic, a CRC-32 of the data, the
+    string count and the end of the data, then NUL-terminated strings."""
+    import binascii
+    import struct
+
+    strings = [b"example_name=Test Plug", b"example_id=000TEST000"]
+    body = b"".join(s + b"\x00" for s in strings)
+    data = (body + b"\x00").ljust(0x8000 - 16, b"\xff")
+    store = b"NVRM" + struct.pack("<III", binascii.crc32(data), len(strings), 16 + len(body)) + data
+    img = tmp_path / "nvram.bin"
+    img.write_bytes(store)
+    vfs = RawImageVFS(img)
+    try:
+        (volume,) = vfs.root().children
+        (node,) = volume.children
+        assert (node.name, node.size) == ("nvram.bin", len(store))
+        assert vfs.read(node) == store
+    finally:
+        vfs.close()
+
+
+def test_uboot_environment_with_a_flipped_byte_is_not_claimed(tmp_path: Path) -> None:
+    from crush.core.raw_image import RawImageOpenError
+
+    env = bytearray(_uboot_env([b"bootdelay=1", b"baudrate=57600"], 0x2000))
+    env[40] ^= 1
+    img = tmp_path / "env.bin"
+    img.write_bytes(bytes(env))
+    with pytest.raises(RawImageOpenError):
+        RawImageVFS(img)

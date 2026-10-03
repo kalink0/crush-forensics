@@ -232,6 +232,14 @@ class VFS(ABC):
     # Said once when the source is loaded, not with every file opened from
     # it (e.g. that reading may update the evidence files' access times).
     load_note: str | ParseIssue = ""
+    # Set by open_vfs() alongside fallback_note on a file opened as a single
+    # file: the file, when its content says it is a disk image, for Open
+    # Disk Image… -- a hint, never a probe. Not set after Open Disk Image…
+    # itself failed on it.
+    disk_image_path: Path | None = None
+    # Likewise: the file, when it holds a ZIP after leading bytes, which
+    # opens as that ZIP only when asked (embedded_zip).
+    embedded_zip_path: Path | None = None
 
     @abstractmethod
     def root(self) -> VFSNode: ...
@@ -2066,10 +2074,13 @@ class SevenZipVFS(VFS):
 
 
 class RawImageVFS(VFS):
-    """VFS backed by a raw disk image (.img/.dd/split .001 set) or an
-    EWF (Expert Witness Format, .E01 + segments) acquisition, read in place
-    via the vendored qnxprobe (+ ewfprobe) readers — no mounting, no admin
-    rights, and only the files an examiner actually opens leave the image.
+    """VFS backed by a raw disk image (.img/.dd/split .001 set), a forensic
+    acquisition (EWF .E01 + segments, SMART, Ex01, AFF/AFD, AFF4), an Apple
+    disk image or a virtual machine disk (VHD, VHDX, VMDK, QCOW), read in
+    place via the vendored qnxprobe (+ ewfprobe) readers — no mounting, no
+    admin rights, and only the files an examiner actually opens leave the
+    image. *password* / *private_key* (a key file's path) open an encrypted
+    container; see open_raw_image.
 
     One top-level child per volume qnxprobe finds (a partition table entry
     or a bare filesystem), named after qnxprobe's own LBA-based identity so
@@ -2080,11 +2091,11 @@ class RawImageVFS(VFS):
     explicit status, never render as a silent empty/zero result.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, password: str = "", private_key: str = "") -> None:
         from crush.core.raw_image import build_volume_node, open_raw_image
 
         self._path = Path(path)
-        self._handle = open_raw_image(self._path)
+        self._handle = open_raw_image(self._path, password=password, private_key=private_key)
         self._lock = threading.Lock()
         self._read_map: dict[str, Any] = {}
 
@@ -2092,14 +2103,21 @@ class RawImageVFS(VFS):
         for vol in self._handle.volumes:
             root.children.append(build_volume_node(vol, self._read_map))
         root.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
+        notes: list[ParseIssue] = []
+        if self._handle.container:
+            # The files the disk is read from: a differencing disk's content
+            # comes partly from its parent, a file of another name.
+            notes.append(ParseIssue("vfs.image_container", detail=self._handle.container))
         if self._handle.missing_pages:
             # Their bytes read as the bad-sector marker, which a file inside
             # would otherwise show as though the device had held it.
-            missing = ParseIssue(
+            notes.append(ParseIssue(
                 "vfs.acquisition_missing_pages", {"count": f"{self._handle.missing_pages:,}"}
-            )
-            root.status = missing
-            self.load_note = missing
+            ))
+        if notes:
+            note = join_notes(notes)
+            root.status = note
+            self.load_note = note
         self._tree = root
 
         self._file_counts: dict[str, int] = {}
@@ -2229,9 +2247,9 @@ class RawImageVFS(VFS):
         return {"kind": entry.kind, "note": entry.note}
 
     def acquisition(self) -> str | None:
-        """ewfprobe's name for the acquisition container this source is
-        ("EWF-E01", "EWF-S01", "EWF2-Ex01", "AFF", "AFD"), None for a raw
-        image or split set."""
+        """ewfprobe's name for the container this source is ("EWF-E01",
+        "EWF-S01", "EWF2-Ex01", "AFF", "AFD", "AFF4", "UDIF", "VHDX", ...;
+        see RawImageHandle.acquisition), None for a raw image or split set."""
         return self._handle.acquisition
 
     def verify_acquisition(
@@ -2509,13 +2527,14 @@ def zip_leading_bytes(path: str | Path) -> int | None:
 
 def open_vfs(
     path: str | Path, *, password: str = "", embedded_zip: bool = False,
-    as_disk_image: bool = False,
+    as_disk_image: bool = False, private_key: str = "",
 ) -> VFS:
     """Factory — open the right VFS type for a source path, by its content
     (see _open_vfs), and note once if reading it may update the evidence's
     access times."""
     vfs = _open_vfs(
         path, password=password, embedded_zip=embedded_zip, as_disk_image=as_disk_image,
+        private_key=private_key,
     )
     if not vfs.load_note:
         vfs.load_note = _source_atime_note(Path(path), vfs)
@@ -2545,7 +2564,7 @@ def _source_atime_note(path: Path, vfs: VFS) -> str | ParseIssue:
 
 def _open_vfs(
     path: str | Path, *, password: str = "", embedded_zip: bool = False,
-    as_disk_image: bool = False,
+    as_disk_image: bool = False, private_key: str = "",
 ) -> VFS:
     """Open the right VFS type for a source path, by its content.
 
@@ -2561,26 +2580,49 @@ def _open_vfs(
     flash filesystems -- up to the whole file -- which every other file
     opened would pay for. Once asked, qnxprobe decides by content what the
     image holds; a file in which it finds nothing opens as a single file,
-    and its fallback_note says why.
+    and its fallback_note says why. An encrypted container raises the
+    password errors (crush.core.passwords) until *password* or
+    *private_key* (a key file's path) opens it.
     """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"File no longer exists: {p}")
     if as_disk_image:
-        if not p.is_file():
-            raise ValueError(f"Not a file, can't be opened as a disk image: {p}")
-        from crush.core.raw_image import RawImageOpenError
+        from crush.core.raw_image import RawImageOpenError, sparse_bundle_kind, sparse_bundle_of
 
+        # An Apple sparse bundle is a folder; like an AFD from any of its
+        # .aff files, it opens whole from any file in it (its Info.plist, a
+        # band) -- the one way to reach it from a file picker.
+        bundle = p if p.is_dir() and sparse_bundle_kind(p) else None
+        if bundle is None and p.is_file():
+            bundle = sparse_bundle_of(p)
+        if bundle is None and not p.is_file():
+            raise ValueError(f"Not a file, can't be opened as a disk image: {p}")
         try:
-            return RawImageVFS(p)
+            image = RawImageVFS(bundle or p, password=password, private_key=private_key)
         except RawImageOpenError as exc:
-            file_vfs = FileVFS(p)
-            file_vfs.fallback_note = ParseIssue("vfs.not_disk_image", detail=str(exc))
-            return file_vfs
+            fallback: VFS = DirectoryVFS(p) if p.is_dir() else FileVFS(p)
+            fallback.fallback_note = ParseIssue("vfs.not_disk_image", detail=str(exc))
+            return fallback
+        if bundle is not None and bundle != p:
+            image.load_note = join_notes([
+                ParseIssue("vfs.sparse_bundle_from_member", {
+                    "file": p.relative_to(bundle).as_posix(), "bundle": bundle.name,
+                }),
+                image.load_note,
+            ])
+        return image
     if p.is_dir():
         if _is_itunes_backup_dir(p):
             return ITunesBackupVFS(p, password=password)
-        return DirectoryVFS(p)
+        directory = DirectoryVFS(p)
+        from crush.core.raw_image import sparse_bundle_kind
+
+        if sparse_bundle_kind(p):
+            # Its files are the bundle's own parts, real files of the folder;
+            # the disk they hold is read through Open Disk Image….
+            directory.fallback_note = ParseIssue("vfs.sparse_bundle_folder")
+        return directory
     if not p.is_file():
         raise ValueError(f"Unsupported source type: {p}")
 
@@ -2611,6 +2653,7 @@ def _open_vfs(
     label = _NAMED_ARCHIVES.get(p.suffix.lower())
     if label is not None and kind is None and not notes:
         notes.append(ParseIssue("vfs.named_but_not", {"suffix": p.suffix.lower(), "label": label}))
+    leading: int | None = None
     if kind is None:
         leading = zip_leading_bytes(p)
         if leading is not None:
@@ -2630,6 +2673,10 @@ def _open_vfs(
         notes.append(hint)
     vfs = FileVFS(p)
     vfs.fallback_note = join_notes(notes)
+    if hint and not is_logical_evidence(head):
+        vfs.disk_image_path = p
+    if leading is not None and not embedded_zip:
+        vfs.embedded_zip_path = p
     return vfs
 
 
@@ -2644,12 +2691,17 @@ def _open_zip(p: Path, password: str, notes: list[ParseIssue]) -> VFS | None:
         except UFDROpenError as exc:
             notes.append(ParseIssue("vfs.ufdr_as_zip", detail=str(exc)))
     try:
-        return ZipVFS(p, password=password)
+        zip_vfs = ZipVFS(p, password=password)
     except (zipfile.BadZipFile, OSError, ValueError, EOFError, NotImplementedError) as exc:
         if isinstance(exc, (PasswordRequiredError, WrongPasswordError)):
             raise
         notes.append(ParseIssue("vfs.zip_not_opened", detail=str(exc)))
         return None
+    if is_aff4(p):
+        # Its members are the container's own parts, real bytes of the file;
+        # the disk they hold is read through Open Disk Image….
+        notes.append(ParseIssue("vfs.aff4_as_zip"))
+    return zip_vfs
 
 
 def _open_7z(p: Path, password: str, notes: list[ParseIssue]) -> VFS | None:
@@ -2678,43 +2730,63 @@ def _tar_suffix(p: Path) -> str:
 
 
 # Names that suggest a disk image, for the hint pointing at Open Disk Image…
-# (never to decide anything): raw/dd and EWF acquisitions, and dumps of the
-# flash filesystems qnxprobe reads. `.bin` is left out: too many other files
-# carry it. A numbered split-set segment (FTK-style `.001`..`.999`) counts too.
+# (never to decide anything): raw/dd images, the containers the image reader
+# opens (acquisitions, Apple disk images, virtual machine disks), and dumps of
+# the flash filesystems qnxprobe reads. `.bin` is left out: too many other
+# files carry it. A numbered split-set segment (FTK-style `.001`..`.999`)
+# counts too.
 DISK_IMAGE_SUFFIXES = (
-    ".img", ".dd", ".raw", ".e01", ".s01", ".ex01", ".aff",
+    ".img", ".dd", ".raw", ".e01", ".s01", ".ex01", ".aff", ".aff4",
+    ".dmg", ".dmgpart", ".sparseimage", ".vhd", ".vhdx", ".vmdk", ".qcow", ".qcow2",
     ".nand", ".ubi", ".ubifs", ".squashfs", ".sqsh", ".jffs2", ".yaffs2",
-)
-
-# The signatures of the acquisition containers Open Disk Image… reads, as
-# qnxprobe.acquisition_format() checks them.
-ACQUISITION_SIGNATURES = (
-    b"EVF\x09\x0d\x0a\xff\x00",   # EWF-E01, and SMART .s01
-    b"EVF2\x0d\x0a\x81\x00",      # EWF2-Ex01
-    b"AFF10\x0d\x0a\x00",         # AFF, and every file of an AFD
-)
-# EnCase logical evidence (L01, Lx01): copies of files, not a disk.
-LOGICAL_EVIDENCE_SIGNATURES = (
-    b"LVF\x09\x0d\x0a\xff\x00",
-    b"LEF2\x0d\x0a\x81\x00",
 )
 
 
 def is_logical_evidence(head: bytes) -> bool:
-    """True when the first bytes are an L01/Lx01 signature -- a container
-    Crush doesn't open yet, and not a disk image either."""
+    """True when the first bytes are an L01/Lx01/AD1 signature -- a
+    container Crush doesn't open yet, and not a disk image either."""
+    from crush.core.raw_image import LOGICAL_EVIDENCE_SIGNATURES
+
     return head.startswith(LOGICAL_EVIDENCE_SIGNATURES)
 
 
-def looks_like_disk_image(name: str, head: bytes) -> ParseIssue | None:
-    """What suggests that a file is a disk image -- an acquisition's
-    signature, an image extension, or a numbered segment of a split set --
-    as the hint's "what", or None. Only the name and the first bytes already
-    read are looked at: a hint, never a probe."""
-    if head.startswith(ACQUISITION_SIGNATURES):
-        return ParseIssue("vfs.disk_image_hint_acquisition")
+def is_aff4(path: str | Path) -> bool:
+    """True when the ZIP at *path* is an AFF4 container, by the volume URI
+    the AFF4 Standard has its writer record (the image reader's own test)."""
+    from crush.core.raw_image import container_format
+
+    return container_format(Path(path)) == "AFF4"
+
+
+def looks_like_disk_image(
+    name: str, head: bytes, path: Path | None = None
+) -> ParseIssue | None:
+    """What suggests that a file is a disk image -- a container the image
+    reader recognises by content, a file of an Apple sparse bundle, a
+    container's signature in its first bytes, an image extension, or a
+    numbered segment of a split set -- as the hint's "what", or None.
+    *path*, for a file on disk, lets the image reader's own recognition
+    decide (it also reads a trailer, a ZIP's comment, a set's first file,
+    the bundle's Info.plist); without it only the name and the first bytes
+    already read are looked at. A hint, never a probe."""
+    from crush.core.raw_image import (
+        CONTAINER_HEAD_SIGNATURES,
+        container_format,
+        container_label,
+        sparse_bundle_of,
+    )
+
     if is_logical_evidence(head):
         return None
+    if path is not None:
+        kind = container_format(path)
+        if kind is not None:
+            return ParseIssue("vfs.disk_image_hint_container", {"label": container_label(kind)})
+        bundle = sparse_bundle_of(path)
+        if bundle is not None:
+            return ParseIssue("vfs.disk_image_hint_bundle", {"bundle": bundle.name})
+    elif head.startswith(CONTAINER_HEAD_SIGNATURES):
+        return ParseIssue("vfs.disk_image_hint_acquisition")
     suffix = Path(name).suffix.lower()
     is_segment = len(suffix) == 4 and suffix[1:].isascii() and suffix[1:].isdigit()
     if suffix in DISK_IMAGE_SUFFIXES or is_segment:
@@ -2725,11 +2797,11 @@ def looks_like_disk_image(name: str, head: bytes) -> ParseIssue | None:
 def _disk_image_hint(path: Path, head: bytes) -> ParseIssue | None:
     """A note for a file opened as a single file that announces itself as
     a disk image (looks_like_disk_image), so the analyst knows Open Disk
-    Image… exists for it -- or, for EnCase logical evidence, that it isn't
-    opened as what it is. None otherwise."""
+    Image… exists for it -- or, for logical evidence, that it isn't opened
+    as what it is. None otherwise."""
     if is_logical_evidence(head):
         return ParseIssue("vfs.logical_evidence")
-    what = looks_like_disk_image(path.name, head)
+    what = looks_like_disk_image(path.name, head, path)
     return ParseIssue("vfs.disk_image_hint", {"what": what}) if what else None
 
 

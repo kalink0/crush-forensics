@@ -357,31 +357,67 @@ FORMATS: list[dict[str, Any]] = [
         "category": "disk_image",
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
-            "macOS disk image format used for app distribution, software installers, "
-            "and user-created backups. Contains HFS+, APFS, or FAT32 filesystems "
-            "requiring mounting or extraction for analysis. Can be AES-128 or AES-256 "
-            "encrypted — password required for access. "
-            "Identified by a 512-byte 'koly' trailer block at EOF rather than a file header — "
-            "standard magic byte detection will fail. "
-            "Also used as a native forensic acquisition format for macOS devices (SWGDE). "
-            "Commonly found in Downloads folders and as components of Time Machine sparsebundles.",
+            "Apple disk image format. A UDIF image consists of data blocks (raw or "
+            "compressed with zlib, bzip2, LZFSE or LZMA), an XML property list holding the "
+            "block map, and a 512-byte 'koly' trailer at EOF instead of a file header; raw "
+            "images can lack the trailer. Typically contains an HFS+, APFS, FAT32 or ExFAT "
+            "filesystem. Can be AES-128 or AES-256 encrypted with a password or a "
+            "certificate; an encrypted image begins 'encrcdsa' (version 2) or ends with "
+            "'cdsaencr' (version 1), and the 'koly' trailer is then inside the encrypted "
+            "data. Variants: segmented UDIF (.dmgpart), sparse image (.sparseimage, header "
+            "'sprs', blocks allocated as written), sparse bundle (.sparsebundle, a folder "
+            "of band files). Common as a software installer (Downloads folders), as "
+            "user-created encrypted containers, as the storage of Time Machine backups to "
+            "network destinations (sparse bundle), and as a preferred acquisition format "
+            "for macOS devices (SWGDE).",
             "Apple Disk Image (DMG)",
         ),
         "platforms": ["macOS"],
-        "parser_class": None,
+        "parser_class": "RawImageVFS",
         "magic": [
             {
                 "offset": None,
                 "value": b"\x6b\x6f\x6c\x79",
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
-                    "DMG 'koly' trailer block at EOF-512 (no file header magic)",
+                    "UDIF 'koly' trailer block at EOF-512 (no file header magic)",
                     "Apple Disk Image (DMG)",
                 ),
-            }
+            },
+            {
+                "offset": 0,
+                "value": b"encrcdsa",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Encrypted disk image, version 2 header",
+                    "Apple Disk Image (DMG)",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"cdsaencr",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Encrypted disk image, version 1 trailer at EOF",
+                    "Apple Disk Image (DMG)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"sprs",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Sparse image (.sparseimage) header",
+                    "Apple Disk Image (DMG)",
+                ),
+            },
         ],
         "extensions": [".dmg", ".sparseimage", ".sparsebundle"],
         "links": [
+            (
+                "Mac OS disk image types — format documentation (libyal/libmodi)",
+                "https://github.com/libyal/libmodi/blob/main/documentation/Mac%20OS%20disk%20image%20types.asciidoc",
+            ),
             (
                 "DMG format reverse-engineered (newosxbook.com)",
                 "https://newosxbook.com/DMG.html",
@@ -3284,6 +3320,302 @@ FORMATS: list[dict[str, Any]] = [
         "status": "reviewed",
     },
     {
+        "name": "AFF4 Acquisition",
+        "short_name": "AFF4",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Advanced Forensic Format 4 — an acquisition format stored as a ZIP64 "
+            "container. The acquired data is held in compressed, chunked image streams, "
+            "mapped onto the source's address space by map streams, with RDF metadata "
+            "(information.turtle) describing source, acquisition and streams; the volume "
+            "URI (aff4://...) is in the ZIP comment and in container.description. A "
+            "container can be striped across several .aff4 files. Stores hashes of "
+            "streams, chunks, maps and of the whole source, so the acquisition can be "
+            "verified. Used for disk images and for memory acquisitions: sparse maps "
+            "represent physical memory with gaps, and the metadata category (e.g. "
+            "aff4:category memory/physical) tells which one an image holds. Variants: "
+            "encrypted AFF4 and AFF4-L for logical evidence.",
+            "AFF4 Acquisition",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                # Informational only (offset None): at offset 0 it would be any
+                # ZIP's signature, and the format identified by it.
+                "offset": None,
+                "value": b"aff4://",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "A ZIP whose comment holds the aff4:// volume URI, or whose first "
+                    "member is container.description",
+                    "AFF4 Acquisition",
+                ),
+            }
+        ],
+        "extensions": [".aff4"],
+        "links": [
+            (
+                "AFF4 Standard (aff4/Standard)",
+                "https://github.com/aff4/Standard",
+            ),
+            (
+                "pyaff4 — the AFF4 reference implementation",
+                "https://github.com/aff4/pyaff4",
+            ),
+            (
+                "ForensicsWiki — Advanced Forensic Framework 4 (AFF4)",
+                "https://forensics.wiki/aff4/",
+            ),
+            (
+                "Cohen, Garfinkel, Schatz — Extending the Advanced Forensic Format to "
+                "accommodate Multiple Data Sources, Logical Evidence, Arbitrary Information "
+                "and Forensic Workflow (DFRWS 2009)",
+                "https://dfrws.org/presentation/extending-the-advanced-forensic-format-to-accommodate-multiple-data-sources-logical-evidence-arbitrary-information-and-forensic-workflow/",
+            ),
+            (
+                "Schatz — AFF4-L: A scalable open logical evidence container (DFRWS 2019)",
+                "https://dfrws.org/presentation/aff4-l-a-scalable-open-logical-evidence-container/",
+            ),
+            (
+                "The AFF4 Imager — documentation (incl. memory acquisition)",
+                "https://aff4-imager.readthedocs.io/en/latest/",
+            ),
+            (
+                "abrignoni/ewfprobe — the reader Crush uses",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "Microsoft Virtual Hard Disk (VHD)",
+        "short_name": "VHD",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Virtual Hard Disk — a 512-byte footer starting 'conectix' at the end of the "
+            "file describes the disk. Three types: fixed (the disk's bytes followed by "
+            "the footer), dynamic (a copy of the footer at offset 0, a dynamic header "
+            "and a block allocation table; blocks are allocated as written) and "
+            "differencing (holds only the blocks changed since a parent VHD; the disk's "
+            "content spans both files). Older Virtual PC versions split a VHD on FAT32 "
+            "volumes into .v01, .v02 … files. Used by Virtual PC, early Hyper-V, Windows "
+            "disk management and Windows Backup images. Mounts with a double-click since "
+            "Windows 8 and is used as a container to deliver malware past "
+            "Mark-of-the-Web (MITRE ATT&CK T1553.005).",
+            "Microsoft Virtual Hard Disk (VHD)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": None,
+                "value": b"conectix",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Footer cookie 'conectix' in the last 512 bytes",
+                    "Microsoft Virtual Hard Disk (VHD)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"conectix",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Copy of the footer at offset 0, in a dynamic or differencing VHD",
+                    "Microsoft Virtual Hard Disk (VHD)",
+                ),
+            },
+        ],
+        "extensions": [".vhd"],
+        "links": [
+            (
+                "Virtual Hard Disk (VHD) image format — format documentation (libyal/libvhdi)",
+                "https://github.com/libyal/libvhdi/blob/main/documentation/Virtual%20Hard%20Disk%20(VHD)%20image%20format.asciidoc",
+            ),
+            (
+                "Unsplitting a split virtual hard disk (Microsoft, Virtual PC Guy)",
+                "https://learn.microsoft.com/en-us/archive/blogs/virtual_pc_guy/unsplitting-a-split-virtual-hard-disk",
+            ),
+            (
+                "ForensicsWiki — Virtual Hard Disk (VHD)",
+                "https://forensics.wiki/virtual_hard_disk_(vhd)/",
+            ),
+            (
+                "MITRE ATT&CK T1553.005 — Mark-of-the-Web Bypass",
+                "https://attack.mitre.org/techniques/T1553/005/",
+            ),
+            (
+                "abrignoni/ewfprobe — the reader Crush uses",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "Microsoft Virtual Hard Disk v2 (VHDX)",
+        "short_name": "VHDX",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Virtual Hard Disk v2 — the successor of VHD. Begins with the file type "
+            "identifier 'vhdxfile', followed by two redundant headers, a log for crash "
+            "consistency, a block allocation table and a metadata region. Fixed, dynamic "
+            "and differencing disks as in VHD; a differencing disk holds only the blocks "
+            "changed since its parent. Used by Hyper-V, Windows disk management and "
+            "backup products. WSL 2 stores each Linux distribution as ext4.vhdx under "
+            "%LOCALAPPDATA%\\Packages\\…\\LocalState\\, and Docker Desktop stores its "
+            "data in a VHDX, so a Windows host can hold complete Linux filesystems. "
+            "Mounts with a double-click and is used to deliver malware past "
+            "Mark-of-the-Web.",
+            "Microsoft Virtual Hard Disk v2 (VHDX)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"vhdxfile",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "VHDX file type identifier 'vhdxfile'",
+                    "Microsoft Virtual Hard Disk v2 (VHDX)",
+                ),
+            }
+        ],
+        "extensions": [".vhdx"],
+        "links": [
+            (
+                "[MS-VHDX]: Virtual Hard Disk v2 (VHDX) File Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-vhdx/",
+            ),
+            (
+                "Virtual Hard Disk version 2 (VHDX) image format — format documentation "
+                "(libyal/libvhdi)",
+                "https://github.com/libyal/libvhdi/blob/main/documentation/Virtual%20Hard%20Disk%20version%202%20(VHDX)%20image%20format.asciidoc",
+            ),
+            (
+                "MITRE ATT&CK T1553.005 — Mark-of-the-Web Bypass",
+                "https://attack.mitre.org/techniques/T1553/005/",
+            ),
+            (
+                "abrignoni/ewfprobe — the reader Crush uses",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "VMware Virtual Disk (VMDK)",
+        "short_name": "VMDK",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "VMware virtual disk. A disk is a text descriptor ('# Disk DescriptorFile') "
+            "naming one or more extents — sparse ('KDMV', older ESX 'COWD'), "
+            "stream-optimized (compressed, as in OVA/OVF exports), flat (the disk's bytes "
+            "as they are) or SESPARSE — embedded in the descriptor's file or stored "
+            "beside it, often split into 2 GB pieces. A snapshot is a delta disk holding "
+            "only what changed since its parent; the disk's content spans the chain. "
+            "Used by VMware Workstation, Fusion and ESXi, and by VirtualBox. Snapshots "
+            "and suspended VMs come with .vmem and .vmsn files beside the disk that hold "
+            "the VM's memory.",
+            "VMware Virtual Disk (VMDK)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"KDMV",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Sparse extent magic 'KDMV' (a descriptor file instead begins "
+                    "'# Disk DescriptorFile')",
+                    "VMware Virtual Disk (VMDK)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"COWD",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Older ESX sparse (COWD) extent",
+                    "VMware Virtual Disk (VMDK)",
+                ),
+            },
+        ],
+        "extensions": [".vmdk"],
+        "links": [
+            (
+                "VMware Virtual Disk Format (VMDK) — format documentation (libyal/libvmdk)",
+                "https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc",
+            ),
+            (
+                "ForensicsWiki — VMware Virtual Disk Format (VMDK)",
+                "https://forensics.wiki/vmware_virtual_disk_format_(vmdk)/",
+            ),
+            (
+                "abrignoni/ewfprobe — the reader Crush uses",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "QEMU Copy-On-Write Disk (QCOW)",
+        "short_name": "QCOW",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "QEMU Copy-On-Write disk (QCOW version 1, QCOW2 versions 2 and 3). Begins "
+            "'QFI' 0xFB and the version, followed by a header, a two-level cluster table "
+            "(L1/L2) and refcount tables. Clusters are allocated as written and can be "
+            "compressed; an image can hold internal snapshots, keep its data in an "
+            "external file, or be an overlay of a backing file, so the disk's content "
+            "spans both files. Can be encrypted with LUKS or QEMU's older AES. Used by "
+            "KVM/libvirt, Proxmox, OpenStack and GNS3, and by the Android Emulator, "
+            "which keeps a virtual device's user data as a QCOW2 overlay "
+            "(userdata-qemu.img.qcow2).",
+            "QEMU Copy-On-Write Disk (QCOW)",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"QFI\xfb",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "QCOW magic 'QFI' 0xFB, followed by the version (1, 2 or 3)",
+                    "QEMU Copy-On-Write Disk (QCOW)",
+                ),
+            }
+        ],
+        "extensions": [".qcow", ".qcow2"],
+        "links": [
+            (
+                "The QCOW2 Image Format (QEMU docs/interop/qcow2.rst)",
+                "https://www.qemu.org/docs/master/interop/qcow2.html",
+            ),
+            (
+                "QEMU Copy-On-Write file format — format documentation (libyal/libqcow)",
+                "https://github.com/libyal/libqcow/blob/main/documentation/QEMU%20Copy-On-Write%20file%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — QCOW image format",
+                "https://forensics.wiki/qcow_image_format/",
+            ),
+            (
+                "abrignoni/ewfprobe — the reader Crush uses",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
         "name": "EnCase Logical Evidence",
         "short_name": "L01",
         "category": "archive",
@@ -3324,6 +3656,67 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "Expert Witness Compression Format (EWF) — libewf project (L01 section)",
                 "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc",
+            ),
+        ],
+        "status": "reviewed",
+    },
+    {
+        "name": "FTK Imager Logical Evidence (AD1)",
+        "short_name": "AD1",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "AccessData (now Exterro) custom content image — a logical image of selected "
+            "files and folders, not a disk: no partition table, no filesystem, no "
+            "unallocated space, so deleted data is only included if it was selected as a "
+            "file. Every segment (.ad1, .ad2, .ad3 …) begins 'ADSEGMENTEDFILE'; the first "
+            "segment carries the logical image header 'ADLOGICALIMAGE'. Stores the file "
+            "tree with names, timestamps, attributes and per-file hashes, with file "
+            "content compressed in chunks. Can be protected with AD encryption (password "
+            "or certificate). Common for targeted and triage collections and for "
+            "evidence handed over by other parties; the content can come from any "
+            "system.",
+            "FTK Imager Logical Evidence (AD1)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"ADSEGMENTEDFILE\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AD1 segment signature 'ADSEGMENTEDFILE', in every file of the set",
+                    "FTK Imager Logical Evidence (AD1)",
+                ),
+            },
+            {
+                "offset": 0x200,
+                "value": b"ADLOGICALIMAGE",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Logical image header, in the first file of the set",
+                    "FTK Imager Logical Evidence (AD1)",
+                ),
+            },
+        ],
+        "extensions": [".ad1"],
+        "links": [
+            (
+                "pcbje/pyad1 — notes and reader for the AD1 format (work in progress)",
+                "https://github.com/pcbje/pyad1",
+            ),
+            (
+                "Dissect — dissect.evidence.ad1 (AD1 reader)",
+                "https://docs.dissect.tools/en/latest/api/dissect/evidence/ad1/index.html",
+            ),
+            (
+                "PRONOM fmt/842 — AccessData Custom Content Image",
+                "https://www.nationalarchives.gov.uk/PRONOM/fmt/842",
+            ),
+            (
+                "PRONOM fmt/843 — AccessData Custom Content Image (Encrypted)",
+                "https://www.nationalarchives.gov.uk/PRONOM/fmt/843",
             ),
         ],
         "status": "reviewed",

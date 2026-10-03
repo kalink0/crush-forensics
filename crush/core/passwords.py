@@ -15,3 +15,13 @@ class PasswordRequiredError(ValueError):
 
 class WrongPasswordError(ValueError):
     """Raised when a supplied password fails to unlock/decrypt a source."""
+
+
+class PrivateKeyRequiredError(PasswordRequiredError):
+    """Raised when a source is sealed only to a certificate and opens with
+    that certificate's private key (a key file), not with a password."""
+
+
+class WrongPrivateKeyError(WrongPasswordError):
+    """Raised when a supplied private key does not open a source sealed to
+    a certificate."""

@@ -1694,6 +1694,27 @@ MESSAGES: dict[str, str] = {
         "Backup keybag has no usable class key for class {class_num}",
         "password.itunes_no_class_key",
     ),
+    "password.image_required": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Disk image is encrypted: {path} — {detail}",
+        "password.image_required",
+    ),
+    "password.image_wrong": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The password does not open this disk image — {detail}",
+        "password.image_wrong",
+    ),
+    "password.image_key_required": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Disk image is sealed to a certificate and opens with its private key: {path} "
+        "— {detail}",
+        "password.image_key_required",
+    ),
+    "password.image_wrong_key": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The private key does not open this disk image — {detail}",
+        "password.image_wrong_key",
+    ),
     "password.realm_not_hex": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Not a valid hex key: {detail}",
@@ -1788,14 +1809,45 @@ MESSAGES: dict[str, str] = {
         "ParseIssue", "name", "vfs.disk_image_hint_name",
     ),
     "vfs.disk_image_hint_acquisition": QT_TRANSLATE_NOOP(
-        "ParseIssue", "acquisition signature (EWF, EWF2 or AFF)",
+        "ParseIssue",
+        "signature of a disk image container (forensic acquisition, Apple disk image or "
+        "virtual disk)",
         "vfs.disk_image_hint_acquisition",
+    ),
+    "vfs.disk_image_hint_container": QT_TRANSLATE_NOOP(
+        "ParseIssue", "content ({label} container)", "vfs.disk_image_hint_container",
+    ),
+    "vfs.disk_image_hint_bundle": QT_TRANSLATE_NOOP(
+        "ParseIssue", "folder (a file of the Apple sparse bundle {bundle})",
+        "vfs.disk_image_hint_bundle",
     ),
     "vfs.logical_evidence": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Opened as a single file: it is EnCase logical evidence (L01/Lx01), which holds "
-        "copies of files, not a disk — Crush doesn't open logical evidence yet",
+        "Opened as a single file: it is logical evidence (EnCase L01/Lx01 or FTK Imager "
+        "AD1), which holds copies of files, not a disk — Crush doesn't open logical "
+        "evidence yet",
         "vfs.logical_evidence",
+    ),
+    "vfs.sparse_bundle_folder": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Apple sparse bundle shown as the folder it is stored in (its band files and "
+        "bookkeeping) — open it as a disk image, or use Open Disk Image… on any of its "
+        "files, to read the disk it holds",
+        "vfs.sparse_bundle_folder",
+    ),
+    "vfs.sparse_bundle_from_member": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{file} is a file of the Apple sparse bundle {bundle}: the whole bundle was opened",
+        "vfs.sparse_bundle_from_member",
+    ),
+    "vfs.aff4_as_zip": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "AFF4 container shown as the ZIP archive it is stored in (its streams, maps and "
+        "metadata) — use Open Disk Image… to read the disk it holds",
+        "vfs.aff4_as_zip",
+    ),
+    "vfs.image_container": QT_TRANSLATE_NOOP(
+        "ParseIssue", "Read as {detail}", "vfs.image_container",
     ),
     "vfs.acquisition_missing_pages": QT_TRANSLATE_NOOP(
         "ParseIssue",
