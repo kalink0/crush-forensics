@@ -87,6 +87,27 @@ def test_identify_empty_bytes_no_crash() -> None:
     assert result is None or isinstance(result, FormatMatch)
 
 
+_PLAIN_XML = b'<?xml version="1.0" encoding="utf-8"?>\n<manifest package="a.b"/>\n'
+_PLIST_XML = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\n'
+    b'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+    b'"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    b'<plist version="1.0"><dict/></plist>\n'
+)
+
+
+@pytest.mark.parametrize("data,expected_parser", [
+    (_PLAIN_XML, "XmlParser"),
+    (_PLIST_XML, "PlistParser"),
+])
+def test_identify_xml_vs_xml_plist(data: bytes, expected_parser: str) -> None:
+    # Both entries share the "<?xml" magic; a plist is the plist entry,
+    # any other XML document the generic XML entry.
+    fmt = FormatDatabase.get().identify(data, "unknown_file")
+    assert fmt is not None
+    assert fmt.parser_class == expected_parser
+
+
 # ---------------------------------------------------------------------------
 # FormatDatabase.by_parser_class()
 # ---------------------------------------------------------------------------
@@ -174,6 +195,38 @@ def test_media_format_has_media_parser_class(magic: bytes, expected_short_name: 
     assert fmt.parser_class == "MediaParser", (
         f"{expected_short_name}: expected parser_class='MediaParser', got {fmt.parser_class!r}"
     )
+
+
+def _ftyp(brand: bytes) -> bytes:
+    return b"\x00\x00\x00\x18ftyp" + brand + b"\x00\x00\x00\x00isom" + b"\x00" * 104
+
+
+def _riff(kind: bytes) -> bytes:
+    return b"RIFF\xe8\x03\x00\x00" + kind + b"\x00" * 116
+
+
+@pytest.mark.parametrize("data,expected_short_name", [
+    (_ftyp(b"heic"), "HEIC/HEIF"),
+    (_ftyp(b"mif1"), "HEIC/HEIF"),
+    (_ftyp(b"hevc"), "HEIC/HEIF"),
+    (_ftyp(b"avif"), "AVIF"),
+    (_ftyp(b"isom"), "MP4"),
+    (_ftyp(b"mp42"), "MP4"),
+    (_ftyp(b"qt  "), "MOV"),
+    (_ftyp(b"3gp4"), "3GP"),
+    (_ftyp(b"3g2a"), "3GP"),
+    (_ftyp(b"M4A "), "M4A"),
+    (_ftyp(b"M4B "), "M4A"),
+    (_riff(b"WEBP"), "WebP"),
+    (_riff(b"WAVE"), "WAV"),
+    (_riff(b"AVI "), "AVI"),
+])
+def test_identify_container_brand(data: bytes, expected_short_name: str) -> None:
+    # ISOBMFF and RIFF formats share their container signature; the major
+    # brand / RIFF form type decides.
+    fmt = FormatDatabase.get().identify(data, "unknown_file")
+    assert fmt is not None
+    assert fmt.short_name == expected_short_name
 
 
 def test_identify_atx_by_magic() -> None:

@@ -183,11 +183,15 @@ FORMATS: list[dict[str, Any]] = [
         "links": [
             (
                 "Apple CoreFoundation source (format spec)",
-                "https://opensource.apple.com/source/CF/CF-550/CFBinaryPList.c",
+                "https://github.com/apple-oss-distributions/CF/blob/CF-550/CFBinaryPList.c",
             ),
             (
                 "Apple developer docs (Property Lists)",
                 "https://developer.apple.com/library/archive/documentation/CoreFoundation/Conceptual/CFPropertyLists/",
+            ),
+            (
+                "Mobile Forensics – The File Format Handbook: Property Lists (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_6",
             ),
             (
                 "NSKeyedArchiver plist forensics (Sarah Edwards / mac4n6)",
@@ -229,8 +233,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://cbor.io/",
             ),
             (
-                "COSE (CBOR Object Signing and Encryption, RFC 8152)",
-                "https://www.rfc-editor.org/rfc/rfc8152.html",
+                "COSE structures and process (CBOR Object Signing and Encryption, RFC 9052)",
+                "https://www.rfc-editor.org/rfc/rfc9052.html",
             ),
             (
                 "WebAuthn spec (CBOR usage)",
@@ -273,10 +277,6 @@ FORMATS: list[dict[str, Any]] = [
         "extensions": [".realm"],
         "links": [
             (
-                "Realm file format internals",
-                "https://mongodben.github.io/flutter-sdk-docs/sdk/flutter/realm-database",
-            ),
-            (
                 "Realm Studio (open .realm files)",
                 "https://www.mongodb.com/docs/atlas/device-sdks/studio/open-realm-file/",
             ),
@@ -297,8 +297,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://www.sciencedirect.com/science/article/abs/pii/S2666281722000221",
             ),
             (
-                "Mobile App Forensics: A Practical Guide (Realm chapter)",
-                "https://link.springer.com/content/pdf/10.1007/978-3-030-98467-0_8",
+                "Mobile Forensics – The File Format Handbook: Realm (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_8",
             ),
             (
                 "Object by Object — RealmDB Forensics with crush (beBinary)",
@@ -475,11 +475,11 @@ FORMATS: list[dict[str, Any]] = [
             ),
             (
                 "Ghidra — open source reverse engineering tool (NSA)",
-                "https://ghidra-sre.org/",
+                "https://github.com/NationalSecurityAgency/ghidra",
             ),
             (
                 "Reversing Android native libraries (HackTricks)",
-                "https://book.hacktricks.xyz/mobile-pentesting/android-app-pentesting/reversing-native-libraries",
+                "https://hacktricks.wiki/en/mobile-pentesting/android-app-pentesting/reversing-native-libraries.html",
             ),
             (
                 "ELF shared library injection forensics",
@@ -593,8 +593,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://29a.ch/photo-forensics/",
             ),
             (
-                "JPEG authentication via EXIF and decoding properties (CFSL)",
-                "https://www.researchgate.net/publication/329880328_Authentication_of_Digital_Image_using_Exif_Metadata_and_Decoding_Properties",
+                "Authentication of digital image using EXIF metadata and decoding properties (IJSRCSEIT 2018)",
+                "https://doi.org/10.32628/CSEIT183815",
             ),
             (
                 "ExifTool — read/write metadata",
@@ -803,7 +803,7 @@ FORMATS: list[dict[str, Any]] = [
             "TIFF Image",
         ),
         "platforms": ["iOS", "macOS", "Windows"],
-        "parser_class": None,
+        "parser_class": "ImageParser",
         "magic": [
             {
                 "offset": 0,
@@ -827,8 +827,8 @@ FORMATS: list[dict[str, Any]] = [
         "extensions": [".tif", ".tiff"],
         "links": [
             (
-                "TIFF 6.0 specification (Adobe)",
-                "https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf",
+                "TIFF Revision 6.0 specification (Aldus/Adobe, copy hosted by ITU)",
+                "https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf",
             ),
             (
                 "TIFF format overview (Wikipedia)",
@@ -872,6 +872,15 @@ FORMATS: list[dict[str, Any]] = [
         "platforms": ["iOS", "macOS", "Android", "Windows"],
         "parser_class": "ImageParser",
         "magic": [
+            {
+                "offset": 0,
+                "value": b"RIFF",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "RIFF container header",
+                    "WebP Image",
+                ),
+            },
             {
                 "offset": 8,
                 "value": b"\x57\x45\x42\x50",
@@ -943,6 +952,69 @@ FORMATS: list[dict[str, Any]] = [
             },
             {
                 "offset": 8,
+                "value": b"hevc",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC image sequence brand 'hevc' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"hevx",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC image sequence brand 'hevx' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"heim",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC multiview brand 'heim' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"heis",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC scalable brand 'heis' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"hevm",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC multiview sequence brand 'hevm' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"hevs",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIC scalable sequence brand 'hevs' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"msf1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HEIF image sequence brand 'msf1' in ISOBMFF ftyp box (offset 8)",
+                    "HEIC / HEIF Image",
+                ),
+            },
+            {
+                "offset": 8,
                 "value": b"\x68\x65\x69\x78",
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
@@ -975,8 +1047,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://www.loc.gov/preservation/digital/formats/fdd/fdd000525.shtml",
             ),
             (
-                "Forensic considerations for HEIF (McKeown & Russell, 2020)",
-                "https://www.napier.ac.uk/~/media/worktribe/output-2653821/forensic-considerations-for-the-high-efficiency-image-file-format-heif.pdf",
+                "Forensic considerations for the High Efficiency Image File Format (McKeown & Russell, IEEE Cyber Security 2020)",
+                "https://doi.org/10.1109/CyberSecurity49315.2020.9138890",
             ),
             (
                 "HEIF forensics — authentication implications (Amped Software)",
@@ -1119,11 +1191,7 @@ FORMATS: list[dict[str, Any]] = [
             ),
             (
                 "AVIF format overview (Library of Congress)",
-                "https://www.loc.gov/preservation/digital/formats/fdd/fdd000538.shtml",
-            ),
-            (
-                "AVIF metadata handling (Exiv2)",
-                "https://dev.exiv2.org/projects/exiv2/wiki/The_Metadata_in_AVIF_files",
+                "https://www.loc.gov/preservation/digital/formats/fdd/fdd000540.shtml",
             ),
             (
                 "ISOBMFF — ISO/IEC 14496-12 base media file format",
@@ -1170,8 +1238,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/galba-arueira/atx_reader",
             ),
             (
-                "ASTC texture compression overview (Khronos)",
-                "https://www.khronos.org/astc/",
+                "ASTC block format (Khronos Data Format Specification)",
+                "https://registry.khronos.org/DataFormat/specs/1.3/dataformat.1.3.html#ASTC",
             ),
             (
                 "Apple LZFSE compression algorithm",
@@ -1304,7 +1372,7 @@ FORMATS: list[dict[str, Any]] = [
             ),
             (
                 "Browser artifacts — JSON files in forensics (HackTricks)",
-                "https://book.hacktricks.wiki/en/generic-methodologies-and-resources/basic-forensic-methodology/specific-software-file-type-tricks/browser-artifacts.html",
+                "https://hacktricks.wiki/en/generic-methodologies-and-resources/basic-forensic-methodology/specific-software-file-type-tricks/browser-artifacts.html",
             ),
         ],
         "status": "reviewed",
@@ -1352,7 +1420,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://www.cclsolutionsgroup.com/post/chromium-session-storage-and-local-storage",
             ),
             (
-                "LevelDB forensics — memory and deleted data analysis (ScienceDirect)",
+                "MIC: Memory analysis of IndexedDB data on Chromium-based applications (FSI: Digital Investigation 2024)",
                 "https://www.sciencedirect.com/science/article/pii/S2666281724001331",
             ),
             (
@@ -1451,6 +1519,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "iOS Unified Logs research (ios-unifiedlogs.com)",
                 "https://www.ios-unifiedlogs.com/",
+            ),
+            (
+                "Thesis Friday — Unified Log analysis series (Tim Korver)",
+                "https://thesisfriday.com/",
             ),
             (
                 "Reviewing macOS Unified Logs — forensic guide (Mandiant/Google)",
@@ -1636,8 +1708,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://www.iso.org/standard/79110.html",
             ),
             (
-                "MP4 authentication via container structure (ResearchGate)",
-                "https://www.researchgate.net/publication/351224338_AUTHENTICATION_OF_DIGITAL_MP4_VIDEO_RECORDINGS_USING_FILE_CONTAINERS_AND_METADATA_PROPERTIES",
+                "Authentication of digital MP4 video recordings using file containers and metadata properties (IJCSE 2021)",
+                "https://doi.org/10.21817/ijcsenet/2021/v10i2/211002004",
             ),
             (
                 "MPEG-4 file structure forensics — mvhd and metadata (UC Denver)",
@@ -1692,7 +1764,7 @@ FORMATS: list[dict[str, Any]] = [
         "links": [
             (
                 "QuickTime file format spec (Apple)",
-                "https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFPreface/qtffPreface.html",
+                "https://developer.apple.com/documentation/quicktime-file-format",
             ),
             (
                 "Apple developer docs — QuickTime metadata atoms",
@@ -1906,7 +1978,16 @@ FORMATS: list[dict[str, Any]] = [
                     "ISOBMFF ftyp box at offset 4",
                     "3GP / 3G2 Video",
                 ),
-            }
+            },
+            {
+                "offset": 8,
+                "value": b"3g",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "3GPP/3GPP2 major brand ('3gp…', '3g2…', '3ge…' etc.) in the ftyp box (offset 8)",
+                    "3GP / 3G2 Video",
+                ),
+            },
         ],
         "extensions": [".3gp", ".3g2"],
         "links": [
@@ -2082,7 +2163,34 @@ FORMATS: list[dict[str, Any]] = [
                     "ISOBMFF ftyp box at offset 4",
                     "M4A Audio",
                 ),
-            }
+            },
+            {
+                "offset": 8,
+                "value": b"M4A ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Apple audio major brand 'M4A ' in the ftyp box (offset 8)",
+                    "M4A Audio",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"M4B ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Apple audiobook major brand 'M4B ' in the ftyp box (offset 8)",
+                    "M4A Audio",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"M4P ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Apple protected audio major brand 'M4P ' in the ftyp box (offset 8)",
+                    "M4A Audio",
+                ),
+            },
         ],
         "extensions": [".m4a", ".m4p", ".m4b"],
         "links": [
@@ -2091,8 +2199,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://en.wikipedia.org/wiki/MP4_file_format",
             ),
             (
-                "Forensic authentication of iOS Voice Memo M4A recordings",
-                "https://www.researchgate.net/publication/337598372_Forensic_originality_identification_of_iPhone_s_voice_memos",
+                "Forensic originality identification of iPhone's voice memos (J. Phys.: Conf. Ser. 2019)",
+                "https://doi.org/10.1088/1742-6596/1345/5/052053",
             ),
             (
                 "ExifTool QuickTime tags (M4A metadata fields)",
@@ -2197,8 +2305,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://xiph.org/flac/documentation_format_overview.html",
             ),
             (
-                "FLAC format specification (IETF RFC / Xiph)",
-                "https://xiph.org/flac/format.html",
+                "FLAC format specification (RFC 9639)",
+                "https://www.rfc-editor.org/rfc/rfc9639.html",
             ),
             (
                 "FLAC overview (Wikipedia)",
@@ -2249,6 +2357,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "OGG format overview (Xiph.org)",
                 "https://xiph.org/ogg/",
+            ),
+            (
+                "Ogg encapsulation format specification (RFC 3533)",
+                "https://www.rfc-editor.org/rfc/rfc3533.html",
             ),
             (
                 "Opus codec specification (RFC 6716)",
@@ -2619,10 +2731,6 @@ FORMATS: list[dict[str, Any]] = [
         "extensions": [".pdf"],
         "links": [
             (
-                "PDF format specification (ISO 32000, Adobe)",
-                "https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf",
-            ),
-            (
                 "PDF metadata fields — complete forensic reference (HTPBE)",
                 "https://htpbe.tech/blog/pdf-metadata-fields-complete-reference",
             ),
@@ -2688,6 +2796,10 @@ FORMATS: list[dict[str, Any]] = [
                 "https://en.wikipedia.org/wiki/Property_list",
             ),
             (
+                "Mobile Forensics – The File Format Handbook: Property Lists (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_6",
+            ),
+            (
                 "iOS plist forensics guide (mac4n6 / Sarah Edwards)",
                 "https://www.mac4n6.com/blog/tag/plist",
             ),
@@ -2737,8 +2849,8 @@ FORMATS: list[dict[str, Any]] = [
                 "https://www.ibm.com/think/x-force/web-browser-artifacts-using-googles-data-interchange-format",
             ),
             (
-                "Protocol Buffers in mobile forensics (Springer — Mobile Forensics Handbook)",
-                "https://link.springer.com/chapter/10.1007/978-3-030-98467-0_9",
+                "Mobile Forensics – The File Format Handbook: Protocol Buffers (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_9",
             ),
             (
                 "Reading Protobuf wire format without a map — forensic deep dive (beBinary)",
@@ -2989,6 +3101,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "SQLite file format specification",
                 "https://www.sqlite.org/fileformat.html",
+            ),
+            (
+                "Mobile Forensics – The File Format Handbook: SQLite (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_5",
             ),
             (
                 "SQLite forensics — freelist, WAL, and unallocated space (Belkasoft)",
@@ -3657,6 +3773,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Expert Witness Compression Format (EWF) — libewf project (L01 section)",
                 "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc",
             ),
+            (
+                "ForensicsWiki — EnCase image file format (incl. L01)",
+                "https://forensics.wiki/encase_image_file_format/",
+            ),
         ],
         "status": "reviewed",
     },
@@ -3768,6 +3888,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "iOS Unified Logs research (ios-unifiedlogs.com)",
                 "https://www.ios-unifiedlogs.com/",
+            ),
+            (
+                "Thesis Friday — Unified Log analysis series (Tim Korver)",
+                "https://thesisfriday.com/",
             ),
         ],
         "status": "reviewed",
@@ -3973,7 +4097,7 @@ FORMATS: list[dict[str, Any]] = [
                 ),
             }
         ],
-        "extensions": [".db", ".keychain-db", ".keychain"],
+        "extensions": [".db"],
         "links": [
             (
                 "Apple keychain data protection (Apple Security Guide)",
@@ -4090,12 +4214,8 @@ FORMATS: list[dict[str, Any]] = [
         "extensions": [],
         "links": [
             (
-                "iOS backup format internals (The iPhone Wiki)",
-                "https://www.theiphonewiki.com/wiki/ITunes_Backup",
-            ),
-            (
-                "Forensic analysis of iTunes backups (Farley Forensics)",
-                "https://farleyforensics.com/2019/04/14/forensic-analysis-of-itunes-backups/",
+                "iTunes Backup format internals (The Apple Wiki)",
+                "https://theapplewiki.com/wiki/ITunes_Backup",
             ),
             (
                 "iPhone backup forensics 101 (Kinga Kieczkowska / OBTS v7)",
@@ -4236,7 +4356,7 @@ FORMATS: list[dict[str, Any]] = [
         "links": [
             (
                 "GZIP file format specification (RFC 1952)",
-                "https://www.rfc-editor.org/rfc/rfc1952",
+                "https://www.rfc-editor.org/rfc/rfc1952.html",
             ),
             (
                 "Gzip format overview (Wikipedia)",
@@ -4252,6 +4372,3049 @@ FORMATS: list[dict[str, Any]] = [
             ),
         ],
         "status": "reviewed",
+    },
+    {
+        "name": "Raw Disk Image",
+        "short_name": "Raw",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A sector-for-sector copy of a disk, partition or flash chip with no container "
+            "around it: no header, no metadata, no hash, no compression. Often split into "
+            "numbered segments (.001, .002, …) that join into one stream. Everything the "
+            "device held is in it, including unallocated space and slack; how and when it "
+            "was acquired is only recorded outside the image.",
+            "Raw Disk Image",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android", "iOS"],
+        "parser_class": "RawImageVFS",
+        "magic": [],
+        "extensions": [".dd", ".raw", ".img", ".001"],
+        "links": [
+            (
+                "ForensicsWiki — Raw image format",
+                "https://forensics.wiki/raw_image_format/",
+            ),
+            (
+                "abrignoni/qnxprobe — partition and filesystem reader",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Master Boot Record (MBR) Partition Table",
+        "short_name": "MBR",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The classic PC partition scheme in the first sector of a disk: boot code, up "
+            "to four primary partition entries and the 0x55AA boot signature. Further "
+            "partitions chain through extended boot records. Each entry carries a type byte "
+            "and a start and length in sectors; space outside every entry (before the "
+            "first partition, between partitions, after the last) can hold remnants of "
+            "earlier layouts. A GPT disk keeps a protective MBR with a single 0xEE entry.",
+            "Master Boot Record (MBR) Partition Table",
+        ),
+        "platforms": ["Windows", "Linux", "macOS", "Android"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 510,
+                "value": b"U\xaa",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Boot signature 0x55AA at the end of sector 0",
+                    "Master Boot Record (MBR) Partition Table",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Master Boot Record (MBR) partition table format (libyal/libvsmbr)",
+                "https://github.com/libyal/libvsmbr/blob/main/documentation/Master%20Boot%20Record%20(MBR)%20partition%20table%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Master boot record",
+                "https://forensics.wiki/master_boot_record/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "GUID Partition Table (GPT)",
+        "short_name": "GPT",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The UEFI partition scheme: a header in the second logical block, a partition "
+            "entry array with a type GUID, unique GUID, start and end LBA and a UTF-16 name "
+            "per partition, and a backup copy of both at the end of the disk. Both copies "
+            "carry CRC32 checksums, so a primary and backup that disagree show the table "
+            "was changed or damaged. Used by current Windows, macOS, Linux and Android "
+            "devices; on 4Kn disks the header sits at byte 4096 instead of 512.",
+            "GUID Partition Table (GPT)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 512,
+                "value": b"EFI PART",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "GPT header signature in LBA 1 (512-byte sectors)",
+                    "GUID Partition Table (GPT)",
+                ),
+            },
+            {
+                "offset": 4096,
+                "value": b"EFI PART",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "GPT header signature in LBA 1 (4096-byte sectors)",
+                    "GUID Partition Table (GPT)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "GUID Partition Table (GPT) format (libyal/libvsgpt)",
+                "https://github.com/libyal/libvsgpt/blob/main/documentation/GUID%20Partition%20Table%20(GPT)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — GPT",
+                "https://forensics.wiki/gpt/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple File System (APFS)",
+        "short_name": "APFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Apple's copy-on-write filesystem on iOS 10.3+ and macOS 10.13+. A container "
+            "holds several volumes sharing one space pool; metadata is kept in B-trees "
+            "addressed through an object map, and every change is written to new blocks "
+            "under a new transaction ID. Older checkpoints and superseded tree nodes can "
+            "therefore remain on disk. Volumes may be encrypted per volume or per file "
+            "(Data Protection on iOS) and can carry snapshots. Timestamps are nanoseconds "
+            "since 1970 UTC.",
+            "Apple File System (APFS)",
+        ),
+        "platforms": ["iOS", "macOS"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 32,
+                "value": b"NXSB",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Container superblock magic 'NXSB' (block 0)",
+                    "Apple File System (APFS)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Apple File System Reference (Apple)",
+                "https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf",
+            ),
+            (
+                "Apple File System (APFS) — format documentation (libyal/libfsapfs)",
+                "https://github.com/libyal/libfsapfs/blob/main/documentation/Apple%20File%20System%20(APFS).asciidoc",
+            ),
+            (
+                "Mobile Forensics – The File Format Handbook: APFS (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_1",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "HFS Plus / HFSX",
+        "short_name": "HFS+",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Apple's filesystem before APFS (Mac OS 8.1 to macOS 10.12, still on many "
+            "external drives and older Time Machine disks). Files and folders are records "
+            "in a catalog B-tree, with an extents overflow file and an attributes file for "
+            "extended attributes and compressed (decmpfs) data. HFSX is the case-sensitive "
+            "variant. An optional journal records metadata changes. Timestamps are seconds "
+            "since 1904, local time on the volume header's creation date and UTC elsewhere.",
+            "HFS Plus / HFSX",
+        ),
+        "platforms": ["macOS", "iOS"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 1024,
+                "value": b"H+\x00\x04",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HFS Plus volume header ('H+', version 4)",
+                    "HFS Plus / HFSX",
+                ),
+            },
+            {
+                "offset": 1024,
+                "value": b"HX\x00\x05",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "HFSX volume header ('HX', version 5)",
+                    "HFS Plus / HFSX",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Technical Note TN1150: HFS Plus Volume Format (Apple)",
+                "https://developer.apple.com/library/archive/technotes/tn/tn1150.html",
+            ),
+            (
+                "Hierarchical File System (HFS) — format documentation (libyal/libfshfs)",
+                "https://github.com/libyal/libfshfs/blob/main/documentation/Hierarchical%20File%20System%20(HFS).asciidoc",
+            ),
+            (
+                "ForensicsWiki — HFS+",
+                "https://forensics.wiki/hfs+/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "NTFS",
+        "short_name": "NTFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The Windows filesystem. Every file and directory is an entry in the Master "
+            "File Table ($MFT) with attributes such as $STANDARD_INFORMATION and "
+            "$FILE_NAME, each holding its own set of four timestamps (100 ns since 1601 "
+            "UTC). Small files are stored resident inside the MFT entry. Metadata files "
+            "record history: $LogFile (transaction log), $UsnJrnl:$J (change journal), "
+            "$Secure, $Bitmap. Alternate data streams (e.g. Zone.Identifier) and Volume "
+            "Shadow Copies live on the same volume.",
+            "NTFS",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 3,
+                "value": b"NTFS    ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "OEM identifier 'NTFS    ' in the boot sector",
+                    "NTFS",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "New Technologies File System (NTFS) — format documentation (libyal/libfsntfs)",
+                "https://github.com/libyal/libfsntfs/blob/main/documentation/New%20Technologies%20File%20System%20(NTFS).asciidoc",
+            ),
+            (
+                "ForensicsWiki — NTFS",
+                "https://forensics.wiki/ntfs/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "FAT32",
+        "short_name": "FAT32",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The 32-bit File Allocation Table filesystem, used on USB sticks, SD cards, "
+            "camera media, EFI system partitions and older Android/iOS-compatible storage. "
+            "Directory entries hold an 8.3 name (plus long-name entries), attributes, size, "
+            "first cluster and creation/modification/access times in local time with "
+            "2-second (modification) and day (access) resolution. A deleted entry keeps "
+            "most of its fields with the first name byte set to 0xE5.",
+            "FAT32",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 82,
+                "value": b"FAT32   ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Filesystem type string 'FAT32   ' in the boot sector",
+                    "FAT32",
+                ),
+            },
+            {
+                "offset": 510,
+                "value": b"U\xaa",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Boot signature 0x55AA",
+                    "FAT32",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "File Allocation Table (FAT) format (libyal/libfsfat)",
+                "https://github.com/libyal/libfsfat/blob/main/documentation/File%20Allocation%20Table%20(FAT)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — FAT",
+                "https://forensics.wiki/fat/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "FAT12 / FAT16",
+        "short_name": "FAT12/16",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The 12- and 16-bit File Allocation Table variants, found on small volumes, old "
+            "media, floppy images and some embedded devices. Directory entries have the "
+            "same layout as on FAT32. The boot sector's filesystem-type string is "
+            "informational only; per the specification the FAT type is decided by the "
+            "cluster count.",
+            "FAT12 / FAT16",
+        ),
+        "platforms": ["Windows", "Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 54,
+                "value": b"FAT12   ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Filesystem type string 'FAT12   ' (informational field)",
+                    "FAT12 / FAT16",
+                ),
+            },
+            {
+                "offset": 54,
+                "value": b"FAT16   ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Filesystem type string 'FAT16   ' (informational field)",
+                    "FAT12 / FAT16",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "File Allocation Table (FAT) format (libyal/libfsfat)",
+                "https://github.com/libyal/libfsfat/blob/main/documentation/File%20Allocation%20Table%20(FAT)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — FAT",
+                "https://forensics.wiki/fat/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "exFAT",
+        "short_name": "exFAT",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Microsoft's Extended FAT for flash media: SDXC cards, large USB drives and "
+            "cameras. Files are described by entry sets (file, stream extension and file "
+            "name entries) with timestamps that carry 10 ms resolution and a UTC offset. "
+            "Contiguous files may have no FAT chain at all. A deleted entry set keeps its "
+            "data with the in-use bit cleared.",
+            "exFAT",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 3,
+                "value": b"EXFAT   ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Filesystem name 'EXFAT   ' in the boot sector",
+                    "exFAT",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "exFAT File System Specification (Microsoft)",
+                "https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification",
+            ),
+            (
+                "File Allocation Table (FAT) format (libyal/libfsfat)",
+                "https://github.com/libyal/libfsfat/blob/main/documentation/File%20Allocation%20Table%20(FAT)%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "ext2 / ext3 / ext4",
+        "short_name": "ext",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The Linux extended filesystem family, also the data and system partitions of "
+            "many Android devices. Files are inodes with up to four timestamps (ext4: "
+            "nanosecond resolution and creation time), block pointers or extents, and "
+            "directory entries that link names to inode numbers. ext3/ext4 keep a journal "
+            "whose older copies of metadata blocks can still describe deleted or changed "
+            "files. The superblock records last mount path, mount and write times.",
+            "ext2 / ext3 / ext4",
+        ),
+        "platforms": ["Linux", "Android"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 1080,
+                "value": b"S\xef",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic 0xEF53 (superblock at byte 1024)",
+                    "ext2 / ext3 / ext4",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "ext4 Data Structures and Algorithms (Linux kernel documentation)",
+                "https://docs.kernel.org/filesystems/ext4/index.html",
+            ),
+            (
+                "Extended File System (EXT) — format documentation (libyal/libfsext)",
+                "https://github.com/libyal/libfsext/blob/main/documentation/Extended%20File%20System%20(EXT).asciidoc",
+            ),
+            (
+                "ForensicsWiki — Extended file system (ext)",
+                "https://forensics.wiki/extended_file_system_(ext)/",
+            ),
+            (
+                "Mobile Forensics – The File Format Handbook: Ext4 (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_2",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Flash-Friendly File System (F2FS)",
+        "short_name": "F2FS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A log-structured filesystem for NAND flash, used as the userdata partition on "
+            "many Android devices. Data and nodes are written to new segments rather than "
+            "in place, and checkpoints alternate between two copies, so earlier versions of "
+            "files and metadata can remain in segments that have not yet been cleaned. "
+            "Inodes carry access, change, modification and (optionally) creation times.",
+            "Flash-Friendly File System (F2FS)",
+        ),
+        "platforms": ["Android", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 1024,
+                "value": b"\x10 \xf5\xf2",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic 0xF2F52010 (byte 1024)",
+                    "Flash-Friendly File System (F2FS)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Flash-Friendly File System (F2FS) (Linux kernel documentation)",
+                "https://docs.kernel.org/filesystems/f2fs.html",
+            ),
+            (
+                "Mobile Forensics – The File Format Handbook: F2FS (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_3",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "QNX6 Filesystem",
+        "short_name": "QNX6",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The QNX Neutrino power-safe filesystem, used in vehicle infotainment and "
+            "telematics units and other embedded systems. Two superblocks alternate; the "
+            "one with the higher serial number is current, and the other describes the "
+            "previous state of the filesystem. Inodes and directory blocks are addressed "
+            "through block pointer trees.",
+            "QNX6 Filesystem",
+        ),
+        "platforms": ["QNX"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 8192,
+                "value": b"\x22\x11\x19h",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic 0x68191122 after the 8 KiB boot block",
+                    "QNX6 Filesystem",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"\x22\x11\x19h",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic 0x68191122 at byte 0 (layouts without boot block)",
+                    "QNX6 Filesystem",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "The QNX6 Filesystem (Linux kernel documentation)",
+                "https://docs.kernel.org/filesystems/qnx6.html",
+            ),
+            (
+                "Mobile Forensics – The File Format Handbook: QNX6 (Springer, 2022)",
+                "https://doi.org/10.1007/978-3-030-98467-0_4",
+            ),
+            (
+                "qnxmount — QNX filesystem parsers (Netherlands Forensic Institute)",
+                "https://github.com/NetherlandsForensicInstitute/qnxmount",
+            ),
+            (
+                "abrignoni/qnxprobe — QNX and embedded filesystem reader",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "QNX4 Filesystem",
+        "short_name": "QNX4",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The older QNX filesystem, still found in embedded and automotive devices. It "
+            "has no magic number: a volume is recognised by its root directory entry and "
+            "the /.bitmap and /.inodes files. Directory entries hold the file's attributes "
+            "directly; files with several names or long names use the separate .inodes "
+            "file.",
+            "QNX4 Filesystem",
+        ),
+        "platforms": ["QNX"],
+        "parser_class": "RawImageVFS",
+        "magic": [],
+        "extensions": [],
+        "links": [
+            (
+                "abrignoni/qnxprobe — QNX and embedded filesystem reader",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "QNX Image Filesystem (IFS)",
+        "short_name": "QNX IFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A QNX boot image: a startup header and startup code followed by a read-only "
+            "image filesystem holding the kernel, drivers, libraries and the build script "
+            "the system boots with. The image filesystem may be compressed. Shows what "
+            "software and configuration a QNX device was built to start.",
+            "QNX Image Filesystem (IFS)",
+        ),
+        "platforms": ["QNX"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xeb~\xff\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Startup header signature 0x00FF7EEB",
+                    "QNX Image Filesystem (IFS)",
+                ),
+            },
+        ],
+        "extensions": [".ifs"],
+        "links": [
+            (
+                "abrignoni/qnxprobe — QNX and embedded filesystem reader",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "QNX Embedded Transaction Filesystem (ETFS)",
+        "short_name": "ETFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A transaction-based QNX filesystem for NAND flash. Every write is a new "
+            "transaction with a sequence number in the page's spare area; the current state "
+            "is rebuilt by replaying them, so pages holding superseded versions of files "
+            "can remain until they are reclaimed. It has no magic number: it is recognised "
+            "by its reserved files (.filetable, .badblks, .counts) at fixed file IDs.",
+            "QNX Embedded Transaction Filesystem (ETFS)",
+        ),
+        "platforms": ["QNX"],
+        "parser_class": "RawImageVFS",
+        "magic": [],
+        "extensions": [],
+        "links": [
+            (
+                "qnxmount — QNX filesystem parsers (Netherlands Forensic Institute)",
+                "https://github.com/NetherlandsForensicInstitute/qnxmount",
+            ),
+            (
+                "abrignoni/qnxprobe — QNX and embedded filesystem reader",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "QNX Embedded Flash Filesystem (EFS / F3S)",
+        "short_name": "EFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The QNX flash filesystem for NOR flash (fs-flash3). The flash is divided into "
+            "units holding extents; changes are copy-on-write, with a pointer from an old "
+            "extent to the one that supersedes it, so older versions can remain readable. "
+            "The partition is found by its boot record containing the text 'QSSL_F3S'.",
+            "QNX Embedded Flash Filesystem (EFS / F3S)",
+        ),
+        "platforms": ["QNX"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": None,
+                "value": b"QSSL_F3S",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Boot record signature 'QSSL_F3S' (offset depends on the unit layout)",
+                    "QNX Embedded Flash Filesystem (EFS / F3S)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "qnxmount — QNX filesystem parsers (Netherlands Forensic Institute)",
+                "https://github.com/NetherlandsForensicInstitute/qnxmount",
+            ),
+            (
+                "abrignoni/qnxprobe — QNX and embedded filesystem reader",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "SquashFS",
+        "short_name": "SquashFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A compressed read-only filesystem used for firmware images of routers, IoT "
+            "devices, set-top boxes and Linux live systems. Inode and directory tables and "
+            "file data are compressed in blocks; files are stored once and cannot be "
+            "changed in place, so the image shows the firmware as built. Timestamps are "
+            "seconds since 1970.",
+            "SquashFS",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"hsqs",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic 'hsqs' (little-endian)",
+                    "SquashFS",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"sqsh",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic 'sqsh' (big-endian)",
+                    "SquashFS",
+                ),
+            },
+        ],
+        "extensions": [".squashfs", ".sqsh"],
+        "links": [
+            (
+                "Squashfs 4.0 Filesystem (Linux kernel documentation)",
+                "https://docs.kernel.org/filesystems/squashfs.html",
+            ),
+            (
+                "Squashfs binary format (dr-emann)",
+                "https://dr-emann.github.io/squashfs/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "JFFS2 (Journalling Flash File System v2)",
+        "short_name": "JFFS2",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A log-structured filesystem for raw NOR/NAND flash in embedded Linux devices. "
+            "The whole filesystem is a sequence of nodes, each with a version number; the "
+            "newest node for each inode wins, so older nodes holding earlier file contents "
+            "and names can remain on the flash until garbage collection erases the block.",
+            "JFFS2 (Journalling Flash File System v2)",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x85\x19",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Node magic 0x1985 (little-endian)",
+                    "JFFS2 (Journalling Flash File System v2)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"\x19\x85",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Node magic 0x1985 (big-endian)",
+                    "JFFS2 (Journalling Flash File System v2)",
+                ),
+            },
+        ],
+        "extensions": [".jffs2"],
+        "links": [
+            (
+                "JFFS2 documentation (Linux MTD project)",
+                "http://www.linux-mtd.infradead.org/doc/jffs2.html",
+            ),
+            (
+                "JFFS: The Journalling Flash File System (David Woodhouse, Red Hat)",
+                "https://sourceware.org/jffs2/jffs2.pdf",
+            ),
+            (
+                "ForensicsWiki — JFFS2",
+                "https://forensics.wiki/jffs2/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "UBI (Unsorted Block Images)",
+        "short_name": "UBI",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A volume layer on raw NAND flash in embedded Linux devices. Each physical "
+            "eraseblock starts with an erase-counter header and a volume-ID header that "
+            "maps it to a logical block of a volume; a volume table names the volumes. "
+            "Eraseblocks that held earlier copies of a logical block can remain until they "
+            "are erased.",
+            "UBI (Unsorted Block Images)",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"UBI#",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Erase-counter header magic 'UBI#'",
+                    "UBI (Unsorted Block Images)",
+                ),
+            },
+        ],
+        "extensions": [".ubi"],
+        "links": [
+            (
+                "UBI documentation (Linux MTD project)",
+                "http://www.linux-mtd.infradead.org/doc/ubi.html",
+            ),
+            (
+                "UBI — Unsorted Block Images, design paper (Linux MTD project)",
+                "http://www.linux-mtd.infradead.org/doc/ubidesign/ubidesign.pdf",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "UBIFS",
+        "short_name": "UBIFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The flash filesystem that runs on a UBI volume. Nodes are written out of place "
+            "and indexed by a wandering B+ tree; a journal holds recent changes. Nodes for "
+            "superseded data can remain in the volume until it is garbage-collected.",
+            "UBIFS",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"1\x18\x10\x06",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Node magic 0x06101831",
+                    "UBIFS",
+                ),
+            },
+        ],
+        "extensions": [".ubifs"],
+        "links": [
+            (
+                "UBIFS documentation (Linux MTD project)",
+                "http://www.linux-mtd.infradead.org/doc/ubifs.html",
+            ),
+            (
+                "UBIFS white paper (Linux MTD project)",
+                "http://www.linux-mtd.infradead.org/doc/ubifs_whitepaper.pdf",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "YAFFS1 / YAFFS2",
+        "short_name": "YAFFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Yet Another Flash File System, used on NAND flash in older Android devices and "
+            "embedded systems. Each page carries tags in its spare area naming the object "
+            "and chunk it belongs to and a sequence number; the newest chunk wins, so "
+            "earlier versions of files can remain on the flash. It has no magic number and "
+            "is recognised by its page and spare-area layout.",
+            "YAFFS1 / YAFFS2",
+        ),
+        "platforms": ["Android", "Linux"],
+        "parser_class": "RawImageVFS",
+        "magic": [],
+        "extensions": [".yaffs", ".yaffs2"],
+        "links": [
+            (
+                "YAFFS (official site)",
+                "https://yaffs.net/",
+            ),
+            (
+                "ForensicsWiki — YAFFS",
+                "https://forensics.wiki/yaffs/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "BitLocker Drive Encryption",
+        "short_name": "BitLocker",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Windows full-volume encryption. The volume keeps a boot sector with the "
+            "'-FVE-FS-' signature and three copies of the FVE metadata, which list the key "
+            "protectors (TPM, PIN, password, recovery password, startup key) and when the "
+            "volume was encrypted. Everything else is ciphertext; without one of the "
+            "protectors' secrets the files cannot be read. BitLocker To Go protects "
+            "removable drives the same way.",
+            "BitLocker Drive Encryption",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 3,
+                "value": b"-FVE-FS-",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "BitLocker signature '-FVE-FS-' in the volume boot sector",
+                    "BitLocker Drive Encryption",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "BitLocker Drive Encryption (BDE) format (libyal/libbde)",
+                "https://github.com/libyal/libbde/blob/main/documentation/BitLocker%20Drive%20Encryption%20(BDE)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — BitLocker disk encryption",
+                "https://forensics.wiki/bitlocker_disk_encryption/",
+            ),
+            (
+                "BitLocker overview (Microsoft)",
+                "https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "AccessData AD Encryption (ADCRYPT)",
+        "short_name": "ADCRYPT",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The encryption wrapper FTK Imager can put around an acquisition (raw or E01 "
+            "segments). Each encrypted file starts with an 'ADCRYPT' header; the content is "
+            "AES-encrypted and opened with the password or the RSA private key "
+            "(certificate) chosen at acquisition time.",
+            "AccessData AD Encryption (ADCRYPT)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": "RawImageVFS",
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"ADCRYPT\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AD encryption header 'ADCRYPT'",
+                    "AccessData AD Encryption (ADCRYPT)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "abrignoni/ewfprobe — reader with AD-encryption support",
+                "https://github.com/abrignoni/ewfprobe",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Cellebrite UFDR",
+        "short_name": "UFDR",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The report/delivery container exported by Cellebrite Physical Analyzer. It is "
+            "a ZIP archive: the extracted files are stored under files/<category>/, while "
+            "the device's original paths, sizes, timestamps and hashes are kept in "
+            "DbData/database.db (a PostgreSQL custom-format dump). report.xml duplicates "
+            "the data in an older XML layout. Large exports may be split into several "
+            "segments.",
+            "Cellebrite UFDR",
+        ),
+        "platforms": ["Android", "iOS"],
+        "parser_class": "UFDRVFS",
+        "magic": [
+            {
+                "offset": None,
+                "value": b"PK\x03\x04",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "ZIP container holding report.xml and DbData/database.db",
+                    "Cellebrite UFDR",
+                ),
+            },
+        ],
+        "extensions": [".ufdr"],
+        "links": [
+            (
+                "UFDR2DIR — UFDR to original file structure (DFIR Science)",
+                "https://github.com/DFIRScience/UFDR2DIR",
+            ),
+            (
+                "pg_dump custom archive format (PostgreSQL documentation)",
+                "https://www.postgresql.org/docs/current/app-pgdump.html",
+            ),
+            (
+                "ForensicsWiki — Cellebrite",
+                "https://forensics.wiki/cellebrite/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Android logcat (text)",
+        "short_name": "logcat",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Text output of Android's logcat: one line per log message with date and time "
+            "(device local time, no year in the default format), PID, TID, priority, tag "
+            "and message. Found in bug reports, ADB extractions and app support exports. "
+            "The binary log buffers on the device are ring buffers, so a capture only "
+            "reaches back as far as the buffer did.",
+            "Android logcat (text)",
+        ),
+        "platforms": ["Android"],
+        "parser_class": "LogParser",
+        "magic": [],
+        "extensions": [".txt", ".log"],
+        "links": [
+            (
+                "Logcat command-line tool (Android developers)",
+                "https://developer.android.com/tools/logcat",
+            ),
+            (
+                "Understand logging (Android Open Source Project)",
+                "https://source.android.com/docs/core/tests/debug/understanding-logging",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Syslog (RFC 3164 / RFC 5424)",
+        "short_name": "Syslog",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Text log format of Unix-like systems and network devices: one message per line "
+            "with priority, timestamp, host name, process tag and message. RFC 3164 "
+            "timestamps have no year and no time zone; RFC 5424 uses full ISO 8601 "
+            "timestamps with offset. Found in /var/log on Linux and in exports from "
+            "routers, firewalls and appliances.",
+            "Syslog (RFC 3164 / RFC 5424)",
+        ),
+        "platforms": ["Linux", "macOS"],
+        "parser_class": "LogParser",
+        "magic": [],
+        "extensions": [".log"],
+        "links": [
+            (
+                "The BSD syslog Protocol (RFC 3164)",
+                "https://www.rfc-editor.org/rfc/rfc3164.html",
+            ),
+            (
+                "The Syslog Protocol (RFC 5424)",
+                "https://www.rfc-editor.org/rfc/rfc5424.html",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "SQLCipher Encrypted Database",
+        "short_name": "SQLCipher",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "An SQLite database with every page AES-256 encrypted, used by messengers and "
+            "other apps (Signal, WeChat, many Android apps). Even the first 16 bytes are "
+            "encrypted (they hold the key-derivation salt), so the file looks random and "
+            "has no signature. Each page carries an IV and an HMAC; with the right key and "
+            "settings it decrypts to an ordinary SQLite database.",
+            "SQLCipher Encrypted Database",
+        ),
+        "platforms": ["Android", "iOS", "Windows", "macOS", "Linux"],
+        "parser_class": "SQLiteParser",
+        "magic": [],
+        "extensions": [".db", ".sqlite"],
+        "links": [
+            (
+                "SQLCipher design — security approach and features (Zetetic)",
+                "https://www.zetetic.net/sqlcipher/design/",
+            ),
+            (
+                "SQLCipher source (Zetetic)",
+                "https://github.com/sqlcipher/sqlcipher",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows PE Executable",
+        "short_name": "PE",
+        "category": "execution",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The Portable Executable format of Windows programs and libraries (.exe, .dll, "
+            ".sys). An MS-DOS stub points to the PE header with the target machine, a link "
+            "timestamp, section table, imports and exports; resources hold version "
+            "information (company, product, original file name) and icons. An Authenticode "
+            "signature, if present, names the signer. Relevant for malware analysis and for "
+            "linking a binary to its origin.",
+            "Windows PE Executable",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"MZ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "MS-DOS header 'MZ' (the PE header follows at e_lfanew)",
+                    "Windows PE Executable",
+                ),
+            },
+        ],
+        "extensions": [".exe", ".dll", ".sys", ".scr", ".cpl"],
+        "links": [
+            (
+                "PE Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/windows/win32/debug/pe-format",
+            ),
+            (
+                "MZ, PE-COFF executable file format (libyal/libexe)",
+                "https://github.com/libyal/libexe/blob/main/documentation/Executable%20(EXE)%20file%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Shortcut (LNK)",
+        "short_name": "LNK",
+        "category": "execution",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Windows shell link files, created when files are opened (Recent folder, Office "
+            "recent items) and inside Jump Lists. They record the target's path, size and "
+            "MAC times at the moment the link was written, the volume serial number and "
+            "type, network share names and often the NetBIOS name and MAC address of the "
+            "machine. Evidence of files and volumes that may no longer exist.",
+            "Windows Shortcut (LNK)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"L\x00\x00\x00\x01\x14\x02\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00F",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header size 0x4C and LinkCLSID {00021401-0000-0000-C000-000000000046}",
+                    "Windows Shortcut (LNK)",
+                ),
+            },
+        ],
+        "extensions": [".lnk"],
+        "links": [
+            (
+                "[MS-SHLLINK]: Shell Link (.LNK) Binary File Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/16cb4ca1-9339-4d0c-a68d-bf1d6cc0f943",
+            ),
+            (
+                "Windows Shortcut File (LNK) format (libyal/liblnk)",
+                "https://github.com/libyal/liblnk/blob/main/documentation/Windows%20Shortcut%20File%20(LNK)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — LNK",
+                "https://forensics.wiki/lnk/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Jump Lists",
+        "short_name": "Jump List",
+        "category": "execution",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Per-application lists of recently and frequently used items, keyed by an "
+            "AppID. AutomaticDestinations-ms files are OLE compound files holding one LNK "
+            "stream per item and a DestList stream with access counts, last-access times "
+            "and the host name; CustomDestinations-ms files are concatenated LNK records "
+            "pinned or provided by the application. They persist after the referenced files "
+            "are gone.",
+            "Windows Jump Lists",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": None,
+                "value": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "OLE compound file signature (AutomaticDestinations-ms); "
+                    "the same bytes start every OLE compound file",
+                    "Windows Jump Lists",
+                ),
+            },
+        ],
+        "extensions": [".automaticdestinations-ms", ".customdestinations-ms"],
+        "links": [
+            (
+                "Jump lists format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Jump%20lists%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Jump lists",
+                "https://forensics.wiki/jump_lists/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "OLE Compound File (CFB)",
+        "short_name": "CFB",
+        "category": "document",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Microsoft's Compound File Binary format: a FAT-like filesystem inside one file "
+            "with storages and streams. It is the container of legacy Office documents "
+            "(.doc, .xls, .ppt), Outlook .msg messages, Thumbs.db, Jump Lists, MSI "
+            "installers and many application files. The SummaryInformation streams carry "
+            "author, last saved by, creation and edit times; unallocated sectors can keep "
+            "data of earlier versions.",
+            "OLE Compound File (CFB)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Compound file signature D0 CF 11 E0 A1 B1 1A E1",
+                    "OLE Compound File (CFB)",
+                ),
+            },
+        ],
+        "extensions": [".doc", ".xls", ".ppt", ".msg", ".msi", ".db"],
+        "links": [
+            (
+                "[MS-CFB]: Compound File Binary File Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b",
+            ),
+            (
+                "OLE Compound File format (libyal/libolecf)",
+                "https://github.com/libyal/libolecf/blob/main/documentation/OLE%20Compound%20File%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Extensible Storage Engine (ESE) Database",
+        "short_name": "ESE",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Microsoft's embedded database engine (JET Blue). Used by SRUM (SRUDB.dat — "
+            "per-app network and energy usage), Windows Search (Windows.edb), Internet "
+            "Explorer/Edge legacy WebCache, Active Directory (ntds.dit) and Exchange. Pages "
+            "are written through transaction logs (.log/.jrs), and a database copied from "
+            "a live system may be in a 'dirty shutdown' state with changes still only in "
+            "the logs.",
+            "Extensible Storage Engine (ESE) Database",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 4,
+                "value": b"\xef\xcd\xab\x89",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "File header signature 0x89ABCDEF at offset 4",
+                    "Extensible Storage Engine (ESE) Database",
+                ),
+            },
+        ],
+        "extensions": [".edb", ".dat", ".dit"],
+        "links": [
+            (
+                "Extensible Storage Engine (ESE) Database File (EDB) format (libyal/libesedb)",
+                "https://github.com/libyal/libesedb/blob/main/documentation/Extensible%20Storage%20Engine%20(ESE)%20Database%20File%20(EDB)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — ESE database file format",
+                "https://forensics.wiki/extensible_storage_engine_(ese)_database_file_(edb)_format/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Event Log (EVT, legacy)",
+        "short_name": "EVT",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The binary event log of Windows NT to XP/2003 (AppEvent.Evt, SecEvent.Evt, "
+            "SysEvent.Evt): a circular buffer of event records with record number, "
+            "generated and written times, event ID, source and strings. Records from before "
+            "a wrap can remain in the file's free space. Superseded by EVTX from Windows "
+            "Vista on.",
+            "Windows Event Log (EVT, legacy)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 4,
+                "value": b"LfLe",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header signature 'LfLe' at offset 4",
+                    "Windows Event Log (EVT, legacy)",
+                ),
+            },
+        ],
+        "extensions": [".evt"],
+        "links": [
+            (
+                "Windows Event Viewer Log (EVT) format (libyal/libevt)",
+                "https://github.com/libyal/libevt/blob/main/documentation/Windows%20Event%20Log%20(EVT)%20format.asciidoc",
+            ),
+            (
+                "Event Log File Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/windows/win32/eventlog/event-log-file-format",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Thumbnail Cache",
+        "short_name": "Thumbcache",
+        "category": "document",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Explorer's thumbnail databases (thumbcache_*.db with an index file "
+            "thumbcache_idx.db, Windows Vista and later). Each entry holds a thumbnail "
+            "image keyed by a cache ID. Thumbnails can remain after the original pictures, "
+            "videos or documents were deleted or were on a removable or network drive.",
+            "Windows Thumbnail Cache",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"CMMM",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Cache file signature 'CMMM'",
+                    "Windows Thumbnail Cache",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"IMMM",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Index file signature 'IMMM'",
+                    "Windows Thumbnail Cache",
+                ),
+            },
+        ],
+        "extensions": [".db"],
+        "links": [
+            (
+                "Windows Explorer Thumbnail Cache database format (libyal/libwtcdb)",
+                "https://github.com/libyal/libwtcdb/blob/main/documentation/Windows%20Explorer%20Thumbnail%20Cache%20database%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Thumbs.db",
+                "https://forensics.wiki/thumbs.db/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "NTFS Master File Table ($MFT)",
+        "short_name": "$MFT",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The NTFS metadata file holding one 1 KiB (sometimes 4 KiB) record per file and "
+            "directory, often exported on its own for triage. Each record has the "
+            "$STANDARD_INFORMATION and $FILE_NAME timestamps, names, parent reference, size "
+            "and the data runs or resident data. Records of deleted files stay until "
+            "reused.",
+            "NTFS Master File Table ($MFT)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"FILE",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "MFT entry signature 'FILE'",
+                    "NTFS Master File Table ($MFT)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "New Technologies File System (NTFS) — format documentation (libyal/libfsntfs)",
+                "https://github.com/libyal/libfsntfs/blob/main/documentation/New%20Technologies%20File%20System%20(NTFS).asciidoc",
+            ),
+            (
+                "ForensicsWiki — $MFT",
+                "https://forensics.wiki/$mft/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "NTFS Transaction Log ($LogFile)",
+        "short_name": "$LogFile",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The NTFS metadata journal: restart pages followed by log record pages "
+            "describing redo and undo operations on MFT entries, indexes and bitmaps. "
+            "Covers the most recent minutes to hours of file system activity, including "
+            "creations, renames and deletions.",
+            "NTFS Transaction Log ($LogFile)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"RSTR",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Restart page signature 'RSTR'",
+                    "NTFS Transaction Log ($LogFile)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "New Technologies File System (NTFS) — format documentation (libyal/libfsntfs)",
+                "https://github.com/libyal/libfsntfs/blob/main/documentation/New%20Technologies%20File%20System%20(NTFS).asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "NTFS Change Journal ($UsnJrnl:$J)",
+        "short_name": "$UsnJrnl",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The update sequence number journal in the $J stream of $Extend\\$UsnJrnl: one "
+            "record per change with file reference, parent reference, timestamp, reason "
+            "flags (create, rename, delete, data overwrite …) and file name. It often "
+            "reaches back days or weeks and names files that no longer exist. The stream is "
+            "sparse; only its end holds records.",
+            "NTFS Change Journal ($UsnJrnl:$J)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [],
+        "links": [
+            (
+                "USN_RECORD_V2 structure (Microsoft)",
+                "https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-usn_record_v2",
+            ),
+            (
+                "New Technologies File System (NTFS) — format documentation (libyal/libfsntfs)",
+                "https://github.com/libyal/libfsntfs/blob/main/documentation/New%20Technologies%20File%20System%20(NTFS).asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Recycle Bin ($I files)",
+        "short_name": "$I",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "For each file moved to the Recycle Bin (Windows Vista and later), "
+            "$Recycle.Bin\\<SID>\\ holds a $R file with the content and a $I file with the "
+            "original path, size and deletion time. Version 2 (Windows 10 and later) stores "
+            "the path length; version 1 a fixed 520-byte path. The header is just a "
+            "version number, not a signature.",
+            "Windows Recycle Bin ($I files)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [],
+        "links": [
+            (
+                "Windows Recycle.Bin file formats (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Windows%20Recycle.Bin%20file%20formats.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Volume Shadow Copy (VSS)",
+        "short_name": "VSS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Copy-on-write snapshots of an NTFS volume (System Restore, backups, previous "
+            "versions). The snapshot store is kept in files under System Volume Information "
+            "and catalogued from a header at offset 0x1E00 of the volume. Each snapshot "
+            "presents the volume as it was at its creation time, including files since "
+            "deleted or changed.",
+            "Volume Shadow Copy (VSS)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 7680,
+                "value": b"k\x87\x088v\xc1HN\xb7\xae\x04\x04nl\xc7R",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "VSS identifier {3808876B-C176-4E48-B7AE-04046E6CC752} at volume offset 0x1E00",
+                    "Volume Shadow Copy (VSS)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Volume Shadow Snapshot (VSS) format (libyal/libvshadow)",
+                "https://github.com/libyal/libvshadow/blob/main/documentation/Volume%20Shadow%20Snapshot%20(VSS)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Windows shadow volumes",
+                "https://forensics.wiki/windows_shadow_volumes/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Outlook Personal Folders (PST / OST)",
+        "short_name": "PST",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Outlook's mailbox file: e-mails, attachments, calendar, contacts and tasks in "
+            "a B-tree based node database (.pst for archives and POP accounts, .ost as the "
+            "offline cache of Exchange/Microsoft 365). Deleted items can remain in "
+            "unallocated blocks. Optional 'compressible' or 'high' encoding obscures but "
+            "does not protect the content.",
+            "Outlook Personal Folders (PST / OST)",
+        ),
+        "platforms": ["Windows", "macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"!BDN",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature '!BDN'",
+                    "Outlook Personal Folders (PST / OST)",
+                ),
+            },
+        ],
+        "extensions": [".pst", ".ost"],
+        "links": [
+            (
+                "[MS-PST]: Outlook Personal Folders (.pst) File Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546",
+            ),
+            (
+                "Personal Folder File (PFF) format (libyal/libpff)",
+                "https://github.com/libyal/libpff/blob/main/documentation/Personal%20Folder%20File%20(PFF)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Personal folder file (PAB, PST, OST)",
+                "https://forensics.wiki/personal_folder_file_(pab,_pst,_ost)/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Minidump",
+        "short_name": "MDMP",
+        "category": "memory",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A partial process or system memory dump written on crashes (Windows Error "
+            "Reporting, %SystemRoot%\\Minidump) or on demand. Streams describe the threads, "
+            "loaded modules with versions and timestamps, exception record, system "
+            "information and selected memory ranges of the process at the time of the dump.",
+            "Windows Minidump",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"MDMP",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'MDMP'",
+                    "Windows Minidump",
+                ),
+            },
+        ],
+        "extensions": [".dmp", ".mdmp"],
+        "links": [
+            (
+                "MINIDUMP_HEADER structure (Microsoft)",
+                "https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/ns-minidumpapiset-minidump_header",
+            ),
+            (
+                "Minidump (MDMP) format (libyal/libmdmp)",
+                "https://github.com/libyal/libmdmp/blob/main/documentation/Minidump%20(MDMP)%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Windows Hibernation File (hiberfil.sys)",
+        "short_name": "hiberfil",
+        "category": "memory",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The compressed copy of physical memory Windows writes on hibernation and, with "
+            "Fast Startup, on every shutdown (kernel session only). Contains processes, "
+            "network state and decrypted keys as they were in RAM. After resume the header "
+            "is wiped ('wake'/zeroed), but compressed memory pages can still be present.",
+            "Windows Hibernation File (hiberfil.sys)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"hibr",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header signature 'hibr'",
+                    "Windows Hibernation File (hiberfil.sys)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"HIBR",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header signature 'HIBR'",
+                    "Windows Hibernation File (hiberfil.sys)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"wake",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header signature 'wake' (after resume)",
+                    "Windows Hibernation File (hiberfil.sys)",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"WAKE",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header signature 'WAKE' (after resume)",
+                    "Windows Hibernation File (hiberfil.sys)",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"RSTR",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header signature 'RSTR' at offset 0; the same bytes start an NTFS "
+                    "$LogFile restart page",
+                    "Windows Hibernation File (hiberfil.sys)",
+                ),
+            },
+        ],
+        "extensions": [".sys"],
+        "links": [
+            (
+                "Windows Hibernation File (hiberfil.sys) format (libyal/libhibr)",
+                "https://github.com/libyal/libhibr/blob/main/documentation/Windows%20Hibernation%20File%20(hiberfil.sys)%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Hiberfil.sys",
+                "https://forensics.wiki/hiberfil.sys/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Resilient File System (ReFS)",
+        "short_name": "ReFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Microsoft's copy-on-write filesystem for Windows Server and Dev Drives on "
+            "Windows 11. Metadata is held in B+ trees that are written to new locations on "
+            "every change, so older tree pages can remain. Supports integrity streams "
+            "(checksums) and block cloning.",
+            "Resilient File System (ReFS)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 3,
+                "value": b"ReFS\x00\x00\x00\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "File system signature 'ReFS' in the volume boot record",
+                    "Resilient File System (ReFS)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Resilient File System (ReFS) (libyal/libfsrefs)",
+                "https://github.com/libyal/libfsrefs/blob/main/documentation/Resilient%20File%20System%20(ReFS).asciidoc",
+            ),
+            (
+                "ForensicsWiki — Resilient file system (ReFS)",
+                "https://forensics.wiki/resilient_file_system_(refs)/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "macOS Keychain (file-based)",
+        "short_name": "kych",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The macOS file keychain format of login.keychain-db and System.keychain (named "
+            ".keychain before macOS 10.12). A CSSM database of tables for generic and "
+            "internet passwords, certificates and keys; record attributes such as service, "
+            "account, server and creation/modification dates are stored in the clear, the "
+            "secrets are encrypted with keys derived from the keychain password. Distinct "
+            "from the SQLite keychain-2.db of iOS and iCloud Keychain.",
+            "macOS Keychain (file-based)",
+        ),
+        "platforms": ["macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"kych",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'kych'",
+                    "macOS Keychain (file-based)",
+                ),
+            },
+        ],
+        "extensions": [".keychain", ".keychain-db"],
+        "links": [
+            (
+                "MacOS keychain database file format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/MacOS%20keychain%20database%20file%20format.asciidoc",
+            ),
+            (
+                "chainbreaker — macOS keychain forensic tool (n0fate)",
+                "https://github.com/n0fate/chainbreaker",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple File System Events (FSEvents)",
+        "short_name": "FSEvents",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The file system event logs in /.fseventsd on macOS volumes (and some iOS "
+            "extractions): gzip-compressed pages of records with the full path, event flags "
+            "(created, renamed, modified, removed …), an event ID and, in newer versions, "
+            "a file node ID. Records carry no timestamps of their own; times come from the "
+            "log files and surrounding evidence. They can show files on volumes and in "
+            "locations that no longer exist.",
+            "Apple File System Events (FSEvents)",
+        ),
+        "platforms": ["macOS", "iOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": None,
+                "value": b"1SLD",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Page signature '1SLD' (inside the gzip stream)",
+                    "Apple File System Events (FSEvents)",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"2SLD",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Page signature '2SLD' (inside the gzip stream)",
+                    "Apple File System Events (FSEvents)",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"3SLD",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Page signature '3SLD' (inside the gzip stream)",
+                    "Apple File System Events (FSEvents)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "MacOS File System Events Disk Log Stream format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/MacOS%20File%20System%20Events%20Disk%20Log%20Stream%20format.asciidoc",
+            ),
+            (
+                "FSEventsParser (G-C Partners)",
+                "https://github.com/dlcowen/FSEventsParser",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple Spotlight Store",
+        "short_name": "Spotlight",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Spotlight's metadata index (store.db and .store.db in .Spotlight-V100 on macOS "
+            "volumes, and per-app indexes on iOS). Holds metadata attributes per indexed "
+            "item such as names, paths, content type, dates (including last used), authors, "
+            "download sources and text excerpts — also for files since deleted.",
+            "Apple Spotlight Store",
+        ),
+        "platforms": ["macOS", "iOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"8tsd",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature '8tsd'",
+                    "Apple Spotlight Store",
+                ),
+            },
+        ],
+        "extensions": [".db"],
+        "links": [
+            (
+                "Apple Spotlight store file formats (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Apple%20Spotlight%20store%20database%20file%20format.asciidoc",
+            ),
+            (
+                "spotlight_parser (Yogesh Khatri)",
+                "https://github.com/ydkhatri/spotlight_parser",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple System Log (ASL)",
+        "short_name": "ASL",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The binary log store of macOS 10.4 to 10.11 and early iOS, still written by "
+            "some components afterwards (/private/var/log/asl/*.asl): records with "
+            "timestamp, host, sender, facility, PID/UID/GID, level and message, plus "
+            "free-form key-value pairs. Superseded by the Unified Log.",
+            "Apple System Log (ASL)",
+        ),
+        "platforms": ["macOS", "iOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"ASL DB\x00\x00\x00\x00\x00\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'ASL DB'",
+                    "Apple System Log (ASL)",
+                ),
+            },
+        ],
+        "extensions": [".asl"],
+        "links": [
+            (
+                "Apple System Log (ASL) file format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Apple%20System%20Log%20(ASL)%20file%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "macOS Finder .DS_Store",
+        "short_name": ".DS_Store",
+        "category": "configuration",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Hidden Finder files storing per-folder view settings in a B-tree of records "
+            "keyed by file name (icon position, view style, comments, etc.). Because "
+            "records are kept for names the Finder has seen, a .DS_Store can list files "
+            "that were in the folder earlier; copies also travel to network shares, USB "
+            "drives and ZIP archives.",
+            "macOS Finder .DS_Store",
+        ),
+        "platforms": ["macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x00\x00\x00\x01Bud1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Alignment value 1 followed by buddy-allocator magic 'Bud1'",
+                    "macOS Finder .DS_Store",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "DS_Store format (Wim Lewis, Mac::Finder::DSStore)",
+                "https://metacpan.org/dist/Mac-Finder-DSStore/view/DSStoreFormat.pod",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "AppleDouble / AppleSingle",
+        "short_name": "AppleDouble",
+        "category": "configuration",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Containers for Mac metadata on filesystems and transports that lack it: an "
+            "AppleDouble '._name' file next to the data file (on FAT, exFAT, SMB shares, in "
+            "__MACOSX folders of ZIP archives) holds the resource fork and Finder info, "
+            "often extended attributes such as com.apple.quarantine with the download "
+            "source. AppleSingle combines data and metadata in one file.",
+            "AppleDouble / AppleSingle",
+        ),
+        "platforms": ["macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x00\x05\x16\x07",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AppleDouble magic 0x00051607",
+                    "AppleDouble / AppleSingle",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"\x00\x05\x16\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "AppleSingle magic 0x00051600",
+                    "AppleDouble / AppleSingle",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "MIME Encapsulation of Macintosh Files — MacMIME (RFC 1740)",
+                "https://www.rfc-editor.org/rfc/rfc1740.html",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple Bill of Materials (BOM)",
+        "short_name": "BOM",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Apple's BOMStore container of named blocks and trees. Installer receipts "
+            "(/var/db/receipts/*.bom) list every file a package installed with mode, owner, "
+            "size and checksum; compiled asset catalogs (Assets.car) in app bundles use "
+            "the same container.",
+            "Apple Bill of Materials (BOM)",
+        ),
+        "platforms": ["macOS", "iOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"BOMStore",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'BOMStore'",
+                    "Apple Bill of Materials (BOM)",
+                ),
+            },
+        ],
+        "extensions": [".bom", ".car"],
+        "links": [
+            (
+                "bomutils — BOM file reader/writer (source with format structures)",
+                "https://github.com/hogliux/bomutils",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "XAR Archive",
+        "short_name": "XAR",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The eXtensible ARchive format of macOS installer packages (.pkg), .xip "
+            "archives and Safari extensions: a binary header, a zlib-compressed XML table "
+            "of contents with paths, owners, modes, timestamps and checksums of every file, "
+            "and a heap with the file data. Packages may carry a signing certificate chain "
+            "in the table of contents.",
+            "XAR Archive",
+        ),
+        "platforms": ["macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"xar!",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'xar!'",
+                    "XAR Archive",
+                ),
+            },
+        ],
+        "extensions": [".pkg", ".xar", ".xip"],
+        "links": [
+            (
+                "xar format (mackyle/xar wiki)",
+                "https://github.com/mackyle/xar/wiki/xarformat",
+            ),
+            (
+                "xar source (Apple Open Source)",
+                "https://github.com/apple-oss-distributions/xar",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple Encrypted Archive (AEA)",
+        "short_name": "AEA",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Apple's signed and encrypted archive format, used for iOS/macOS firmware and "
+            "OTA components. The content (usually an Apple Archive) is encrypted in "
+            "segments; opening it requires the key, which for firmware is fetched from "
+            "Apple's servers using metadata in the file.",
+            "Apple Encrypted Archive (AEA)",
+        ),
+        "platforms": ["iOS", "macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"AEA1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'AEA1'",
+                    "Apple Encrypted Archive (AEA)",
+                ),
+            },
+        ],
+        "extensions": [".aea"],
+        "links": [
+            (
+                "AEA guide (blacktop/ipsw documentation)",
+                "https://blacktop.github.io/ipsw/docs/guides/aea",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Apple Partition Map (APM)",
+        "short_name": "APM",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The partition scheme of PowerPC Macs, still used on some older external disks "
+            "and DMG images. A driver descriptor in block 0 is followed by one map entry "
+            "per partition with name, type ('Apple_HFS', 'Apple_Free' …), start and size.",
+            "Apple Partition Map (APM)",
+        ),
+        "platforms": ["macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"ER",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Driver descriptor signature 'ER' (block 0)",
+                    "Apple Partition Map (APM)",
+                ),
+            },
+            {
+                "offset": 512,
+                "value": b"PM",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Partition map entry signature 'PM' (block 1)",
+                    "Apple Partition Map (APM)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Apple Partition Map (APM) (libyal/libvsapm)",
+                "https://github.com/libyal/libvsapm/blob/main/documentation/Apple%20partition%20map%20(APM)%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Android Boot Image",
+        "short_name": "Boot image",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The boot partition image of Android devices: a header with OS version and "
+            "patch level, kernel command line and sizes, followed by the kernel, ramdisk "
+            "and (depending on header version) second-stage, DTB and recovery DTBO. Shows "
+            "the kernel and init configuration a device boots with, and modifications such "
+            "as rooting patches.",
+            "Android Boot Image",
+        ),
+        "platforms": ["Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"ANDROID!",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Boot image magic 'ANDROID!'",
+                    "Android Boot Image",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"VNDRBOOT",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Vendor boot image magic 'VNDRBOOT'",
+                    "Android Boot Image",
+                ),
+            },
+        ],
+        "extensions": [".img"],
+        "links": [
+            (
+                "Boot image header (Android Open Source Project)",
+                "https://source.android.com/docs/core/architecture/bootloader/boot-image-header",
+            ),
+            (
+                "bootimg.h (AOSP mkbootimg source)",
+                "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/include/bootimg/bootimg.h",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "systemd Journal",
+        "short_name": "journal",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The binary log of systemd-journald (/var/log/journal, /run/log/journal): "
+            "entries of key-value fields (MESSAGE, _PID, _UID, _COMM, _BOOT_ID, …) with "
+            "realtime and monotonic timestamps, hash-chained for sealing when Forward "
+            "Secure Sealing is enabled. Archived journal files keep older entries; a file "
+            "not closed cleanly is marked online/dirty.",
+            "systemd Journal",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"LPKSHHRH",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'LPKSHHRH'",
+                    "systemd Journal",
+                ),
+            },
+        ],
+        "extensions": [".journal", ".journal~"],
+        "links": [
+            (
+                "Journal File Format (systemd)",
+                "https://systemd.io/JOURNAL_FILE_FORMAT/",
+            ),
+            (
+                "Systemd journal file format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Systemd%20journal%20file%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "LUKS Encrypted Volume",
+        "short_name": "LUKS",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Linux Unified Key Setup, the standard Linux disk encryption format. A header "
+            "with cipher, UUID and up to 8 (LUKS1) or 32 (LUKS2) key slots, each holding "
+            "the volume key encrypted with a passphrase or key file; LUKS2 adds a JSON "
+            "metadata area and a secondary header copy. Without a slot's secret the data "
+            "area is ciphertext.",
+            "LUKS Encrypted Volume",
+        ),
+        "platforms": ["Linux", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"LUKS\xba\xbe",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Primary header magic 'LUKS' 0xBA 0xBE",
+                    "LUKS Encrypted Volume",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"SKUL\xba\xbe",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "LUKS2 secondary header magic 'SKUL' 0xBA 0xBE",
+                    "LUKS Encrypted Volume",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "LUKS1 On-Disk Format Specification (cryptsetup)",
+                "https://gitlab.com/cryptsetup/cryptsetup/-/wikis/LUKS-standard/on-disk-format.pdf",
+            ),
+            (
+                "LUKS2 On-Disk Format Specification (cryptsetup)",
+                "https://gitlab.com/cryptsetup/LUKS2-docs/-/raw/main/luks2_doc_wip.pdf",
+            ),
+            (
+                "LUKS Disk Encryption format (libyal/libluksde)",
+                "https://github.com/libyal/libluksde/blob/main/documentation/Linux%20Unified%20Key%20Setup%20(LUKS)%20Disk%20Encryption%20format.asciidoc",
+            ),
+            (
+                "ForensicsWiki — Linux unified key setup (LUKS)",
+                "https://forensics.wiki/linux_unified_key_setup_(luks)/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Linux Logical Volume Manager (LVM2)",
+        "short_name": "LVM2",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Linux volume management: a physical volume label in one of the first four "
+            "sectors (normally the second) points to a text metadata area describing volume "
+            "groups and logical volumes with their extents. The metadata area keeps "
+            "earlier versions of the configuration in a ring buffer, so removed or resized "
+            "logical volumes can be traced.",
+            "Linux Logical Volume Manager (LVM2)",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 512,
+                "value": b"LABELONE",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Physical volume label 'LABELONE' (normally sector 1)",
+                    "Linux Logical Volume Manager (LVM2)",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "LVM format specification (libyal/libvslvm)",
+                "https://github.com/libyal/libvslvm/blob/main/documentation/Logical%20Volume%20Manager%20(LVM)%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "utmp / wtmp / btmp Login Records",
+        "short_name": "utmp",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Fixed-size binary login records on Linux and other Unix systems: utmp (current "
+            "sessions), wtmp (login/logout, boot and shutdown history) and btmp (failed "
+            "logins). Each record has type, PID, terminal, user name, remote host or IP and "
+            "a timestamp. No header or signature; records are recognised by size and "
+            "layout.",
+            "utmp / wtmp / btmp Login Records",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [],
+        "links": [
+            (
+                "utmp(5) — Linux manual page",
+                "https://man7.org/linux/man-pages/man5/utmp.5.html",
+            ),
+            (
+                "Utmp login records format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Utmp%20login%20records%20format.asciidoc",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "LiME Memory Image",
+        "short_name": "LiME",
+        "category": "memory",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Physical memory captured from Linux and Android devices with the LiME kernel "
+            "module. In 'lime' format each captured memory range is preceded by a 32-byte "
+            "header with its start and end physical address; gaps between ranges are not "
+            "stored. 'raw' and 'padded' formats have no headers.",
+            "LiME Memory Image",
+        ),
+        "platforms": ["Linux", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"EMiL",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Range header magic 0x4C694D45 (little-endian 'EMiL')",
+                    "LiME Memory Image",
+                ),
+            },
+        ],
+        "extensions": [".lime", ".mem"],
+        "links": [
+            (
+                "LiME — Linux Memory Extractor",
+                "https://github.com/jtsylve/LiME",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "XFS",
+        "short_name": "XFS",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A journaling filesystem used as the default on Red Hat Enterprise Linux and "
+            "its derivatives and on many NAS devices. Allocation groups each manage their "
+            "own inodes and free space through B+ trees; inodes carry nanosecond timestamps "
+            "and, on v5 filesystems, a creation time.",
+            "XFS",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"XFSB",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock signature 'XFSB'",
+                    "XFS",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "X File System (XFS) (libyal/libfsxfs)",
+                "https://github.com/libyal/libfsxfs/blob/main/documentation/X%20File%20System%20(XFS).asciidoc",
+            ),
+            (
+                "ForensicsWiki — XFS",
+                "https://forensics.wiki/xfs/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Btrfs",
+        "short_name": "Btrfs",
+        "category": "filesystem",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A copy-on-write Linux filesystem with subvolumes and snapshots (default on "
+            "openSUSE and Fedora desktops, Synology NAS). Metadata trees are written to new "
+            "locations on every transaction, so earlier tree generations and snapshot "
+            "contents can hold previous versions of files.",
+            "Btrfs",
+        ),
+        "platforms": ["Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 65600,
+                "value": b"_BHRfS_M",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Superblock magic '_BHRfS_M' (superblock at 64 KiB)",
+                    "Btrfs",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "On-disk Format (Btrfs documentation)",
+                "https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "PCAP Packet Capture",
+        "short_name": "PCAP",
+        "category": "network",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The classic libpcap capture format written by tcpdump, Wireshark and many "
+            "network devices: a global header with link type and snapshot length, then one "
+            "record per packet with a timestamp (microsecond or nanosecond resolution, UTC) "
+            "and the captured bytes.",
+            "PCAP Packet Capture",
+        ),
+        "platforms": ["Linux", "macOS", "Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xd4\xc3\xb2\xa1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Magic 0xA1B2C3D4 little-endian (microseconds)",
+                    "PCAP Packet Capture",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"\xa1\xb2\xc3\xd4",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Magic 0xA1B2C3D4 big-endian (microseconds)",
+                    "PCAP Packet Capture",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"M<\xb2\xa1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Magic 0xA1B23C4D little-endian (nanoseconds)",
+                    "PCAP Packet Capture",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"\xa1\xb2<M",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Magic 0xA1B23C4D big-endian (nanoseconds)",
+                    "PCAP Packet Capture",
+                ),
+            },
+        ],
+        "extensions": [".pcap", ".cap"],
+        "links": [
+            (
+                "pcap-savefile(5) — libpcap file format (tcpdump)",
+                "https://www.tcpdump.org/manpages/pcap-savefile.5.html",
+            ),
+            (
+                "PCAP Capture File Format (IETF draft-ietf-opsawg-pcap)",
+                "https://datatracker.ietf.org/doc/draft-ietf-opsawg-pcap/",
+            ),
+            (
+                "ForensicsWiki — PCAP",
+                "https://forensics.wiki/pcap/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "PCAPNG Packet Capture",
+        "short_name": "PCAPNG",
+        "category": "network",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The block-based successor of PCAP and Wireshark's default: section header, "
+            "interface descriptions with names and time resolution, enhanced packet blocks, "
+            "name resolution blocks, and comments. Can hold captures from several "
+            "interfaces and link types in one file and records capture hardware, OS and "
+            "application.",
+            "PCAPNG Packet Capture",
+        ),
+        "platforms": ["Linux", "macOS", "Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x0a\x0d\x0d\x0a",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Section header block type 0x0A0D0D0A",
+                    "PCAPNG Packet Capture",
+                ),
+            },
+            {
+                "offset": 8,
+                "value": b"M<+\x1a",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Byte-order magic 0x1A2B3C4D (little-endian)",
+                    "PCAPNG Packet Capture",
+                ),
+            },
+        ],
+        "extensions": [".pcapng", ".ntar"],
+        "links": [
+            (
+                "PCAP Now Generic (pcapng) Capture File Format (IETF draft-ietf-opsawg-pcapng)",
+                "https://datatracker.ietf.org/doc/draft-ietf-opsawg-pcapng/",
+            ),
+            (
+                "PcapNg (Wireshark wiki)",
+                "https://wiki.wireshark.org/Development/PcapNg",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "RAR Archive",
+        "short_name": "RAR",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The RAR archive format (versions 1.5–4.x and 5.0): headers with file names, "
+            "sizes, modification (and optionally creation and access) times and attributes; "
+            "solid compression, multi-volume sets, recovery records and AES encryption of "
+            "data or of the headers too. With encrypted headers even the file names are "
+            "hidden.",
+            "RAR Archive",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"Rar!\x1a\x07\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "RAR 1.5–4.x signature",
+                    "RAR Archive",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"Rar!\x1a\x07\x01\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "RAR 5.0 signature",
+                    "RAR Archive",
+                ),
+            },
+        ],
+        "extensions": [".rar", ".r00", ".part1.rar"],
+        "links": [
+            (
+                "RAR 5.0 archive format (RARLAB)",
+                "https://www.rarlab.com/technote.htm",
+            ),
+            (
+                "ForensicsWiki — RAR",
+                "https://forensics.wiki/rar/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "bzip2 Compressed Data",
+        "short_name": "bzip2",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Block-sorting compressed stream holding a single file, often a TAR archive "
+            "(.tar.bz2) or a log/disk image. No file name or timestamp is stored; each 900 "
+            "KB-or-smaller block carries its own CRC, so undamaged blocks of a truncated or "
+            "carved stream can still be decompressed.",
+            "bzip2 Compressed Data",
+        ),
+        "platforms": ["Linux", "macOS", "Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"BZh",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'BZh' followed by the block size digit",
+                    "bzip2 Compressed Data",
+                ),
+            },
+        ],
+        "extensions": [".bz2", ".tbz2", ".tbz"],
+        "links": [
+            (
+                "bzip2 (sourceware.org)",
+                "https://sourceware.org/bzip2/",
+            ),
+            (
+                "The bzip2 format (Joe Tsai, dsnet/compress)",
+                "https://github.com/dsnet/compress/blob/master/doc/bzip2-format.pdf",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "XZ Compressed Data",
+        "short_name": "XZ",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "LZMA2-based compressed stream holding a single file, often a TAR archive "
+            "(.tar.xz), Linux packages, kernel modules or firmware. Streams consist of "
+            "blocks with integrity checks and an index; no file name or timestamp is "
+            "stored.",
+            "XZ Compressed Data",
+        ),
+        "platforms": ["Linux", "macOS", "Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xfd7zXZ\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Stream header magic FD 37 7A 58 5A 00",
+                    "XZ Compressed Data",
+                ),
+            },
+        ],
+        "extensions": [".xz", ".txz"],
+        "links": [
+            (
+                "The .xz File Format (Tukaani)",
+                "https://tukaani.org/xz/xz-file-format.txt",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Zstandard Compressed Data",
+        "short_name": "zstd",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Zstandard frames as used for .zst files, Linux packages and initramfs, browser "
+            "and app caches and database pages. A frame header may record the content size "
+            "and a dictionary ID; skippable frames can carry other data.",
+            "Zstandard Compressed Data",
+        ),
+        "platforms": ["Linux", "Android", "Windows", "macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"(\xb5/\xfd",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Frame magic 0xFD2FB528",
+                    "Zstandard Compressed Data",
+                ),
+            },
+        ],
+        "extensions": [".zst", ".tzst"],
+        "links": [
+            (
+                "Zstandard Compression and the 'application/zstd' Media Type (RFC 8878)",
+                "https://www.rfc-editor.org/rfc/rfc8878.html",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "LZ4 Frame",
+        "short_name": "LZ4",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The LZ4 frame format for .lz4 files and LZ4-compressed data in apps, kernels "
+            "and databases. The frame descriptor records block size, checksums and "
+            "optionally the content size. (Mozilla's jsonlz4 and Apple's LZ4 variants use "
+            "other headers.)",
+            "LZ4 Frame",
+        ),
+        "platforms": ["Linux", "Android", "Windows", "macOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x04\x22M\x18",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Frame magic 0x184D2204",
+                    "LZ4 Frame",
+                ),
+            },
+        ],
+        "extensions": [".lz4"],
+        "links": [
+            (
+                "LZ4 Frame Format Description (lz4 project)",
+                "https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Mozilla LZ4 (jsonlz4)",
+        "short_name": "jsonlz4",
+        "category": "serialization",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Firefox's LZ4-compressed JSON files: session store (sessionstore.jsonlz4, "
+            "recovery.jsonlz4 — open tabs, history per tab, form data, cookies), bookmark "
+            "backups and add-on data. A custom header 'mozLz40' and the decompressed size "
+            "precede an LZ4 block.",
+            "Mozilla LZ4 (jsonlz4)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"mozLz40\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Header magic 'mozLz40'",
+                    "Mozilla LZ4 (jsonlz4)",
+                ),
+            },
+        ],
+        "extensions": [".jsonlz4", ".mozlz4", ".baklz4"],
+        "links": [
+            (
+                "dejsonlz4 — reference decoder (avih)",
+                "https://github.com/avih/dejsonlz4",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Microsoft Cabinet (CAB)",
+        "short_name": "CAB",
+        "category": "archive",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Microsoft's compressed archive format for installers, Windows updates and "
+            "drivers. Holds file names, sizes, DOS date/time stamps and attributes for each "
+            "file; can be split across several cabinets and signed with Authenticode.",
+            "Microsoft Cabinet (CAB)",
+        ),
+        "platforms": ["Windows"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"MSCF",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 'MSCF'",
+                    "Microsoft Cabinet (CAB)",
+                ),
+            },
+        ],
+        "extensions": [".cab"],
+        "links": [
+            (
+                "Microsoft Cabinet Format (Microsoft)",
+                "https://learn.microsoft.com/en-us/previous-versions/bb417343(v=msdn.10)",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "ISO 9660 Optical Disc Image",
+        "short_name": "ISO",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The CD/DVD filesystem image format, also used to deliver software and malware "
+            "(mounted by a double-click on Windows). Volume descriptors from sector 16 on "
+            "carry the volume name, creating application and creation date; Joliet and Rock "
+            "Ridge extensions add long names and Unix attributes. UDF images may coexist "
+            "in the same file.",
+            "ISO 9660 Optical Disc Image",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 32769,
+                "value": b"CD001",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Volume descriptor identifier 'CD001' (sector 16)",
+                    "ISO 9660 Optical Disc Image",
+                ),
+            },
+        ],
+        "extensions": [".iso"],
+        "links": [
+            (
+                "ECMA-119 — Volume and File Structure of CDROM (Ecma International)",
+                "https://ecma-international.org/publications-and-standards/standards/ecma-119/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "KeePass Database (KDBX)",
+        "short_name": "KDBX",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The password database of KeePass, KeePassXC and compatible apps. Outside the "
+            "encrypted payload only the header is readable (cipher, key derivation function "
+            "and its parameters); entries with titles, user names, passwords, URLs, notes "
+            "and history are encrypted with a key derived from the master password and/or "
+            "key file.",
+            "KeePass Database (KDBX)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android", "iOS"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\x03\xd9\xa2\x9a",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 1 0x9AA2D903",
+                    "KeePass Database (KDBX)",
+                ),
+            },
+            {
+                "offset": 4,
+                "value": b"g\xfbK\xb5",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Signature 2 0xB54BFB67 (KDBX 2.x and later)",
+                    "KeePass Database (KDBX)",
+                ),
+            },
+        ],
+        "extensions": [".kdbx"],
+        "links": [
+            (
+                "KDBX File Format Specification (KeePass)",
+                "https://keepass.info/help/kb/kdbx.html",
+            ),
+            (
+                "KDBX 4.1 (KeePass)",
+                "https://keepass.info/help/kb/kdbx_4.1.html",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "VeraCrypt / TrueCrypt Volume",
+        "short_name": "VeraCrypt",
+        "category": "disk_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Encrypted containers and partitions of VeraCrypt and its predecessor "
+            "TrueCrypt. The volume header is itself encrypted with a key derived from the "
+            "password (and optional key files/PIM), so a volume has no signature and is "
+            "indistinguishable from random data; a hidden volume can sit inside the free "
+            "space of an outer one.",
+            "VeraCrypt / TrueCrypt Volume",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [".hc", ".tc"],
+        "links": [
+            (
+                "VeraCrypt Volume Format Specification (VeraCrypt)",
+                "https://veracrypt.io/en/VeraCrypt%20Volume%20Format%20Specification.html",
+            ),
+            (
+                "ForensicsWiki — TrueCrypt",
+                "https://forensics.wiki/truecrypt/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Mbox Mailbox",
+        "short_name": "mbox",
+        "category": "document",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A mailbox stored as one text file of concatenated e-mail messages, each "
+            "starting with a 'From ' separator line (sender and date). Used by Thunderbird, "
+            "Apple Mail exports, Google Takeout and Unix mail spools. Messages deleted in "
+            "the client can remain in the file until it is compacted.",
+            "Mbox Mailbox",
+        ),
+        "platforms": ["Windows", "macOS", "Linux"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"From ",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Separator line 'From '",
+                    "Mbox Mailbox",
+                ),
+            },
+        ],
+        "extensions": [".mbox", ".mbx"],
+        "links": [
+            (
+                "The application/mbox Media Type (RFC 4155)",
+                "https://www.rfc-editor.org/rfc/rfc4155.html",
+            ),
+            (
+                "ForensicsWiki — Mbox",
+                "https://forensics.wiki/mbox/",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "E-mail Message (EML / RFC 5322)",
+        "short_name": "EML",
+        "category": "document",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A single e-mail message as text: header fields (From, To, Date, Subject, "
+            "Message-ID) and the Received chain, which records each server that handled the "
+            "message with time and addresses, followed by the MIME body and attachments. "
+            "Authentication results (SPF, DKIM, DMARC) in the headers help judge whether a "
+            "message is genuine. No signature; recognised by its header lines.",
+            "E-mail Message (EML / RFC 5322)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "iOS", "Android"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [".eml"],
+        "links": [
+            (
+                "Internet Message Format (RFC 5322)",
+                "https://www.rfc-editor.org/rfc/rfc5322.html",
+            ),
+        ],
+        "status": "draft",
+    },
+    {
+        "name": "Chromium Disk Cache",
+        "short_name": "Chrome cache",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "The HTTP cache of Chrome, Edge and other Chromium browsers and Electron apps. "
+            "The blockfile backend uses an index file and data_0..3 block files; the simple "
+            "backend (Android, Linux) stores one file per entry. Entries hold the URL, "
+            "response headers with server dates and the cached content (pages, images, "
+            "scripts), also for sites no longer in history.",
+            "Chromium Disk Cache",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"\xc3\xca\x03\xc1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Blockfile index magic 0xC103CAC3",
+                    "Chromium Disk Cache",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"\xc3\xca\x04\xc1",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Blockfile data file magic 0xC104CAC3",
+                    "Chromium Disk Cache",
+                ),
+            },
+            {
+                "offset": 0,
+                "value": b"0\x5cr\xa7\x1bm\xfb\xfc",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Simple cache entry magic 0xFCFB6D1BA7725C30",
+                    "Chromium Disk Cache",
+                ),
+            },
+        ],
+        "extensions": [],
+        "links": [
+            (
+                "Chrome Cache file format (libyal/dtformats)",
+                "https://github.com/libyal/dtformats/blob/main/documentation/Chrome%20Cache%20file%20format.asciidoc",
+            ),
+            (
+                "Disk Cache (Chromium design documents)",
+                "https://www.chromium.org/developers/design-documents/network-stack/disk-cache/",
+            ),
+            (
+                "Very Simple Backend (Chromium design documents)",
+                "https://www.chromium.org/developers/design-documents/network-stack/disk-cache/very-simple-backend/",
+            ),
+        ],
+        "status": "draft",
     },
 ]
 

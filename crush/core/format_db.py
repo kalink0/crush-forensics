@@ -111,11 +111,12 @@ class FormatDatabase:
             return None
 
         cur = self._conn.execute(
-            "SELECT f.id, m.offset, m.pattern "
+            "SELECT f.id, f.parser_class, m.offset, m.pattern "
             "FROM formats f JOIN magic_bytes m ON m.format_id = f.id "
             "ORDER BY f.id"
         )
 
+        is_plist_xml: bool | None = None
         scores: dict[int, int] = {}
         for row in cur:
             offset = row["offset"]
@@ -124,8 +125,14 @@ class FormatDatabase:
             pattern: bytes = row["pattern"]
             end = offset + len(pattern)
             if len(peek_bytes) >= end and peek_bytes[offset:end] == pattern:
-                if pattern == XML_PLIST_SIG and not _looks_like_plist_xml(peek_bytes):
-                    continue
+                # "<?xml" is shared by the XML plist and the generic XML
+                # entry: a plist counts only for the plist entry, any other
+                # XML only for the generic one.
+                if pattern == XML_PLIST_SIG:
+                    if is_plist_xml is None:
+                        is_plist_xml = _looks_like_plist_xml(peek_bytes)
+                    if is_plist_xml != (row["parser_class"] == "PlistParser"):
+                        continue
                 scores[row["id"]] = scores.get(row["id"], 0) + len(pattern)
 
         if not scores:
