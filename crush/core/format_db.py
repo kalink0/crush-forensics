@@ -43,6 +43,8 @@ FORMAT_CATEGORIES = (
     QT_TRANSLATE_NOOP("FormatCategory", "execution"),
     QT_TRANSLATE_NOOP("FormatCategory", "filesystem"),
     QT_TRANSLATE_NOOP("FormatCategory", "log"),
+    QT_TRANSLATE_NOOP("FormatCategory", "logical_image"),
+    QT_TRANSLATE_NOOP("FormatCategory", "media"),
     QT_TRANSLATE_NOOP("FormatCategory", "memory"),
     QT_TRANSLATE_NOOP("FormatCategory", "network"),
     QT_TRANSLATE_NOOP("FormatCategory", "serialization"),
@@ -60,6 +62,7 @@ class FormatMatch:
     parser_class: str | None   # e.g. "SQLiteParser", or None if unsupported
     links: list[tuple[str, str]]  # [(label, url), ...]
     magic: list[tuple[int | None, bytes, str]]  # [(offset, pattern, description), ...]
+    last_reviewed: str | None  # ISO date of the entry's last manual review, None if not recorded
 
     def relevance_text(self) -> CatalogText:
         return CatalogText(KNOWLEDGE_CONTEXT, self.forensic_relevance, self.name, knowledge=True)
@@ -209,4 +212,5 @@ class FormatDatabase:
             parser_class=row["parser_class"],
             links=links,
             magic=magic,
+            last_reviewed=row["last_reviewed"],
         )

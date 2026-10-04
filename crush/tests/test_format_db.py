@@ -34,6 +34,33 @@ def test_format_db_categories_are_documented_values() -> None:
         assert fmt.category in FORMAT_CATEGORIES, f"{fmt.name}: category {fmt.category!r}"
 
 
+def test_format_db_platforms_in_declared_order() -> None:
+    from crush.data.build_formats_db import PLATFORMS
+    for fmt in FormatDatabase.get().all_formats():
+        values = fmt.platforms.split(",") if fmt.platforms else []
+        assert values == [p for p in PLATFORMS if p in values], f"{fmt.name}: {values}"
+
+
+def test_format_db_last_reviewed_matches_build_script() -> None:
+    from crush.data.build_formats_db import FORMATS
+    expected = {f["name"]: f["last_reviewed"] for f in FORMATS if f["status"] == "reviewed"}
+    for fmt in FormatDatabase.get().all_formats():
+        assert fmt.last_reviewed == expected[fmt.name], fmt.name
+
+
+@pytest.mark.parametrize("field,value", [
+    ("platforms", ["MacOS"]),
+    ("platforms", "Windows"),
+    ("last_reviewed", "04.10.2026"),
+    ("last_reviewed", "2026-13-01"),
+])
+def test_build_rejects_undeclared_values(field: str, value: object) -> None:
+    from crush.data.build_formats_db import _check_entry
+    entry = {"name": "X", "platforms": ["Windows"], "last_reviewed": None, field: value}
+    with pytest.raises(ValueError):
+        _check_entry(entry)
+
+
 # ---------------------------------------------------------------------------
 # FormatDatabase.identify() — magic bytes
 # ---------------------------------------------------------------------------

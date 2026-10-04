@@ -110,6 +110,12 @@ class FormatInfoDialog(QDialog):
                         Qt.TextInteractionFlag.TextBrowserInteraction
                     )
                     form.addRow(translate("FormatInfoDialog", "Link:"), link_lbl)
+
+            self._add_row(
+                form,
+                translate("FormatInfoDialog", "Last reviewed"),
+                fmt.last_reviewed or translate("FormatInfoDialog", "Not recorded"),
+            )
         else:
             self._add_row(
                 form,
