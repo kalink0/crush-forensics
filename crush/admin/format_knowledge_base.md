@@ -60,7 +60,7 @@ Commit **both** `build_formats_db.py` and `formats.db`.
 | `magic` | No | List of `{"offset": int | None, "value": bytes, "description": str}`. Each entry is checked on its own: every matching entry adds its length to the format's score (see [How Identification Works at Runtime](#how-identification-works-at-runtime)). Use `offset: None` for trailer/unknown offsets, a signature another entry shares, or one too short to identify the format on its own (informational only, never matched; the description says why). |
 | `extensions` | No | Extension metadata (not used for identification). Lowercase, include the dot |
 | `links` | No | List of `(label, url)` tuples — opened from Format Info and Format Reference dialogs |
-| `status` | Yes | `"draft"`: compiled from a short web search (search engine or AI), nothing more; not in formats.db, published on the format reference site marked as draft. `"reviewed"`: sources refined and checked, checked against the specification where one is available and for known forensic details (can still contain errors); in formats.db. |
+| `status` | Yes | `"draft"`: compiled from a brief web search (search engine or AI-assisted), nothing more; not in formats.db, published on the format reference site marked as draft. `"reviewed"`: checked manually — sources verified and refined; signatures and structural details checked against the specification where one exists, for undocumented formats against published reverse-engineering research and own research; practical knowledge from casework and the DFIR community; in formats.db. |
 
 ### Categories
 
@@ -165,7 +165,7 @@ identification never uses extensions.
 
 `scripts/build_format_pages.py` publishes every entry of `FORMATS` on GitHub
 Pages at <https://kalink0.github.io/crush-forensics/formats/>: one page per
-format, an overview with filter and signature search, `formats.json` and
+format, an overview with filter and signature lookup, `formats.json` and
 `formats.db`. It reads the entries through `entry()`, the same normalisation
 `build()` writes to formats.db, and shows the texts unchanged. Drafts are
 included and marked.

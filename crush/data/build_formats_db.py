@@ -73,11 +73,13 @@ _OUT = Path(__file__).parent / "formats.db"
 #   extensions      List of lowercase extensions including the dot
 #   links           List of (label, url) tuples — reference links
 #   status          "draft" (excluded from DB) | "reviewed" (included in DB).
-#                   draft: compiled from a short web search (search engine
-#                   or AI), nothing more. reviewed: sources refined and
-#                   checked, checked against the specification where one is
-#                   available and for known forensic details -- can still
-#                   contain errors. The format reference site says so.
+#                   draft: compiled from a brief web search (search engine
+#                   or AI-assisted), nothing more. reviewed: checked
+#                   manually -- sources verified and refined; signatures and
+#                   structure checked against the specification where one
+#                   exists, else against published reverse-engineering and
+#                   own research; practical knowledge from casework and the
+#                   DFIR community. The format reference site says so.
 #   last_reviewed   ISO date ("YYYY-MM-DD") of the last manual review of the
 #                   whole entry, or None
 # ---------------------------------------------------------------------------
