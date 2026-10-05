@@ -426,14 +426,14 @@ jobs:
           echo "Forensic audit did not pass on every platform (${{ needs.forensic-audit.result }}); the report was attached anyway."
           exit 1
 
-  # Rebuild the GitHub Pages site from all releases' attached reports. Also
-  # after a FAIL (forensic-audit-publish goes red on purpose but has attached
-  # the report), so the site and badge show it.
-  audit-pages:
+  # Rebuild the GitHub Pages site (all releases' attached reports, format
+  # reference). Also after a FAIL (forensic-audit-publish goes red on
+  # purpose but has attached the report), so the site and badge show it.
+  pages:
     needs: forensic-audit-publish
     if: ${{ !cancelled() }}
     permissions:
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/audit-pages.yml
+    uses: ./.github/workflows/pages.yml

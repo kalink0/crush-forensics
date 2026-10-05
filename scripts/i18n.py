@@ -17,6 +17,8 @@ update   extracts every translatable string from crush/ (tests and
          glossary.csv.
 release  compiles every catalog and records per-language completeness in
          languages.json (View → Language offers a language from 90 %).
+         Website texts (contexts starting with "Website") are compiled
+         but not counted: they aren't in the app.
          Compiles a copy merged with the current code, in which every text
          without a finished translation carries its English source -- so
          an untranslated text shows English, never the translation of
@@ -58,6 +60,10 @@ I18N_DIR = PACKAGE / "i18n"
 EXCLUDED_DIRS = {"tests", "third_party", "__pycache__"}
 PSEUDO = "pseudo"
 MANIFEST_NAME = "languages.json"
+# Contexts of website texts (crush/data/format_pages_text.py
+# WEBSITE_CONTEXT_PREFIX; test_format_pages checks both agree): in the
+# catalogs, not counted towards a language's completeness in the app.
+WEBSITE_CONTEXT_PREFIX = "Website"
 GLOSSARY_CSV = I18N_DIR / "glossary.csv"
 GLOSSARY_QPH = I18N_DIR / "glossary.qph"
 _CODE_RE = re.compile(r"^[a-z]{2,3}(?:_[A-Za-z0-9]{2,4})?$")
@@ -264,14 +270,20 @@ def cmd_check() -> int:
 
 
 def count_messages(ts: Path) -> tuple[int, int]:
-    """(translated, total) for the current (non-obsolete) messages of *ts*."""
+    """(translated, total) for the current (non-obsolete) messages of *ts*
+    that the app shows. Website texts (contexts starting with
+    WEBSITE_CONTEXT_PREFIX, crush/data/format_pages_text.py) are in the
+    catalog but not in the app, so they don't count towards the 90 %."""
     translated = total = 0
-    for message in ET.parse(ts).getroot().iter("message"):
-        translation = message.find("translation")
-        if translation is not None and translation.get("type") in ("obsolete", "vanished"):
+    for context in ET.parse(ts).getroot().iter("context"):
+        if (context.findtext("name") or "").startswith(WEBSITE_CONTEXT_PREFIX):
             continue
-        total += 1
-        translated += _is_translated(message)
+        for message in context.iter("message"):
+            translation = message.find("translation")
+            if translation is not None and translation.get("type") in ("obsolete", "vanished"):
+                continue
+            total += 1
+            translated += _is_translated(message)
     return translated, total
 
 

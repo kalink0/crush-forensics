@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Front page of the GitHub Pages site. Written to the site by
+     scripts/build_format_pages.py --site-index, which fills in the theme
+     (crush/data/site_theme.py) at its three markers. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crush</title>
+  <!--THEME_HEAD-->
+  <style>
+    /*THEME_CSS*/
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         font-size:14px;color:var(--text);background:var(--bg);line-height:1.5}
+    a{color:var(--link)}
+    header{background:var(--header-bg);color:var(--header-text);padding:24px 72px 20px 32px}
+    header h1{font-size:20px;font-weight:600;letter-spacing:.3px}
+    header a{color:inherit}
+    main{max-width:800px;margin:0 auto;padding:24px 16px 40px}
+    section{background:var(--surface);border-radius:8px;padding:20px 24px;margin-bottom:18px;
+            box-shadow:0 1px 3px var(--shadow)}
+    section p{color:var(--muted)}
+    h2{font-size:16px;font-weight:600;margin-bottom:6px}
+  </style>
+</head>
+<body>
+<header>
+  <!--THEME_TOGGLE-->
+  <h1><a href="https://github.com/kalink0/crush-forensics">Crush</a> &mdash; Digital Forensic Analysis Workbench</h1>
+</header>
+<main>
+  <section>
+    <h2><a href="audit/">Forensic integrity audit</a></h2>
+    <p>The forensic test results attached to every release.
+      <a href="audit/history.html">All releases</a></p>
+  </section>
+  <section>
+    <h2><a href="formats/">Format reference</a></h2>
+    <p>The file formats Crush knows: forensic relevance, signatures, known extensions,
+      references and Crush support. As of the latest build (nightly or release).</p>
+  </section>
+</main>
+</body>
+</html>

@@ -11,6 +11,7 @@ Everything else is generated from it.
 crush/data/build_formats_db.py   ← edit this
 crush/data/formats.db            ← generated artifact (commit both)
 crush/core/format_db.py          ← runtime wrapper (do not edit for data changes)
+scripts/build_format_pages.py    ← format reference site on GitHub Pages (generated in CI)
 ```
 
 ---
@@ -22,7 +23,7 @@ Open `crush/data/build_formats_db.py` and find the `FORMATS` list. Each entry is
 ```python
 {
     "name": "SQLite Database",           # Full human-readable name shown in UI
-    "short_name": "SQLite",              # Abbreviation
+    "short_name": "SQLite",              # Abbreviation; permanent site address, never change
     "category": "database",             # See Categories below
     "forensic_relevance": "...",         # What an investigator finds here
     "platforms": ["iOS", "macOS", "Android"],  # List of platform strings
@@ -32,7 +33,7 @@ Open `crush/data/build_formats_db.py` and find the `FORMATS` list. Each entry is
     ],
     "extensions": [".db", ".sqlite"],   # Lowercase with dot (currently not used for identification)
     "links": [("Format spec", "https://...")],  # List of (label, url) tuples
-    "status": "reviewed",              # "draft" (excluded) or "reviewed" (included)
+    "status": "reviewed",              # "draft" (not in formats.db) or "reviewed"
 },
 ```
 
@@ -51,15 +52,15 @@ Commit **both** `build_formats_db.py` and `formats.db`.
 | Field | Required | Notes |
 |---|---|---|
 | `name` | Yes | Shown in Properties panel and Format Reference dialog |
-| `short_name` | No | Abbreviation for compact display |
+| `short_name` | Yes | Abbreviation for compact display, and the format's permanent address on the format reference site (`/formats/<short_name in lower case, other characters as ->/`). **Never change it once published**: links to the old address break. A new format adds its address to `scripts/format_pages/published_slugs.txt` (`test_format_pages` checks the list). |
 | `category` | No | See Categories below |
 | `forensic_relevance` | No | Shown in Properties panel — explain what an analyst finds here |
-| `platforms` | No | List of strings: `"iOS"`, `"macOS"`, `"Android"`, `"Windows"`, `"Linux"` |
+| `platforms` | No | List of strings from `PLATFORMS`: `"Windows"`, `"macOS"`, `"Linux"`, `"iOS"`, `"Android"`, `"QNX"` (stored in that order); `ALL_PLATFORMS` for a format not tied to any operating system |
 | `parser_class` | No | Class name of the Crush parser, e.g. `"SQLiteParser"`. `None` = unsupported |
-| `magic` | No | List of `{"offset": int | None, "value": bytes, "description": str}` — **all** must match for a hit. Use `offset: None` for trailer/unknown offsets (informational only). |
+| `magic` | No | List of `{"offset": int | None, "value": bytes, "description": str}`. Each entry is checked on its own: every matching entry adds its length to the format's score (see [How Identification Works at Runtime](#how-identification-works-at-runtime)). Use `offset: None` for trailer/unknown offsets, a signature another entry shares, or one too short to identify the format on its own (informational only, never matched; the description says why). |
 | `extensions` | No | Extension metadata (not used for identification). Lowercase, include the dot |
 | `links` | No | List of `(label, url)` tuples — opened from Format Info and Format Reference dialogs |
-| `status` | Yes | `"draft"` (excluded from DB) or `"reviewed"` (included in DB) |
+| `status` | Yes | `"draft"`: compiled from a short web search (search engine or AI), nothing more; not in formats.db, published on the format reference site marked as draft. `"reviewed"`: sources refined and checked, checked against the specification where one is available and for known forensic details (can still contain errors); in formats.db. |
 
 ### Categories
 
@@ -144,8 +145,9 @@ For **unsupported files** (handled by `HexFallbackParser`), magic identification
 
 Realm files expose a 24-byte header in unencrypted files. The mnemonic signature
 `T-DB` lives at offset 16 (bytes `54 2D 44 42`). Encrypted Realm files may not
-expose this mnemonic, so extension-based detection (`.realm`) is still used as
-a fallback.
+expose this mnemonic, so `RealmParser.can_parse` also accepts the `.realm`
+extension as a fallback. That fallback is in the parser only: formats.db
+identification never uses extensions.
 
 ---
 
@@ -155,4 +157,23 @@ a fallback.
 
 - Supported formats (with a parser) are shown in normal text.
 - Unsupported formats are shown in grey.
-- Selecting a row and clicking **Open Reference…** opens the `docs_url` in the system browser.
+- Selecting a row and clicking **View Details…** (or double-clicking it) opens the Format Info dialog for that format, with its signatures and its `links` as clickable references.
+
+---
+
+## Format Reference Site
+
+`scripts/build_format_pages.py` publishes every entry of `FORMATS` on GitHub
+Pages at <https://kalink0.github.io/crush-forensics/formats/>: one page per
+format, an overview with filter and signature search, `formats.json` and
+`formats.db`. It reads the entries through `entry()`, the same normalisation
+`build()` writes to formats.db, and shows the texts unchanged. Drafts are
+included and marked.
+
+`.github/workflows/pages.yml` rebuilds it with every build (nightly or
+release), so it shows the state of the latest build. Each page names the
+commit it was built from. Build it locally with:
+
+```bash
+python scripts/build_format_pages.py --out site --commit "$(git rev-parse HEAD)"
+```

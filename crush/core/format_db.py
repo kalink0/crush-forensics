@@ -24,6 +24,11 @@ def _resolve_db_path() -> Path:
 
 _DB_PATH = _resolve_db_path()
 
+# The format reference website (scripts/build_format_pages.py): the same
+# database, as of the latest Crush build -- which may be newer than the
+# formats.db bundled with this installation.
+FORMAT_REFERENCE_URL = "https://kalink0.github.io/crush-forensics/formats/"
+
 
 # Translation contexts. formats.db stays English; build_formats_db.py marks
 # each format's forensic_relevance and magic-byte descriptions with
