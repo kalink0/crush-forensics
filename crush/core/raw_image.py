@@ -63,10 +63,19 @@ CONTAINER_HEAD_SIGNATURES: tuple[bytes, ...] = (
     qnxprobe.VMDK_DESCRIPTOR_START,
     qnxprobe.QCOW_MAGIC,
 )
+# FTK Imager's AD encryption: what it holds (a disk image or an AD1) shows
+# only once its password or key opened it.
+AD_ENCRYPTED_SIGNATURE: bytes = qnxprobe.ADCRYPT_SIGNATURE
 # Logical evidence (EnCase L01/Lx01, FTK Imager AD1): copies of files, not a disk.
 LOGICAL_EVIDENCE_SIGNATURES: tuple[bytes, ...] = (
     qnxprobe.L01_SIGNATURE,
     qnxprobe.LX01_SIGNATURE,
+    qnxprobe.AD1_SIGNATURE,
+)
+# The ones that open as a source of their own (LogicalEvidenceVFS): ewfprobe
+# reads L01 and AD1, not Lx01.
+OPENED_LOGICAL_SIGNATURES: tuple[bytes, ...] = (
+    qnxprobe.L01_SIGNATURE,
     qnxprobe.AD1_SIGNATURE,
 )
 
@@ -204,11 +213,13 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
     kind = qnxprobe.acquisition_format(str(path))  # type: ignore[no-untyped-call]
     if kind in ("L01", "Lx01", "AD1"):
         # qnxprobe refuses these too, but points to its own command line.
+        # open_vfs() opens L01 and AD1 as logical evidence before this.
         maker = "FTK Imager" if kind == "AD1" else "EnCase"
         raise RawImageOpenError(
             f"{path.name}: {maker} logical evidence ({kind}) holds copies of files, "
             "not a disk, so there is no partition table or filesystem to read; "
-            "Crush doesn't open logical evidence yet"
+            + ("Crush doesn't read Lx01" if kind == "Lx01"
+               else "it opens as logical evidence instead")
         )
     bundle = sparse_bundle_of(path)
     if bundle is not None:

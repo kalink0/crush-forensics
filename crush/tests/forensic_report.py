@@ -88,6 +88,8 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "EWF2 acquisition (.Ex01)",
         "AFF acquisition (.aff/.afd)",
         "AFF4 acquisition (.aff4)",
+        "EnCase logical evidence (.L01)",
+        "FTK Imager logical evidence (.ad1)",
         "Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         "VHD/VHDX virtual disk",
         "VMDK virtual disk",

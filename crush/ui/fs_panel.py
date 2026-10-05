@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 
 from crush.core.session import Session
-from crush.core.vfs import VFS, RawImageVFS, VFSNode
+from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
 from crush.ui.log_scope import window_log_scope
@@ -651,7 +651,7 @@ class FilesystemPanel(QWidget):
         close_source_action = None
         if node is vfs.root():
             menu.addSeparator()
-            if isinstance(vfs, RawImageVFS) and vfs.acquisition():
+            if vfs.acquisition():
                 verify_acquisition_action = menu.addAction(
                     translate("FilesystemPanel", "Verify Acquisition Hash…")
                 )

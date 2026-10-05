@@ -1192,9 +1192,15 @@ class MainWindow(QMainWindow):
                     loading_path=self._loading_path
                 )
             )
-        from crush.core.vfs import RawImageVFS
+        from crush.core.vfs import LogicalEvidenceVFS, RawImageVFS
 
-        opened_as_image = isinstance(loaded_vfs, RawImageVFS)
+        # Logical evidence asked for as a disk image opens as what it is
+        # (Open Disk Image… is how an AD-encrypted set gets its password),
+        # and is reopened the way it was opened.
+        asked_as_image = getattr(self, "_loading_as_disk_image", False)
+        opened_as_image = isinstance(loaded_vfs, RawImageVFS) or (
+            asked_as_image and isinstance(loaded_vfs, LogicalEvidenceVFS)
+        )
         self._add_to_recent_files(self._loading_path, as_disk_image=opened_as_image)
         if getattr(self, "_loading_as_disk_image", False) and not opened_as_image:
             # Asked for explicitly, so a status-bar line alone is too easy to miss.
@@ -1822,11 +1828,11 @@ class MainWindow(QMainWindow):
         defeat the point of reading it on demand in the first place — this is
         an explicit, examiner-triggered action.
         """
-        from crush.core.vfs import RawImageVFS
+        from crush.core.vfs import LogicalEvidenceVFS
         from crush.ui.busy_dialog import run_with_busy_dialog
         from crush.ui.verify_result_dialog import VerifyResultDialog, verify_report_html
 
-        if not isinstance(vfs, RawImageVFS):
+        if vfs.acquisition() is None:
             return
         title = translate("MainWindow", "Verify Acquisition Hash")
 
@@ -1862,7 +1868,37 @@ class MainWindow(QMainWindow):
                 findings.append(translate(
                     "MainWindow", "{count} of the container's own checks do not match."
                 ).format(count=f"{len(container_bad):,}"))
-            if not stored:
+            # Logical evidence also records a hash of each file it holds.
+            files_checked = (
+                (result.get("entry_md5_checked") or 0)  # type: ignore[attr-defined]
+                + (result.get("entry_sha1_checked") or 0)  # type: ignore[attr-defined]
+            )
+            files_bad = sorted(set(
+                list(result.get("entry_md5_mismatched") or [])  # type: ignore[attr-defined]
+                + list(result.get("entry_sha1_mismatched") or [])  # type: ignore[attr-defined]
+            ))
+            if files_bad:
+                findings.append(translate(
+                    "MainWindow", "{count} file(s) do not match their recorded hash."
+                ).format(count=f"{len(files_bad):,}"))
+            if files_checked:
+                if not stored:
+                    tag = (
+                        translate("MainWindow", "{path}  [verify: no stored hash, file hash "
+                                  "MISMATCH]")
+                        if files_bad else
+                        translate("MainWindow", "{path}  [verify: no stored hash, file hashes "
+                                  "match]")
+                    )
+                elif match:
+                    tag = (
+                        translate("MainWindow", "{path}  [verify: MATCH, file hash MISMATCH]")
+                        if files_bad else
+                        translate("MainWindow", "{path}  [verify: MATCH, file hashes match]")
+                    )
+                else:
+                    tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+            elif not stored:
                 if container_checks:
                     tag = (
                         translate("MainWindow", "{path}  [verify: no stored hash, container "
@@ -1888,7 +1924,9 @@ class MainWindow(QMainWindow):
             # a silent success.
             VerifyResultDialog(
                 self, title,
-                verify_report_html(result, findings),  # type: ignore[arg-type]
+                verify_report_html(  # type: ignore[arg-type]
+                    result, findings, holds_files=isinstance(vfs, LogicalEvidenceVFS),
+                ),
             ).exec()
 
         def _on_error(message: str) -> None:
@@ -3442,7 +3480,7 @@ class MainWindow(QMainWindow):
         """Prepend format knowledge-base metadata to a ParseResult without overriding parser data."""
         try:
             from crush.core.format_db import FormatDatabase
-            from crush.core.vfs import RawImageVFS, UFDRVFS
+            from crush.core.vfs import LogicalEvidenceVFS, RawImageVFS, UFDRVFS
             from crush.parsers.base import ParseResult
 
             fmt_meta: dict = {}
@@ -3475,6 +3513,14 @@ class MainWindow(QMainWindow):
                 node_info = vfs.node_info(node)
                 if node_info:
                     fmt_meta.update(node_info)
+
+            # What logical evidence records about the entry: the hashes its
+            # acquisition tool took ("not recorded" when it took none), the
+            # values it stores beside them.
+            if isinstance(vfs, LogicalEvidenceVFS):
+                entry_info = vfs.node_info(node)
+                if entry_info:
+                    fmt_meta.update(entry_info)
 
             # A parser that reads several formats (images, media, ...) has an
             # entry per format: the file's bytes pick among them, and when
@@ -4795,14 +4841,18 @@ def _is_zip_file(path: str) -> bool:
 
 
 def _peeked_archive_kind(node: VFSNode, vfs: VFS) -> str | None:
-    """Archive kind from the member's first bytes (cached from the tree
-    build for archive members, so this costs no extraction)."""
-    from crush.core.vfs import SNIFF_BYTES, archive_kind
+    """Kind of browsable source from the member's first bytes (cached from
+    the tree build for archive members, so this costs no extraction): an
+    archive kind, or "logical_evidence" for an L01 or AD1."""
+    from crush.core.vfs import SNIFF_BYTES, archive_kind, opens_as_logical_evidence
 
     try:
-        return archive_kind(vfs.peek(node, SNIFF_BYTES))
+        head = vfs.peek(node, SNIFF_BYTES)
     except (OSError, ValueError):
         return None
+    if opens_as_logical_evidence(head):
+        return "logical_evidence"
+    return archive_kind(head)
 
 
 # A hint banner: the text, and a (caption, callback) per way offered.
@@ -4892,12 +4942,21 @@ def _disk_image_hint(node: VFSNode, vfs: VFS) -> _SourceHint | None:
     except (OSError, ValueError):
         head = b""
     if is_logical_evidence(head):
+        # L01 and AD1 open as sources (_peeked_archive_kind); this is Lx01.
         return _SourceHint(translate(
             "MainWindow",
-            "logical evidence (EnCase L01/Lx01 or FTK Imager AD1) — holds copies of files, "
-            "not a disk; Crush doesn't open logical evidence yet",
+            "EnCase Lx01 logical evidence — holds copies of files, not a disk; Crush doesn't "
+            "read Lx01",
         ), None)
-    if looks_like_disk_image(node.name, head, _regular_file_path(node, vfs)):
+    what = looks_like_disk_image(node.name, head, _regular_file_path(node, vfs))
+    if what is not None and what.code == "vfs.disk_image_hint_ad_encrypted":
+        # It may hold logical evidence rather than a disk.
+        return _SourceHint(translate(
+            "MainWindow",
+            "FTK Imager AD-encrypted — holds a disk image or AD1 logical evidence; "
+            "right-click → Open Disk Image in New Window to open it with its password or key",
+        ), "disk_image")
+    if what is not None:
         return _SourceHint(translate(
             "MainWindow",
             "looks like a disk image — right-click → Open Disk Image in New Window to read it",

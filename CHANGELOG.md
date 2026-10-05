@@ -14,6 +14,8 @@ All notable changes to Crush will be documented in this file.
 - Added to Open Disk Image… -> Support for encrypted containers, opened with a password or a private key. ([#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Added to Verify Acquisition Hash -> Support for the container's own checksums. ([#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Added to ZIP archives -> Support for the times in a member's extra fields and local header, each shown with where it is stored.
+- Added to opening evidence -> Support for EnCase L01 and FTK Imager AD1 logical evidence, also AD-encrypted, with each file's recorded hashes.
+- Added to Verify Acquisition Hash -> Support for logical evidence, including every file's recorded hash.
 
 ### Bug Fixes
 

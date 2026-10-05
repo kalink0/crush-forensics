@@ -1,0 +1,33 @@
+﻿Created By Exterro® FTK® Imager 4.7.3.61 
+
+Case Information: 
+Acquired using: ADI4.7.3.61
+Case Number: 
+Evidence Number: 
+Unique Description: 
+Examiner: 
+Notes: 
+
+--------------------------------------------------------------
+
+Information for \\Mac\Home\Downloads\ad1-samples\lean-src-c0-1mb.ad1:
+[Computed Hashes]
+ MD5 checksum:    b545d470bdbd48d48e35b1b8ba8f41e6
+ SHA1 checksum:   c7e3ba6af6bf6957bb27c253f26ff07e26868703
+
+Image information:
+ Acquisition started:   Sun Sep 27 15:41:12 2026
+ Acquisition finished:  Sun Sep 27 15:41:13 2026
+ Segment list:
+  \\Mac\Home\Downloads\ad1-samples\lean-src-c0-1mb.ad1
+  \\Mac\Home\Downloads\ad1-samples\lean-src-c0-1mb.ad2
+  \\Mac\Home\Downloads\ad1-samples\lean-src-c0-1mb.ad3
+  \\Mac\Home\Downloads\ad1-samples\lean-src-c0-1mb.ad4
+ COMPUTED HASH :  b545d470bdbd48d48e35b1b8ba8f41e6
+ COMPUTED HASH :  c7e3ba6af6bf6957bb27c253f26ff07e26868703
+
+Image Verification Results:
+ Verification started:  Sun Sep 27 15:41:13 2026
+ Verification finished: Sun Sep 27 15:41:13 2026
+ MD5 checksum:    b545d470bdbd48d48e35b1b8ba8f41e6 : verified
+ SHA1 checksum:   c7e3ba6af6bf6957bb27c253f26ff07e26868703 : verified

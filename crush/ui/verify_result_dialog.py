@@ -2,12 +2,14 @@
 # Copyright 2026 - now Marco Neumann (kalink0)
 """The result of Verify Acquisition Hash, laid out to be read and copied.
 
-One block per check -- a hash of the whole disk the acquisition recorded,
-or one of the container's own checks (a UDIF image's data, block table and
-master checksums, an AFF4's stream and map hashes) -- with the stored and
-the recomputed value on lines of their own, every value in full. A
-recomputed value is marked green when it matches the stored one and red
-when it doesn't.
+One block per check -- a hash of the whole disk (or, for logical evidence,
+the whole image) the acquisition recorded, or one of the container's own
+checks (a UDIF image's data, block table and master checksums, an AFF4's
+stream and map hashes) -- with the stored and the recomputed value on lines
+of their own, every value in full. A recomputed value is marked green when
+it matches the stored one and red when it doesn't. Logical evidence also
+records a hash of each file: how many were checked, and every file whose
+hash doesn't match, by path.
 """
 from __future__ import annotations
 
@@ -50,22 +52,54 @@ def _block(title: str, stored: object, computed: object, match: bool) -> str:
     )
 
 
-def verify_report_html(result: dict[str, Any], findings: list[str]) -> str:
+def _file_hash_rows(algorithm: str, checked: int, mismatched: list[str]) -> str:
+    """How many files' recorded *algorithm* hashes were recomputed, and
+    every file whose hash doesn't match -- all of them, by path."""
+    if not mismatched:
+        line = translate(
+            "VerifyResultDialog", "{algorithm}: {count} file(s) checked, all match"
+        ).format(algorithm=algorithm, count=f"{checked:,}")
+        return f"<p style='color:{_GREEN}'>{_esc(line)}</p>"
+    line = translate(
+        "VerifyResultDialog", "{algorithm}: {bad} of {count} file(s) checked do not match:"
+    ).format(algorithm=algorithm, bad=f"{len(mismatched):,}", count=f"{checked:,}")
+    paths = "<br>".join(f"<code>{_esc(p)}</code>" for p in mismatched)
+    return f"<p style='color:{_RED}'>{_esc(line)}<br>{paths}</p>"
+
+
+def verify_report_html(
+    result: dict[str, Any], findings: list[str], *, holds_files: bool = False
+) -> str:
     """The whole report for ewfprobe's verify() *result*, as rich text.
     *findings* are what was found while reading (failed chunk checksums,
-    missing pages, mismatching container checks), already worded."""
+    missing pages, mismatching container checks, files whose recorded hash
+    doesn't match), already worded. *holds_files*: the acquisition is
+    logical evidence, which holds files rather than a disk."""
     stored: dict[str, str] = result.get("stored") or {}
     computed: dict[str, str] = result.get("computed") or {}
     checks: list[dict[str, Any]] = result.get("container_checks") or []
+    md5_checked = int(result.get("entry_md5_checked") or 0)
+    sha1_checked = int(result.get("entry_sha1_checked") or 0)
 
     parts: list[str] = []
     if not stored:
-        headline = (
-            translate("VerifyResultDialog", "This acquisition recorded no hash of the whole disk "
-                      "to verify against.")
-            if checks else
-            translate("VerifyResultDialog", "This acquisition recorded no hash to verify against.")
-        )
+        if holds_files:
+            headline = (
+                translate("VerifyResultDialog", "This acquisition recorded no hash of its whole "
+                          "data; the hashes it recorded of its files were checked.")
+                if md5_checked or sha1_checked else
+                translate("VerifyResultDialog",
+                          "This acquisition recorded no hash to verify against.")
+            )
+        elif checks:
+            headline = translate(
+                "VerifyResultDialog",
+                "This acquisition recorded no hash of the whole disk to verify against.",
+            )
+        else:
+            headline = translate(
+                "VerifyResultDialog", "This acquisition recorded no hash to verify against."
+            )
         parts.append(f"<p><b>{_esc(headline)}</b></p>")
     elif result.get("match"):
         parts.append(
@@ -86,6 +120,25 @@ def verify_report_html(result: dict[str, Any], findings: list[str]) -> str:
             + "</b></p>"
         )
 
+    # An AD1 doesn't hold its image hash: it is read from FTK Imager's log, a
+    # separate text file beside the image.
+    if "ad1_log_expected" in result:
+        log = result.get("ad1_log")
+        note = (
+            translate(
+                "VerifyResultDialog",
+                "An AD1 doesn't hold its image hash: the recorded hash was read from FTK "
+                "Imager's log beside it, {log} — a separate text file.",
+            ).format(log=log)
+            if log else
+            translate(
+                "VerifyResultDialog",
+                "An AD1 doesn't hold its image hash: FTK Imager writes it to its log beside "
+                "the image ({log}), which was not found.",
+            ).format(log=result["ad1_log_expected"])
+        )
+        parts.append(f"<p>{_esc(note)}</p>")
+
     if findings:
         parts.append(
             f"<p style='color:{_RED}'>"
@@ -94,13 +147,34 @@ def verify_report_html(result: dict[str, Any], findings: list[str]) -> str:
         )
 
     if stored:
-        parts.append(
-            "<h3>" + _esc(translate("VerifyResultDialog", "Hash of the whole disk"))
-            + "</h3>"
+        heading = (
+            translate("VerifyResultDialog", "Hash of the whole image")
+            if holds_files else
+            translate("VerifyResultDialog", "Hash of the whole disk")
         )
+        parts.append("<h3>" + _esc(heading) + "</h3>")
         for name in sorted(stored):
             got = computed.get(name)
             parts.append(_block(name, stored[name], got, got == stored[name]))
+
+    if holds_files:
+        parts.append(
+            "<h3>" + _esc(translate("VerifyResultDialog", "Recorded hashes of the files"))
+            + "</h3>"
+        )
+        if not md5_checked and not sha1_checked:
+            parts.append(
+                "<p>" + _esc(translate("VerifyResultDialog",
+                                       "No file has a recorded hash to check.")) + "</p>"
+            )
+        if md5_checked:
+            parts.append(_file_hash_rows(
+                "MD5", md5_checked, list(result.get("entry_md5_mismatched") or []),
+            ))
+        if sha1_checked:
+            parts.append(_file_hash_rows(
+                "SHA-1", sha1_checked, list(result.get("entry_sha1_mismatched") or []),
+            ))
 
     if checks:
         parts.append(

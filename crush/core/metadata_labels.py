@@ -17,7 +17,10 @@ from __future__ import annotations
 from crush.core.issues import QT_TRANSLATE_NOOP
 
 METADATA_LABELS = (
+    QT_TRANSLATE_NOOP("MetadataLabel", "AD1 item type"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "AD1 type record"),
     QT_TRANSLATE_NOOP("MetadataLabel", "ATX warnings"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Acquired (L01)"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Active"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Active top ref"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Array layers"),
@@ -36,6 +39,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Decode status"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Decrypted size"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Deleted"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Deleted (L01)"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Depth"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Detection rule"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Display format"),
@@ -94,6 +98,8 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Platforms"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Possibly Encrypted"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Read error"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Recorded MD5"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Recorded SHA-1"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Records"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Recovered entries"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Reference"),

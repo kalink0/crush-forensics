@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-199 checks in total.
+214 checks in total.
 
 ### Sources
 
@@ -39,6 +39,8 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [AFF4 acquisition (.aff4)](#aff4-acquisition-aff4) | 1 | not tested | not tested | 1 | not tested | not tested |
+| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 1 | 1 |
+| [FTK Imager logical evidence (.ad1)](#ftk-imager-logical-evidence-ad1) | 2 | 1 | 1 | 2 | 1 | 1 |
 | [Apple disk image (.dmg/.sparseimage/.sparsebundle)](#apple-disk-image-dmgsparseimagesparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
 | [VHD/VHDX virtual disk](#vhdvhdx-virtual-disk) | 1 | not tested | not tested | 4 | not tested | not tested |
 | [VMDK virtual disk](#vmdk-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
@@ -215,6 +217,27 @@ No forensic checks.
 - **Source Immutability** — Reading the whole stream of pyaff4-zlib.aff4 and verifying it must leave the file byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
 - **Known-output Verification** — pyaff4-zlib.aff4, written by pyaff4 (the AFF4 reference implementation), must open as an AFF4 acquisition whose stream reads back to the MD5 of the content pyaff4 was given ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_stream_matches_what_pyaff4_was_given`)
 - *Not tested:* No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### EnCase logical evidence (.L01)
+
+- **Source Immutability** — Opening, reading and verifying an L01 leaves its bytes unchanged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_does_not_modify_source`)
+- **Source Immutability** — Opening, reading and verifying an L01 leaves its mtime and ctime unchanged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_does_not_change_timestamps`)
+- **No Side Effects** — Opening, reading and verifying an L01 creates no files beside it ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_creates_no_sibling_files`)
+- **Read-only Media** — An L01 opens, reads and verifies when its file is chmod 0o444 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_works_on_readonly_media`)
+- **Known-output Verification** — Every MD5 EnCase recorded for a file of the L01 matches the file as read ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_recorded_md5s_match`)
+- **Completeness** — Every entry of the L01 that holds data is in the tree exactly once, an entry with data and entries beneath it as well ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_every_entry_with_data_is_shown_once`)
+- **Reproducibility** — Opening an L01 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_reproducible`)
+
+#### FTK Imager logical evidence (.ad1)
+
+- **Source Immutability** — Opening, reading and verifying an AD1 leaves its bytes and FTK Imager's log unchanged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_does_not_modify_source`)
+- **Source Immutability** — Opening, reading and verifying an AD1 leaves its and its log's mtime and ctime unchanged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_does_not_change_timestamps`)
+- **No Side Effects** — Opening, reading and verifying an AD1 creates no files beside it ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_creates_no_sibling_files`)
+- **Read-only Media** — An AD1 opens, reads and verifies when its files are chmod 0o444 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_works_on_readonly_media`)
+- **Known-output Verification** — Every file FTK Imager lists in its own listing of the image appears with its size, recorded MD5/SHA-1, UTC times and deleted flag, and reads to that MD5 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_matches_ftk_imagers_listing`)
+- **Known-output Verification** — Verify Acquisition Hash reproduces the image hash in FTK Imager's log and every file's recorded MD5 and SHA-1 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_verify_against_ftk_imagers_log`)
+- **Completeness** — An AD1 set in four files opens whole from any of its files, every file matching the manifest of the folder imaged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_set_opens_whole_from_any_file`)
+- **Reproducibility** — Opening an AD1 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_reproducible`)
 
 #### Apple disk image (.dmg/.sparseimage/.sparsebundle)
 

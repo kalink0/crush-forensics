@@ -15,7 +15,7 @@ Use the **File** menu to load a source:
 
 | Menu item | When to use |
 |---|---|
-| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. Archives are recognised by their content, not their name: a ZIP named `.bin`, `.apk`, `.ipa` or `.docx` opens as a ZIP, and a UFDR opens as a UFDR whatever it is called. A file named like an archive whose content isn't one opens as a single file, and the status bar says so. |
+| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. Archives are recognised by their content, not their name: a ZIP named `.bin`, `.apk`, `.ipa` or `.docx` opens as a ZIP, and a UFDR opens as a UFDR whatever it is called. Logical evidence (EnCase L01, FTK Imager AD1) opens as its collected files, see [Logical Evidence](#logical-evidence-l01-ad1). A file named like an archive whose content isn't one opens as a single file, and the status bar says so. |
 | **Open folder…** | Already-extracted acquisition or any folder of files on disk |
 
 Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
@@ -61,7 +61,7 @@ A disk image is only read as one when opened this way. **Open file…**, drag & 
 
 An **Apple sparse bundle** is a folder (`Info.plist`, `token`, and a `bands/` folder of equal-sized band files that together hold the disk), recognised by its `Info.plist`, not its name. Typical places: Time Machine backups to a network share or Time Capsule, and encrypted containers made with Disk Utility or `hdiutil`. Opening such a folder asks whether to read it as a disk image; choosing "No" shows the folder's files, with a note saying it is a sparse bundle. Open Disk Image… on any file of a bundle (its `Info.plist`, a band — the file picker can't pick a folder) opens the whole bundle, and the status bar says which file it was opened from; a file of a bundle opened normally points at Open Disk Image…. The root note says how many band files were read; a band that isn't stored reads as zeros, as hdiutil reads it.
 
-Logical evidence — EnCase `.L01`/`.Lx01` and FTK Imager `.ad1`, recognised by their signatures — is not a disk image: it holds copies of files, and Crush doesn't open it yet. The banner and the status bar say so (with no button), and Open Disk Image… refuses it with that reason.
+Logical evidence — EnCase `.L01` and FTK Imager `.ad1`, recognised by their signatures — is not a disk image: it holds copies of files and opens as a source of its own (see Logical Evidence), also when picked with Open Disk Image…. EnCase `.Lx01` is not read: the banner and the status bar say so (with no button), and Open Disk Image… refuses it with that reason.
 
 Once opened as a disk image, what it holds is recognised by its content — an MBR/GPT partition table or a filesystem it can read — not by its file name, so `.bin` or extensionless images open the same way as `.img`/`.dd`. If no readable filesystem is found in a raw image, a dialog says why (e.g. a split set with a missing segment) and the file opens as an ordinary file (Hex View) instead — its own bytes are the disk. A container (acquisition, Apple disk image, virtual disk) stays open even then: its file holds the container (compressed chunks, headers, allocation tables), not the disk, so the disk is listed as one region that isn't recognised, readable in Hex View and verifiable. A container the reader refuses opens as an ordinary file with the reason — e.g. an encrypted Ex01, an encrypted AFF4, a QCOW encrypted with LUKS, an Ex01 or AFF compressed with bzip2, an AFF that records no image size (it may be incomplete), an AFD with a gap in its file numbering, or a differencing disk whose parent isn't beside it. Containers and split sets are the exception to name-independence: their other files are found by name — segments by their `.E01`/`.s01`/`.Ex01`/`.001`/`.dmgpart` extensions, an AFD by its `.afd` folder name, a VMDK's extents and a differencing disk's parent by the name the container records — so they must keep those names.
 
@@ -130,13 +130,38 @@ What a container records about its own data besides a hash of the disk is recomp
 
 ### Known limitations
 
-- **Containers not read** — VDI disk images, AFM, logical evidence (EnCase L01/Lx01, FTK Imager AD1), encrypted Ex01, encrypted AFF4 and AFF4-L, an Apple disk image unlocked by a keybag or in the older version 1 encrypted format, a QCOW encrypted with LUKS, a VMDK SESPARSE extent, and a VHD split into `.v01` files. Each is refused with the reason.
+- **Containers not read** — VDI disk images, AFM, EnCase Lx01 logical evidence, encrypted Ex01, encrypted AFF4 and AFF4-L, an Apple disk image unlocked by a keybag or in the older version 1 encrypted format, a QCOW encrypted with LUKS, a VMDK SESPARSE extent, and a VHD split into `.v01` files. Each is refused with the reason.
 - **Volumes encrypted inside the disk** — a locked BitLocker volume, an encrypted APFS volume and FileVault are named with what would open them, not read; Crush has no way to give the password, recovery password or key file for them yet.
 - **Named streams of deleted files** are not listed in `$Recovered`.
 - **No other filesystems yet** — notably Btrfs, XFS, and LittleFS (common on smartwatches and other small embedded/IoT devices) are not covered by the underlying reader.
 - **No snapshot support** — NTFS Volume Shadow Copies and APFS snapshots are not read; only the filesystem's current, live state (plus the deleted-file recovery above) is available.
 - **Deleted-file recovery is NTFS/FAT32/exFAT/YAFFS2/JFFS2/UBIFS only** — ext2/3/4, F2FS, HFS+, APFS, YAFFS1, SquashFS (read-only, nothing is deleted) and the QNX filesystems have no equivalent in the underlying reader.
 - **Flash readers and real devices** — SquashFS and JFFS2 have been validated only against images written by their own tools and the Linux kernel; YAFFS2 and UBIFS have also been read off real device dumps (see the qnxprobe README).
+
+---
+
+## Logical Evidence (L01, AD1)
+
+Logical evidence holds copies of the files and folders an examiner selected, not a disk: there is no partition table, no filesystem and no unallocated space. Crush opens **EnCase `.L01`** and **FTK Imager `.ad1`** (AD1 version 4) as a source of their own, read in place with [abrignoni/ewfprobe](https://github.com/abrignoni/ewfprobe). They are recognised by their signature on **Open file…**, drag & drop, and inside an opened folder, archive or image (right-click → **Open in New Window**). A set of several files (`.L01`/`.L02` …, `.ad1`/`.ad2` …) opens whole from any of its files; the root note names the files it was read from.
+
+The tree is the set's own entry list, shown as stored:
+
+- **An entry with data of its own and entries beneath it** — an L01 plist with its parsed children, an AD1 file with a named stream, an AD1 folder with its index data — is shown as a folder. Its own data is an entry inside that folder, under the same name, with an **Entry status** saying so. Nothing is hidden behind the entries beneath it.
+- **AD1 entries FTK Imager marks as deleted** are listed with an Entry status saying so, and read like any other entry.
+- **An L01 entry marked sparse** reads from the data its duplicate data offset points to (or as one stored byte repeated to its size); its Entry status says which.
+- **Repeated names** are numbered like other same-named entries (`name`, `name (2)` …). Names can hold `\` and `:` (an AD1's top entries are named for their sources, e.g. `U:\:AD1LEAN [NTFS]`); a `/` in a name is shown as `∕`, and the Entry status says so.
+
+The Properties panel shows each entry's **Recorded MD5** and **Recorded SHA-1** as the acquisition tool took them (or *(not recorded)*), and its times with where they come from: an AD1's `created`, `modified` and `accessed` records and an L01's `cr`, `ac`, `wr` and `mo` columns, in UTC. An L01's deletion (`dl`) and acquisition (`aq`) times are listed beside them; an AD1's item type and type record are shown as stored.
+
+**Verify Acquisition Hash…** (right-click the root) recomputes the image hash and every entry's recorded MD5 (and an AD1's SHA-1), and lists every file whose hash doesn't match. An L01 records no hash of its whole data, only of its files. **An AD1 doesn't hold its image hash at all**: FTK Imager writes it to its log beside the image (`<name>.ad1.txt`), a separate text file; the result names the log it was read from, or says it wasn't found.
+
+An **AD-encrypted AD1** (password or certificate) shows what it holds only once opened: opened normally it is a single file pointing at **Open Disk Image…**, which asks for the password or the certificate's private key and then opens it as logical evidence (see Encrypted containers under Raw Disk Images & Forensic Acquisitions).
+
+### Known limitations
+
+- **Lx01** (EnCase 7 logical evidence, EWF2) is not read; it opens as a single file and says so.
+- **Segment names** — an L01's segments are found by their names (`.L01`, `.L02` …), as for an E01: an L01 renamed to anything else is recognised but opens as a single file, with the reader's reason.
+- **AD1 versions** other than 4 are refused with the reason.
 
 ---
 

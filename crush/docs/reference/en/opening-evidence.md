@@ -4,7 +4,7 @@ Use the **File** menu to load a source:
 
 | Menu item | When to use |
 |---|---|
-| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. Archives are recognised by their content, not their name: a ZIP named `.bin`, `.apk`, `.ipa` or `.docx` opens as a ZIP, and a UFDR opens as a UFDR whatever it is called. A file named like an archive whose content isn't one opens as a single file, and the status bar says so. |
+| **Open file…** | Any single file — image, database, plist, ZIP, TAR, 7z, etc. Crush detects the type automatically. ZIP, TAR, and 7z archives are opened as browsable trees; other files open directly in a viewer tab. Archives are recognised by their content, not their name: a ZIP named `.bin`, `.apk`, `.ipa` or `.docx` opens as a ZIP, and a UFDR opens as a UFDR whatever it is called. Logical evidence (EnCase L01, FTK Imager AD1) opens as its collected files, see [Logical Evidence](logical-evidence.md). A file named like an archive whose content isn't one opens as a single file, and the status bar says so. |
 | **Open folder…** | Already-extracted acquisition or any folder of files on disk |
 
 Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
