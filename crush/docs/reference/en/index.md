@@ -3,6 +3,7 @@
 - [What is Crush?](what-is-crush.md)
 - [Opening Evidence](opening-evidence.md)
 - [Raw Disk Images & Forensic Acquisitions](raw-disk-images-ewf-acquisitions.md)
+- [Logical Evidence (L01, AD1)](logical-evidence.md)
 - [Cellebrite UFDR](cellebrite-ufdr.md)
 - [The Interface](the-interface.md)
 - [Themes](themes.md)

@@ -271,6 +271,19 @@ class VFS(ABC):
         shows both."""
         return node.stored_times
 
+    def acquisition(self) -> str | None:
+        """The reader's name for the forensic acquisition this source is
+        (whose own recorded hashes Verify Acquisition Hash checks), or None
+        when it is none."""
+        return None
+
+    def verify_acquisition(
+        self, progress: Callable[[int, int], None] | None = None
+    ) -> dict[str, Any]:
+        """Recompute the acquisition's hashes and compare them to its own
+        recorded ones. Only valid when acquisition() is not None."""
+        raise ValueError("this source is not a forensic acquisition")
+
     def close(self) -> None:
         """Optional cleanup for VFS implementations."""
         return None
@@ -2371,6 +2384,163 @@ class RawImageVFS(VFS):
         return total
 
 
+class LogicalEvidenceVFS(VFS):
+    """VFS backed by logical evidence -- an EnCase L01 or an FTK Imager AD1
+    set (AD-encrypted or not) -- read with the vendored ewfprobe: the files
+    the examiner collected, as the set's own entry list holds them. See
+    crush.core.logical_evidence for how entries are shown."""
+
+    def __init__(self, path: str | Path, *, password: str = "", private_key: str = "") -> None:
+        from crush.core.logical_evidence import build_tree, open_logical_evidence
+
+        self._path = Path(path)
+        self._handle = open_logical_evidence(
+            self._path, password=password, private_key=private_key,
+        )
+        self._lock = threading.Lock()
+        try:
+            self._tree = build_tree(self._handle)
+        except Exception:
+            self._handle.close()
+            raise
+        # The files the set is read from, and what opened it when encrypted.
+        if self._handle.container:
+            note = ParseIssue("vfs.image_container", detail=self._handle.container)
+            self._tree.status = note
+            self.load_note = note
+        self._file_counts: dict[str, int] = {}
+        self._total_sizes: dict[str, int] = {}
+        self._compute_file_counts(self._tree)
+        self._compute_total_sizes(self._tree)
+
+    def root(self) -> VFSNode:
+        return self._tree
+
+    def _entry(self, node: VFSNode) -> Any:
+        from crush.core.logical_evidence import LogicalEntryUnreadableError
+
+        entry = self._handle.entries.get(node.path)
+        if entry is None:
+            raise LogicalEntryUnreadableError(f"No such entry: {node.path}")
+        return entry
+
+    def read(self, node: VFSNode) -> bytes:
+        from crush.core.logical_evidence import read_entry
+
+        entry = self._entry(node)
+        with self._lock:
+            return read_entry(self._handle, entry)
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        from crush.core.logical_evidence import open_entry
+
+        entry = self._entry(node)
+        if node.size <= STREAM_THRESHOLD:
+            return BytesIO(self.read(node))
+        with self._lock:
+            inner = open_entry(self._handle, entry)
+        return buffered(LockedStream(inner, self._lock))
+
+    def peek(self, node: VFSNode, n: int = 32) -> bytes:
+        from crush.core.logical_evidence import open_entry
+
+        entry = self._entry(node)
+        with self._lock:
+            with open_entry(self._handle, entry) as f:
+                return bytes(f.read(n))
+
+    def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
+        # An entry's head is a short read, unless another thread holds the
+        # set for a long one.
+        from crush.core.logical_evidence import open_entry
+
+        entry = self._handle.entries.get(node.path)
+        if entry is None or not self._lock.acquire(blocking=False):
+            return None
+        try:
+            with open_entry(self._handle, entry) as f:
+                return bytes(f.read(n))
+        except OSError:
+            return None
+        finally:
+            self._lock.release()
+
+    def node_info(self, node: VFSNode) -> dict[str, Any] | None:
+        """What the set records about *node* beyond its name, size and
+        times (recorded hashes, ...); None for a folder with no entry data."""
+        from crush.core.logical_evidence import entry_info
+
+        entry = self._handle.entries.get(node.path)
+        return None if entry is None else entry_info(self._handle, entry)
+
+    def acquisition(self) -> str | None:
+        """ewfprobe's name for the set: "EWF-L01" or "AD1"."""
+        return self._handle.kind
+
+    def verify_acquisition(
+        self, progress: Callable[[int, int], None] | None = None
+    ) -> dict[str, Any]:
+        """Recompute the set's own recorded hashes: the image hash (an AD1's
+        is FTK Imager's, over its structure and its entries) and every
+        entry's recorded MD5 (and an AD1's SHA-1).
+
+        An AD1 doesn't hold its image hash: FTK Imager writes it to its log
+        beside the image (<first file>.txt). "ad1_log" names the log the
+        recorded hash was read from (None: not found), "ad1_log_expected"
+        the name looked for -- a separate text file, which the analyst must
+        be told.
+
+        What the reader doesn't check is counted here, over the entries with
+        data shown in the tree, so "all match" is never read as "all
+        checked": "entry_count", "entry_md5_missing" (no recorded MD5),
+        for an AD1 "entry_sha1_missing", and for an L01
+        "entry_sha1_unchecked" (a recorded SHA-1, which the reader doesn't
+        check for an L01: it checks an L01's MD5 only)."""
+        with self._lock:
+            result: dict[str, Any] = self._handle.image.verify(progress=progress)
+            ad1 = getattr(self._handle.image, "ad1", None)
+        if self._handle.kind == "AD1" and ad1 is not None:
+            result["ad1_log"] = ad1.get("log")
+            result["ad1_log_expected"] = Path(self._handle.image.paths[0]).name + ".txt"
+        entries = list({id(e): e for e in self._handle.entries.values()}.values())
+        result["entry_count"] = len(entries)
+        result["entry_md5_missing"] = sum(1 for e in entries if not e.md5)
+        if self._handle.kind == "AD1":
+            result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
+        else:
+            result["entry_sha1_unchecked"] = sum(1 for e in entries if e.sha1)
+        return result
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def file_count(self, node: VFSNode) -> int:
+        return self._file_counts.get(node.path, 0)
+
+    def total_size(self, node: VFSNode) -> int:
+        return self._total_sizes.get(node.path, 0)
+
+    def _compute_file_counts(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._file_counts[node.path] = 1
+            return 1
+        total = 0
+        for child in node.children:
+            total += self._compute_file_counts(child)
+        self._file_counts[node.path] = total
+        return total
+
+    def _compute_total_sizes(self, node: VFSNode) -> int:
+        if not node.is_dir:
+            self._total_sizes[node.path] = node.size
+            return node.size
+        total = 0
+        for child in node.children:
+            total += self._compute_total_sizes(child)
+        self._total_sizes[node.path] = total
+        return total
+
+
 class UFDRVFS(VFS):
     """VFS backed by a Cellebrite UFDR (Physical Analyzer report/delivery
     container). Browses the original device's file/folder tree, decoded
@@ -2681,6 +2851,27 @@ def _open_vfs(
             bundle = sparse_bundle_of(p)
         if bundle is None and not p.is_file():
             raise ValueError(f"Not a file, can't be opened as a disk image: {p}")
+        if bundle is None:
+            # Logical evidence holds files, not a disk: it opens as the
+            # source it is. An AD-encrypted set says which it holds only
+            # once its password or key opened it.
+            from crush.core.logical_evidence import NotLogicalEvidenceError
+            from crush.core.raw_image import container_format
+
+            kind = container_format(p)
+            if kind in ("L01", "AD1", "AD_ENCRYPTED"):
+                logical_notes: list[ParseIssue] = []
+                try:
+                    logical = _open_logical(p, password, private_key, logical_notes)
+                except NotLogicalEvidenceError:
+                    logical = None  # a disk inside: read below
+                else:
+                    if logical is None:
+                        unread = FileVFS(p)
+                        unread.fallback_note = join_notes(logical_notes)
+                        return unread
+                if logical is not None:
+                    return logical
         try:
             image = RawImageVFS(bundle or p, password=password, private_key=private_key)
         except RawImageOpenError as exc:
@@ -2726,6 +2917,8 @@ def _open_vfs(
         return AndroidBackupVFS(p, password=password)
     elif head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p):
         vfs = _open_tar(p, ParseIssue("vfs.compressed_tar_found"), notes)
+    elif opens_as_logical_evidence(head):
+        vfs = _open_logical(p, password, "", notes)
     elif p.name.lower().endswith(_TAR_SUFFIXES):
         # Pre-POSIX (V7) TAR has no magic; its name is all there is.
         vfs = _open_tar(p, ParseIssue("vfs.named_as", {"suffix": _tar_suffix(p)}), notes)
@@ -2826,11 +3019,35 @@ DISK_IMAGE_SUFFIXES = (
 
 
 def is_logical_evidence(head: bytes) -> bool:
-    """True when the first bytes are an L01/Lx01/AD1 signature -- a
-    container Crush doesn't open yet, and not a disk image either."""
+    """True when the first bytes are an L01/Lx01/AD1 signature -- logical
+    evidence, which holds copies of files and is not a disk image."""
     from crush.core.raw_image import LOGICAL_EVIDENCE_SIGNATURES
 
     return head.startswith(LOGICAL_EVIDENCE_SIGNATURES)
+
+
+def opens_as_logical_evidence(head: bytes) -> bool:
+    """True for the logical evidence Crush opens by its first bytes: an L01
+    or AD1 file (any file of a set). Lx01 isn't read; an AD-encrypted set
+    shows what it holds only once opened (Open Disk Image… asks for its
+    password)."""
+    from crush.core.raw_image import OPENED_LOGICAL_SIGNATURES
+
+    return head.startswith(OPENED_LOGICAL_SIGNATURES)
+
+
+def _open_logical(
+    p: Path, password: str, private_key: str, notes: list[ParseIssue]
+) -> VFS | None:
+    """LogicalEvidenceVFS; None (reason in *notes*) when the set can't be
+    read. Password errors and NotLogicalEvidenceError propagate."""
+    from crush.core.logical_evidence import LogicalEvidenceOpenError
+
+    try:
+        return LogicalEvidenceVFS(p, password=password, private_key=private_key)
+    except LogicalEvidenceOpenError as exc:
+        notes.append(ParseIssue("vfs.logical_not_opened", detail=str(exc)))
+        return None
 
 
 def is_aff4(path: str | Path) -> bool:
@@ -2853,6 +3070,7 @@ def looks_like_disk_image(
     the bundle's Info.plist); without it only the name and the first bytes
     already read are looked at. A hint, never a probe."""
     from crush.core.raw_image import (
+        AD_ENCRYPTED_SIGNATURE,
         CONTAINER_HEAD_SIGNATURES,
         container_format,
         container_label,
@@ -2863,11 +3081,15 @@ def looks_like_disk_image(
         return None
     if path is not None:
         kind = container_format(path)
+        if kind == "AD_ENCRYPTED":
+            return ParseIssue("vfs.disk_image_hint_ad_encrypted")
         if kind is not None:
             return ParseIssue("vfs.disk_image_hint_container", {"label": container_label(kind)})
         bundle = sparse_bundle_of(path)
         if bundle is not None:
             return ParseIssue("vfs.disk_image_hint_bundle", {"bundle": bundle.name})
+    elif head.startswith(AD_ENCRYPTED_SIGNATURE):
+        return ParseIssue("vfs.disk_image_hint_ad_encrypted")
     elif head.startswith(CONTAINER_HEAD_SIGNATURES):
         return ParseIssue("vfs.disk_image_hint_acquisition")
     suffix = Path(name).suffix.lower()
@@ -2880,11 +3102,15 @@ def looks_like_disk_image(
 def _disk_image_hint(path: Path, head: bytes) -> ParseIssue | None:
     """A note for a file opened as a single file that announces itself as
     a disk image (looks_like_disk_image), so the analyst knows Open Disk
-    Image… exists for it -- or, for logical evidence, that it isn't opened
-    as what it is. None otherwise."""
+    Image… exists for it -- or, for Lx01 logical evidence, that it isn't
+    opened as what it is. None otherwise (an L01 or AD1 that didn't open
+    already says why)."""
     if is_logical_evidence(head):
-        return ParseIssue("vfs.logical_evidence")
+        return None if opens_as_logical_evidence(head) else ParseIssue("vfs.logical_evidence")
     what = looks_like_disk_image(path.name, head, path)
+    if what is not None and what.code == "vfs.disk_image_hint_ad_encrypted":
+        # It may hold logical evidence rather than a disk: said as such.
+        return ParseIssue("vfs.ad_encrypted_hint")
     return ParseIssue("vfs.disk_image_hint", {"what": what}) if what else None
 
 
@@ -2899,7 +3125,7 @@ def is_browsable_source_file(path: str | Path) -> bool:
         return False
     with open(p, "rb") as f:
         head = f.read(SNIFF_BYTES)
-    if archive_kind(head) is not None:
+    if archive_kind(head) is not None or opens_as_logical_evidence(head):
         return True
     return head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p)
 

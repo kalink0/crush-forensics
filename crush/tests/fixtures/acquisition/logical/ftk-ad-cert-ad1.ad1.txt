@@ -1,0 +1,22 @@
+﻿Created By Exterro® FTK® Imager 4.7.3.61 
+
+Case Information: 
+Acquired using: ADI4.7.3.61
+Case Number: 
+Evidence Number: 
+Unique Description: 
+Examiner: 
+Notes: 
+
+--------------------------------------------------------------
+
+Information for \\Mac\Home\Downloads\ad-cert-samples\out-ad1-cert\ftk-ad-cert-ad1.ad1:
+[Computed Hashes]
+ MD5 checksum:    82c5373b58d14d7afb419a763f55dae1
+ SHA1 checksum:   d57e9ae498cb78d024a4167ba64fb20a27cc127d
+
+Image information:
+ Acquisition started:   Sun Sep 27 21:49:03 2026
+ Acquisition finished:  Sun Sep 27 21:49:03 2026
+ Segment list:
+  \\Mac\Home\Downloads\ad-cert-samples\out-ad1-cert\ftk-ad-cert-ad1.ad1

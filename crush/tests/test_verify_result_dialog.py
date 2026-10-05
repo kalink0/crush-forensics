@@ -97,6 +97,69 @@ def test_no_hash_and_no_checks_says_so() -> None:
     assert "This acquisition recorded no hash to verify against." in report
 
 
+def test_ad1_names_the_log_its_hash_comes_from(tmp_path: Path) -> None:
+    """An AD1 doesn't hold its image hash: the report names FTK Imager's log
+    it was read from, and lists the files' recorded hashes checked."""
+    logical = FIXTURES_DIR / "acquisition" / "logical"
+    for name in ("lean-multi-ntfs-c9.ad1", "lean-multi-ntfs-c9.ad1.txt"):
+        shutil.copy(logical / name, tmp_path / name)
+    vfs = open_vfs(tmp_path / "lean-multi-ntfs-c9.ad1")
+    try:
+        result = vfs.verify_acquisition()
+    finally:
+        vfs.close()
+    report = verify_report_html(result, [], holds_files=True)
+    assert "FTK Imager's log beside it, lean-multi-ntfs-c9.ad1.txt" in report
+    assert "Hash of the whole image" in report and "whole disk" not in report
+    assert "MD5: 9 file(s) checked, all match" in report
+    assert "SHA-1: 9 file(s) checked, all match" in report
+    assert "3 of 12 file(s) have no recorded MD5 and were not checked against one." in report
+    assert "3 of 12 file(s) have no recorded SHA-1 and were not checked against one." in report
+
+
+def test_files_without_a_recorded_hash_are_counted() -> None:
+    """An L01 where few files have a recorded MD5: "all match" comes with
+    how many were not checked, and a recorded SHA-1 the reader doesn't check
+    is said."""
+    result = {"stored": {}, "computed": {}, "match": None, "entry_md5_checked": 108,
+              "entry_md5_mismatched": [], "entry_count": 9342, "entry_md5_missing": 9234,
+              "entry_sha1_unchecked": 5}
+    report = verify_report_html(result, [], holds_files=True)
+    assert "MD5: 108 file(s) checked, all match" in report
+    assert "9,234 of 9,342 file(s) have no recorded MD5 and were not checked against one." \
+        in report
+    assert "5 file(s) have a recorded SHA-1, which was not checked: the reader checks an " \
+        "L01's recorded MD5 only." in report
+
+
+def test_ad1_without_its_log_says_so() -> None:
+    result = {"stored": {}, "computed": {}, "match": None, "entry_md5_checked": 3,
+              "entry_md5_mismatched": [], "ad1_log": None, "ad1_log_expected": "x.ad1.txt"}
+    report = verify_report_html(result, [], holds_files=True)
+    assert "FTK Imager writes it to its log beside the image (x.ad1.txt), which was not found" \
+        in report
+    assert "recorded no hash of its whole data; the hashes it recorded of its files were " \
+        "checked" in report
+
+
+def test_every_file_whose_hash_differs_is_listed() -> None:
+    bad = [f"folder/file{i}.bin" for i in range(30)]
+    result = {"stored": {}, "computed": {}, "match": None, "entry_md5_checked": 40,
+              "entry_md5_mismatched": bad}
+    report = verify_report_html(result, ["30 file(s) do not match their recorded hash."],
+                                holds_files=True)
+    assert "MD5: 30 of 40 file(s) checked do not match:" in report
+    for path in bad:
+        assert f"<code>{path}</code>" in report
+
+
+def test_logical_evidence_without_file_hashes_says_so() -> None:
+    report = verify_report_html({"stored": {}, "computed": {}, "match": None}, [],
+                                holds_files=True)
+    assert "This acquisition recorded no hash to verify against." in report
+    assert "No file has a recorded hash to check." in report
+
+
 def test_dialog_shows_the_report(qapp: QApplication) -> None:
     dialog = VerifyResultDialog(None, "Verify Acquisition Hash", verify_report_html(
         {"stored": {"MD5": "aa" * 16}, "computed": {"MD5": "aa" * 16}, "match": True}, [],

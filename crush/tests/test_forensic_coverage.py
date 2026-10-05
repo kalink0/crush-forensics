@@ -48,6 +48,7 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
     "AndroidBackupVFS": ("Android backup (.ab)",),
     "ITunesBackupVFS": ("iTunes backup",),
     "UFDRVFS": ("Cellebrite UFDR",),
+    "LogicalEvidenceVFS": ("EnCase logical evidence (.L01)", "FTK Imager logical evidence (.ad1)"),
     "RawImageVFS": (
         "Raw disk image", "EWF acquisition (.E01)", "SMART acquisition (.s01)",
         "EWF2 acquisition (.Ex01)", "AFF acquisition (.aff/.afd)", "AFF4 acquisition (.aff4)",

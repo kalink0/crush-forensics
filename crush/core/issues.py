@@ -1817,16 +1817,33 @@ MESSAGES: dict[str, str] = {
     "vfs.disk_image_hint_container": QT_TRANSLATE_NOOP(
         "ParseIssue", "content ({label} container)", "vfs.disk_image_hint_container",
     ),
+    "vfs.disk_image_hint_ad_encrypted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "content (FTK Imager AD-encrypted: a disk image or AD1 logical evidence)",
+        "vfs.disk_image_hint_ad_encrypted",
+    ),
+    "vfs.ad_encrypted_hint": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Opened as a single file: it is encrypted with FTK Imager's AD encryption and holds "
+        "a disk image or AD1 logical evidence, which shows once it is opened — use Open "
+        "Disk Image… to open it with its password or key",
+        "vfs.ad_encrypted_hint",
+    ),
     "vfs.disk_image_hint_bundle": QT_TRANSLATE_NOOP(
         "ParseIssue", "folder (a file of the Apple sparse bundle {bundle})",
         "vfs.disk_image_hint_bundle",
     ),
     "vfs.logical_evidence": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Opened as a single file: it is logical evidence (EnCase L01/Lx01 or FTK Imager "
-        "AD1), which holds copies of files, not a disk — Crush doesn't open logical "
-        "evidence yet",
+        "Opened as a single file: it is EnCase Lx01 logical evidence, which Crush doesn't "
+        "read (L01 and FTK Imager AD1 logical evidence open as sources of their own)",
         "vfs.logical_evidence",
+    ),
+    "vfs.logical_not_opened": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Logical evidence (L01/AD1) signature found, but not opened as logical evidence — "
+        "{detail}",
+        "vfs.logical_not_opened",
     ),
     "vfs.sparse_bundle_folder": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -1908,6 +1925,16 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "not a valid date/time; stored words: date {date}, time {time}",
         "time.dos_invalid",
+    ),
+    "time.ad1_record": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "AD1 \"{name}\" record",
+        "time.ad1_record",
+    ),
+    "time.l01_column": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "L01 entry column \"{name}\"",
+        "time.l01_column",
     ),
     "time.fat_entry": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -2027,6 +2054,34 @@ MESSAGES: dict[str, str] = {
         "the content is shown as stored (ciphertext)",
         "entry.file_key_unreadable",
     ),
+    "entry.logical_own_data": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The data the entry {name} stores itself; the entry also holds the entries "
+        "beside this one, so it is shown as a folder",
+        "entry.logical_own_data",
+    ),
+    "entry.name_has_slash": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The stored name contains \"/\", shown here as \"∕\" (a path separator can't "
+        "be part of a name in the tree)",
+        "entry.name_has_slash",
+    ),
+    "entry.ad1_deleted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Marked as deleted in the AD1 (item type 2, which FTK Imager lists as deleted)",
+        "entry.ad1_deleted",
+    ),
+    "entry.l01_sparse_duplicate": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Marked sparse in the L01: its content is read from the data stored at its "
+        "duplicate data offset",
+        "entry.l01_sparse_duplicate",
+    ),
+    "entry.l01_sparse_byte": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Marked sparse in the L01: its content is one stored byte, repeated to its size",
+        "entry.l01_sparse_byte",
+    ),
     "entry.raw_depth": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Not listed: nested deeper than {limit} directories (guard against a "
@@ -2092,6 +2147,9 @@ MESSAGES: dict[str, str] = {
     ),
     # -- UFDR ------------------------------------------------------------------------
     "ufdr.not_recorded": QT_TRANSLATE_NOOP("ParseIssue", "(not recorded)", "ufdr.not_recorded"),
+    "logical.not_recorded": QT_TRANSLATE_NOOP(
+        "ParseIssue", "(not recorded)", "logical.not_recorded",
+    ),
     "ufdr.not_located": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "not located in container",

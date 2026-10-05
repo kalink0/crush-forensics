@@ -3708,7 +3708,7 @@ FORMATS: list[dict[str, Any]] = [
             "This EWF-E01 (version 1) format is the one EnCase 6/7 and FTK "
             "Imager write and by far the most common in the field. SMART (.s01) "
             "acquisitions carry the same signature and are read the same way; "
-            "the newer EWF2 (.Ex01) and the logical .L01/.Lx01 variants have "
+            "the newer EWF2 (.Ex01) and the logical .L01 variant have "
             "entries of their own. "
             "The acquisition stores its own MD5/SHA1 of the media in a dedicated "
             "hash section, written by the acquisition tool — recomputing and "
@@ -4157,19 +4157,19 @@ FORMATS: list[dict[str, Any]] = [
         "category": "logical_image",
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
-            "EnCase logical evidence file (.L01, and .Lx01 in the EWF2 format) — copies "
+            "EnCase logical evidence file (.L01) — copies "
             "of selected files and folders rather than a disk: no partition table, no "
             "filesystem, no unallocated space, so deleted data is only included if it "
-            "was selected. Uses the EWF segment structure (.L01 … .L99, then .LAA …; "
-            ".Lx01, .Lx02 …); an 'ltree' section stores the file tree with names, "
+            "was selected. Uses the EWF segment structure (.L01 … .L99, then .LAA …); "
+            "an 'ltree' section stores the file tree with names, "
             "paths, timestamps, attributes and per-file MD5/SHA1 hashes, with the file "
-            "content in compressed chunks. Lx01 can be encrypted. Common for targeted "
+            "content in compressed chunks. Common for targeted "
             "and triage collections and for evidence handed over by other parties; the "
             "content can come from any system.",
             "EnCase Logical Evidence",
         ),
         "platforms": ALL_PLATFORMS,
-        "parser_class": None,
+        "parser_class": "LogicalEvidenceVFS",
         "magic": [
             {
                 "offset": 0,
@@ -4180,28 +4180,15 @@ FORMATS: list[dict[str, Any]] = [
                     "EnCase Logical Evidence",
                 ),
             },
-            {
-                "offset": 0,
-                "value": b"LEF2\x0d\x0a\x81\x00",
-                "description": QT_TRANSLATE_NOOP(
-                    "FormatKnowledge",
-                    "Lx01 signature ('LEF2' + control bytes)",
-                    "EnCase Logical Evidence",
-                ),
-            },
         ],
-        "extensions": [".l01", ".lx01"],
+        "extensions": [".l01"],
         "links": [
             (
                 "Expert Witness Compression Format (EWF) — libewf project (L01 section)",
                 "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc",
             ),
             (
-                "Expert Witness Compression Format 2 (EWF2) — libewf project (Lx01 section)",
-                "https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%202%20(EWF2).asciidoc",
-            ),
-            (
-                "ForensicsWiki — EnCase image file format (incl. L01 and Lx01)",
+                "ForensicsWiki — EnCase image file format (incl. L01)",
                 "https://forensics.wiki/encase_image_file_format/",
             ),
         ],
@@ -4227,7 +4214,7 @@ FORMATS: list[dict[str, Any]] = [
             "FTK Imager Logical Evidence (AD1)",
         ),
         "platforms": ALL_PLATFORMS,
-        "parser_class": None,
+        "parser_class": "LogicalEvidenceVFS",
         "magic": [
             {
                 "offset": 0,

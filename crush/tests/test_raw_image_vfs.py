@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from crush.core.issues import ParseIssue
 from crush.core.raw_image import (
     RawImageFileUnreadableError,
     RawImageOpenError,
@@ -1225,41 +1226,52 @@ class TestAffAcquisition:
 
 
 class TestLogicalEvidence:
-    """L01/Lx01 hold copies of files, not a disk: refused as a disk image
-    with Crush's own reason, and named as what they are on a normal open."""
+    """Logical evidence holds copies of files, not a disk. L01 and AD1 open
+    as sources of their own (test_logical_evidence); Lx01, which isn't
+    read, is refused as a disk image with Crush's own reason and named as
+    what it is on a normal open. A damaged L01 or AD1 says why it didn't
+    open."""
 
-    @pytest.mark.parametrize("head", [b"LVF\x09\x0d\x0a\xff\x00", b"LEF2\x0d\x0a\x81\x00"])
-    def test_refused_as_disk_image(self, tmp_path: Path, head: bytes) -> None:
-        path = tmp_path / "evidence.L01"
-        path.write_bytes(head + bytes(4096))
+    _LX01 = b"LEF2\x0d\x0a\x81\x00"
+
+    def test_lx01_refused_as_disk_image(self, tmp_path: Path) -> None:
+        path = tmp_path / "evidence.Lx01"
+        path.write_bytes(self._LX01 + bytes(4096))
         vfs = open_vfs(path, as_disk_image=True)
         try:
             assert isinstance(vfs, FileVFS)
-            assert "logical evidence" in str(vfs.fallback_note)
+            assert "logical evidence (Lx01)" in str(vfs.fallback_note)
             assert "ewfprobe" not in str(vfs.fallback_note)
         finally:
             vfs.close()
 
-    def test_ad1_refused_as_disk_image(self, tmp_path: Path) -> None:
-        """FTK Imager's AD1 is logical evidence too, and is refused in Crush's
-        own words rather than with the reader's pointer to its command line."""
-        path = tmp_path / "evidence.ad1"
-        path.write_bytes(b"ADSEGMENTEDFILE\x00" + bytes(4096))
-        vfs = open_vfs(path, as_disk_image=True)
-        try:
-            assert isinstance(vfs, FileVFS)
-            assert "FTK Imager logical evidence (AD1)" in str(vfs.fallback_note)
-            assert "ewfprobe" not in str(vfs.fallback_note)
-        finally:
-            vfs.close()
-
-    def test_named_on_a_normal_open(self, tmp_path: Path) -> None:
+    def test_lx01_named_on_a_normal_open(self, tmp_path: Path) -> None:
         path = tmp_path / "no_extension"
-        path.write_bytes(b"LVF\x09\x0d\x0a\xff\x00" + bytes(4096))
+        path.write_bytes(self._LX01 + bytes(4096))
         vfs = open_vfs(path)
         try:
             assert isinstance(vfs, FileVFS)
-            assert "logical evidence" in str(vfs.fallback_note)
+            note = vfs.fallback_note
+            assert isinstance(note, ParseIssue) and note.code == "vfs.logical_evidence"
+        finally:
+            vfs.close()
+
+    @pytest.mark.parametrize("as_disk_image", [False, True])
+    @pytest.mark.parametrize(
+        "name,head", [("evidence.L01", b"LVF\x09\x0d\x0a\xff\x00"),
+                      ("evidence.ad1", b"ADSEGMENTEDFILE\x00")],
+    )
+    def test_damaged_says_why(
+        self, tmp_path: Path, name: str, head: bytes, as_disk_image: bool
+    ) -> None:
+        path = tmp_path / name
+        path.write_bytes(head + bytes(4096))
+        vfs = open_vfs(path, as_disk_image=as_disk_image)
+        try:
+            assert isinstance(vfs, FileVFS)
+            note = vfs.fallback_note
+            assert isinstance(note, ParseIssue) and note.code == "vfs.logical_not_opened"
+            assert note.detail
         finally:
             vfs.close()
 

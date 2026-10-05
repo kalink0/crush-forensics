@@ -141,19 +141,63 @@ def test_single_file_source_gets_banner_that_opens_it_as_disk_image(
         win.close()
 
 
-def test_logical_evidence_member_gets_banner_without_button(
+def test_logical_evidence_member_offers_open_in_new_window(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An L01 (or AD1) opens as a source of its own, by its content."""
+    from crush.ui.main_window import MainWindow
+
+    (tmp_path / "evidence").write_bytes(_L01_HEAD)
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "evidence")
+    win = MainWindow()
+    calls: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        win, "_open_in_new_window",
+        lambda n, v, as_disk_image=False: calls.append((n.name, as_disk_image)),
+    )
+    try:
+        bar = _open(win, node, vfs)
+        assert bar is not None
+        buttons = bar.findChildren(QPushButton)
+        assert [b.text() for b in buttons] == ["Open in New Window"]
+        buttons[0].click()
+        assert calls == [("evidence", False)]
+    finally:
+        win.close()
+
+
+def test_ad_encrypted_member_says_it_may_hold_logical_evidence(
     qapp: QApplication, tmp_path: Path
 ) -> None:
     from crush.ui.main_window import MainWindow
 
-    (tmp_path / "evidence.L01").write_bytes(_L01_HEAD)
+    (tmp_path / "evidence").write_bytes(qnxprobe.ADCRYPT_SIGNATURE + bytes(4096))
     vfs = DirectoryVFS(tmp_path)
-    node = next(c for c in vfs.root().children if c.name == "evidence.L01")
+    node = next(c for c in vfs.root().children if c.name == "evidence")
     win = MainWindow()
     try:
         bar = _open(win, node, vfs)
         assert bar is not None
-        assert "logical evidence" in bar.findChild(QLabel).text()
+        assert "a disk image or AD1 logical evidence" in bar.findChild(QLabel).text()
+        assert [b.text() for b in bar.findChildren(QPushButton)] == [
+            "Open Disk Image in New Window"
+        ]
+    finally:
+        win.close()
+
+
+def test_lx01_member_gets_banner_without_button(qapp: QApplication, tmp_path: Path) -> None:
+    from crush.ui.main_window import MainWindow
+
+    (tmp_path / "evidence.Lx01").write_bytes(qnxprobe.LX01_SIGNATURE + bytes(4096))
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "evidence.Lx01")
+    win = MainWindow()
+    try:
+        bar = _open(win, node, vfs)
+        assert bar is not None
+        assert "Lx01 logical evidence" in bar.findChild(QLabel).text()
         assert bar.findChildren(QPushButton) == []
     finally:
         win.close()

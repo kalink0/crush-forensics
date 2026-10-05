@@ -44,3 +44,23 @@ each one holds is recorded in ewfprobe's `tests/fixtures/manifest.json` and
 
 `dmg-sparsebundle.sparsebundle/bands/*.gz` are gzip-compressed here; the tests
 decompress them into a copy of the bundle.
+
+## Logical evidence (`logical/`), from ewfprobe v0.12.0
+
+Copied from the same repository and commit (`34c34b8`, tag v0.12.0): `tests/fixtures/ad1/`
+and `tests/fixtures/` (the certificate set, its key and the L01). MIT License; the L01 is
+Digital Corpora scenario data, CC0.
+
+| File(s) | Container | Written by | Opens with |
+|---|---|---|---|
+| `lean-multi-ntfs-c9.ad1` | AD1 v4, two sources (an NTFS volume, a folder), compression 9 | FTK Imager 4.7.3.61 | — |
+| `lean-src-c0-1mb.ad1.gz`–`.ad4.gz` | AD1 v4 in four 1 MB files, compression 0 | FTK Imager 4.7.3.61 | — |
+| `lean-src-c6-1mb-adcrypt.ad1`, `.ad2` | the same folder, compression 6, AD encryption | FTK Imager 4.7.3.61 | password `Ad1Test-2026!` |
+| `ftk-ad-cert-ad1.ad1` | AD1, AD encryption sealed to a 2048-bit test certificate | FTK Imager 4.7.3.61 | `ad-cert-test-key-2048.pem` |
+| `tracy-phone-2012-07-05-1640.L01.gz` | EWF-L01 of an iPhone, 9,951 entries | EnCase 7.2.4.2 | — |
+
+Beside each AD1: FTK Imager's own log (`*.ad1.txt`, holding the image hash, which an AD1
+doesn't store itself) and its file listing (`*.ad1.csv`, UTF-16: path, size, times,
+deleted flag, MD5, SHA-1). `lean_manifest.txt` records the folder imaged, file by file
+(size, MD5, SHA-1, UTC times), before imaging. The `.gz` files are gzip-compressed here;
+the tests decompress them.

@@ -1,0 +1,31 @@
+﻿Created By Exterro® FTK® Imager 4.7.3.61 
+
+Case Information: 
+Acquired using: ADI4.7.3.61
+Case Number: 
+Evidence Number: 
+Unique Description: 
+Examiner: 
+Notes: 
+
+--------------------------------------------------------------
+
+Information for \\Mac\Home\Downloads\ad1-samples\lean-src-c6-1mb-adcrypt.ad1:
+[Computed Hashes]
+ MD5 checksum:    2c4a09f36b6f690a566c71e57ea71381
+ SHA1 checksum:   c7285744f71d9d026b44c9c6e78b20bf9c3ea882
+
+Image information:
+ Acquisition started:   Sun Sep 27 15:42:35 2026
+ Acquisition finished:  Sun Sep 27 15:42:35 2026
+ Segment list:
+  \\Mac\Home\Downloads\ad1-samples\lean-src-c6-1mb-adcrypt.ad1
+  \\Mac\Home\Downloads\ad1-samples\lean-src-c6-1mb-adcrypt.ad2
+ COMPUTED HASH :  2c4a09f36b6f690a566c71e57ea71381
+ COMPUTED HASH :  c7285744f71d9d026b44c9c6e78b20bf9c3ea882
+
+Image Verification Results:
+ Verification started:  Sun Sep 27 15:42:35 2026
+ Verification finished: Sun Sep 27 15:42:35 2026
+ MD5 checksum:    2c4a09f36b6f690a566c71e57ea71381 : verified
+ SHA1 checksum:   c7285744f71d9d026b44c9c6e78b20bf9c3ea882 : verified

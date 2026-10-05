@@ -1,0 +1,33 @@
+﻿Created By Exterro® FTK® Imager 4.7.3.61 
+
+Case Information: 
+Acquired using: ADI4.7.3.61
+Case Number: 
+Evidence Number: 
+Unique Description: 
+Examiner: 
+Notes: 
+
+--------------------------------------------------------------
+
+Information for \\Mac\Home\Downloads\ad1-samples\lean-multi-ntfs-c9.ad1:
+[Custom Content Sources]
+ U:\:AD1LEAN [NTFS]|[root]|known|*(Wildcard,Consider Case,Include Subdirectories)
+ second:C:\AD1Lean\second|*(Wildcard,Consider Case,Include Subdirectories)
+[Computed Hashes]
+ MD5 checksum:    430943c75fae0ff41334e4291cebf3f7
+ SHA1 checksum:   c44ff0a31e17decce8776e236fef973f840c4d95
+
+Image information:
+ Acquisition started:   Sun Sep 27 15:44:47 2026
+ Acquisition finished:  Sun Sep 27 15:44:47 2026
+ Segment list:
+  \\Mac\Home\Downloads\ad1-samples\lean-multi-ntfs-c9.ad1
+ COMPUTED HASH :  430943c75fae0ff41334e4291cebf3f7
+ COMPUTED HASH :  c44ff0a31e17decce8776e236fef973f840c4d95
+
+Image Verification Results:
+ Verification started:  Sun Sep 27 15:44:47 2026
+ Verification finished: Sun Sep 27 15:44:47 2026
+ MD5 checksum:    430943c75fae0ff41334e4291cebf3f7 : verified
+ SHA1 checksum:   c44ff0a31e17decce8776e236fef973f840c4d95 : verified
