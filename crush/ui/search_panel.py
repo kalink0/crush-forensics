@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.stored_times import MODIFIED
 from crush.core.ts_decode import unix_to_utc
 from crush.core.vfs import VFS, VFSNode
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
@@ -56,6 +57,14 @@ def _fmt_ts(ts: float) -> str:
     if dt is None:
         return translate("SearchPanel", "{value} (out of range)").format(value=ts)
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _modified_reading(node: VFSNode) -> str:
+    """The first stored modification reading with no time zone, or ""."""
+    for t in node.stored_times:
+        if t.kind == MODIFIED and t.reading:
+            return t.reading
+    return ""
 
 
 _ISOBMFF_IMAGE_BRANDS: frozenset[bytes] = frozenset({
@@ -364,8 +373,16 @@ class SearchPanel(QWidget):
             size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             size_item.setEditable(False)
 
-            ts_item = QStandardItem(ts_str)
-            ts_item.setData(node.modified, _ROLE_SORT)
+            reading = "" if node.modified else _modified_reading(node)
+            if reading:
+                # No instant to sort by: sorted by its text, as stored.
+                ts_item = QStandardItem(
+                    translate("SearchPanel", "{reading} (as stored, no time zone)").format(
+                        reading=reading)
+                )
+            else:
+                ts_item = QStandardItem(ts_str)
+                ts_item.setData(node.modified, _ROLE_SORT)
             ts_item.setEditable(False)
 
             self._model.appendRow([name_item, path_item, ext_item, size_item, ts_item])

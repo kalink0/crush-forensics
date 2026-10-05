@@ -13,9 +13,14 @@ All notable changes to Crush will be documented in this file.
 - Added to Open Disk Image… -> Support for AFF4, Apple disk images and VHD, VHDX, VMDK and QCOW virtual disks. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Added to Open Disk Image… -> Support for encrypted containers, opened with a password or a private key. ([#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Added to Verify Acquisition Hash -> Support for the container's own checksums. ([#138](https://github.com/kalink0/crush-forensics/pull/138))
+- Added to ZIP archives -> Support for the times in a member's extra fields and local header, each shown with where it is stored.
 
 ### Bug Fixes
 
+- Fixed a ZIP with a member's invalid DOS date opening as a single file. ([#139](https://github.com/kalink0/crush-forensics/issues/139))
+- Fixed ZIP member times depending on the analysis machine's time zone. ([#139](https://github.com/kalink0/crush-forensics/issues/139))
+- Fixed FAT/exFAT entries in disk images showing no times.
+- Fixed archive folders with no record of their own showing a member's time, and 7z entries with no stored time showing the previous entry's.
 - Fixed an online-only NTFS cloud placeholder reading as zeros. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Fixed an NTFS-compressed file reading short when a compression unit ends early. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Fixed a locked BitLocker volume showing as an empty FAT32 volume. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))

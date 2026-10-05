@@ -14,9 +14,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.stored_times import ACCESSED, BIRTH, CHANGED, KINDS, MODIFIED, StoredTime
 from crush.core.ts_decode import unix_to_utc
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
-from crush.core.issues import CatalogText, render_value
+from crush.core.issues import CatalogText, ParseIssue, render_value
 from crush.ui import open_url
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
@@ -98,24 +99,28 @@ class PropertiesPanel(QScrollArea):
             self._layout.addRow(info_btn)
 
         # Timestamps (MACB) — always show all four, mark unavailable ones clearly
-        self._add_timestamp(translate("PropertiesPanel", "Modified (UTC)"), node.modified)
-        self._add_timestamp(translate("PropertiesPanel", "Accessed (UTC)"), node.accessed)
-        self._add_timestamp(translate("PropertiesPanel", "Changed (UTC)"), node.changed)
-        self._add_timestamp(translate("PropertiesPanel", "Birth (UTC)"), node.birth)
+        stored = vfs.stored_times(node) if vfs is not None else node.stored_times
+        not_read = stored if isinstance(stored, ParseIssue) else None
+        if not_read is not None:
+            stored = node.stored_times
+        if stored:
+            self._add_stored_times(stored)
+            if not_read is not None:
+                self._add_note(render_value(not_read, localized=True))
+        else:
+            self._add_timestamp(translate("PropertiesPanel", "Modified (UTC)"), node.modified)
+            self._add_timestamp(translate("PropertiesPanel", "Accessed (UTC)"), node.accessed)
+            self._add_timestamp(translate("PropertiesPanel", "Changed (UTC)"), node.changed)
+            self._add_timestamp(translate("PropertiesPanel", "Birth (UTC)"), node.birth)
 
-        has_modified = bool(node.modified)
-        has_others = bool(node.accessed or node.changed or node.birth)
-        if has_modified and not has_others:
-            note = QLabel(
-                translate(
+            has_modified = bool(node.modified)
+            has_others = bool(node.accessed or node.changed or node.birth)
+            if has_modified and not has_others:
+                self._add_note(translate(
                     "PropertiesPanel",
-                    "<i>Only mtime is stored in ZIP/TAR archives.<br>"
-                    "Accessed, Changed, and Birth are not available.</i>",
-                )
-            )
-            note.setWordWrap(True)
-            note.setStyleSheet("color: gray; font-size: 10px;")
-            self._layout.addRow(note)
+                    "Only the modification time is read from this source. "
+                    "Accessed, Changed, and Birth are not available.",
+                ))
 
         # Parser-supplied metadata: the key is an English label (marked in
         # crush.core.metadata_labels), a value may be a ParseIssue or a
@@ -278,6 +283,73 @@ class PropertiesPanel(QScrollArea):
             return False
         self._layout.addRow(box)
         return True
+
+    def _add_note(self, text: str) -> None:
+        note = QLabel(text)
+        note.setTextFormat(Qt.TextFormat.PlainText)
+        note.setWordWrap(True)
+        note.setTextInteractionFlags(_SELECTABLE)
+        note.setStyleSheet("color: gray; font-size: 10px; font-style: italic;")
+        self._layout.addRow(note)
+
+    def _add_stored_times(self, times: list[StoredTime]) -> None:
+        """Each timestamp as the source stores it, with where it comes from:
+        an instant in UTC, or a reading with no time zone as stored."""
+        names = {
+            MODIFIED: (
+                translate("PropertiesPanel", "Modified"),
+                translate("PropertiesPanel", "Modified (UTC)"),
+                translate("PropertiesPanel", "Modified (as stored, no time zone)"),
+            ),
+            ACCESSED: (
+                translate("PropertiesPanel", "Accessed"),
+                translate("PropertiesPanel", "Accessed (UTC)"),
+                translate("PropertiesPanel", "Accessed (as stored, no time zone)"),
+            ),
+            CHANGED: (
+                translate("PropertiesPanel", "Changed"),
+                translate("PropertiesPanel", "Changed (UTC)"),
+                translate("PropertiesPanel", "Changed (as stored, no time zone)"),
+            ),
+            BIRTH: (
+                translate("PropertiesPanel", "Birth"),
+                translate("PropertiesPanel", "Birth (UTC)"),
+                translate("PropertiesPanel", "Birth (as stored, no time zone)"),
+            ),
+        }
+        for kind in KINDS:
+            plain, utc_label, reading_label = names[kind]
+            rows = [t for t in times if t.kind == kind]
+            if not rows:
+                self._add_timestamp(plain, 0.0)
+                continue
+            for t in rows:
+                if t.utc is not None:
+                    label = utc_label
+                    ts = unix_to_utc(t.utc)
+                    value = (
+                        ts.strftime("%Y-%m-%d %H:%M:%S UTC") if ts is not None
+                        else translate("PropertiesPanel", "{value} (out of range)").format(
+                            value=t.utc)
+                    )
+                elif t.reading:
+                    label, value = reading_label, t.reading
+                else:
+                    label, value = plain, "—"
+                text = translate("PropertiesPanel", "{value} — {source}").format(
+                    value=value, source=render_value(t.source, localized=True),
+                )
+                if t.note is not None:
+                    text = translate("PropertiesPanel", "{text}; {note}").format(
+                        text=text, note=render_value(t.note, localized=True),
+                    )
+                lbl = QLabel(text)
+                lbl.setTextFormat(Qt.TextFormat.PlainText)
+                lbl.setWordWrap(True)
+                lbl.setTextInteractionFlags(_SELECTABLE)
+                self._layout.addRow(
+                    translate("PropertiesPanel", "{label}:").format(label=label), lbl
+                )
 
     def _add_timestamp(self, label: str, ts_value: float) -> None:
         if ts_value:

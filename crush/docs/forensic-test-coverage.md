@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-194 checks in total.
+199 checks in total.
 
 ### Sources
 
@@ -26,7 +26,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 |---|---|---|---|---|---|---|
 | [Folder](#folder) | 3 | not tested | not tested | not tested | not tested | not tested |
 | [Single file](#single-file) | not tested | not tested | not tested | not tested | not tested | not tested |
-| [ZIP archive](#zip-archive) | 4 | not tested | 1 | 1 | not tested | 1 |
+| [ZIP archive](#zip-archive) | 4 | not tested | 1 | 2 | 1 | 2 |
 | [7z archive](#7z-archive) | 1 | not tested | not tested | not tested | not tested | not tested |
 | [TAR archive](#tar-archive) | 2 | not tested | 1 | 1 | not tested | not tested |
 | [gzip file](#gzip-file) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -49,8 +49,8 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | | Source Immutability | No Side Effects | Read-only Media | Known-output Verification | Completeness | Reproducibility |
 |---|---|---|---|---|---|---|
 | [NTFS](#ntfs) | not tested | not tested | not tested | 6 | not tested | not tested |
-| [FAT32](#fat32) | not tested | not tested | not tested | 1 | not tested | not tested |
-| [exFAT](#exfat) | not tested | not tested | not tested | 1 | not tested | not tested |
+| [FAT32](#fat32) | not tested | not tested | not tested | 2 | not tested | not tested |
+| [exFAT](#exfat) | not tested | not tested | not tested | 2 | not tested | not tested |
 | [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [HFS+](#hfs) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -123,8 +123,11 @@ No forensic checks.
 - **Source Immutability** — Decrypting a WinZip-AES-encrypted ZIP must leave the source file byte-identical ([test_forensic.py](../../crush/tests/test_forensic.py), `test_zip_aes_encrypted_does_not_modify_source`)
 - **Read-only Media** — ZipVFS must read all entries when the archive file is chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_zip_vfs_works_on_readonly_media`)
 - **Known-output Verification** — minimal.zip must contain exactly: evidence/minimal.sqlite and evidence/minimal_binary.plist ([test_forensic.py](../../crush/tests/test_forensic.py), `test_zip_fixture_contains_expected_entries`)
+- **Known-output Verification** — The pyaff4 container (every member stored with month 0) opens as a ZIP ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_real_pyaff4_container_opens_as_zip`)
+- **Completeness** — A ZIP member with an invalid DOS date must not stop the archive from opening; the member shows its stored date as not valid, the others keep theirs ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_invalid_date_keeps_archive_open`)
 - **Reproducibility** — Reading the same ZIP archive entry twice must return byte-identical data ([test_forensic.py](../../crush/tests/test_forensic.py), `test_zip_vfs_read_is_reproducible`)
-- *Not tested:* No Side Effects, Completeness
+- **Reproducibility** — A ZIP DOS time is shown the same on every analysis machine, whatever its time zone ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_independent_of_analysis_time_zone`)
+- *Not tested:* No Side Effects
 
 #### 7z archive
 
@@ -264,11 +267,13 @@ No forensic checks.
 #### FAT32
 
 - **Known-output Verification** — Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_recovers_content_with_first_character_lost`)
+- **Known-output Verification** — FAT32 entries show their stored date/time as stored, with no time zone ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_fat32`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### exFAT
 
 - **Known-output Verification** — Three deliberately deleted exFAT test files must recover, names and content, to their reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_recovers_all_three_with_intact_names`)
+- **Known-output Verification** — exFAT entries show their stored date/time as stored, with the stored UTC offset shown and not applied ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_exfat_offset_shown_not_applied`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### ext2/3/4

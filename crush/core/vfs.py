@@ -31,6 +31,14 @@ from typing import IO, TYPE_CHECKING, Any, Iterator, cast
 from crush.core import tempdir
 from crush.core.issues import ParseIssue, ParseIssueError
 from crush.core.passwords import PasswordRequiredError, WrongPasswordError
+from crush.core.stored_times import (
+    StoredTime,
+    filetime_to_unix,
+    first_instant,
+    merge_local,
+    zip_central_times,
+    zip_local_times,
+)
 from crush.core.vfs_stream import (
     COPY_CHUNK,
     STREAM_THRESHOLD,
@@ -215,6 +223,12 @@ class VFSNode:
     # don't show: a symbolic link, one of several entries stored under the
     # same name, a directory that couldn't be listed ... "" when nothing.
     status: str | ParseIssue = ""
+    # Every timestamp as the source stores it, with where it comes from,
+    # for sources that store more than one instant per kind or a reading
+    # with no time zone (ZIP, FAT/exFAT). Empty: the floats above say it
+    # all. modified then holds the first stored instant, or 0.0 when the
+    # source stores only a reading.
+    stored_times: list[StoredTime] = field(default_factory=list)
 
     @property
     def extension(self) -> str:
@@ -249,6 +263,13 @@ class VFS(ABC):
 
     @abstractmethod
     def open(self, node: VFSNode) -> IO[bytes]: ...
+
+    def stored_times(self, node: VFSNode) -> list[StoredTime] | ParseIssue:
+        """The node's stored timestamps, including those only read when
+        asked (a ZIP member's local header) -- or why those couldn't be
+        read. A ParseIssue never replaces node.stored_times: the caller
+        shows both."""
+        return node.stored_times
 
     def close(self) -> None:
         """Optional cleanup for VFS implementations."""
@@ -507,6 +528,10 @@ class ZipVFS(VFS):
         # virtual path -> index into infolist(): the exact entry, since a ZIP
         # may hold several entries under one name (open(name) gives the last).
         self._zip_entries: dict[str, int] = {}
+        # Likewise for folders with a record of their own.
+        self._dir_entries: dict[str, int] = {}
+        # virtual path -> times incl. the local header's, read when first asked.
+        self._local_times: dict[str, list[StoredTime] | ParseIssue] = {}
         self._tree = self._build_tree()
         self._validate_password_if_needed()
         self._file_counts: dict[str, int] = {}
@@ -554,38 +579,51 @@ class ZipVFS(VFS):
         _offsets: dict[str, int] = {}  # virtual_path -> header_offset for storage-order prescan
         occurrences: dict[str, list[VFSNode]] = {}
 
+        # Folders only implied by a member's path: they have no record of
+        # their own, so no time either, until a record of their own comes.
+        implied: set[str] = set()
+
         # Archive order, so same-named entries are numbered as stored.
         for index, info in enumerate(self._zf.infolist()):
             is_dir_entry = info.filename.endswith("/")
             parts = _member_parts(info.filename.rstrip("/"))
             if not parts:
                 continue
-            zip_ts = 0.0
-            if info.date_time:
-                from datetime import datetime
-                zip_ts = datetime(*info.date_time).timestamp()
+            # A DOS date/time is a reading with no time zone: kept as stored,
+            # never converted (an instant only comes from an extra field).
+            times = zip_central_times(info.date_time, info.extra)
             for depth in range(1, len(parts)):
                 virtual_path = "/" + "/".join(parts[:depth])
                 if virtual_path not in nodes:
                     parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
-                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True,
-                                   modified=zip_ts)
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True)
                     nodes[parent_path].children.append(node)
                     nodes[virtual_path] = node
+                    implied.add(virtual_path)
             stored_path = "/" + "/".join(parts)
             parent_path = "/" + "/".join(parts[:-1]) if len(parts) > 1 else "/"
             name = parts[-1]
             if is_dir_entry:
                 if stored_path not in nodes:
-                    node = VFSNode(name=name, path=stored_path, is_dir=True, modified=zip_ts)
+                    node = VFSNode(name=name, path=stored_path, is_dir=True)
                     nodes[parent_path].children.append(node)
                     nodes[stored_path] = node
+                elif stored_path in implied:
+                    # Its record comes after a member inside it.
+                    node = nodes[stored_path]
+                else:
+                    continue
+                implied.discard(stored_path)
+                node.stored_times = times
+                node.modified = first_instant(times)
+                self._dir_entries[stored_path] = index
                 continue
             virtual_path = stored_path
             if virtual_path in nodes:
                 name, virtual_path = _free_sibling(nodes, parent_path, name)
             node = VFSNode(name=name, path=virtual_path, is_dir=False,
-                           size=info.file_size, modified=zip_ts)
+                           size=info.file_size, modified=first_instant(times),
+                           stored_times=times)
             if info.create_system == 3 and stat.S_ISLNK(info.external_attr >> 16):
                 node.status = ParseIssue("entry.symlink_stored_target")
             nodes[parent_path].children.append(node)
@@ -609,6 +647,26 @@ class ZipVFS(VFS):
     def storage_ordered_files(self) -> list[VFSNode]:
         """Return all file nodes sorted by their offset in the ZIP (sequential read order)."""
         return self._storage_ordered_nodes
+
+    def stored_times(self, node: VFSNode) -> list[StoredTime] | ParseIssue:
+        """The central directory's times plus what the member's local header
+        adds (Info-ZIP keeps access and creation time only there). Read on
+        first request, not when the archive opens: one seek per member."""
+        entries = self._dir_entries if node.is_dir else self._zip_entries
+        index = entries.get(node.path)
+        if index is None:
+            return node.stored_times
+        cached = self._local_times.get(node.path)
+        if cached is None:
+            offset = self._zf.infolist()[index].header_offset
+            try:
+                with _open_noatime(self._zip_path) as f:
+                    local = zip_local_times(f, offset)
+            except OSError as exc:
+                local = ParseIssue("time.zip_local_unreadable", detail=str(exc))
+            cached = local if isinstance(local, ParseIssue) else merge_local(node.stored_times, local)
+            self._local_times[node.path] = cached
+        return cached
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
         with self._zf_lock:
@@ -754,6 +812,8 @@ class TarVFS(VFS):
         self._stored_content: dict[str, bytes] = {}
         occurrences: dict[str, list[VFSNode]] = {}
         by_name: dict[str, tarfile.TarInfo] = {}
+        # Folders only implied by a member's path: no record, so no time.
+        implied: set[str] = set()
 
         for member in self._tf.getmembers():
             parts = _member_parts(member.name)
@@ -764,10 +824,10 @@ class TarVFS(VFS):
                 virtual_path = "/" + "/".join(parts[:depth])
                 if virtual_path not in nodes:
                     parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
-                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True,
-                                   modified=mtime)
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True)
                     nodes[parent_path].children.append(node)
                     nodes[virtual_path] = node
+                    implied.add(virtual_path)
             stored_path = "/" + "/".join(parts)
             parent_path = "/" + "/".join(parts[:-1]) if len(parts) > 1 else "/"
             name = parts[-1]
@@ -776,6 +836,10 @@ class TarVFS(VFS):
                     node = VFSNode(name=name, path=stored_path, is_dir=True, modified=mtime)
                     nodes[parent_path].children.append(node)
                     nodes[stored_path] = node
+                elif stored_path in implied:
+                    # Its record comes after a member inside it.
+                    nodes[stored_path].modified = mtime
+                implied.discard(stored_path)
                 continue
             virtual_path = stored_path
             if virtual_path in nodes:
@@ -1746,27 +1810,42 @@ class SevenZipVFS(VFS):
         # works block by block (see prefetch_heads). files and list() come
         # from the same header, in the same order.
         files = list(self._zf.files)
+        aligned = len(files) == len(infos) and all(
+            f.filename == i.filename for f, i in zip(files, infos)
+        )
         folders = (
             [id(f.folder) if f.folder is not None else None for f in files]
-            if len(files) == len(infos)
-            and all(f.filename == i.filename for f, i in zip(files, infos))
+            if aligned
             else [None] * len(infos)
         )
+        # Each entry's own last-write FILETIME (UTC), or None when it stores
+        # none: list() carries the previous entry's time on to such an entry.
+        writes: list[int | None] | None = (
+            [f.lastwritetime for f in files] if aligned else None
+        )
+
+        # Folders only implied by a member's path: no record, so no time.
+        implied: set[str] = set()
 
         # Archive order, so same-named entries are numbered as stored.
         for order, info in enumerate(infos):
             parts = _member_parts(info.filename.rstrip("/"))
             if not parts:
                 continue
-            ts = info.creationtime.timestamp() if info.creationtime else 0.0
+            if writes is not None:
+                ft = writes[order]
+                ts = filetime_to_unix(int(ft)) if ft is not None else 0.0
+            else:
+                # list()'s creationtime is the last-write time (UTC).
+                ts = info.creationtime.timestamp() if info.creationtime else 0.0
             for depth in range(1, len(parts)):
                 virtual_path = "/" + "/".join(parts[:depth])
                 if virtual_path not in nodes:
                     parent_path = "/" + "/".join(parts[: depth - 1]) if depth > 1 else "/"
-                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True,
-                                   modified=ts)
+                    node = VFSNode(name=parts[depth - 1], path=virtual_path, is_dir=True)
                     nodes[parent_path].children.append(node)
                     nodes[virtual_path] = node
+                    implied.add(virtual_path)
             stored_path = "/" + "/".join(parts)
             parent_path = "/" + "/".join(parts[:-1]) if len(parts) > 1 else "/"
             name = parts[-1]
@@ -1775,6 +1854,10 @@ class SevenZipVFS(VFS):
                     node = VFSNode(name=name, path=stored_path, is_dir=True, modified=ts)
                     nodes[parent_path].children.append(node)
                     nodes[stored_path] = node
+                elif stored_path in implied:
+                    # Its record comes after a member inside it.
+                    nodes[stored_path].modified = ts
+                implied.discard(stored_path)
                 continue
             virtual_path = stored_path
             if virtual_path in nodes:
