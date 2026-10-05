@@ -34,6 +34,33 @@ def test_format_db_categories_are_documented_values() -> None:
         assert fmt.category in FORMAT_CATEGORIES, f"{fmt.name}: category {fmt.category!r}"
 
 
+def test_format_db_platforms_in_declared_order() -> None:
+    from crush.data.build_formats_db import PLATFORMS
+    for fmt in FormatDatabase.get().all_formats():
+        values = fmt.platforms.split(",") if fmt.platforms else []
+        assert values == [p for p in PLATFORMS if p in values], f"{fmt.name}: {values}"
+
+
+def test_format_db_last_reviewed_matches_build_script() -> None:
+    from crush.data.build_formats_db import FORMATS
+    expected = {f["name"]: f["last_reviewed"] for f in FORMATS if f["status"] == "reviewed"}
+    for fmt in FormatDatabase.get().all_formats():
+        assert fmt.last_reviewed == expected[fmt.name], fmt.name
+
+
+@pytest.mark.parametrize("field,value", [
+    ("platforms", ["MacOS"]),
+    ("platforms", "Windows"),
+    ("last_reviewed", "04.10.2026"),
+    ("last_reviewed", "2026-13-01"),
+])
+def test_build_rejects_undeclared_values(field: str, value: object) -> None:
+    from crush.data.build_formats_db import _check_entry
+    entry = {"name": "X", "platforms": ["Windows"], "last_reviewed": None, field: value}
+    with pytest.raises(ValueError):
+        _check_entry(entry)
+
+
 # ---------------------------------------------------------------------------
 # FormatDatabase.identify() — magic bytes
 # ---------------------------------------------------------------------------
@@ -87,31 +114,149 @@ def test_identify_empty_bytes_no_crash() -> None:
     assert result is None or isinstance(result, FormatMatch)
 
 
+_PLAIN_XML = b'<?xml version="1.0" encoding="utf-8"?>\n<manifest package="a.b"/>\n'
+_PLIST_XML = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\n'
+    b'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+    b'"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    b'<plist version="1.0"><dict/></plist>\n'
+)
+
+
+@pytest.mark.parametrize("data,expected_parser", [
+    (_PLAIN_XML, "XmlParser"),
+    (_PLIST_XML, "PlistParser"),
+])
+def test_identify_xml_vs_xml_plist(data: bytes, expected_parser: str) -> None:
+    # Both entries share the "<?xml" magic; a plist is the plist entry,
+    # any other XML document the generic XML entry.
+    fmt = FormatDatabase.get().identify(data, "unknown_file")
+    assert fmt is not None
+    assert fmt.parser_class == expected_parser
+
+
+def test_identify_tie_is_not_resolved_by_table_order() -> None:
+    # "RIFF" alone is the WebP, AVI and WAV signature alike: no format is
+    # singled out, and every tied one is reported.
+    data = b"RIFF" + b"\x00" * 64
+    db = FormatDatabase.get()
+    assert db.identify(data, "unknown_file") is None
+    assert {m.name for m in db.top_matches(data)} == {"WebP Image", "AVI Video", "WAV Audio"}
+
+
+# Content a format's signatures alone don't make: an XML plist is told from
+# any other XML document by its DOCTYPE / root element.
+_SELF_IDENTIFY_SAMPLES = {"Property List (XML plist)": _PLIST_XML}
+
+# Formats that share a signature by spec, with nothing at a fixed offset to
+# tell them apart: they tie, and the tie is reported with all of them.
+_SHARED_SIGNATURES = [
+    # ASF header GUID; audio vs. video is decided by the stream types.
+    {"WMA Audio", "WMV Video (ASF)"},
+]
+
+
+def test_every_format_identifies_itself() -> None:
+    # Each signature, together with the format's other signatures, must
+    # single out its own format -- a signature shared with another entry, or
+    # one that ties with it, would show the analyst the other format.
+    from crush.data.build_formats_db import FORMATS
+
+    db = FormatDatabase.get()
+    wrong = []
+    for entry in FORMATS:
+        if entry["status"] != "reviewed":
+            continue
+        name = entry["name"]
+        magics = [(m["offset"], m["value"]) for m in entry["magic"] if m["offset"] is not None]
+        for offset, value in magics:
+            if name in _SELF_IDENTIFY_SAMPLES:
+                data = _SELF_IDENTIFY_SAMPLES[name]
+            else:
+                buf = bytearray(max(o + len(v) for o, v in magics))
+                for o, v in [*magics, (offset, value)]:
+                    buf[o:o + len(v)] = v
+                data = bytes(buf)
+            found = [m.name for m in db.top_matches(data)]
+            shared = next((g for g in _SHARED_SIGNATURES if name in g), {name})
+            if set(found) != shared:
+                wrong.append(f"{name} @{offset} {value!r} -> {found}")
+    assert not wrong, "\n".join(wrong)
+
+
 # ---------------------------------------------------------------------------
-# FormatDatabase.by_parser_class()
+# FormatDatabase.for_parser()
 # ---------------------------------------------------------------------------
 
-def test_by_parser_class_sqlite() -> None:
-    fmt = FormatDatabase.get().by_parser_class("SQLiteParser")
-    assert fmt is not None
-    assert fmt.parser_class == "SQLiteParser"
+def test_for_parser_single_entry() -> None:
+    # A parser with one entry gets that one, whatever the bytes.
+    matches = FormatDatabase.get().for_parser("MMKVParser", b"")
+    assert [m.name for m in matches] == ["MMKV Key-Value Store"]
 
 
-def test_by_parser_class_plist() -> None:
-    fmt = FormatDatabase.get().by_parser_class("PlistParser")
-    assert fmt is not None
-    assert fmt.parser_class == "PlistParser"
+def test_for_parser_unknown_returns_empty() -> None:
+    assert FormatDatabase.get().for_parser("NonExistentParser", _SQLITE_MAGIC) == []
 
 
-def test_by_parser_class_unknown_returns_none() -> None:
-    fmt = FormatDatabase.get().by_parser_class("NonExistentParser")
-    assert fmt is None
+@pytest.mark.parametrize("parser,data,expected", [
+    ("ImageParser", b"\x89PNG\r\n\x1a\n" + b"\x00" * 64, "PNG Image"),
+    ("ImageParser", b"\xff\xd8\xff\xe0" + b"\x00" * 64, "JPEG Image"),
+    ("MediaParser", b"\x00\x00\x00\x14ftypqt  " + b"\x00" * 64, "MOV Video (QuickTime)"),
+    ("MediaParser", b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 64, "WAV Audio"),
+    ("PlistParser", _PLIST_XML, "Property List (XML plist)"),
+    ("SQLiteParser", _SQLITE_MAGIC, "SQLite Database"),
+])
+def test_for_parser_picks_the_files_own_format(parser: str, data: bytes, expected: str) -> None:
+    # A parser that reads several formats: the bytes pick the entry, never
+    # the parser's first one by table order.
+    matches = FormatDatabase.get().for_parser(parser, data)
+    assert [m.name for m in matches] == [expected]
 
 
-def test_by_parser_class_media() -> None:
-    fmt = FormatDatabase.get().by_parser_class("MediaParser")
-    assert fmt is not None
-    assert fmt.parser_class == "MediaParser"
+def test_for_parser_undetermined_lists_every_candidate() -> None:
+    # Neither text-log entry has a signature: both stay candidates.
+    matches = FormatDatabase.get().for_parser("LogParser", b"plain text line\n" * 8)
+    assert len(matches) == 2
+    assert all(m.parser_class == "LogParser" for m in matches)
+
+
+def _enriched(tmp_path, qapp, parser: object, name: str, raw: bytes) -> dict:  # type: ignore[no-untyped-def]
+    from crush.core.vfs import DirectoryVFS
+    from crush.parsers.base import ParseResult
+    from crush.ui.main_window import MainWindow
+
+    (tmp_path / name).write_bytes(raw)
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == name)
+    win = MainWindow()
+    try:
+        result = win._enrich_with_format_info(parser, node, vfs, ParseResult("hex", b""))
+        return dict(result.metadata)
+    finally:
+        win.close()
+
+
+def test_properties_show_the_parsed_files_own_format_knowledge(tmp_path, qapp) -> None:  # type: ignore[no-untyped-def]
+    # A PNG read by ImageParser shows PNG's knowledge, not the first
+    # ImageParser entry's (JPEG).
+    from crush.parsers.image_parser import ImageParser
+
+    meta = _enriched(tmp_path, qapp, ImageParser(), "img.bin", b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+    png = FormatDatabase.get().identify(b"\x89PNG\r\n\x1a\n", "x")
+    assert png is not None
+    assert meta["Format"] == "PNG Image"
+    assert str(meta["Forensic relevance"]) == png.forensic_relevance
+
+
+def test_properties_say_when_the_format_is_not_singled_out(tmp_path, qapp) -> None:  # type: ignore[no-untyped-def]
+    from crush.parsers.log_parser import LogParser
+
+    meta = _enriched(tmp_path, qapp, LogParser(), "app.log", b"plain text line\n" * 8)
+    status = meta["Format (identified)"]
+    assert status.code == "entry.format_not_singled_out"
+    assert "Android logcat (text)" in status.params["candidates"]
+    assert "Forensic relevance" not in meta
+    assert "Format" not in meta
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +289,6 @@ _KTX_MAGIC        = b"\xabKTX 11\xbb\r\n\x1a\n" + b"\x00" * 120
     (_FLAC_MAGIC,     "FLAC"),
     (_OGG_MAGIC,      "OGG"),
     (_AMR_NB_MAGIC,   "AMR"),
-    (_WMA_GUID,       "WMA"),
     (_MP4_FTYP_MAGIC, "MP4"),
     (_MKV_EBML_MAGIC, "MKV"),
     (_AVI_MAGIC,      "AVI"),
@@ -162,7 +306,6 @@ def test_identify_media_by_magic(magic: bytes, expected_short_name: str) -> None
     (_FLAC_MAGIC,     "FLAC"),
     (_OGG_MAGIC,      "OGG"),
     (_AMR_NB_MAGIC,   "AMR"),
-    (_WMA_GUID,       "WMA"),
     (_MP4_FTYP_MAGIC, "MP4"),
     (_MKV_EBML_MAGIC, "MKV"),
     (_AVI_MAGIC,      "AVI"),
@@ -174,6 +317,48 @@ def test_media_format_has_media_parser_class(magic: bytes, expected_short_name: 
     assert fmt.parser_class == "MediaParser", (
         f"{expected_short_name}: expected parser_class='MediaParser', got {fmt.parser_class!r}"
     )
+
+
+def test_asf_guid_names_both_asf_formats() -> None:
+    # WMA and WMV share the ASF header GUID (the stream types tell them
+    # apart): from the bytes alone both are named, neither is picked.
+    db = FormatDatabase.get()
+    assert db.identify(_WMA_GUID, "unknown_file") is None
+    assert {m.name for m in db.top_matches(_WMA_GUID)} == {"WMA Audio", "WMV Video (ASF)"}
+    # A file MediaParser read is one of its formats: WMA.
+    assert [m.name for m in db.for_parser("MediaParser", _WMA_GUID)] == ["WMA Audio"]
+
+
+def _ftyp(brand: bytes) -> bytes:
+    return b"\x00\x00\x00\x18ftyp" + brand + b"\x00\x00\x00\x00isom" + b"\x00" * 104
+
+
+def _riff(kind: bytes) -> bytes:
+    return b"RIFF\xe8\x03\x00\x00" + kind + b"\x00" * 116
+
+
+@pytest.mark.parametrize("data,expected_short_name", [
+    (_ftyp(b"heic"), "HEIC/HEIF"),
+    (_ftyp(b"mif1"), "HEIC/HEIF"),
+    (_ftyp(b"hevc"), "HEIC/HEIF"),
+    (_ftyp(b"avif"), "AVIF"),
+    (_ftyp(b"isom"), "MP4"),
+    (_ftyp(b"mp42"), "MP4"),
+    (_ftyp(b"qt  "), "MOV"),
+    (_ftyp(b"3gp4"), "3GP"),
+    (_ftyp(b"3g2a"), "3GP"),
+    (_ftyp(b"M4A "), "M4A"),
+    (_ftyp(b"M4B "), "M4A"),
+    (_riff(b"WEBP"), "WebP"),
+    (_riff(b"WAVE"), "WAV"),
+    (_riff(b"AVI "), "AVI"),
+])
+def test_identify_container_brand(data: bytes, expected_short_name: str) -> None:
+    # ISOBMFF and RIFF formats share their container signature; the major
+    # brand / RIFF form type decides.
+    fmt = FormatDatabase.get().identify(data, "unknown_file")
+    assert fmt is not None
+    assert fmt.short_name == expected_short_name
 
 
 def test_identify_atx_by_magic() -> None:
@@ -219,7 +404,7 @@ def test_all_media_extensions_covered_in_db() -> None:
 # ---------------------------------------------------------------------------
 
 def test_format_match_fields() -> None:
-    fmt = FormatDatabase.get().by_parser_class("SQLiteParser")
+    fmt = FormatDatabase.get().identify(_SQLITE_MAGIC, "unknown_file")
     assert fmt is not None
     # Check all fields exist and have expected types
     assert isinstance(fmt.name, str)

@@ -2028,6 +2028,12 @@ MESSAGES: dict[str, str] = {
         "no reader for this content — showing raw bytes",
         "entry.raw_no_reader",
     ),
+    "entry.format_not_singled_out": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not determined — the signature bytes don't single out one of: "
+        "{candidates}; no format knowledge shown",
+        "entry.format_not_singled_out",
+    ),
     # -- UFDR ------------------------------------------------------------------------
     "ufdr.not_recorded": QT_TRANSLATE_NOOP("ParseIssue", "(not recorded)", "ufdr.not_recorded"),
     "ufdr.not_located": QT_TRANSLATE_NOOP(

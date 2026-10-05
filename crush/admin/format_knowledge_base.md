@@ -131,8 +131,10 @@ Then rebuild the DB. No other files need to change.
 
 ## How Identification Works at Runtime
 
-1. **Magic bytes** — checked first. All `{"offset", "value"}` entries in an entry must match.
-2. **Parser class lookup** — when a file is successfully parsed, `FormatDatabase.by_parser_class()` looks up the format by the parser's class name, bypassing magic detection entirely.
+1. **Magic bytes** — every `{"offset", "value"}` entry that matches adds its length to its format's score; the highest score wins (`FormatDatabase.identify()`). Entries with `offset: None` are informational and never matched. When several formats share the top score, no format is chosen: the Properties panel and Format Info list the tied candidates instead.
+2. **Parser class lookup** — when a file is successfully parsed, `FormatDatabase.for_parser()` looks up the format by the parser's class name. A parser that reads several formats (e.g. `ImageParser`, `MediaParser`) has one entry per format; the magic bytes then pick among those entries only, and when they don't single one out, the candidates are listed instead of one entry's knowledge.
+
+Every format with a matchable signature must be identified as itself (`test_every_format_identifies_itself` in `crush/tests/test_format_db.py`). A signature that two entries share therefore belongs to one entry only, or is `offset: None` in both, with the reason in its description.
 
 For **unsupported files** (handled by `HexFallbackParser`), magic identification runs and the result is shown in the Properties panel alongside the raw hex view.
 
