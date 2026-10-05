@@ -443,3 +443,15 @@ jobs:
             crush-macos-${BUILD_ID}.zip \
             crush-macos-intel-${BUILD_ID}.zip \
             crush-windows-${BUILD_ID}.zip
+
+  # Rebuild the GitHub Pages site; its format reference shows this nightly's
+  # state.
+  pages:
+    needs: release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      ref: ${{ github.sha }}

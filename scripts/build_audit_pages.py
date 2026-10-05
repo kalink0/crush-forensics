@@ -7,7 +7,7 @@ The site is rebuilt from scratch on every run, from the
 crush-forensic-audit.{html,json} files attached to the GitHub releases
 (written by scripts/combine_forensic_audit.py). The releases are the only
 source; the site keeps no state of its own. Network access stays in the
-workflow (.github/workflows/audit-pages.yml), which provides:
+workflow (.github/workflows/pages.yml), which provides:
 
   --releases  JSON Lines, one object per release with an audit report:
               {"tag", "published_at", "url"}

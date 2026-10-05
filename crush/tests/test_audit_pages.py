@@ -107,7 +107,7 @@ def test_history_lists_every_release_beyond_one_api_page(tmp_path):
 def test_workflow_lists_releases_without_a_page_limit():
     """`gh api --paginate` follows every page; `gh release list` stops at
     30 entries (or at its --limit) without saying so."""
-    workflow = (ROOT / ".github" / "workflows" / "audit-pages.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
     assert 'gh api --paginate "repos/$REPO/releases"' in workflow
     assert "gh release list" not in workflow
 
@@ -205,3 +205,20 @@ def test_report_links_to_history_only_when_given():
     assert f'<a href="{url}">Audit reports of all releases</a>' in \
         forensic_report.render_html(runs, 1, url)
     assert "Audit reports of all releases" not in forensic_report.render_html(runs, 1)
+
+
+def test_audit_pages_have_the_theme():
+    """Report and release history carry the dark/light theme and its toggle;
+    a colour written into their CSS directly would stay the same in both."""
+    from crush.data import site_theme
+
+    report = forensic_report.render_html(_combined([["passed"]] * 3)["runs"], 3)
+    history = forensic_report.render_history_html([], "v1")
+    for page in (report, history):
+        assert site_theme.CSS in page and site_theme.HEAD_SCRIPT in page
+        assert 'id="theme-toggle"' in page
+    own_css = forensic_report._CSS.removeprefix(site_theme.CSS)
+    # The header is dark in both themes; its verdict colours stay fixed.
+    own_css = own_css.replace(".verdict.pass{color:#4ade80}.verdict.fail{color:#f87171}", "")
+    import re
+    assert not re.findall(r"#[0-9a-fA-F]{3,6}\b", own_css)

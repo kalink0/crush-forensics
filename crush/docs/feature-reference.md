@@ -213,7 +213,7 @@ The left panel shows the loaded archive or folder as a tree.
   - **Add to Multi-Log Studio** — adds the file as an additional source to the currently open studio tab
   - **Open External (Default)** — hand off to the OS default application
   - **Open External (Choose App…)** — pick an application
-  - **Show Format Info** — opens a popup showing the identified format name, category, platforms, parser support status, and forensic relevance. For known formats an **Open Reference…** button links to the format specification. Also updates the Properties panel. Works for unsupported formats — useful for quickly understanding what a file is before deciding how to examine it
+  - **Show Format Info** — opens a popup showing the identified format name, category, platforms, parser support status, signatures, forensic relevance, reference links (opened in your browser) and the date of the last review. When the signatures match several formats equally, it lists those candidates instead of picking one. Also updates the Properties panel. Works for unsupported formats — useful for quickly understanding what a file is before deciding how to examine it
   - **Export…** — extract the file or folder to disk
 
 **Filtering:** type in the filter box at the top of the panel to search across the entire loaded tree. All searches are case-insensitive and match anywhere in the value.
@@ -917,7 +917,9 @@ The panel refreshes automatically whenever you switch between already-open viewe
 
 - Supported formats appear in normal text
 - Unsupported formats appear in grey — Crush will show forensic context in the Properties panel but display raw hex
-- Select a row and click **Open Reference…** to open the format specification in your browser
+- Select a row and click **View Details…** (or double-click it) to open the Format Info for that format, with its signatures and reference links (opened in your browser)
+
+The same format database is published online at <https://kalink0.github.io/crush-forensics/formats/> (linked as **Online version** at the bottom of this window and in **Help → About**), rebuilt with every build (nightly or release) and showing the state of the latest one (each page names its commit). It also lists draft entries, which Crush itself doesn't use yet, and offers the data as `formats.json` and `formats.db`.
 
 ---
 

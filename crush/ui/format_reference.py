@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crush.core.format_db import FormatDatabase, FormatMatch
+from crush.core.format_db import FORMAT_REFERENCE_URL, FormatDatabase, FormatMatch
+from crush.ui import open_url
 from crush.ui.format_info_dialog import FormatInfoDialog
 from crush.ui.i18n import translate
 from crush.ui.knowledge_toggle import follow_knowledge_original, knowledge_original_checkbox
@@ -100,6 +101,16 @@ class FormatReferenceDialog(QDialog):
         bl.setContentsMargins(0, 0, 0, 0)
         self._count_label = QLabel("")
         bl.addWidget(self._count_label)
+        # The website is built from the latest Crush build, so it may be
+        # newer than this installation's database; the label says so.
+        online = translate("FormatReferenceDialog", "Online version (latest Crush build)")
+        self._online_label = QLabel(
+            f'<a href="{FORMAT_REFERENCE_URL}">{online}</a>'  # i18n: keep -- markup/layout only
+        )
+        self._online_label.setToolTip(FORMAT_REFERENCE_URL)
+        self._online_label.linkActivated.connect(open_url)
+        self._online_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        bl.addWidget(self._online_label)
         bl.addStretch()
         toggle = knowledge_original_checkbox(self)
         if toggle is not None:

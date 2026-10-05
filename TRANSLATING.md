@@ -92,6 +92,10 @@ a note below the English: for a parser message it is the message's code, for a f
 knowledge text the format's name. The same English text can appear in two contexts and be
 translated differently there.
 
+Contexts whose name starts with **Website** (e.g. `WebsiteFormatReference`) hold texts of the
+[format reference website](https://kalink0.github.io/crush-forensics/formats/), not of the app.
+They are optional: they don't count towards the 90 % below.
+
 ### 5. Send it back
 
 Open an [issue](https://github.com/kalink0/crush-forensics/issues) "Translation: &lt;language&gt;
@@ -175,7 +179,7 @@ in plain text, if you'd like to read it outside Qt Linguist.
 ## When your language appears in Crush
 
 A language is offered under **View → Language** once at least **90 %** of its texts are
-translated. Below that it can only be tried with `--language <code>`. English is used for
+translated (website texts not counted). Below that it can only be tried with `--language <code>`. English is used for
 every text not translated yet.
 
 ## When Crush changes

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 import crush
+from crush.core.format_db import FORMAT_REFERENCE_URL
 from crush.core.peach_launcher import get_bundled_peach_version
 from crush.parsers.unified_log_parser import get_bundled_ul_version
 from crush.ui import open_url as _open_link
@@ -37,6 +38,9 @@ def _about_html() -> str:
     )
     license_line = translate("AboutDialog", "Licensed under the <b>Apache License 2.0</b>")
     report = translate("AboutDialog", "Report a bug or request a feature")
+    format_reference = translate(
+        "AboutDialog", "Format reference online (latest Crush build)"
+    )
     return f"""\
 <h2>Crush {crush.display_version()}</h2>
 <p><b>{tagline}</b> &nbsp;·&nbsp; © {crush.__release_year__} Marco Neumann</p>
@@ -46,6 +50,7 @@ def _about_html() -> str:
 <p><a href="https://github.com/kalink0/crush-forensics">
 github.com/kalink0/crush-forensics</a></p>
 <p><a href="https://github.com/kalink0/crush-forensics/issues">{report}</a></p>
+<p><a href="{FORMAT_REFERENCE_URL}">{format_reference}</a></p>
 """
 
 

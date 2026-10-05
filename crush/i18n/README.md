@@ -25,4 +25,8 @@ the current texts, keeps its translations) and `check`, then commit it.
 Run `crush --language <code>` to try a catalog before it is complete enough
 (90 %) to be offered under View → Language.
 
+Contexts starting with `Website` (from `crush/data/format_pages_text.py`) are texts of the
+format reference website, not of the app. They are in the catalogs so translators can do
+them too, but `release` doesn't count them towards the 90 %.
+
 How to translate: [TRANSLATING.md](../../TRANSLATING.md).

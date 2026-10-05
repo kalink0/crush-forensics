@@ -103,6 +103,7 @@ Integrity Mode (Linux)
 
 - [Feature Reference](crush/docs/feature-reference.md)
 - [Format Support & Parser Limitations](crush/docs/format-support.md)
+- [Format Reference](https://kalink0.github.io/crush-forensics/formats/): every format in Crush's format database (forensic relevance, signatures, references, Crush support), as of the latest build (nightly or release)
 - [Forensic Test Coverage](crush/docs/forensic-test-coverage.md)
 - [Translating Crush](TRANSLATING.md)
 

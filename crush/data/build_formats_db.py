@@ -17,6 +17,7 @@ skips a parenthesised text. test_format_db checks both.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -30,7 +31,11 @@ _OUT = Path(__file__).parent / "formats.db"
 # Format definitions
 # Each entry:
 #   name            Full human-readable name
-#   short_name      Abbreviation shown in UI
+#   short_name      Abbreviation shown in UI. Required, and NEVER changed
+#                   once published: it is the entry's permanent address on
+#                   the format reference site (scripts/build_format_pages.py,
+#                   /formats/<url_slug(short_name)>/). Pinned by
+#                   scripts/format_pages/published_slugs.txt.
 #   category        database | configuration | log | execution | document |
 #                   filesystem | disk_image | logical_image | archive |
 #                   serialization | media | memory | network | uncategorized
@@ -67,7 +72,12 @@ _OUT = Path(__file__).parent / "formats.db"
 #                   format is identified by its own signatures.
 #   extensions      List of lowercase extensions including the dot
 #   links           List of (label, url) tuples — reference links
-#   status          "draft" (excluded from DB) | "reviewed" (included in DB)
+#   status          "draft" (excluded from DB) | "reviewed" (included in DB).
+#                   draft: compiled from a short web search (search engine
+#                   or AI), nothing more. reviewed: sources refined and
+#                   checked, checked against the specification where one is
+#                   available and for known forensic details -- can still
+#                   contain errors. The format reference site says so.
 #   last_reviewed   ISO date ("YYYY-MM-DD") of the last manual review of the
 #                   whole entry, or None
 # ---------------------------------------------------------------------------
@@ -9820,9 +9830,59 @@ FORMATS: list[dict[str, Any]] = [
 # Build
 # ---------------------------------------------------------------------------
 
+def url_slug(short_name: str) -> str:
+    """The entry's address on the format reference site: short_name in
+    lower case, every run of characters other than a-z/0-9 as one '-'."""
+    return re.sub(r"[^a-z0-9]+", "-", short_name.lower()).strip("-")
+
+
+def entry(fmt: dict[str, Any]) -> dict[str, Any]:
+    """One FORMATS entry with every field present and normalised exactly as
+    it is written to formats.db (platforms in PLATFORMS order, lower-case
+    extensions, empty text for a missing one). build() and the format
+    reference site both read the entries through this, so they can't
+    differ."""
+    platforms = fmt.get("platforms", [])
+    return {
+        "name": fmt["name"],
+        "short_name": fmt.get("short_name", ""),
+        "category": fmt.get("category", ""),
+        "forensic_relevance": fmt.get("forensic_relevance", ""),
+        "platforms": [p for p in PLATFORMS if p in platforms],
+        "parser_class": fmt.get("parser_class"),
+        "magic": [
+            {
+                "offset": m.get("offset"),
+                "value": m["value"],
+                "description": m.get("description", ""),
+            }
+            for m in fmt.get("magic", [])
+        ],
+        "extensions": [ext.lower() for ext in fmt.get("extensions", [])],
+        "links": [(label, url) for label, url in fmt.get("links", [])],
+        "status": fmt.get("status"),
+        "last_reviewed": fmt.get("last_reviewed"),
+    }
+
+
+def check_slugs(formats: list[dict[str, Any]]) -> None:
+    """Every entry needs a short_name, and no two may share an address."""
+    seen: dict[str, str] = {}
+    for fmt in formats:
+        slug = url_slug(fmt.get("short_name", ""))
+        if not slug:
+            raise ValueError(f"{fmt['name']}: short_name is missing or has no a-z/0-9")
+        if slug in seen:
+            raise ValueError(
+                f"{fmt['name']}: short_name gives the same site address {slug!r} as "
+                f"{seen[slug]}"
+            )
+        seen[slug] = fmt["name"]
+
+
 def _check_entry(fmt: dict[str, Any]) -> None:
     """Reject values outside the declared sets, before anything is written."""
-    unknown = [p for p in fmt.get("platforms", []) if p not in PLATFORMS]
+    unknown =[p for p in fmt.get("platforms", []) if p not in PLATFORMS]
     if unknown:
         raise ValueError(f"{fmt['name']}: unknown platform(s) {unknown}, allowed {PLATFORMS}")
     reviewed_on = fmt.get("last_reviewed")
@@ -9838,6 +9898,7 @@ def _check_entry(fmt: dict[str, Any]) -> None:
 def build(out_path: Path = _OUT) -> None:
     for fmt in FORMATS:
         _check_entry(fmt)
+    check_slugs(FORMATS)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
@@ -9885,35 +9946,32 @@ def build(out_path: Path = _OUT) -> None:
     if undated:
         print(f"WARNING: {len(undated)} reviewed format(s) without last_reviewed: {', '.join(undated)}")
 
-    for fmt in reviewed:
-        platforms = fmt.get("platforms", [])
-        platforms_str = ",".join(p for p in PLATFORMS if p in platforms)
-
+    for fmt in map(entry, reviewed):
         cur = conn.execute(
             "INSERT INTO formats (name, short_name, category, forensic_relevance, "
             "platforms, parser_class, last_reviewed) VALUES (?,?,?,?,?,?,?)",
             (
                 fmt["name"],
-                fmt.get("short_name", ""),
-                fmt.get("category", ""),
-                fmt.get("forensic_relevance", ""),
-                platforms_str,
-                fmt.get("parser_class"),
-                fmt.get("last_reviewed"),
+                fmt["short_name"],
+                fmt["category"],
+                fmt["forensic_relevance"],
+                ",".join(fmt["platforms"]),
+                fmt["parser_class"],
+                fmt["last_reviewed"],
             ),
         )
         fid = cur.lastrowid
-        for m in fmt.get("magic", []):
+        for m in fmt["magic"]:
             conn.execute(
                 "INSERT INTO magic_bytes (format_id, offset, pattern, description) VALUES (?,?,?,?)",
-                (fid, m.get("offset"), m["value"], m.get("description", "")),
+                (fid, m["offset"], m["value"], m["description"]),
             )
-        for ext in fmt.get("extensions", []):
+        for ext in fmt["extensions"]:
             conn.execute(
                 "INSERT INTO extensions (format_id, extension) VALUES (?,?)",
-                (fid, ext.lower()),
+                (fid, ext),
             )
-        for label, url in fmt.get("links", []):
+        for label, url in fmt["links"]:
             conn.execute(
                 "INSERT INTO links (format_id, label, url) VALUES (?,?,?)",
                 (fid, label, url),

@@ -283,6 +283,23 @@ def test_count_messages(tmp_path: Path) -> None:
     assert script.count_messages(ts) == (1, 4)
 
 
+def test_count_messages_leaves_out_website_texts(tmp_path: Path) -> None:
+    """Website texts are in the catalog but not in the app: not counted."""
+    ts = tmp_path / "x.ts"
+    ts.write_text(
+        '<?xml version="1.0" encoding="utf-8"?><TS version="2.1" language="de">'
+        "<context><name>C</name>"
+        "<message><source>a</source><translation>A</translation></message>"
+        '<message><source>b</source><translation type="unfinished"></translation></message>'
+        "</context><context><name>WebsiteFormatReference</name>"
+        '<message><source>w</source><translation type="unfinished"></translation></message>'
+        "<message><source>v</source><translation>V</translation></message>"
+        "</context></TS>",
+        encoding="utf-8",
+    )
+    assert script.count_messages(ts) == (1, 2)
+
+
 # -- Translation check (placeholders) ---------------------------------------------
 
 @pytest.mark.parametrize(("source", "translation"), [

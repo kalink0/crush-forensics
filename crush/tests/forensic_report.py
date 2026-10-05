@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from crush.data import site_theme
+
 SCHEMA_VERSION = 1
 DEFAULT_REPOSITORY = "https://github.com/kalink0/crush-forensics"
 
@@ -276,12 +278,12 @@ def missing_runs_note(runs: list[dict[str, Any]], expected: int | None) -> str:
 # HTML
 # ---------------------------------------------------------------------------
 
-_CSS = """
+_CSS = site_theme.CSS + """
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-         font-size:14px;color:#1a1a2e;background:#f0f2f5}
+         font-size:14px;color:var(--text);background:var(--bg)}
     a{color:inherit}
-    header{background:#1a1a2e;color:#fff;padding:24px 32px 20px}
+    header{background:var(--header-bg);color:var(--header-text);padding:24px 72px 20px 32px}
     header h1{font-size:20px;font-weight:600;letter-spacing:.3px}
     .meta{margin-top:5px;font-size:12px;opacity:.75;line-height:1.6}
     .meta code{font-family:"SF Mono","Fira Code",monospace}
@@ -292,36 +294,36 @@ _CSS = """
     .verdict.pass{color:#4ade80}.verdict.fail{color:#f87171}
     .counts{font-size:12px;opacity:.75}
     main{max-width:1040px;margin:0 auto;padding:24px 16px 40px}
-    section{background:#fff;border-radius:8px;padding:20px 24px;
-            margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow-x:auto}
+    section{background:var(--surface);border-radius:8px;padding:20px 24px;
+            margin-bottom:18px;box-shadow:0 1px 3px var(--shadow);overflow-x:auto}
     .cat-header{display:flex;align-items:center;gap:10px;margin-bottom:6px}
     .cat-header h2{font-size:15px;font-weight:600}
-    .cat-count{font-size:12px;color:#666}
+    .cat-count{font-size:12px;color:var(--muted)}
     .badge{font-size:11px;font-weight:700;letter-spacing:.4px;
            padding:2px 8px;border-radius:4px}
-    .badge.pass{background:#dcfce7;color:#166534}
-    .badge.fail{background:#fee2e2;color:#991b1b}
-    .cat-intro{font-size:13px;color:#555;line-height:1.55;margin-bottom:14px}
+    .badge.pass{background:var(--badge-pass-bg);color:var(--badge-pass-fg)}
+    .badge.fail{background:var(--badge-fail-bg);color:var(--badge-fail-fg)}
+    .cat-intro{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:14px}
     table{width:100%;border-collapse:collapse}
     th{text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;
-       letter-spacing:.5px;color:#999;padding:6px 10px;
-       border-bottom:2px solid #e5e7eb}
-    td{padding:8px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+       letter-spacing:.5px;color:var(--faint);padding:6px 10px;
+       border-bottom:2px solid var(--border-strong)}
+    td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
     tr:last-child td{border-bottom:none}
     .col-status{width:80px}.col-fn{width:260px}
     .cell-status{font-weight:700;font-size:11px;letter-spacing:.5px;white-space:nowrap}
-    .status-passed{color:#16a34a}.status-failed{color:#dc2626}
-    .status-skipped,.status-missing{color:#9ca3af}
-    .cell-fn{font-family:"SF Mono","Fira Code",monospace;font-size:12px;color:#6366f1;
+    .status-passed{color:var(--pass)}.status-failed{color:var(--fail)}
+    .status-skipped,.status-missing{color:var(--skip)}
+    .cell-fn{font-family:"SF Mono","Fira Code",monospace;font-size:12px;color:var(--accent);
              word-break:break-all}
     .cell-hash{font-family:"SF Mono","Fira Code",monospace;font-size:11px;
-               color:#888;word-break:break-all}
-    .cell-size{text-align:right;color:#888;font-size:12px;white-space:nowrap}
-    .row-failed{background:#fff5f5}
-    details{margin-top:6px;font-size:12px;color:#555}
+               color:var(--faint);word-break:break-all}
+    .cell-size{text-align:right;color:var(--faint);font-size:12px;white-space:nowrap}
+    .row-failed{background:var(--row-failed)}
+    details{margin-top:6px;font-size:12px;color:var(--muted)}
     details pre{white-space:pre-wrap;word-break:break-word;font-size:11px;
-                background:#f9fafb;padding:8px;border-radius:4px;margin-top:4px}
-    footer{text-align:center;font-size:11px;color:#bbb;padding:0 0 24px}
+                background:var(--code-bg);padding:8px;border-radius:4px;margin-top:4px}
+    footer{text-align:center;font-size:11px;color:var(--faint);padding:0 0 24px}
 """
 
 
@@ -497,10 +499,12 @@ def render_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Crush Forensic Audit</title>
+  {site_theme.HEAD_SCRIPT}
   <style>{_CSS}</style>
 </head>
 <body>
 <header>
+  {site_theme.toggle()}
   <h1>Crush &mdash; Forensic Integrity Audit Report</h1>
   <div class="meta">
     Crush {_html.escape(str(env0.get("crush_version")))}{ref} &nbsp;|&nbsp;
@@ -642,10 +646,12 @@ def render_history_html(entries: list[dict[str, Any]], latest: str) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Crush Forensic Audit — All Releases</title>
+  {site_theme.HEAD_SCRIPT}
   <style>{_CSS}</style>
 </head>
 <body>
 <header>
+  {site_theme.toggle()}
   <h1>Crush &mdash; Forensic Integrity Audit: All Releases</h1>
   <div class="meta">
     One row per release that has an audit report attached. Each report is the
