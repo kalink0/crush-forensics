@@ -7,7 +7,9 @@ import html
 import importlib.util
 import json
 import re
+import shutil
 import sqlite3
+import subprocess
 import urllib.parse
 import sys
 from pathlib import Path
@@ -233,11 +235,82 @@ def test_unknown_offset_is_shown(tmp_path, monkeypatch):
     page = (site / "testfmt" / "index.html").read_text(encoding="utf-8")
     assert "unknown" in page and "00 54 52 4C" in page and ".TRL" in page
     index = (site / "index.html").read_text(encoding="utf-8")
-    # The signature search only checks signatures with a known offset.
-    data = json.loads(re.search(
+    # The signature lookup finds it as well, with its offset as unknown.
+    assert _format_data(index)["formats"][0]["signatures"] == [[None, "0054524C", "Trailer"]]
+
+
+def _format_data(index: str) -> dict[str, Any]:
+    return json.loads(re.search(
         r'<script type="application/json" id="format-data">(.*?)</script>', index, re.S
     ).group(1))
-    assert data["formats"][0]["signatures"] == []
+
+
+def _lookup(site: Path, value: str) -> list[dict[str, Any]] | None:
+    """Run search.js's lookup() under Node on the site's own data."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not found: the signature lookup (JavaScript) can't be run")
+    data = _format_data((site / "index.html").read_text(encoding="utf-8"))
+    script = (
+        "const s = require(process.argv[1]);"
+        "const d = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+        "const h = s.lookup(d.formats, process.argv[2]);"
+        "console.log(JSON.stringify(h === null ? null : h.map(x => ({"
+        "name: x.format.name, offset: x.offset, hex: x.hex, start: x.start,"
+        "length: x.length}))));"
+    )
+    out = subprocess.run(
+        [node, "-e", script, str(site / "static" / "search.js"), value],
+        input=json.dumps(data), capture_output=True, text=True, check=True,
+    )
+    result: list[dict[str, Any]] | None = json.loads(out.stdout)
+    return result
+
+
+def test_signature_lookup_finds_part_of_a_signature(site):
+    """'37 7A' is the start of the 7-Zip signature; it must be found
+    although the signature is longer."""
+    hits = _lookup(site, "37 7A")
+    assert hits is not None
+    seven = [h for h in hits if h["name"] == "7-Zip Archive"]
+    assert seven == [{"name": "7-Zip Archive", "offset": 0, "hex": "377ABCAF271C",
+                      "start": 0, "length": 2}]
+    # In the middle of the signature, any spelling of hex.
+    assert any(h["name"] == "7-Zip Archive" and h["start"] == 4
+               for h in _lookup(site, "0x271c") or [])
+    full = _lookup(site, "377ABCAF271C")
+    assert full is not None and [h["name"] for h in full] == ["7-Zip Archive"]
+
+
+def test_signature_lookup_is_byte_aligned_and_lists_every_hit(site, published):
+    # "7A BC" shifted by half a byte ("7ABC" inside "37ABC...") is no match.
+    assert all(h["start"] * 2 % 2 == 0 for h in _lookup(site, "7A BC") or [])
+    assert _lookup(site, "A B") is None          # not whole bytes
+    assert _lookup(site, "0x37,0x7A") == _lookup(site, "377a")
+    assert _lookup(site, "zz") is None
+    assert _lookup(site, "") == []
+    # One byte: every signature containing it, none left out.
+    expected = sum(
+        1 for r in published["formats"] for s in r["signatures"]
+        if any(s["hex"][i:i + 2] == "00" for i in range(0, len(s["hex"]), 2))
+    )
+    assert len(_lookup(site, "00") or []) == expected
+
+
+def test_signature_lookup_includes_unknown_offsets(tmp_path, monkeypatch):
+    monkeypatch.setattr(source, "FORMATS", [
+        _entry(magic=[{"offset": None, "value": b"\x00TRL", "description": "Trailer"}]),
+    ])
+    hits = _lookup(_build(tmp_path), "54 52")
+    assert hits == [{"name": "Test Format", "offset": None, "hex": "0054524C",
+                     "start": 1, "length": 2}]
+
+
+def test_extensions_note_only_on_the_overview(site):
+    note = html.escape(pages._ui("extensions_note"))
+    assert note in (site / "index.html").read_text(encoding="utf-8")
+    for page in site.glob("*/index.html"):
+        assert note not in page.read_text(encoding="utf-8"), page
 
 
 @pytest.mark.parametrize("overrides, message", [

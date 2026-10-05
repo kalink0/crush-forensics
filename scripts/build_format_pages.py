@@ -10,7 +10,7 @@ marked; formats.db leaves them out. Every entry is rendered or the build
 fails; nothing is skipped.
 
 Output (--out is the site root; everything goes to <out>/formats/):
-  formats/index.html           all formats, filterable, plus signature search
+  formats/index.html           all formats, filterable, plus signature lookup
   formats/<slug>/index.html    one page per format; slug = url_slug(short_name),
                                a permanent address (published_slugs.txt)
   formats/formats.json         every entry, machine-readable
@@ -217,6 +217,7 @@ def _page(title: str, body: str, static: str, meta: dict[str, str], report_url: 
 </main>
 <footer>
   <p>{disclaimer}</p>
+  <p>{_e(_ui("draft_disclaimer"))}</p>
   <p>{_e(_ui("license", license=LICENSE))}</p>
 </footer>
 {scripts}</body>
@@ -264,14 +265,18 @@ def _index_html(recs: list[dict[str, Any]], meta: dict[str, str]) -> str:
     )
     search_data = {
         "ui": {k: _ui(k) for k in (
-            "count", "count_filtered", "sig_invalid", "sig_none", "sig_hits", "sig_hit",
+            "count", "count_filtered", "sig_invalid", "sig_none", "sig_hits",
+            "offset_known", "offset_unknown",
         )},
         "formats": [
             {
                 "slug": r["slug"],
                 "name": r["name"],
+                # Every signature, an unknown offset as null: the lookup
+                # finds signatures by their bytes, wherever they sit.
                 "signatures": [
-                    [s["offset"], s["hex"]] for s in r["signatures"] if s["offset"] is not None
+                    [s["offset"], s["hex"], _knowledge(s["description"])]
+                    for s in r["signatures"]
                 ],
             }
             for r in recs
@@ -420,7 +425,6 @@ def _format_html(r: dict[str, Any], meta: dict[str, str], source_line: int | Non
 <section>
   <h3>{_e(_ui("f_extensions"))}</h3>
   <p>{_list_or_none(r["extensions"])}</p>
-  <p class="help">{_e(_ui("extensions_note"))}</p>
 </section>
 <section>
   <h3>{_e(_ui("f_links"))}</h3>

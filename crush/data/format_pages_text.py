@@ -67,12 +67,20 @@ WEBSITE_TEXTS: dict[str, str] = {
     ),
     "disclaimer": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference",
-        "Entries marked reviewed were reviewed on a best-effort basis: sources refined and "
-        "checked, the entry checked against the specification where one is "
-        "available and for known forensic details. They can still be incorrect; "
-        "each entry names its sources. Drafts are compiled from a short web search "
-        "(search engine or AI) and have not been reviewed. Found an error or a "
-        "missing source? {link}.",
+        "Reviewed entries were checked manually. Sources were verified and refined; "
+        "signatures and structural details were checked against the specification "
+        "where one exists, and for undocumented formats against published "
+        "reverse-engineering research and own research. Practical knowledge \u2014 "
+        "such as which OS versions introduced a format \u2014 comes from casework and "
+        "from findings shared by the DFIR community. Each entry lists its references "
+        "(sources and related tools) and review date. Should you find an error or "
+        "have additional knowledge, corrections and additions are welcome and "
+        "credited: {link}.",
+    ),
+    "draft_disclaimer": QT_TRANSLATE_NOOP(
+        "WebsiteFormatReference",
+        "Draft entries were compiled from a brief web search (search engine or "
+        "AI-assisted) and have not been reviewed yet.",
     ),
     "filesig_note": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference",
@@ -93,8 +101,8 @@ WEBSITE_TEXTS: dict[str, str] = {
     ),
     "draft_note": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference",
-        "Draft: compiled from a short web search (search engine or AI) and not "
-        "reviewed yet. Drafts are not part of formats.db, so Crush neither shows "
+        "Draft: compiled from a brief web search (search engine or AI-assisted) and "
+        "not reviewed yet. Drafts are not part of formats.db, so Crush neither shows "
         "them nor uses their signatures.",
     ),
     "downloads": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Machine-readable:"),
@@ -105,21 +113,21 @@ WEBSITE_TEXTS: dict[str, str] = {
     "all_categories": QT_TRANSLATE_NOOP("WebsiteFormatReference", "All categories"),
     "all_support": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Any support"),
     "all_statuses": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Any status"),
-    "sig_search": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Signature search"),
+    "sig_search": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Signature lookup"),
     "sig_search_help": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference",
-        "Enter a file's first bytes as hex (e.g. 53 51 4C 69 74 65). Lists every "
-        "signature that matches at its offset. This is not Crush's identification "
-        "result: Crush weighs all matching signatures and identifies nothing when "
-        "formats tie. Signatures with an unknown offset are not searched.",
+        "Enter hex bytes (e.g. 37 7A or 53 51 4C 69 74 65). Lists every signature "
+        "that contains them, with the offset the signature has in a file. To "
+        "identify a file, open it in Crush (Show Format Info).",
     ),
-    "sig_placeholder": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Hex bytes from offset 0"),
+    "sig_placeholder": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Hex bytes, e.g. 37 7A"),
     "sig_invalid": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference", "Not valid hex: use pairs of 0-9 / A-F."
     ),
-    "sig_none": QT_TRANSLATE_NOOP("WebsiteFormatReference", "No signature matches these bytes."),
-    "sig_hits": QT_TRANSLATE_NOOP("WebsiteFormatReference", "{count} matching signature(s):"),
-    "sig_hit": QT_TRANSLATE_NOOP("WebsiteFormatReference", "offset {offset}, {length} bytes"),
+    "sig_none": QT_TRANSLATE_NOOP("WebsiteFormatReference", "No signature contains these bytes."),
+    "sig_hits": QT_TRANSLATE_NOOP(
+        "WebsiteFormatReference", "{count} signature(s) contain these bytes:"
+    ),
     "col_extensions": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Known extensions"),
     "col_support": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Crush support"),
     "draft": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Draft"),
@@ -127,8 +135,8 @@ WEBSITE_TEXTS: dict[str, str] = {
     "all_formats": QT_TRANSLATE_NOOP("WebsiteFormatReference", "← All formats"),
     "draft_banner": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference",
-        "Draft — this entry is compiled from a short web search (search engine "
-        "or AI) and has not been reviewed. It is not part of formats.db, so Crush "
+        "Draft — this entry was compiled from a brief web search (search engine "
+        "or AI-assisted) and has not been reviewed yet. It is not part of formats.db, so Crush "
         "neither shows it nor uses its signatures.",
     ),
     "f_support": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Crush support"),
@@ -147,7 +155,7 @@ WEBSITE_TEXTS: dict[str, str] = {
     ),
     "history": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Change history of the source"),
     "report": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Report a correction"),
-    "report_issue": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Report it as an issue on GitHub"),
+    "report_issue": QT_TRANSLATE_NOOP("WebsiteFormatReference", "open an issue on GitHub"),
     "theme_toggle": QT_TRANSLATE_NOOP(
         "WebsiteFormatReference", "Switch between dark and light theme"
     ),

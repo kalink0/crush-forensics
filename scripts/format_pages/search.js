@@ -1,9 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 // Format reference site (scripts/build_format_pages.py): table filter and
-// signature search. The page is complete without this script; it only adds
+// signature lookup. The page is complete without this script; it only adds
 // filtering. Texts come from the page (#format-data .ui).
 (function () {
   "use strict";
+
+  // --- Signature lookup (no DOM; also run by crush/tests/test_format_pages.py) ---
+  // Hex bytes -> every signature that contains them, at any position within
+  // the signature, signatures with an unknown offset included. In the
+  // page's order (category, name), no ranking. null for input that isn't
+  // hex byte pairs.
+  // Groups separated by spaces, commas, colons, semicolons or dashes, each
+  // whole bytes ("37 7A", "377A", "0x37,0x7A"); "A B" is not two bytes.
+  function parseHex(value) {
+    var groups = value.replace(/0x/gi, " ").split(/[\s,:;-]+/).filter(Boolean);
+    for (var i = 0; i < groups.length; i += 1) {
+      if (!/^(?:[0-9A-Fa-f]{2})+$/.test(groups[i])) return null;
+    }
+    return groups.join("").toUpperCase();
+  }
+
+  function lookup(formats, value) {
+    var needle = parseHex(value);
+    if (needle === null) return null;
+    var hits = [];
+    if (!needle) return hits;
+    formats.forEach(function (f) {
+      f.signatures.forEach(function (sig) {
+        var hex = sig[1];
+        // Byte-aligned: a match must start on a byte boundary.
+        for (var at = hex.indexOf(needle); at !== -1; at = hex.indexOf(needle, at + 1)) {
+          if (at % 2 === 0) {
+            hits.push({ format: f, offset: sig[0], hex: hex, description: sig[2],
+                        start: at / 2, length: needle.length / 2 });
+            break;
+          }
+        }
+      });
+    });
+    return hits;
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { parseHex: parseHex, lookup: lookup };
+  }
+  if (typeof document === "undefined") return;
 
   var data = JSON.parse(document.getElementById("format-data").textContent);
   var ui = data.ui;
@@ -43,48 +84,44 @@
   });
   document.getElementById("tools").hidden = false;
 
-  // --- Signature search -------------------------------------------------
-  // Lists every signature with a known offset that the entered bytes match
-  // at that offset. Picks no winner: that is not what Crush's
-  // identification does, and the page says so.
+  // --- Signature lookup -----------------------------------------------------
   var input = document.getElementById("sig-input");
   var result = document.getElementById("sig-result");
-
-  function parseHex(value) {
-    var clean = value.replace(/0x/gi, "").replace(/[\s,:;-]/g, "");
-    if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length % 2 !== 0) return null;
-    var bytes = [];
-    for (var i = 0; i < clean.length; i += 2) bytes.push(parseInt(clean.substr(i, 2), 16));
-    return bytes;
-  }
-
-  function matches(bytes, offset, hex) {
-    var length = hex.length / 2;
-    if (offset + length > bytes.length) return false;
-    for (var i = 0; i < length; i += 1) {
-      if (bytes[offset + i] !== parseInt(hex.substr(i * 2, 2), 16)) return false;
-    }
-    return true;
-  }
 
   function clear(node) {
     while (node.firstChild) node.removeChild(node.firstChild);
   }
 
+  function pairs(hex) {
+    return hex ? hex.match(/../g).join(" ") : "";
+  }
+
+  // The signature as hex, the looked-up bytes marked.
+  function signatureCode(hit) {
+    var code = document.createElement("code");
+    var hex = hit.hex, a = hit.start * 2, b = a + hit.length * 2;
+    code.appendChild(document.createTextNode(pairs(hex.slice(0, a)) + (a ? " " : "")));
+    var mark = document.createElement("mark");
+    mark.textContent = pairs(hex.slice(a, b));
+    code.appendChild(mark);
+    code.appendChild(document.createTextNode((b < hex.length ? " " : "") + pairs(hex.slice(b))));
+    return code;
+  }
+
+  function offsetText(offset) {
+    return offset === null
+      ? ui.offset_unknown
+      : fmt(ui.offset_known, { offset: offset, offset_hex: offset.toString(16).toUpperCase() });
+  }
+
   function search() {
     clear(result);
     if (!input.value.trim()) return;
-    var bytes = parseHex(input.value);
-    if (bytes === null) {
+    var hits = lookup(data.formats, input.value);
+    if (hits === null) {
       result.textContent = ui.sig_invalid;
       return;
     }
-    var hits = [];
-    data.formats.forEach(function (f) {
-      f.signatures.forEach(function (sig) {
-        if (matches(bytes, sig[0], sig[1])) hits.push({ format: f, offset: sig[0], hex: sig[1] });
-      });
-    });
     if (!hits.length) {
       result.textContent = ui.sig_none;
       return;
@@ -97,13 +134,15 @@
       var link = document.createElement("a");
       link.href = hit.format.slug + "/";
       link.textContent = hit.format.name;
-      var code = document.createElement("code");
-      code.textContent = hit.hex.match(/../g).join(" ");
       item.appendChild(link);
-      item.appendChild(document.createTextNode(
-        " — " + fmt(ui.sig_hit, { offset: hit.offset, length: hit.hex.length / 2 }) + ": "
-      ));
-      item.appendChild(code);
+      item.appendChild(document.createTextNode(" — " + offsetText(hit.offset) + ": "));
+      item.appendChild(signatureCode(hit));
+      if (hit.description) {
+        var desc = document.createElement("div");
+        desc.className = "help";
+        desc.textContent = hit.description;
+        item.appendChild(desc);
+      }
       list.appendChild(item);
     });
     result.appendChild(head);
