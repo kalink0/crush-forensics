@@ -31,10 +31,12 @@ from typing import TYPE_CHECKING, Any
 # sys.path fallback cannot find a sibling file — mirrors how iLEAPP/ALEAPP
 # wire the same two vendored libraries together.
 from crush.core.issues import ParseIssue
+from crush.core.stored_times import fat_stored_times
 from crush.third_party.ewfprobe import ewfprobe as _ewfprobe
 
 sys.modules.setdefault("ewfprobe", _ewfprobe)
 from crush.third_party import qnxprobe  # noqa: E402
+from crush.third_party.qnxprobe.qnxprobe import ExfatWalker  # noqa: E402
 
 if TYPE_CHECKING:
     from crush.core.vfs import VFSNode
@@ -498,13 +500,15 @@ def _walk_into(
     try:
         if hasattr(walker, "listdir_records"):
             # FAT/exFAT keep a wall-clock reading with no timezone rather
-            # than an instant; listdir_records() hands it back as text.
+            # than an instant (entry() gives mtime 0); listdir_records()
+            # hands the readings back as text.
+            exfat = isinstance(walker, ExfatWalker)
             listing = [
-                (name, child, (recorded or {}).get("modified", ""))
+                (name, child, fat_stored_times(recorded or {}, exfat=exfat))
                 for name, child, recorded in walker.listdir_records(wnode)
             ]
         else:
-            listing = [(name, child, "") for name, child in walker.listdir(wnode)]
+            listing = [(name, child, []) for name, child in walker.listdir(wnode)]
     except Exception as exc:
         # Its siblings still can be listed; this one says why it's empty.
         vfs_node.status = ParseIssue("entry.raw_unlisted", detail=str(exc))
@@ -512,7 +516,7 @@ def _walk_into(
     listing.sort(key=lambda item: item[0])
 
     children: list[VFSNode] = []
-    for name, child, _reading in listing:
+    for name, child, times in listing:
         child_path = f"{base_path}/{name}"
         try:
             ent = walker.entry(child)
@@ -525,18 +529,21 @@ def _walk_into(
             children.append(VFSNode(
                 name=name, path=child_path, is_dir=False,
                 status=ParseIssue("entry.raw_entry_unreadable", detail=problem or ""),
+                stored_times=times,
             ))
             read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")
             continue
         mode, size, mtime = ent
         if (mode & 0o170000) == qnxprobe.S_IFDIR:  # not just the bit: block devices and sockets share it
-            child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime or 0.0)
+            child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime or 0.0,
+                                 stored_times=times)
             children.append(child_node)
             _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1)
             _add_stream_nodes(walker, child, name, base_path, children, read_map)
         elif (mode & 0o170000) == 0o100000:  # regular files only
             child_node = VFSNode(
                 name=name, path=child_path, is_dir=False, size=size or 0, modified=mtime or 0.0,
+                stored_times=times,
             )
             children.append(child_node)
             read_map[child_path] = _Entry(walker=walker, node=child, size=size or 0)
@@ -550,7 +557,7 @@ def _walk_into(
             )
             child_node = VFSNode(
                 name=name, path=child_path, is_dir=False, size=0, modified=mtime or 0.0,
-                status=status,
+                status=status, stored_times=times,
             )
             children.append(child_node)
             read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")

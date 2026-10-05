@@ -1868,6 +1868,62 @@ MESSAGES: dict[str, str] = {
         "evidence read-only to prevent this)",
         "vfs.atime_not_owned",
     ),
+    # -- Stored timestamps of an entry (Properties: where a time comes from) -----
+    "time.zip_dos_central": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ZIP DOS date/time (central directory)",
+        "time.zip_dos_central",
+    ),
+    "time.zip_dos_local": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ZIP DOS date/time (local header)",
+        "time.zip_dos_local",
+    ),
+    "time.zip_extra_central": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ZIP extra field {name} ({id}, central directory)",
+        "time.zip_extra_central",
+    ),
+    "time.zip_extra_local": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ZIP extra field {name} ({id}, local header)",
+        "time.zip_extra_local",
+    ),
+    "time.zip_extra_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the field holds {size} bytes, too few for its layout; no time read from it",
+        "time.zip_extra_short",
+    ),
+    "time.zip_local_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The local header's times were not read: no local file header at offset {offset}",
+        "time.zip_local_missing",
+    ),
+    "time.zip_local_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The local header's times were not read: {detail}",
+        "time.zip_local_unreadable",
+    ),
+    "time.dos_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not a valid date/time; stored words: date {date}, time {time}",
+        "time.dos_invalid",
+    ),
+    "time.fat_entry": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "FAT directory entry",
+        "time.fat_entry",
+    ),
+    "time.exfat_entry": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "exFAT directory entry",
+        "time.exfat_entry",
+    ),
+    "time.offset_not_applied": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "UTC offset {offset} stored beside it, not applied",
+        "time.offset_not_applied",
+    ),
     # -- Entries in a browsed source (Properties: Entry status) --------------------
     "entry.duplicate": QT_TRANSLATE_NOOP(
         "ParseIssue",
