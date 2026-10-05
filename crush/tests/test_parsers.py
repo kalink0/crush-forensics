@@ -2271,6 +2271,20 @@ def test_hex_fallback_unknown_says_not_identified(tmp_path: Path) -> None:
     assert result.metadata["Format (identified)"].code == "hexfallback.not_identified"
 
 
+def test_hex_fallback_tie_lists_candidates(tmp_path: Path) -> None:
+    # "RIFF" alone matches WebP, AVI and WAV equally: none is picked, all are named.
+    (tmp_path / "riff.bin").write_bytes(b"RIFF" + b"\x00" * 60)
+
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "riff.bin")
+    result = HexFallbackParser().parse(node, vfs)
+
+    status = result.metadata["Format (identified)"]
+    assert status.code == "entry.format_not_singled_out"
+    assert set(status.params["candidates"].split(", ")) == {"WebP Image", "AVI Video", "WAV Audio"}
+    assert "Forensic relevance" not in result.metadata
+
+
 # ---------------------------------------------------------------------------
 # _detect_encoding — text viewer encoding detection
 # ---------------------------------------------------------------------------

@@ -42,13 +42,19 @@ class HexFallbackParser(AbstractParser):
         # always there: identified, not identified, or why that failed.
         try:
             from crush.core.format_db import FormatDatabase
-            fmt = FormatDatabase.get().identify(raw[:512], node.name)
+            matches = FormatDatabase.get().top_matches(raw[:512])
         except Exception as exc:
             meta["Format (identified)"] = ParseIssue("hexfallback.identify_failed", detail=str(exc))
-            fmt = None
+            matches = []
         else:
-            if fmt is None:
+            if not matches:
                 meta["Format (identified)"] = ParseIssue("hexfallback.not_identified")
+            elif len(matches) > 1:
+                meta["Format (identified)"] = ParseIssue(
+                    "entry.format_not_singled_out",
+                    {"candidates": ", ".join(m.name for m in matches)},
+                )
+        fmt = matches[0] if len(matches) == 1 else None
         if fmt:
             meta["Format (identified)"] = fmt.name
             if fmt.category:

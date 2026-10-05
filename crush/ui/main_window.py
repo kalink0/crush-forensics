@@ -528,6 +528,10 @@ class _ExportMultiWorker(QObject):
         )
 
 
+# Bytes read from the start of a file to match it against formats.db
+# signatures (Properties panel and Format Info alike).
+_FORMAT_PEEK_BYTES = 2048
+
 # Characters NTFS/Windows reject outright, plus C0 control characters.
 # Sanitized unconditionally (not only when os.name == "nt") so an export
 # also stays usable on exFAT/NTFS media mounted from Linux or macOS.
@@ -3472,10 +3476,21 @@ class MainWindow(QMainWindow):
                 if node_info:
                     fmt_meta.update(node_info)
 
-            fmt = FormatDatabase.get().by_parser_class(type(parser).__name__) if parser else None
-            if fmt is None:
-                peek = vfs.peek(node)
-                fmt = FormatDatabase.get().identify(peek, node.name)
+            # A parser that reads several formats (images, media, ...) has an
+            # entry per format: the file's bytes pick among them, and when
+            # they don't single one out, that is said -- never another
+            # format's knowledge in its place.
+            db = FormatDatabase.get()
+            peek = vfs.peek(node, _FORMAT_PEEK_BYTES)
+            matches = db.for_parser(type(parser).__name__, peek) if parser else []
+            if not matches:
+                matches = db.top_matches(peek)
+            fmt = matches[0] if len(matches) == 1 else None
+            if len(matches) > 1:
+                fmt_meta["Format (identified)"] = ParseIssue(
+                    "entry.format_not_singled_out",
+                    {"candidates": ", ".join(m.name for m in matches)},
+                )
             if fmt is not None:
                 fmt_meta["Format"] = fmt.name
                 if fmt.platforms:
@@ -3503,14 +3518,16 @@ class MainWindow(QMainWindow):
         try:
             from crush.core.format_db import FormatDatabase
             from crush.ui.format_info_dialog import FormatInfoDialog
-            peek = vfs.peek(node, 2048)
-            fmt = FormatDatabase.get().identify(peek, node.name)
-            if fmt is None:
+            peek = vfs.peek(node, _FORMAT_PEEK_BYTES)
+            matches = FormatDatabase.get().top_matches(peek)
+            fmt = matches[0] if len(matches) == 1 else None
+            if not matches:
                 from crush.core.magic import detect_fast_label
                 label = detect_fast_label(peek, node.path or node.name)
                 if label:
                     fmt = FormatDatabase.get().by_short_name(label)
-            dlg = FormatInfoDialog(node, fmt, self)
+            candidates = matches if len(matches) > 1 else []
+            dlg = FormatInfoDialog(node, fmt, self, candidates)
             dlg.exec()
             # Also update the Properties panel
             if fmt:

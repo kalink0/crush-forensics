@@ -60,7 +60,7 @@ def translated(qapp, tmp_path: Path):
 
 
 def _sqlite() -> FormatMatch:
-    fmt = FormatDatabase.get().by_parser_class("SQLiteParser")
+    fmt = FormatDatabase.get().identify(b"SQLite format 3\x00" + b"\x00" * 84, "db")
     assert fmt is not None
     return fmt
 
