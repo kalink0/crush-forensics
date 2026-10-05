@@ -24,6 +24,7 @@ from crush.core.passwords import (
     PasswordRequiredError,
     PrivateKeyRequiredError,
     WrongPasswordError,
+    WrongPrivateKeyError,
 )
 from crush.core.stored_times import ACCESSED, BIRTH, MODIFIED
 from crush.core.vfs import (
@@ -188,6 +189,9 @@ class TestAd1:
         assert result["entry_md5_checked"] == 9 and result["entry_md5_mismatched"] == []
         assert result["entry_sha1_checked"] == 9 and result["entry_sha1_mismatched"] == []
         assert result["ad1_log"] == "lean-multi-ntfs-c9.ad1.txt"
+        # The three folders' own data has no recorded hash: counted, not hidden.
+        assert result["entry_count"] == 12
+        assert result["entry_md5_missing"] == 3 and result["entry_sha1_missing"] == 3
 
     def test_without_ftk_imagers_log_no_image_hash(self, tmp_path: Path) -> None:
         """The image hash is in FTK Imager's log, not in the AD1: without the
@@ -248,6 +252,23 @@ class TestAd1:
         finally:
             vfs.close()
             same.close()
+
+    def test_a_secret_that_does_not_open_it_is_wrong(
+        self, tmp_path: Path, ad1_encrypted: Path, ad1_cert: Path
+    ) -> None:
+        """A password or key given that doesn't open the set is refused as
+        wrong, with the reader's reason -- also a key for a set that opens
+        only with its password, and a key file that isn't a key -- so the
+        prompt that asks again says so."""
+        key = str(LOGICAL / "ad-cert-test-key-2048.pem")
+        junk = tmp_path / "junk.pem"
+        junk.write_bytes(b"not a key\n")
+        with pytest.raises(WrongPrivateKeyError, match="opens only with its password"):
+            open_vfs(ad1_encrypted, as_disk_image=True, private_key=key)
+        with pytest.raises(WrongPasswordError, match="private key"):
+            open_vfs(ad1_cert, as_disk_image=True, password="a password opens nothing here")
+        with pytest.raises(WrongPrivateKeyError, match="RSA key"):
+            open_vfs(ad1_cert, as_disk_image=True, private_key=str(junk))
 
     def test_sealed_to_a_certificate_opens_with_its_key(self, ad1_cert: Path) -> None:
         with pytest.raises(PrivateKeyRequiredError):
@@ -313,6 +334,11 @@ class TestL01:
         assert result["stored"] == {} and result["match"] is None  # no image hash in it
         assert result["entry_md5_checked"] == 108
         assert result["entry_md5_mismatched"] == []
+        # What wasn't checked is counted: 9,342 entries with data (9,219
+        # files and the own data of 123 entries with entries beneath them).
+        assert result["entry_count"] == 9342
+        assert result["entry_md5_missing"] == 9342 - 108
+        assert result["entry_sha1_unchecked"] == 0
 
     def test_sparse_entry_reads_from_its_duplicate(self, l01: Path) -> None:
         vfs = open_vfs(l01)

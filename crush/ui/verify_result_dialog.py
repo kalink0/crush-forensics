@@ -8,8 +8,9 @@ checks (a UDIF image's data, block table and master checksums, an AFF4's
 stream and map hashes) -- with the stored and the recomputed value on lines
 of their own, every value in full. A recomputed value is marked green when
 it matches the stored one and red when it doesn't. Logical evidence also
-records a hash of each file: how many were checked, and every file whose
-hash doesn't match, by path.
+records a hash of each file: how many were checked, every file whose hash
+doesn't match, by path, and how many files have no recorded hash (or one
+the reader doesn't check) and so were not checked.
 """
 from __future__ import annotations
 
@@ -175,6 +176,26 @@ def verify_report_html(
             parts.append(_file_hash_rows(
                 "SHA-1", sha1_checked, list(result.get("entry_sha1_mismatched") or []),
             ))
+        # What was not checked, counted, so "all match" isn't read as "all checked".
+        total = int(result.get("entry_count") or 0)
+        not_checked: list[str] = []
+        for algorithm, key in (("MD5", "entry_md5_missing"), ("SHA-1", "entry_sha1_missing")):
+            missing = int(result.get(key) or 0)
+            if missing:
+                not_checked.append(translate(
+                    "VerifyResultDialog",
+                    "{missing} of {total} file(s) have no recorded {algorithm} and were not "
+                    "checked against one.",
+                ).format(missing=f"{missing:,}", total=f"{total:,}", algorithm=algorithm))
+        unchecked_sha1 = int(result.get("entry_sha1_unchecked") or 0)
+        if unchecked_sha1:
+            not_checked.append(translate(
+                "VerifyResultDialog",
+                "{count} file(s) have a recorded SHA-1, which was not checked: the reader "
+                "checks an L01's recorded MD5 only.",
+            ).format(count=f"{unchecked_sha1:,}"))
+        if not_checked:
+            parts.append("<p><b>" + "<br>".join(_esc(t) for t in not_checked) + "</b></p>")
 
     if checks:
         parts.append(

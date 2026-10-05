@@ -113,6 +113,23 @@ def test_ad1_names_the_log_its_hash_comes_from(tmp_path: Path) -> None:
     assert "Hash of the whole image" in report and "whole disk" not in report
     assert "MD5: 9 file(s) checked, all match" in report
     assert "SHA-1: 9 file(s) checked, all match" in report
+    assert "3 of 12 file(s) have no recorded MD5 and were not checked against one." in report
+    assert "3 of 12 file(s) have no recorded SHA-1 and were not checked against one." in report
+
+
+def test_files_without_a_recorded_hash_are_counted() -> None:
+    """An L01 where few files have a recorded MD5: "all match" comes with
+    how many were not checked, and a recorded SHA-1 the reader doesn't check
+    is said."""
+    result = {"stored": {}, "computed": {}, "match": None, "entry_md5_checked": 108,
+              "entry_md5_mismatched": [], "entry_count": 9342, "entry_md5_missing": 9234,
+              "entry_sha1_unchecked": 5}
+    report = verify_report_html(result, [], holds_files=True)
+    assert "MD5: 108 file(s) checked, all match" in report
+    assert "9,234 of 9,342 file(s) have no recorded MD5 and were not checked against one." \
+        in report
+    assert "5 file(s) have a recorded SHA-1, which was not checked: the reader checks an " \
+        "L01's recorded MD5 only." in report
 
 
 def test_ad1_without_its_log_says_so() -> None:

@@ -1898,6 +1898,14 @@ class MainWindow(QMainWindow):
                     )
                 else:
                     tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+                # "match" must not read as "all checked".
+                not_checked = int(
+                    result.get("entry_md5_missing") or 0  # type: ignore[attr-defined]
+                )
+                if not_checked:
+                    tag = translate(
+                        "MainWindow", "{tag} [{count} file(s) without a recorded MD5, not checked]"
+                    ).format(tag=tag, count=f"{not_checked:,}")
             elif not stored:
                 if container_checks:
                     tag = (

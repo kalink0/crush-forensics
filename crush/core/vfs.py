@@ -2488,13 +2488,27 @@ class LogicalEvidenceVFS(VFS):
         beside the image (<first file>.txt). "ad1_log" names the log the
         recorded hash was read from (None: not found), "ad1_log_expected"
         the name looked for -- a separate text file, which the analyst must
-        be told."""
+        be told.
+
+        What the reader doesn't check is counted here, over the entries with
+        data shown in the tree, so "all match" is never read as "all
+        checked": "entry_count", "entry_md5_missing" (no recorded MD5),
+        for an AD1 "entry_sha1_missing", and for an L01
+        "entry_sha1_unchecked" (a recorded SHA-1, which the reader doesn't
+        check for an L01: it checks an L01's MD5 only)."""
         with self._lock:
             result: dict[str, Any] = self._handle.image.verify(progress=progress)
             ad1 = getattr(self._handle.image, "ad1", None)
         if self._handle.kind == "AD1" and ad1 is not None:
             result["ad1_log"] = ad1.get("log")
             result["ad1_log_expected"] = Path(self._handle.image.paths[0]).name + ".txt"
+        entries = list({id(e): e for e in self._handle.entries.values()}.values())
+        result["entry_count"] = len(entries)
+        result["entry_md5_missing"] = sum(1 for e in entries if not e.md5)
+        if self._handle.kind == "AD1":
+            result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
+        else:
+            result["entry_sha1_unchecked"] = sum(1 for e in entries if e.sha1)
         return result
 
     def close(self) -> None:

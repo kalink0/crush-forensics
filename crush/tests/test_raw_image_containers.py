@@ -297,7 +297,8 @@ class TestAppleDiskImage:
         key = str(tmp_path / "dmg-cert-test-key-2048.pem")
         with pytest.raises(PrivateKeyRequiredError):
             open_vfs(path, as_disk_image=True)
-        with pytest.raises(PrivateKeyRequiredError):
+        # A password given doesn't open it: wrong, and the reason says a key does.
+        with pytest.raises(WrongPasswordError, match="private key"):
             open_vfs(path, as_disk_image=True, password="a password opens nothing here")
         note = _assert_disk(path, "UDIF", _SMALL_DISK, private_key=key)
         assert "opened with its private key" in note
@@ -443,6 +444,14 @@ class TestEncryptedAcquisitions:
             open_vfs(path, as_disk_image=True)
         note = _assert_disk(path, "EWF-E01", _AD_SOURCE, password=_AD_PASSWORD)
         assert "of 2 segments" in note and "opened with its password" in note
+        # A key given to a set that opens only with its password -- a real key
+        # or a file that isn't one -- is wrong, with the reason.
+        key = str(FIXTURES_DIR / "acquisition" / "dmg-cert-test-key-2048.pem")
+        junk = tmp_path / "junk.pem"
+        junk.write_bytes(b"not a key\n")
+        for given in (key, str(junk)):
+            with pytest.raises(WrongPrivateKeyError, match="opens only with its password"):
+                open_vfs(path, as_disk_image=True, private_key=given)
         vfs = open_vfs(path, as_disk_image=True, password=_AD_PASSWORD)
         try:
             assert isinstance(vfs, RawImageVFS)

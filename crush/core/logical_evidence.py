@@ -104,6 +104,10 @@ def open_logical_evidence(
             str(path), password=password or None, private_key=private_key or None,
         )
     except _ewfprobe.EwfPasswordRequiredError as exc:
+        if password or private_key:
+            # Given, and it doesn't open the set (a key for a set that opens
+            # only with a password): wrong, with the reader's reason.
+            raise _wrong(password, private_key, str(exc)) from exc
         by_key = exc.needs == "private key"
         required = PrivateKeyRequiredError if by_key else PasswordRequiredError
         raise required(ParseIssue(
@@ -111,19 +115,39 @@ def open_logical_evidence(
             {"path": str(path)}, detail=str(exc),
         )) from exc
     except _ewfprobe.EwfWrongPasswordError as exc:
-        wrong = WrongPrivateKeyError if private_key and not password else WrongPasswordError
-        raise wrong(ParseIssue(
-            "password.image_wrong_key" if wrong is WrongPrivateKeyError
-            else "password.image_wrong",
-            detail=str(exc),
-        )) from exc
+        raise _wrong(password, private_key, str(exc)) from exc
     except (_ewfprobe.EwfError, OSError) as exc:
+        if private_key and _asks_for_a_secret(path):
+            # The key file itself could not be used (unreadable, not an RSA
+            # key): the set asks for one without it, so ask again.
+            raise _wrong(password, private_key, str(exc)) from exc
         raise LogicalEvidenceOpenError(f"{path.name}: {exc}") from exc
     if image.format not in _LOGICAL_FORMATS:
         image.close()  # type: ignore[no-untyped-call]
         raise NotLogicalEvidenceError(f"{path.name} holds {image.format}, not logical evidence")
     container = qnxprobe.describe_acquisition(image)  # type: ignore[no-untyped-call]
     return LogicalHandle(path=path, image=image, container=str(container))
+
+
+def _wrong(password: str, private_key: str, detail: str) -> WrongPasswordError:
+    """The error for a password or key that was given and doesn't open the
+    set -- a wrong key when only a key was given."""
+    if private_key and not password:
+        return WrongPrivateKeyError(ParseIssue("password.image_wrong_key", detail=detail))
+    return WrongPasswordError(ParseIssue("password.image_wrong", detail=detail))
+
+
+def _asks_for_a_secret(path: Path) -> bool:
+    """True when opening *path* with nothing given is refused for want of a
+    password or private key -- whether a failure with a key given lies with
+    the key rather than with the set (as raw_image does for disk images)."""
+    try:
+        _ewfprobe.open_ewf(str(path)).close()  # type: ignore[no-untyped-call]
+    except _ewfprobe.EwfPasswordRequiredError:
+        return True
+    except Exception:
+        return False
+    return False
 
 
 def build_tree(handle: LogicalHandle) -> "VFSNode":

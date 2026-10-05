@@ -236,7 +236,10 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
         )
     except qnxprobe.ImagePasswordError as exc:
         by_key = exc.needs == "private key"
-        if exc.wrong:
+        # A password or key was given and doesn't open it (a key for a set
+        # that opens only with a password): it was wrong, and the reader's
+        # reason says what opens it.
+        if exc.wrong or password or private_key:
             wrong = WrongPrivateKeyError if private_key and not password else WrongPasswordError
             raise wrong(ParseIssue(
                 "password.image_wrong_key" if wrong is WrongPrivateKeyError
