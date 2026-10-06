@@ -60,10 +60,12 @@ gzip
 heic-heif
 hfs
 hiberfil
+hive
 i
 ical
 ios-backup
 ips-crash
+isar
 iso
 jffs2
 jks
@@ -83,6 +85,7 @@ kych
 l01
 leveldb
 lime
+lmdb
 lnk
 logarchive
 logcat

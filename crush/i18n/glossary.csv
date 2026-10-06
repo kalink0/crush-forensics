@@ -4,6 +4,10 @@ SQLCipher,do-not-translate,Format/library name
 Realm,do-not-translate,Format name
 LevelDB,do-not-translate,Format name
 MMKV,do-not-translate,Format name
+Hive,do-not-translate,Format name (Dart/Flutter); also the Windows registry hive (fixed technical term)
+Isar,do-not-translate,Format name (Dart/Flutter)
+LMDB,do-not-translate,Format name
+libmdbx,do-not-translate,Format/library name
 SEGB,do-not-translate,Format name (Apple)
 Biome,do-not-translate,Apple's name for the SEGB-based data store
 Protobuf,do-not-translate,Format name (Protocol Buffers)

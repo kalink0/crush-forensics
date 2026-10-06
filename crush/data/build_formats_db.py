@@ -9812,6 +9812,198 @@ FORMATS: list[dict[str, Any]] = [
         "status": "reviewed",
         "last_reviewed": "2026-10-05",
     },
+    {
+        "name": "Hive Database (Dart / Flutter)",
+        "short_name": "Hive",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Append-only key-value store of the Dart/Flutter Hive library (Hive 2.x and its "
+            "Hive CE continuation). Each box is one <name>.hive file, the box name in lower case, "
+            "next to a <name>.lock file; a <name>.hivec file is the intermediate result of a "
+            "compaction. Has no magic bytes: the file is a plain sequence of frames, each made of "
+            "a little-endian uint32 frame length, the key (type 0: uint32, type 1: UTF-8 string "
+            "of up to 255 bytes), the value (a type ID byte followed by the data, absent for a "
+            "deletion) and a CRC32 over the frame. Every write or delete appends a new frame, so "
+            "earlier values and deleted keys remain in the file until a compaction rewrites only "
+            "the live frames (automatically once more than 60 obsolete frames make up over 15 % "
+            "of the entries, or when the app requests it). With encryption only the value is "
+            "encrypted (AES-256-CBC, random 16-byte IV in front, PKCS7 padding); keys stay in "
+            "plain text and the CRC is seeded with a checksum of the key. Integers are stored as "
+            "64-bit floats. Custom objects carry an app-defined type ID (stored as ID + 32) and "
+            "store their fields by numeric index, not by name. Hive CE adds value types such as "
+            "sets, DateTime, BigInt and Duration plus 16-bit type IDs, but keeps the frame layout. "
+            "Opening a box whose last frame is damaged truncates the file at the last valid frame "
+            "by default. The Hive 4 development versions store boxes as Isar databases instead "
+            "(see Isar Database). Depending on the app, boxes hold settings, cached content, "
+            "session state such as account IDs or tokens, histories or the app's main records. "
+            "Found in the app data directories of Flutter apps on Android, iOS and desktop "
+            "systems.",
+            "Hive Database (Dart / Flutter)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "iOS", "Android"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [".hive", ".hivec"],
+        "links": [
+            (
+                "Hive 2.2.3 frame writer (source)",
+                "https://github.com/isar/hive/blob/v2.2.3/hive/lib/src/binary/binary_writer_impl.dart",
+            ),
+            (
+                "Hive 2.2.3 storage backend: lock file, recovery, compaction (source)",
+                "https://github.com/isar/hive/blob/v2.2.3/hive/lib/src/backend/vm/storage_backend_vm.dart",
+            ),
+            (
+                "Hive CE (Hive Community Edition)",
+                "https://github.com/IO-Design-Team/hive_ce",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-06",
+    },
+    {
+        "name": "Isar Database (Dart / Flutter)",
+        "short_name": "Isar",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Embedded object database of the Dart/Flutter Isar library. Isar 3.x and its "
+            "community fork store each instance in a single libmdbx file named <name>.isar "
+            "(default.isar for the default instance) with a <name>.isar-lck lock file next to it. "
+            "The file is a libmdbx database and carries the libmdbx meta page signature (see LMDB "
+            "/ libmdbx Database); only the name and its sub-databases tell it apart. Each "
+            "collection is a named sub-database keyed by the 64-bit object ID, accompanied by "
+            "sub-databases for indexes (_i_<collection>_<index>) and links (_l_ and _b_ "
+            "prefixes). The _info sub-database holds the collection schemas as JSON, which gives "
+            "the property names and types needed to decode the binary objects. Collections hold "
+            "the app's structured records, for example libraries, histories, download lists or "
+            "account data, depending on the app. Objects use a "
+            "compact little-endian layout of a static part followed by dynamic data; DateTime "
+            "values are stored as UTC microseconds since the Unix epoch. As in any libmdbx file, "
+            "freed pages can retain deleted or earlier versions of objects until they are reused "
+            "or the file is compacted (rewritten as <name>.isar.compact and renamed, only when "
+            "the app enables compaction on open). Isar 3 has no encryption. Isar 4 (development "
+            "releases and forks) can use this native engine or SQLite; with SQLite the instance "
+            "is a <name>.sqlite file in WAL mode, optionally encrypted with SQLCipher. Found in "
+            "the app data directories of Flutter apps on Android, iOS and desktop systems.",
+            "Isar Database (Dart / Flutter)",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "iOS", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": None,
+                "value": b"\x03\x11\x4c\xef\xbd\x9d\x65\x59",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "libmdbx meta page signature at offset 20, shared with every libmdbx file "
+                    "(see LMDB / libmdbx Database); identifies the storage engine, not Isar",
+                    "Isar Database (Dart / Flutter)",
+                ),
+            },
+        ],
+        "extensions": [".isar"],
+        "links": [
+            (
+                "Isar 3.1.0+1 instance: file name, sub-databases, compaction (source)",
+                "https://github.com/isar/isar/blob/3.1.0%2B1/packages/isar_core/src/instance.rs",
+            ),
+            (
+                "Isar 3.1.0+1 libmdbx environment flags (source)",
+                "https://github.com/isar/isar/blob/3.1.0%2B1/packages/isar_core/src/mdbx/env.rs",
+            ),
+            (
+                "Isar 4 SQLite engine: file name, WAL, encryption (source)",
+                "https://github.com/isar/isar/blob/main/packages/isar_core/src/sqlite/sqlite_open.rs",
+            ),
+            (
+                "Isar Community (maintained fork of Isar 3)",
+                "https://github.com/isar-community/isar-community",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-06",
+    },
+    {
+        "name": "LMDB / libmdbx Database",
+        "short_name": "LMDB",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Memory-mapped key-value store built as a copy-on-write B+tree. LMDB and its "
+            "derivative libmdbx share the design but are not file-compatible. An environment "
+            "consists of a data file and a lock file: data.mdb and lock.mdb in a directory "
+            "(LMDB), mdbx.dat and mdbx.lck (libmdbx), or in single-file mode any file name with a "
+            "lock file carrying the suffix -lock (LMDB) or -lck (libmdbx). In single-file mode "
+            "the data file often has no extension at all, so the meta page signature is the "
+            "reliable indicator. The data file starts "
+            "with two (LMDB) or three (libmdbx) meta pages holding the signature, the last "
+            "committed transaction ID and the roots of the free-page tree and the main tree; "
+            "named sub-databases are entries of the main tree. Pages released by a transaction "
+            "are tracked in the free-page tree and reused later, so deleted and overwritten "
+            "records can survive in pages no longer referenced, and the older meta pages point "
+            "to earlier committed states. The lock file only holds the reader table and no "
+            "records. Header fields use the byte order of the creating system (little-endian "
+            "on common platforms). In LMDB 0.9 the signature "
+            "offset depends on the page number size of the build: 16 on 64-bit, 12 on 32-bit. "
+            "Used by OpenLDAP and many embedded applications, for example Monero node data "
+            "(lmdb/data.mdb), Ethereum clients such as Erigon and Reth (libmdbx), and Flutter "
+            "apps using Isar (see Isar Database).",
+            "LMDB / libmdbx Database",
+        ),
+        "platforms": ["Windows", "macOS", "Linux", "iOS", "Android"],
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 16,
+                "value": b"\xde\xc0\xef\xbe\x01\x00\x00\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "LMDB 0.9 meta page: magic 0xBEEFC0DE and data version 1 (little-endian, "
+                    "64-bit build)",
+                    "LMDB / libmdbx Database",
+                ),
+            },
+            {
+                "offset": 12,
+                "value": b"\xde\xc0\xef\xbe\x01\x00\x00\x00",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "LMDB 0.9 meta page: magic 0xBEEFC0DE and data version 1 (little-endian, "
+                    "32-bit build)",
+                    "LMDB / libmdbx Database",
+                ),
+            },
+            {
+                "offset": 20,
+                "value": b"\x03\x11\x4c\xef\xbd\x9d\x65\x59",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "libmdbx meta page: 56-bit magic 0x59659DBDEF4C11 with data version 3 "
+                    "(little-endian)",
+                    "LMDB / libmdbx Database",
+                ),
+            },
+        ],
+        "extensions": [".mdb", ".dat"],
+        "links": [
+            (
+                "LMDB 0.9 source: meta page, magic, file names (mdb.c)",
+                "https://github.com/LMDB/lmdb/blob/mdb.RE/0.9/libraries/liblmdb/mdb.c",
+            ),
+            (
+                "libmdbx 0.12.4 internals: magic, data version, page header (source)",
+                "https://github.com/isar/libmdbx/blob/v0.12.4/src/internals.h",
+            ),
+            (
+                "libmdbx (GitHub mirror)",
+                "https://github.com/erthink/libmdbx",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-06",
+    },
 ]
 
 

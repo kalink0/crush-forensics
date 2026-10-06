@@ -26,6 +26,26 @@
     <definition>Do not translate -- Format name</definition>
   </phrase>
   <phrase>
+    <source>Hive</source>
+    <target>Hive</target>
+    <definition>Do not translate -- Format name (Dart/Flutter); also the Windows registry hive (fixed technical term)</definition>
+  </phrase>
+  <phrase>
+    <source>Isar</source>
+    <target>Isar</target>
+    <definition>Do not translate -- Format name (Dart/Flutter)</definition>
+  </phrase>
+  <phrase>
+    <source>LMDB</source>
+    <target>LMDB</target>
+    <definition>Do not translate -- Format name</definition>
+  </phrase>
+  <phrase>
+    <source>libmdbx</source>
+    <target>libmdbx</target>
+    <definition>Do not translate -- Format/library name</definition>
+  </phrase>
+  <phrase>
     <source>SEGB</source>
     <target>SEGB</target>
     <definition>Do not translate -- Format name (Apple)</definition>
