@@ -151,6 +151,7 @@ tiff
 tracev3
 ubi
 ubifs
+ufd
 ufdr
 usnjrnl
 utmp

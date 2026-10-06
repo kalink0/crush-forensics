@@ -1840,6 +1840,9 @@ class MainWindow(QMainWindow):
             return vfs.verify_acquisition()
 
         def _on_done(result: object) -> None:
+            if "recorded_files" in result:  # type: ignore[operator]
+                _on_recorded_files_done(result)  # type: ignore[arg-type]
+                return
             stored: dict[str, str] = result.get("stored") or {}  # type: ignore[attr-defined]
             match = result.get("match")  # type: ignore[attr-defined]
             checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
@@ -1936,6 +1939,29 @@ class MainWindow(QMainWindow):
                     result, findings, holds_files=isinstance(vfs, LogicalEvidenceVFS),
                 ),
             ).exec()
+
+        def _on_recorded_files_done(result: dict[str, Any]) -> None:
+            # A UFD records a hash of each file of the extraction, not of a disk.
+            files: list[dict[str, Any]] = result.get("recorded_files") or []
+            missing = [f["name"] for f in files if not f.get("found")]
+            bad = [f["name"] for f in files if f.get("found") and not f.get("match")]
+            findings = []
+            if bad:
+                findings.append(translate(
+                    "MainWindow", "{count} file(s) do not match their recorded hash."
+                ).format(count=f"{len(bad):,}"))
+            if missing:
+                findings.append(translate(
+                    "MainWindow", "{count} file(s) with a recorded hash were not found."
+                ).format(count=f"{len(missing):,}"))
+            if not files:
+                tag = translate("MainWindow", "{path}  [verify: no stored hash]")
+            elif result.get("match"):
+                tag = translate("MainWindow", "{path}  [verify: MATCH]")
+            else:
+                tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+            self._status.showMessage(tag.format(path=node.path))
+            VerifyResultDialog(self, title, verify_report_html(result, findings)).exec()
 
         def _on_error(message: str) -> None:
             QMessageBox.warning(
@@ -3095,6 +3121,14 @@ class MainWindow(QMainWindow):
         if node.is_dir:
             metadata["Files"] = f"{vfs.file_count(node):,}"
             metadata["Total size"] = _format_size(vfs.total_size(node))
+            # A UFDR holds only part of the extraction: how many of the
+            # folder's files Cellebrite counted there, and how many it holds.
+            # A UFD/UFDX: what it records, on its root and each extraction.
+            from crush.core.ufd import UFDVFS, UFDXVFS
+            from crush.core.vfs import UFDRVFS
+
+            if isinstance(vfs, (UFDRVFS, UFDVFS, UFDXVFS)):
+                metadata.update(vfs.node_info(node) or {})
         else:
             metadata["Size"] = _format_size(node.size)
         if node.status:

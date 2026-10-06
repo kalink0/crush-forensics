@@ -80,9 +80,10 @@ class PropertiesPanel(QScrollArea):
         # iTunes backups store files flat under a fileID (SHA1) sharded
         # directory layout; the tree above shows the resolved domain/
         # relativePath, but the original on-disk name is forensically
-        # relevant too.
-        if isinstance(vfs, ITunesBackupVFS):
-            original = vfs.original_backup_path(node)
+        # relevant too. Also for a backup inside another source (a UFD's dump).
+        inner_vfs, inner_node = vfs.delegate(node) if vfs is not None else (None, node)
+        if isinstance(inner_vfs, ITunesBackupVFS):
+            original = inner_vfs.original_backup_path(inner_node)
             if original is not None:
                 orig_label = QLabel(original)
                 orig_label.setWordWrap(True)

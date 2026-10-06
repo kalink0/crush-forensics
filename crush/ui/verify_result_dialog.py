@@ -76,6 +76,8 @@ def verify_report_html(
     missing pages, mismatching container checks, files whose recorded hash
     doesn't match), already worded. *holds_files*: the acquisition is
     logical evidence, which holds files rather than a disk."""
+    if "recorded_files" in result:
+        return _recorded_files_report(result, findings)
     stored: dict[str, str] = result.get("stored") or {}
     computed: dict[str, str] = result.get("computed") or {}
     checks: list[dict[str, Any]] = result.get("container_checks") or []
@@ -209,6 +211,58 @@ def verify_report_html(
             parts.append(_block(
                 title, check.get("stored"), check.get("computed"), bool(check.get("match")),
             ))
+    return "".join(parts)
+
+
+def _recorded_files_report(result: dict[str, Any], findings: list[str]) -> str:
+    """The report for an acquisition that records a hash of each of its
+    files rather than of a disk (a Cellebrite UFD): one block per file, a
+    file it names but that isn't there as a failed check, and its HMAC as
+    recorded but not checked."""
+    files: list[dict[str, Any]] = result.get("recorded_files") or []
+    parts: list[str] = []
+    if not files:
+        headline = translate("VerifyResultDialog",
+                             "This acquisition recorded no hash to verify against.")
+        parts.append(f"<p><b>{_esc(headline)}</b></p>")
+    elif result.get("match"):
+        parts.append(
+            f"<p style='color:{_GREEN}'><b>" + _esc(translate(
+                "VerifyResultDialog",
+                "MATCH — every file hash the acquisition recorded matches its file",
+            )) + "</b></p>"
+        )
+    else:
+        parts.append(
+            f"<p style='color:{_RED}'><b>" + _esc(translate(
+                "VerifyResultDialog",
+                "MISMATCH — not every file matches the hash the acquisition recorded for it",
+            )) + "</b></p>"
+        )
+    if findings:
+        parts.append(f"<p style='color:{_RED}'>" + "<br>".join(_esc(f) for f in findings) + "</p>")
+    if files:
+        parts.append(
+            "<h3>" + _esc(translate("VerifyResultDialog", "Recorded hashes of the acquisition's files"))
+            + "</h3>"
+        )
+    for entry in files:
+        title = translate("VerifyResultDialog", "{what} ({algorithm})").format(
+            what=entry.get("name"), algorithm=entry.get("algorithm"),
+        )
+        if not entry.get("found"):
+            computed: object = translate("VerifyResultDialog", "(file not found)")
+        else:
+            computed = entry.get("computed")
+        parts.append(_block(title, entry.get("stored"), computed, bool(entry.get("match"))))
+    hmac = result.get("recorded_hmac")
+    if hmac:
+        note = translate(
+            "VerifyResultDialog",
+            "The acquisition also records an HMAC ({hmac}). It is keyed with the acquisition "
+            "tool vendor's key and can't be recomputed: not checked.",
+        ).format(hmac=hmac)
+        parts.append(f"<p>{_esc(note)}</p>")
     return "".join(parts)
 
 

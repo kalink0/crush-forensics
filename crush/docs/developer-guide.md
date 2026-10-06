@@ -494,7 +494,8 @@ in `NOT_APPLICABLE`, with the reason.
 | `crush/core/vfs.py` | `VFSNode`, `VFS` ABC, `DirectoryVFS`, `ZipVFS`, `TarVFS`, `AndroidBackupVFS`, `ITunesBackupVFS`, `RawImageVFS`, `LogicalEvidenceVFS`, `UFDRVFS`, `BytesVFS` |
 | `crush/core/logical_evidence.py` | EnCase L01 / FTK Imager AD1 adapter backing `LogicalEvidenceVFS` — opens a set (also AD-encrypted) with `ewfprobe`, builds the tree from its entry list, recorded hashes and times per entry |
 | `crush/core/raw_image.py` | Raw disk image / EWF adapter backing `RawImageVFS` — volume tree, unallocated-gap synthesis, deleted-file recovery, EWF verify; wraps `crush/third_party/{qnxprobe,ewfprobe}` |
-| `crush/core/ufdr.py` | Cellebrite UFDR (10.x) adapter backing `UFDRVFS` — extracts + parses the embedded `pg_dump` database via `pgdumplib`, builds the device filesystem tree from `Nodes`, resolves a node to its physical bytes in the outer ZIP |
+| `crush/core/ufd.py` | Cellebrite UFD (INI) and UFDX (XML) parsing; `UFDVFS`/`UFDXVFS`, sources built from other VFSes' trees (`_MountVFS`: ZIP folders, an iTunes backup in a dump), with `delegate()` to the node's own VFS |
+| `crush/core/ufdr.py` | Cellebrite UFDR (10.x) adapter backing `UFDRVFS` — extracts + parses the embedded `pg_dump` database via `pgdumplib`, builds the device filesystem tree from `Nodes` (Type 10 derived items beside their file), resolves a node to its physical bytes in the outer ZIP |
 | `crush/core/ios_keybag.py` | Apple backup KeyBag parsing + `Manifest.db`/per-file decrypt (iOS 10.2+) |
 | `crush/core/android_backup_crypto.py` | Android `adb backup` master-key unwrap + payload decrypt (PBKDF2/AES-256) |
 | `crush/core/passwords.py` | `PasswordRequiredError`, `WrongPasswordError` — shared contract for any password-protected source/parser |

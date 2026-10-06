@@ -731,6 +731,18 @@ def itunes_backup_keybag_fixture(tmp_path: Path) -> Path:
     of the decrypt path: PBKDF2 derive, AES key-wrap, AES-CBC encrypt) so the
     test exercises the real cryptographic pipeline, not a stub.
     """
+    return make_itunes_backup_keybag(tmp_path)
+
+
+@pytest.fixture
+def itunes_backup_keybag_factory() -> Any:
+    """make_itunes_backup_keybag, for a backup with a password."""
+    return make_itunes_backup_keybag
+
+
+def make_itunes_backup_keybag(tmp_path: Path, password: str = "") -> Path:
+    """The backup itunes_backup_keybag_fixture describes, in *tmp_path*; with
+    *password*, protected by it (`IsEncrypted: True`)."""
     import os
     import plistlib
     import sqlite3
@@ -741,7 +753,6 @@ def itunes_backup_keybag_fixture(tmp_path: Path) -> Path:
 
     from crush.core.ios_keybag import _pbkdf2
 
-    password = ""
     class_num = 3
     class_key = os.urandom(32)
     manifest_key = os.urandom(32)
@@ -822,7 +833,7 @@ def itunes_backup_keybag_fixture(tmp_path: Path) -> Path:
     (backup_dir / "Info.plist").write_bytes(plistlib.dumps({"Product Name": "iPhone"}))
     (backup_dir / "Manifest.plist").write_bytes(
         plistlib.dumps(
-            {"IsEncrypted": False, "BackupKeyBag": keybag, "ManifestKey": manifest_key_entry}
+            {"IsEncrypted": bool(password), "BackupKeyBag": keybag, "ManifestKey": manifest_key_entry}
         )
     )
     (backup_dir / "Status.plist").write_bytes(plistlib.dumps({"BackupState": "new"}))

@@ -6102,6 +6102,49 @@ FORMATS: list[dict[str, Any]] = [
         "last_reviewed": "2026-10-04"
     },
     {
+        "name": "Cellebrite UFD",
+        "short_name": "UFD",
+        "category": "logical_image",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Plain-text INI file written beside a mobile device extraction by Cellebrite "
+            "products, and by other tools writing the same layout (UfdVer=1.2 in the files "
+            "seen). [Dumps] names the extraction's dumps and the "
+            "file each is in, typically one ZIP: FileDump for the file system, and others "
+            "such as KeyStore or KeyChain. One section per dump gives its Type (e.g. "
+            "ZIPfolder) and the ZIP folder holding it (ZIPLogicalPath, e.g. Dump, "
+            "iPhoneDump). Further sections record, among others, the device (model, OS, "
+            "IMEIs), the acquisition (tool, extraction type, start and end as local time "
+            "with the UTC offset written after it, case fields), a SHA-256 of each file "
+            "([SHA256]) and an HMAC ([Hash]) keyed by the vendor. An extraction holding an "
+            "encrypted iTunes backup may record its password (BackupPassword, IsEncrypted).",
+            "Cellebrite UFD",
+        ),
+        "platforms": ["Android", "iOS"],
+        "parser_class": "UFDVFS",
+        "magic": [
+            {
+                "offset": None,
+                "value": b"[",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "INI text: it starts with a [section] header, whose name varies "
+                    "(e.g. [DeviceInfo], [Crime Case]) -- no fixed signature",
+                    "Cellebrite UFD",
+                ),
+            },
+        ],
+        "extensions": [".ufd"],
+        "links": [
+            (
+                "prosch88/UFADE — source that writes a UFED-layout .ufd for an iOS extraction",
+                "https://github.com/prosch88/UFADE/blob/50fd711d651aa3113dccb98755e5e6ccb7c3d48c/ufade.py",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-06"
+    },
+    {
         "name": "Android logcat (text)",
         "short_name": "logcat",
         "category": "log",
