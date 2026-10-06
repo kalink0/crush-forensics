@@ -118,12 +118,12 @@ class _LoadSourceWorker(QObject):
 
         try:
             if self._itunes_zip_prefix is not None:
-                from crush.core.vfs import open_itunes_backup_from_zip
+                # The whole ZIP, its backup(s) opened in place: what the ZIP
+                # holds beside a backup is never left out.
+                from crush.core.mounted import ZipWithITunesBackupVFS
 
                 vfs = self._session.add_source_vfs(
-                    open_itunes_backup_from_zip(
-                        self._path, self._itunes_zip_prefix, password=self._password
-                    )
+                    ZipWithITunesBackupVFS(self._path, password=self._password)
                 )
             else:
                 vfs = self._session.add_source(
@@ -3836,8 +3836,10 @@ class MainWindow(QMainWindow):
             translate(
                 "MainWindow",
                 "An iTunes backup structure was detected inside this ZIP file.\n\n"
-                "Open it as an iTunes backup (reconstructed filesystem tree)?\n"
-                'Choosing "No" opens the file as a regular ZIP archive instead.',
+                "Open it as an iTunes backup (reconstructed filesystem tree)? Everything "
+                "else the ZIP holds is shown too.\n"
+                'Choosing "No" opens the file as a regular ZIP archive instead, the '
+                "backup as its stored files.",
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )

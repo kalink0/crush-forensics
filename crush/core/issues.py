@@ -2339,25 +2339,25 @@ MESSAGES: dict[str, str] = {
         "What {file} holds outside the folders the UFD names for its dumps",
         "ufd.other_content",
     ),
-    "ufd.itunes_opened": QT_TRANSLATE_NOOP(
+    "vfs.itunes_backup_opened": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "An iTunes backup, opened as one ({password}); the files the ZIP stores for it "
-        "are shown when the ZIP is opened on its own",
-        "ufd.itunes_opened",
+        "are shown when the ZIP is opened as a plain ZIP",
+        "vfs.itunes_backup_opened",
     ),
     "ufd.password_from_ufd": QT_TRANSLATE_NOOP(
         "ParseIssue", "with the BackupPassword the UFD records", "ufd.password_from_ufd",
     ),
-    "ufd.password_typed": QT_TRANSLATE_NOOP(
-        "ParseIssue", "with the password entered", "ufd.password_typed",
+    "vfs.password_typed": QT_TRANSLATE_NOOP(
+        "ParseIssue", "with the password entered", "vfs.password_typed",
     ),
-    "ufd.password_none": QT_TRANSLATE_NOOP(
-        "ParseIssue", "no password recorded or entered", "ufd.password_none",
+    "vfs.password_none": QT_TRANSLATE_NOOP(
+        "ParseIssue", "no password recorded or entered", "vfs.password_none",
     ),
-    "ufd.itunes_not_opened": QT_TRANSLATE_NOOP(
+    "vfs.itunes_backup_not_opened": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Holds an iTunes backup that couldn't be opened as one; its stored files are shown",
-        "ufd.itunes_not_opened",
+        "vfs.itunes_backup_not_opened",
     ),
     "ufd.backup_password_rejected": QT_TRANSLATE_NOOP(
         "ParseIssue",

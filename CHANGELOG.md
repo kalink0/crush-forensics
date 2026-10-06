@@ -32,6 +32,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed a locked BitLocker volume showing as an empty FAT32 volume. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Fixed UFDR files listed twice under one path showing as a single file.
 - Fixed empty UFDR files, and files whose content is stored under another category, showing as not located.
+- Fixed a ZIP opened as an iTunes backup leaving out everything the ZIP holds beside the backup.
 
 ### Changed
 

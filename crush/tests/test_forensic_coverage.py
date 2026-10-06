@@ -48,6 +48,7 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
     "GzipVFS": ("gzip file",),
     "AndroidBackupVFS": ("Android backup (.ab)",),
     "ITunesBackupVFS": ("iTunes backup",),
+    "ZipWithITunesBackupVFS": ("iTunes backup",),
     "UFDRVFS": ("Cellebrite UFDR",),
     "UFDVFS": ("Cellebrite UFD",),
     "UFDXVFS": ("Cellebrite UFDX",),

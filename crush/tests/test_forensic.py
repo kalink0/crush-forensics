@@ -412,18 +412,18 @@ def test_itunes_backup_vfs_per_file_decrypt_does_not_modify_source(
          "(extraction happens in a temp directory, never in place)",
 )
 def test_open_itunes_backup_from_zip_does_not_modify_source(itunes_backup_zip_fixture: Path) -> None:
-    from crush.core.vfs import open_itunes_backup_from_zip
+    from crush.core.mounted import ZipWithITunesBackupVFS
 
     digest_before = _sha256_file(itunes_backup_zip_fixture)
     ts_before = _timestamps(itunes_backup_zip_fixture)
 
-    vfs = open_itunes_backup_from_zip(itunes_backup_zip_fixture, "wrapper/")
+    vfs = ZipWithITunesBackupVFS(itunes_backup_zip_fixture)
     for node in _file_nodes(vfs.root()):
         _ = vfs.read(node)
     vfs.close()
 
     assert _sha256_file(itunes_backup_zip_fixture) == digest_before, (
-        "open_itunes_backup_from_zip modified the source ZIP"
+        "opening the ZIP with its iTunes backup modified the source ZIP"
     )
     _assert_timestamps_unchanged(ts_before, _timestamps(itunes_backup_zip_fixture), "ITunesBackupVFS (zip)")
 
