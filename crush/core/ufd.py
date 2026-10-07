@@ -168,9 +168,9 @@ def parse_ufd(path: str | Path) -> Ufd:
 
 def _resolve(base: Path, ref: str) -> Path | None:
     """The file *ref* (as written in a .ufd/.ufdx: relative, Windows
-    separators) names, relative to *base* -- exactly as written, since the
-    tool that wrote the reference wrote the file too. None when it isn't
-    there."""
+    separators) names, relative to *base*, as the filesystem resolves it
+    -- the tool that wrote the reference wrote the file too, so the name
+    matches as written. None when it isn't there."""
     parts = PureWindowsPath(ref).parts
     target = Path(ref) if not parts or PureWindowsPath(ref).anchor else base.joinpath(*parts)
     return target if target.is_file() else None

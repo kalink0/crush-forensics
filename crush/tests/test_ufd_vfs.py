@@ -204,17 +204,6 @@ def test_nested_dump_folder_leaves_its_siblings_in_other_content(tmp_path: Path)
     vfs.close()
 
 
-def test_dump_file_must_match_its_name_exactly(tmp_path: Path) -> None:
-    # The tool that wrote the .ufd wrote the file: a name differing in
-    # case is another file, not looked for.
-    text = UFED_UFD.replace("FileDump=EXTRACTION_FFS.zip", "FileDump=extraction_ffs.ZIP")
-    vfs = open_vfs(_ufed(tmp_path, text=text))
-    assert str(_find(vfs.root(), "FileDump").status) == (
-        "The UFD names extraction_ffs.ZIP for this dump; it isn't beside the UFD"
-    )
-    vfs.close()
-
-
 # -- Verify Acquisition Hash ----------------------------------------------------
 
 

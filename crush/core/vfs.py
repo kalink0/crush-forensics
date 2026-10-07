@@ -1434,11 +1434,12 @@ class ITunesBackupVFS(VFS):
         """On-disk path (relative to the backup root) this node's content is
         actually stored under, e.g. "ab/ab54f7c9...e1" — the raw fileID-named
         file, before domain/relativePath resolution. None for directories or
-        entries with no backing file (e.g. unresolved manifest rows)."""
+        entries with no backing file (e.g. unresolved manifest rows). With
+        "/" on every OS."""
         located = self._file_locations.get(node.path)
         if located is None:
             return None
-        return str(located.relative_to(self._backup_path))
+        return located.relative_to(self._backup_path).as_posix()
 
     def root(self) -> VFSNode:
         return self._tree
