@@ -37,6 +37,7 @@ from PySide6.QtGui import (
 )
 from shiboken6 import isValid
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QApplication,
     QDialog,
     QDockWidget,
@@ -1150,6 +1151,17 @@ class MainWindow(QMainWindow):
             self._hand_over_to_new_window(vfs)
             return
         self._placed_batch = batch
+        replaces = not (getattr(self, "_append_to_tree", False) and not vfs.root().is_dir)
+        if replaces and self._fs_panel._vfs_list:
+            # Decided here, once loaded, where it is known what replaces the
+            # tree -- the one check for every way of opening.
+            answer = self._ask_replace_sources(vfs)
+            if answer == "new_window":
+                self._hand_over_to_new_window(vfs, asked=True)
+                return
+            if answer == "cancel":
+                self._cancel_loaded_source(vfs)
+                return
         self._logger.debug("Load worker finished; preparing tree build")
         if hasattr(self, "_progress"):
             self._progress.set_text(translate("MainWindow", "Building tree…"))
@@ -1180,9 +1192,64 @@ class MainWindow(QMainWindow):
         self._update_window_title()
         QTimer.singleShot(0, self._ensure_tree_loaded)
 
-    def _hand_over_to_new_window(self, vfs: VFS) -> None:
+    def _replace_sources_box(
+        self, vfs: VFS
+    ) -> tuple[QMessageBox, dict[QAbstractButton, Literal["replace", "new_window", "cancel"]]]:
+        """The question before *vfs* replaces the sources this window shows,
+        and what each of its buttons answers. Replace is the default."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(
+            translate("MainWindow", "Open {name}").format(name=Path(self._loading_path).name)
+        )
+        box.setText(translate("MainWindow", "Close the sources open in this window?"))
+        box.setInformativeText(
+            "\n".join(source.root().name for source in self._fs_panel._vfs_list)
+        )
+        replace = box.addButton(
+            translate("MainWindow", "Replace"), QMessageBox.ButtonRole.AcceptRole
+        )
+        new_window = box.addButton(
+            translate("MainWindow", "New Window"), QMessageBox.ButtonRole.ActionRole
+        )
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(replace)
+        box.setEscapeButton(cancel)
+        return box, {replace: "replace", new_window: "new_window", cancel: "cancel"}
+
+    def _ask_replace_sources(self, vfs: VFS) -> Literal["replace", "new_window", "cancel"]:
+        progress = getattr(self, "_progress", None)
+        if progress is not None:
+            progress.hide()
+        box, answers = self._replace_sources_box(vfs)
+        box.exec()
+        answer = answers.get(box.clickedButton(), "cancel")
+        if answer == "replace" and progress is not None:
+            progress.show()
+        return answer
+
+    def _cancel_loaded_source(self, vfs: VFS) -> None:
+        """The analyst kept the open sources: the source loaded for it is
+        not shown, and closed."""
+        self.session.remove_source(vfs)
+        if hasattr(self, "_progress"):
+            self._progress.close()
+        self._pending_focus_path = None
+        path = self._loading_path
+        # Its INTEGRITY line may already be in the log: this says it was
+        # never opened in the end.
+        self._logger.info("Not opened, cancelled to keep the open sources: %s", path)
+        self._status.showMessage(
+            translate("MainWindow", "Opening {path} cancelled: it was not opened").format(
+                path=path
+            )
+        )
+
+    def _hand_over_to_new_window(self, vfs: VFS, asked: bool = False) -> None:
         """Show a source this window loaded in a window of its own, open as
-        it is -- not loaded (or hashed) a second time."""
+        it is -- not loaded (or hashed) a second time. *asked*: the analyst
+        chose it (_ask_replace_sources), rather than it being a later item
+        of an opened batch."""
         self.session.detach_source(vfs)
         if hasattr(self, "_progress"):
             self._progress.close()
@@ -1190,22 +1257,28 @@ class MainWindow(QMainWindow):
         focus_path = self._pending_focus_path
         self._pending_focus_path = None
         batch = getattr(self, "_loading_batch", None)
-        if batch is not getattr(self, "_handover_batch", None):
+        if batch is None or batch is not getattr(self, "_handover_batch", None):
             self._handover_batch = batch
             self._handover_count = 0
         self._handover_count += 1
         window = self._spawn_window(step=self._handover_count)
-        self._logger.info(
-            "Opened in a new window, as this window shows another source opened with it: %s",
-            path,
-        )
-        self._status.showMessage(
-            translate(
-                "MainWindow",
-                "{path} opened in a new window: this window shows another source opened "
-                "with it",
-            ).format(path=path)
-        )
+        if asked:
+            self._logger.info("Opened in a new window, as chosen: %s", path)
+            self._status.showMessage(
+                translate("MainWindow", "{path} opened in a new window").format(path=path)
+            )
+        else:
+            self._logger.info(
+                "Opened in a new window, as this window shows another source opened with it: %s",
+                path,
+            )
+            self._status.showMessage(
+                translate(
+                    "MainWindow",
+                    "{path} opened in a new window: this window shows another source opened "
+                    "with it",
+                ).format(path=path)
+            )
         window._adopt_loaded_source(
             vfs,
             path,

@@ -50,6 +50,7 @@ All notable changes to Crush will be documented in this file.
 - An iTunes backup in a ZIP is extracted without the rest of the ZIP.
 - Open Disk Image… picks one file; the other parts of a set are joined from it as before.
 - Of several folders, archives, backups or disk images opened at once, each after the first opens in a new window instead of replacing the one before.
+- Opening a folder, archive, backup or disk image in a window that shows a source asks first whether to replace it, open it in a new window, or cancel.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.57 and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.12.0. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 
 ## v0.21.0 - 2026-09-30
