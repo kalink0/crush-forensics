@@ -99,10 +99,17 @@ def _ftk_listing(name: str) -> list[dict[str, str]]:
     return [dict(zip(header, (v.strip() for v in line.split("\t")))) for line in lines[1:]]
 
 
+_FTK_MONTHS = {m: i for i, m in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1)}
+
+
 def _ftk_time(text: str) -> float:
-    """FTK Imager's listing time, e.g. "2022-May-16 23:19:09.765432", as UTC."""
-    dt = datetime.strptime(text, "%Y-%b-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
-    return dt.timestamp()
+    """FTK Imager's listing time, e.g. "2022-May-16 23:19:09.765432", as UTC.
+    The month is FTK Imager's English abbreviation, read without the locale
+    (Qt tests set it to the system's)."""
+    year, month, rest = text.split("-", 2)
+    dt = datetime.strptime(f"{year}-{_FTK_MONTHS[month]:02d}-{rest}", "%Y-%m-%d %H:%M:%S.%f")
+    return dt.replace(tzinfo=timezone.utc).timestamp()
 
 
 def _manifest() -> dict[str, tuple[int, str]]:

@@ -5,6 +5,7 @@
 - [Raw Disk Images & Forensic Acquisitions](raw-disk-images-ewf-acquisitions.md)
 - [Logical Evidence (L01, AD1)](logical-evidence.md)
 - [Cellebrite UFDR](cellebrite-ufdr.md)
+- [Cellebrite UFD and UFDX](cellebrite-ufd-ufdx.md)
 - [The Interface](the-interface.md)
 - [Themes](themes.md)
 - [Filesystem Panel](filesystem-panel.md)

@@ -20,6 +20,8 @@ Use the **File** menu to load a source:
 
 Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
 
+**A ZIP holding an iTunes backup** (recognised by its content) asks whether to open the backup. **Yes** shows the whole ZIP, with the backup's folder holding the opened backup (its files under their device paths) instead of its stored, hash-named files. Everything else the ZIP holds stays in the tree, e.g. the AFC Service, Applications and Lockdown Service folders of an extraction in the UFED layout. An encrypted backup asks for its password. **No** opens the ZIP as it is.
+
 You can also **drag and drop** files, archives, or folders straight onto the Crush window instead of using the File menu — it follows the exact same rule: a dropped file appends, a dropped folder or archive (anything that opens as its own browsable tree) replaces. Dropping several items at once loads them one after another. Works the same on Windows, macOS, and Linux.
 
 A third way: pass paths on the command line — `crush /path/to/evidence.zip /path/to/case_folder` or `crush --open /path/to/evidence.zip` (repeatable) — to have Crush open them on startup instead of loading manually. Each invocation opens a fresh window. Useful for launching Crush from another tool with evidence already queued up.
@@ -167,16 +169,43 @@ An **AD-encrypted AD1** (password or certificate) shows what it holds only once 
 
 ## Cellebrite UFDR
 
-**Open file…** also accepts a Cellebrite Physical Analyzer report container (`.ufdr`), opened in place — the archive isn't extracted first. The tree shown is the original device's own filesystem, e.g. `/data/app/...`, `/data/data/com.example.app/...`, reconstructed from the container's embedded PostgreSQL dump rather than the container's own internal, type-bucketed storage layout (Cellebrite's `files/Application/...`, `files/Image/...`, and so on). Selecting a file shows Cellebrite's own recorded MD5/SHA-256 and category in the Properties panel.
+**Open file…** also accepts a Cellebrite Physical Analyzer report container (`.ufdr`), opened in place — the archive isn't extracted first. The tree shows the files the UFDR holds under their original device paths, e.g. `/data/app/...`, `/data/data/com.example.app/...`, reconstructed from the container's embedded PostgreSQL dump rather than the container's own internal, type-bucketed storage layout (Cellebrite's `files/Application/...`, `files/Image/...`, and so on). Selecting a file shows Cellebrite's own recorded MD5/SHA-256 and category in the Properties panel.
 
-Only UFDR 10.x is supported (the version that embeds the actual database — earlier UFDR 7 exports do not and aren't covered). If a node's bytes can't be located in the container, it still appears in the tree with an explicit "not located in container" status rather than opening as empty or wrong content.
+**A UFDR holds only the files Physical Analyzer exported into it, not the whole extraction** — in one real UFDR, about a third of the extraction's files. The root's **Entry status** says so. A folder's Properties show **Extraction files (Cellebrite count)**, the number of files below it in the whole extraction as Cellebrite counted them, and **Extraction files in this UFDR**; when files are missing, **Missing from this UFDR** says how many. Those files aren't listed: the UFDR records nothing about them but this count.
+
+Only UFDR 10.x is supported (the version that embeds the actual database — earlier UFDR 7 exports do not and aren't covered). A file's bytes are checked against Cellebrite's recorded MD5 when they are first read or shown in the Properties panel; a file over 64 MB is matched by its category, name and size only, without the hash check. If a file's bytes can't be located in the container, it still appears in the tree with an explicit "not located in container" status rather than opening as empty or wrong content. A file Cellebrite records as 0 bytes opens as empty: the container stores no bytes for it.
+
+- **Items Cellebrite derived from a file** — e.g. the decrypted copy of an app database (`signal.db.decrypted` and `signal.db.decrypted-wal` for Signal; likewise Threema, Wickr and vault apps), an `AndroidManifest.xml` from an APK, images embedded in a PDF or a cached web page. A file's only derived item is shown next to it in the same folder; several (or one whose name is already taken there) are in a folder `<file> (derived)` next to it. The Properties panel's **Derived from** names the file; such a folder's **Entry status** says what it holds. Neither is a file or folder of the device's filesystem.
+- **A file the UFDR doesn't hold, whose derived items it does** — common for images carved from fonts, binaries and cache entries: the file is shown as a placeholder at its path, with the size Cellebrite recorded and no content; its **Entry status** says so. Its derived items are placed beside it like any file's, and **Derived from** says the UFDR doesn't contain the file.
+- **Several catalog entries under one path** are each shown, numbered `name`, `name (2)` …, with an **Entry status** saying so.
 
 ### Known limitations
 
 - **Filesystem browsing only** — Cellebrite's own decoded forensic tables (contacts, calls, chats, locations, and the rest of Physical Analyzer's ~185 other tables) are not read or shown; use Cellebrite Reader for those.
+- **Folders are taken from Cellebrite's paths** — a derived item's path runs through the file it came from. When the UFDR records nothing about that file, not even a placeholder's path and size, the file shows as a folder.
 - **No split/segmented UFDR exports** — a case exported as multiple `.ufdr` parts is not supported; open a single, complete `.ufdr`.
 - **UFDR 10.x only** — UFDR 7 containers (no embedded database) are not supported.
 - **No encrypted UFDR containers** — not yet supported.
+
+---
+
+## Cellebrite UFD and UFDX
+
+A `.ufd` is the small text file UFED writes beside an extraction; tools that rebuild UFED's layout, such as UFADE, write one too. It names the files the extraction consists of (usually a ZIP) and how to read them. A `.ufdx` lists several extractions of one device, each by its `.ufd`. **Open file…** accepts either and opens the extraction(s) they describe. Both are recognised by their content, whatever their name.
+
+- **Each dump is a folder named as in the `.ufd`** — e.g. `FileDump` (the device's file system) and `KeyStore`, each holding the ZIP folder the `.ufd` names for it (`Dump`, `extra`, `iPhoneDump`). Its **Entry status** says which folder of which file it is.
+- **A `.ufdx` gives each extraction a folder** named after the folder its `.ufd` is in (e.g. `EXTRACTION_FFS 01`), holding what that `.ufd` opens.
+- **An iTunes backup inside a dump opens as the backup**, recognised by its content, not by its folder's name. The backup's tree replaces the folder that holds its stored files. If the `.ufd` records a `BackupPassword`, it is used. When that password doesn't open the backup, or none is recorded for an encrypted one, Crush asks for it. The folder's **Entry status** says which password opened it. The backup's own files are extracted to the temp directory first; to see the files the ZIP stores for it, open the ZIP on its own as a plain ZIP.
+- **What the ZIP holds outside the dumps' folders** is shown in a folder `(other content of <zip>)`, never left out.
+- **The Properties panel of the root** (and, in a `.ufdx`, of each extraction's folder) shows every value the `.ufd` records, as written — device, tool, case fields, start and end time with the UTC offset as the `.ufd` writes it, without conversion.
+- **Verify Acquisition Hash…** on the root recomputes the SHA-256 the `.ufd` records for each of its files and compares them. A file it names that isn't there is a failed check. On a `.ufdx`, every extraction's files are checked; an extraction it lists that is missing or can't be read as a UFD is a failed check, with the reason. The HMAC UFED records is keyed with Cellebrite's key and can't be recomputed: the result names it as not checked.
+
+Opening the ZIP on its own works as before: nothing is read from a `.ufd` beside it.
+
+### Known limitations
+
+- **ZIP dumps only** — a dump of another type (e.g. a physical image) is listed with a status saying it isn't read.
+- **Only what the `.ufd` names** — files beside it that it doesn't name (a UFADE `.case.json`, `SummaryReport.pdf` when not listed) aren't opened.
 
 ---
 

@@ -2210,6 +2210,189 @@ MESSAGES: dict[str, str] = {
         "{count:,} Nodes row(s) with an unreadable Type were left out of the tree",
         "ufdr.rows_skipped",
     ),
+    "ufdr.duplicate": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Listed {count} times under this path in the UFDR's file catalog; this is "
+        "entry {k} of {count} (catalog order)",
+        "ufdr.duplicate",
+    ),
+    "ufdr.rows_other_type": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} Nodes row(s) of Type {type}, which isn't decoded, were left out of the tree",
+        "ufdr.rows_other_type",
+    ),
+    "ufdr.derived_from": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{path} -- an item Cellebrite derived from that file (e.g. decrypted or extracted "
+        "from it), not a file in the device's filesystem",
+        "ufdr.derived_from",
+    ),
+    "ufdr.derived_from_not_exported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{path} -- an item Cellebrite derived from that file (e.g. decrypted or extracted "
+        "from it), not a file in the device's filesystem; the UFDR doesn't contain "
+        "{path} itself",
+        "ufdr.derived_from_not_exported",
+    ),
+    "ufdr.derived_folder": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Holds the items Cellebrite derived from {path} (e.g. decrypted or extracted from "
+        "it); not a folder in the device's filesystem",
+        "ufdr.derived_folder",
+    ),
+    "ufdr.derived_folder_not_exported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Holds the items Cellebrite derived from {path} (e.g. decrypted or extracted from "
+        "it); not a folder in the device's filesystem. The UFDR doesn't contain {path} "
+        "itself",
+        "ufdr.derived_folder_not_exported",
+    ),
+    "ufdr.not_exported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not contained in this UFDR: Cellebrite exported items derived from this file, "
+        "not the file. It records only its path and size ({size:,} bytes); no content, "
+        "hashes or times",
+        "ufdr.not_exported",
+    ),
+    "ufdr.not_exported_no_size": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not contained in this UFDR: Cellebrite exported items derived from this file, "
+        "not the file. It records only its path; no size, content, hashes or times",
+        "ufdr.not_exported_no_size",
+    ),
+    "ufdr.not_exported_content": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not contained in this UFDR: {path} -- Cellebrite exported items derived from "
+        "this file, not the file's content",
+        "ufdr.not_exported_content",
+    ),
+    "ufdr.partial_export": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "This UFDR holds {in_ufdr:,} of the {extraction:,} files Cellebrite counted in "
+        "the extraction: only these were exported into it. Each folder's Properties "
+        "show both counts",
+        "ufdr.partial_export",
+    ),
+    "ufdr.files_not_exported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{missing:,} of the {counted:,} files below this folder in the extraction aren't "
+        "in this UFDR: Cellebrite didn't export them, and records nothing about them but "
+        "this count. They aren't listed",
+        "ufdr.files_not_exported",
+    ),
+    "ufdr.partial_export_folders": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "This UFDR holds only the files Physical Analyzer exported into it, not the whole "
+        "extraction. Each folder's Properties show how many files Cellebrite counted there "
+        "in the extraction and how many of them this UFDR holds",
+        "ufdr.partial_export_folders",
+    ),
+    # -- UFD / UFDX ------------------------------------------------------------------
+    "vfs.ufd_not_opened": QT_TRANSLATE_NOOP(
+        "ParseIssue", "Looks like a Cellebrite UFD/UFDX but couldn't be read", "vfs.ufd_not_opened",
+    ),
+    "vfs.itunes_zip_no_space": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not enough space in the temp directory to extract the iTunes backup "
+        "({needed:,} bytes needed, {free:,} available at {location})",
+        "vfs.itunes_zip_no_space",
+    ),
+    "ufd.not_text": QT_TRANSLATE_NOOP(
+        "ParseIssue", "Not readable as text (no byte-order mark, not UTF-8)", "ufd.not_text",
+    ),
+    "ufd.no_sections": QT_TRANSLATE_NOOP("ParseIssue", "No [section] in the file", "ufd.no_sections"),
+    "ufd.other_lines": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} line(s) are neither a [section] nor key=value; shown as written",
+        "ufd.other_lines",
+    ),
+    "ufd.no_dumps": QT_TRANSLATE_NOOP(
+        "ParseIssue", "The UFD lists no dumps ([Dumps] is missing or empty)", "ufd.no_dumps",
+    ),
+    "ufd.dump_file_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The UFD names {file} for this dump; it isn't beside the UFD",
+        "ufd.dump_file_missing",
+    ),
+    "ufd.dump_no_section": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The UFD names {file} for this dump but has no section saying how to read it",
+        "ufd.dump_no_section",
+    ),
+    "ufd.dump_type_unsupported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Dump type \"{type}\" ({file}) isn't read; only ZIPfolder is supported",
+        "ufd.dump_type_unsupported",
+    ),
+    "ufd.zip_not_opened": QT_TRANSLATE_NOOP(
+        "ParseIssue", "{file} couldn't be opened as a ZIP", "ufd.zip_not_opened",
+    ),
+    "ufd.dump_path_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The UFD names folder {path} of {file} for this dump; the ZIP has no such folder",
+        "ufd.dump_path_missing",
+    ),
+    "ufd.dump_folder": QT_TRANSLATE_NOOP(
+        "ParseIssue", "Folder {path} of {file}, as the UFD names it", "ufd.dump_folder",
+    ),
+    "ufd.other_content": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "What {file} holds outside the folders the UFD names for its dumps",
+        "ufd.other_content",
+    ),
+    "vfs.itunes_backup_opened": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "An iTunes backup, opened as one ({password}); the files the ZIP stores for it "
+        "are shown when the ZIP is opened as a plain ZIP",
+        "vfs.itunes_backup_opened",
+    ),
+    "ufd.password_from_ufd": QT_TRANSLATE_NOOP(
+        "ParseIssue", "with the BackupPassword the UFD records", "ufd.password_from_ufd",
+    ),
+    "vfs.password_typed": QT_TRANSLATE_NOOP(
+        "ParseIssue", "with the password entered", "vfs.password_typed",
+    ),
+    "vfs.password_none": QT_TRANSLATE_NOOP(
+        "ParseIssue", "no password recorded or entered", "vfs.password_none",
+    ),
+    "vfs.itunes_backup_not_opened": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Holds an iTunes backup that couldn't be opened as one; its stored files are shown",
+        "vfs.itunes_backup_not_opened",
+    ),
+    "ufd.backup_password_rejected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The BackupPassword the UFD records doesn't open the iTunes backup in its dump",
+        "ufd.backup_password_rejected",
+    ),
+    "ufdx.not_xml": QT_TRANSLATE_NOOP("ParseIssue", "Not well-formed XML", "ufdx.not_xml"),
+    "ufdx.not_evidence_collection": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The XML's root is <{root}>, not <EvidenceCollection>",
+        "ufdx.not_evidence_collection",
+    ),
+    "ufdx.no_extractions": QT_TRANSLATE_NOOP(
+        "ParseIssue", "The UFDX lists no extractions", "ufdx.no_extractions",
+    ),
+    "ufdx.extraction": QT_TRANSLATE_NOOP(
+        "ParseIssue", "Extraction {path} ({type}), as the UFDX lists it", "ufdx.extraction",
+    ),
+    "ufdx.extraction_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The UFDX lists extraction {path} ({type}); it isn't there",
+        "ufdx.extraction_missing",
+    ),
+    "ufdx.extraction_not_opened": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The UFDX lists extraction {path} ({type}); it couldn't be read as a UFD",
+        "ufdx.extraction_not_opened",
+    ),
+    "ufdx.extraction_password_rejected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Extraction {path} ({type}): {reason}. One password is entered for the whole UFDX; "
+        "if its extractions need different ones, open each extraction's UFD on its own",
+        "ufdx.extraction_password_rejected",
+    ),
     # -- Timestamp column decoding (cell markers) ------------------------------
     "ts_decode.not_a_number": QT_TRANSLATE_NOOP(
         "ParseIssue",

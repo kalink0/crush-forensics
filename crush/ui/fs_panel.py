@@ -1108,7 +1108,7 @@ class FilesystemPanel(QWidget):
         are thread-safe (DirectoryVFS opens independent handles; ZipVFS uses
         thread-local ZipFile handles; TarVFS serialises via a per-instance lock).
         """
-        from crush.core.vfs import DirectoryVFS, FileVFS, SevenZipVFS, ZipVFS
+        from crush.core.vfs import DirectoryVFS, FileVFS, SevenZipVFS
         # Archive VFS types (ZIP, tar, 7z) serialize on a lock anyway — extra
         # threads only add overhead.  Use parallel workers only when every
         # source is a plain directory or single-file VFS.
@@ -1128,8 +1128,10 @@ class FilesystemPanel(QWidget):
         # instead of re-decompressing shared solid blocks.
         all_nodes: list[tuple[VFSNode, VFS]] = []
         for vfs in vfs_list:
-            if isinstance(vfs, ZipVFS):
-                all_nodes.extend((node, vfs) for node in vfs.storage_ordered_files())
+            # A ZIP, or a source holding ZIP folders (a UFD's dumps).
+            storage_order = getattr(vfs, "storage_ordered_files", None)
+            if storage_order is not None:
+                all_nodes.extend((node, vfs) for node in storage_order())
                 continue
             if isinstance(vfs, SevenZipVFS):
                 # Too large to hold whole: one pass keeping only each

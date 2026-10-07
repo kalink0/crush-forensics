@@ -82,6 +82,8 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "Android backup (.ab)",
         "iTunes backup",
         "Cellebrite UFDR",
+        "Cellebrite UFD",
+        "Cellebrite UFDX",
         "Raw disk image",
         "EWF acquisition (.E01)",
         "SMART acquisition (.s01)",

@@ -9,6 +9,8 @@ Use the **File** menu to load a source:
 
 Opening a file (**Open file…**) appends it to the existing tree as a new root node, so multiple files can be open side by side. Opening a folder replaces the current tree.
 
+**A ZIP holding an iTunes backup** (recognised by its content) asks whether to open the backup. **Yes** shows the whole ZIP, with the backup's folder holding the opened backup (its files under their device paths) instead of its stored, hash-named files. Everything else the ZIP holds stays in the tree, e.g. the AFC Service, Applications and Lockdown Service folders of an extraction in the UFED layout. An encrypted backup asks for its password. **No** opens the ZIP as it is.
+
 You can also **drag and drop** files, archives, or folders straight onto the Crush window instead of using the File menu — it follows the exact same rule: a dropped file appends, a dropped folder or archive (anything that opens as its own browsable tree) replaces. Dropping several items at once loads them one after another. Works the same on Windows, macOS, and Linux.
 
 A third way: pass paths on the command line — `crush /path/to/evidence.zip /path/to/case_folder` or `crush --open /path/to/evidence.zip` (repeatable) — to have Crush open them on startup instead of loading manually. Each invocation opens a fresh window. Useful for launching Crush from another tool with evidence already queued up.

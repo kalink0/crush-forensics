@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-214 checks in total.
+229 checks in total.
 
 ### Sources
 
@@ -32,7 +32,9 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [gzip file](#gzip-file) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Android backup (.ab)](#android-backup-ab) | 3 | not tested | not tested | not tested | not tested | not tested |
 | [iTunes backup](#itunes-backup) | 4 | not tested | not tested | not tested | not tested | not tested |
-| [Cellebrite UFDR](#cellebrite-ufdr) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [Cellebrite UFDR](#cellebrite-ufdr) | 2 | 1 | 1 | not tested | not tested | 1 |
+| [Cellebrite UFD](#cellebrite-ufd) | 2 | 1 | 1 | not tested | not tested | 1 |
+| [Cellebrite UFDX](#cellebrite-ufdx) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [EWF acquisition (.E01)](#ewf-acquisition-e01) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [SMART acquisition (.s01)](#smart-acquisition-s01) | 1 | not tested | not tested | 2 | not tested | not tested |
@@ -171,7 +173,30 @@ No forensic checks.
 
 #### Cellebrite UFDR
 
-No forensic checks.
+- **Source Immutability** — Opening and reading a UFDR leaves its bytes unchanged ([test_ufdr_vfs.py](../../crush/tests/test_ufdr_vfs.py), `test_ufdr_does_not_modify_source`)
+- **Source Immutability** — Opening and reading a UFDR leaves its mtime and ctime unchanged ([test_ufdr_vfs.py](../../crush/tests/test_ufdr_vfs.py), `test_ufdr_does_not_change_timestamps`)
+- **No Side Effects** — Opening and reading a UFDR creates no files beside it (its database dump is extracted to the temp directory) ([test_ufdr_vfs.py](../../crush/tests/test_ufdr_vfs.py), `test_ufdr_creates_no_sibling_files`)
+- **Read-only Media** — A UFDR opens and reads with its file 0o444 and its folder 0o555 ([test_ufdr_vfs.py](../../crush/tests/test_ufdr_vfs.py), `test_ufdr_works_on_readonly_media`)
+- **Reproducibility** — Opening a UFDR twice gives the same tree, statuses and bytes ([test_ufdr_vfs.py](../../crush/tests/test_ufdr_vfs.py), `test_ufdr_reproducible`)
+- *Not tested:* Known-output Verification, Completeness
+
+#### Cellebrite UFD
+
+- **Source Immutability** — Opening, reading and verifying a UFD (with an iTunes backup in its dump) leaves the .ufd and its ZIP unchanged ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufd_does_not_modify_source`)
+- **Source Immutability** — Opening, reading and verifying a UFD leaves the mtime and ctime of the .ufd and its ZIP unchanged ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufd_does_not_change_timestamps`)
+- **No Side Effects** — Opening, reading and verifying a UFD creates no files beside it, the extracted iTunes backup included ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufd_creates_no_sibling_files`)
+- **Read-only Media** — A UFD opens, reads and verifies, its iTunes backup included, with its files 0o444 and their folder 0o555 ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufd_works_on_readonly_media`)
+- **Reproducibility** — Opening a UFD twice gives the same tree, statuses and bytes ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufd_reproducible`)
+- *Not tested:* Known-output Verification, Completeness
+
+#### Cellebrite UFDX
+
+- **Source Immutability** — Opening, reading and verifying a UFDX leaves the .ufdx, its .ufd and ZIP unchanged ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufdx_does_not_modify_source`)
+- **Source Immutability** — Opening, reading and verifying a UFDX leaves the mtime and ctime of all its files unchanged ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufdx_does_not_change_timestamps`)
+- **No Side Effects** — Opening, reading and verifying a UFDX creates no files in or beside its folders ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufdx_creates_no_sibling_files`)
+- **Read-only Media** — A UFDX opens, reads and verifies with its files 0o444 and their folders 0o555 ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufdx_works_on_readonly_media`)
+- **Reproducibility** — Opening a UFDX twice gives the same tree, statuses and bytes ([test_ufd_vfs.py](../../crush/tests/test_ufd_vfs.py), `test_ufdx_reproducible`)
+- *Not tested:* Known-output Verification, Completeness
 
 #### Raw disk image
 

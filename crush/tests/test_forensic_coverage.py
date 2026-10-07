@@ -15,13 +15,14 @@ from pathlib import Path
 
 import crush.parsers
 from crush.core import raw_image  # registers the vendored ewfprobe qnxprobe imports
+from crush.core import ufd  # its sources subclass VFS: counted whatever ran before
 from crush.core import vfs as vfs_module
 from crush.parsers.base import AbstractParser
 from crush.tests import forensic_report
 
 ROOT = Path(__file__).resolve().parents[2]
 qnxprobe_module = importlib.import_module("crush.third_party.qnxprobe.qnxprobe")
-assert raw_image
+assert raw_image and ufd
 
 def _load_script():
     spec = importlib.util.spec_from_file_location(
@@ -47,7 +48,10 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
     "GzipVFS": ("gzip file",),
     "AndroidBackupVFS": ("Android backup (.ab)",),
     "ITunesBackupVFS": ("iTunes backup",),
+    "ZipWithITunesBackupVFS": ("iTunes backup",),
     "UFDRVFS": ("Cellebrite UFDR",),
+    "UFDVFS": ("Cellebrite UFD",),
+    "UFDXVFS": ("Cellebrite UFDX",),
     "LogicalEvidenceVFS": ("EnCase logical evidence (.L01)", "FTK Imager logical evidence (.ad1)"),
     "RawImageVFS": (
         "Raw disk image", "EWF acquisition (.E01)", "SMART acquisition (.s01)",
@@ -60,6 +64,7 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
 # VFS classes that aren't a source of evidence, and why.
 NOT_A_SOURCE: dict[str, str] = {
     "BytesVFS": "holds bytes Crush has already read (e.g. a BLOB opened as a file)",
+    "_MountVFS": "the base of UFDVFS/UFDXVFS (other sources' trees in one), never opened itself",
 }
 WALKER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "NtfsWalker": ("NTFS",),

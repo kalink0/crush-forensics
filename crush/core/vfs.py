@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import hashlib
 import io
 import logging
 import os
@@ -270,6 +271,13 @@ class VFS(ABC):
         read. A ParseIssue never replaces node.stored_times: the caller
         shows both."""
         return node.stored_times
+
+    def delegate(self, node: VFSNode) -> tuple[VFS, VFSNode]:
+        """The VFS and node that actually hold *node*: itself, except in a
+        source made of other sources' trees (a UFD's dumps), whose nodes
+        stand for nodes of those. For what only one VFS type knows about
+        its nodes (an iTunes backup's file IDs)."""
+        return self, node
 
     def acquisition(self) -> str | None:
         """The reader's name for the forensic acquisition this source is
@@ -1329,6 +1337,11 @@ class ITunesBackupVFS(VFS):
         manifest_key = self._keybag.unwrap_manifest_key(cast(bytes, manifest_plist["ManifestKey"]))
         return ios_keybag.aes_cbc_decrypt_and_unpad(manifest_key, raw)
 
+    @property
+    def password(self) -> str:
+        """The password it was opened with ("" for none)."""
+        return self._password
+
     def close(self) -> None:
         if self._cleanup_dir is not None:
             shutil.rmtree(self._cleanup_dir, ignore_errors=True)
@@ -1421,11 +1434,12 @@ class ITunesBackupVFS(VFS):
         """On-disk path (relative to the backup root) this node's content is
         actually stored under, e.g. "ab/ab54f7c9...e1" — the raw fileID-named
         file, before domain/relativePath resolution. None for directories or
-        entries with no backing file (e.g. unresolved manifest rows)."""
+        entries with no backing file (e.g. unresolved manifest rows). With
+        "/" on every OS."""
         located = self._file_locations.get(node.path)
         if located is None:
             return None
-        return str(located.relative_to(self._backup_path))
+        return located.relative_to(self._backup_path).as_posix()
 
     def root(self) -> VFSNode:
         return self._tree
@@ -2567,20 +2581,34 @@ class UFDRVFS(VFS):
         return self._tree
 
     def read(self, node: VFSNode) -> bytes:
-        info = self._handle.resolve(node)
+        if self._handle.is_empty(node):
+            return b""
+        # A pending MD5 check is settled with the bytes read here, not by a
+        # second pass over the member.
+        info = self._handle.resolve(node, confirm=False)
         with self._zf_lock:
-            return self._handle.zf.read(info)
+            data = self._handle.zf.read(info)
+        if self._handle.is_unconfirmed(node):
+            self._handle.confirm(node, hashlib.md5(data).hexdigest())
+            # Raises if the recorded bytes are nowhere in the container.
+            confirmed = self._handle.resolve(node)
+            if confirmed is not info:  # found in another bucket
+                with self._zf_lock:
+                    data = self._handle.zf.read(confirmed)
+        return data
 
     def open(self, node: VFSNode) -> IO[bytes]:
-        info = self._handle.resolve(node)
         if node.size <= STREAM_THRESHOLD:
             return BytesIO(self.read(node))
+        info = self._handle.resolve(node)
         with self._zf_lock:
             inner = self._handle.zf.open(info)
         return buffered(LockedStream(inner, self._zf_lock))
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
-        info = self._handle.resolve(node)
+        if self._handle.is_empty(node):
+            return b""
+        info = self._handle.resolve(node, confirm=False)
         with self._zf_lock:
             with self._handle.zf.open(info) as f:
                 return f.read(n)
@@ -2588,7 +2616,9 @@ class UFDRVFS(VFS):
     def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
         # A ZIP member decompresses from its own start: a short read, unless
         # another thread holds the container for a long one.
-        info = self._handle.resolve(node)
+        if self._handle.is_empty(node):
+            return b""
+        info = self._handle.resolve(node, confirm=False)
         if not self._zf_lock.acquire(blocking=False):
             return None
         try:
@@ -2599,8 +2629,9 @@ class UFDRVFS(VFS):
 
     def node_info(self, node: VFSNode) -> dict[str, str] | None:
         """Cellebrite's own recorded MD5/SHA-256/category for *node*, plus an
-        explicit "not located" status if its bytes couldn't be found in the
-        container -- None for directories. See _enrich_with_format_info."""
+        explicit status if its bytes aren't in the container; for a folder,
+        its file count in the extraction and in this UFDR. See
+        _enrich_with_format_info."""
         return self._handle.node_info(node)
 
     def close(self) -> None:
@@ -2903,6 +2934,9 @@ def _open_vfs(
     notes: list[ParseIssue] = []
     with open(p, "rb") as f:
         head = f.read(SNIFF_BYTES)
+    ufd_source = _open_ufd_source(p, head, password, notes)
+    if ufd_source is not None:
+        return ufd_source
     kind = archive_kind(head)
     vfs: VFS | None = None
     if kind == "zip":
@@ -2954,6 +2988,30 @@ def _open_vfs(
     if leading is not None and not embedded_zip:
         vfs.embedded_zip_path = p
     return vfs
+
+
+def _open_ufd_source(p: Path, head: bytes, password: str, notes: list[ParseIssue]) -> VFS | None:
+    """A Cellebrite UFD or UFDX opened as the extraction(s) it describes,
+    recognised by content; None when *p* is neither, or (reason in
+    *notes*) when it can't be read. Password errors propagate."""
+    from crush.core.ufd import (
+        UFDOpenError,
+        UFDVFS,
+        UFDXVFS,
+        is_ufd,
+        is_ufdx,
+        looks_like_ufd,
+        looks_like_ufdx,
+    )
+
+    try:
+        if looks_like_ufdx(head) and is_ufdx(p):
+            return UFDXVFS(p, password=password)
+        if looks_like_ufd(head) and is_ufd(p):
+            return UFDVFS(p, password=password)
+    except UFDOpenError as exc:
+        notes.append(ParseIssue("vfs.ufd_not_opened", detail=str(exc)))
+    return None
 
 
 def _open_zip(p: Path, password: str, notes: list[ParseIssue]) -> VFS | None:
@@ -3127,6 +3185,10 @@ def is_browsable_source_file(path: str | Path) -> bool:
         head = f.read(SNIFF_BYTES)
     if archive_kind(head) is not None or opens_as_logical_evidence(head):
         return True
+    from crush.core.ufd import is_ufd, is_ufdx, looks_like_ufd, looks_like_ufdx
+
+    if (looks_like_ufdx(head) and is_ufdx(p)) or (looks_like_ufd(head) and is_ufd(p)):
+        return True
     return head.startswith((_BZIP2_MAGIC, _XZ_MAGIC)) and _is_compressed_tar(p)
 
 
@@ -3212,39 +3274,67 @@ def detect_itunes_backup_in_zip(path: str | Path) -> str | None:
     one content check, cheap since it's a single small file).
     """
     with zipfile.ZipFile(path) as zf:
-        names = set(zf.namelist())
-        for name in names:
-            if not name.endswith("Manifest.db"):
-                continue
-            prefix = name[: -len("Manifest.db")]
-            if not (
-                f"{prefix}Info.plist" in names
-                and f"{prefix}Manifest.plist" in names
-                and f"{prefix}Status.plist" in names
-            ):
-                continue
-            if not _has_hex_shard_sibling(names, prefix):
-                continue
-            if not _manifest_plist_has_backup_keybag(zf, f"{prefix}Manifest.plist"):
-                continue
-            return prefix
-    return None
+        prefixes = itunes_backup_prefixes(zf)
+    return prefixes[0] if prefixes else None
+
+
+def itunes_backup_prefixes(zf: zipfile.ZipFile) -> list[str]:
+    """The in-zip directory prefix of every iTunes backup in *zf*, by the
+    signals detect_itunes_backup_in_zip describes, sorted."""
+    names = set(zf.namelist())
+    found: list[str] = []
+    for name in names:
+        if not name.endswith("Manifest.db"):
+            continue
+        prefix = name[: -len("Manifest.db")]
+        if not (
+            f"{prefix}Info.plist" in names
+            and f"{prefix}Manifest.plist" in names
+            and f"{prefix}Status.plist" in names
+        ):
+            continue
+        if not _has_hex_shard_sibling(names, prefix):
+            continue
+        if not _manifest_plist_has_backup_keybag(zf, f"{prefix}Manifest.plist"):
+            continue
+        found.append(prefix)
+    return sorted(found)
 
 
 def open_itunes_backup_from_zip(
-    path: str | Path, prefix: str, *, password: str = ""
+    path: str | Path, prefix: str, *, password: str = "", fallback_password: str = ""
 ) -> ITunesBackupVFS:
     """Extract a wrapped iTunes backup out of a zip and open it.
 
-    Only called once the user has confirmed they want this (see
-    detect_itunes_backup_in_zip); the extracted copy is removed again when
-    the returned VFS is closed.
+    Only the backup's own members (those under *prefix*) are extracted --
+    the ZIP may be a whole extraction of tens of GB around it -- after
+    checking the temp directory has room for them. The extracted copy is
+    removed again when the returned VFS is closed. *fallback_password* is
+    tried, on the same extracted copy, when *password* doesn't open it;
+    the returned VFS's `password` says which one did.
     """
-    tmp_dir = tempdir.mkdtemp(prefix="crush-itunes-backup-")
+    with zipfile.ZipFile(path) as zf:
+        members = [i for i in zf.infolist() if i.filename.startswith(prefix)]
+        needed = sum(i.file_size for i in members)
+        space = tempdir.check_space(needed)
+        if not space.enough_space:
+            raise OSError(ParseIssue("vfs.itunes_zip_no_space", {
+                "needed": needed, "free": space.free, "location": str(space.location),
+            }))
+        tmp_dir = tempdir.mkdtemp(prefix="crush-itunes-backup-")
+        try:
+            for info in members:
+                zf.extract(info, tmp_dir)
+        except Exception:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
     try:
-        with zipfile.ZipFile(path) as zf:
-            zf.extractall(tmp_dir)
-        return ITunesBackupVFS(tmp_dir / prefix, password=password, _cleanup_dir=tmp_dir)
+        try:
+            return ITunesBackupVFS(tmp_dir / prefix, password=password, _cleanup_dir=tmp_dir)
+        except (PasswordRequiredError, WrongPasswordError):
+            if not fallback_password:
+                raise
+            return ITunesBackupVFS(tmp_dir / prefix, password=fallback_password, _cleanup_dir=tmp_dir)
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise

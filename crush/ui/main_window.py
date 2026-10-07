@@ -118,12 +118,12 @@ class _LoadSourceWorker(QObject):
 
         try:
             if self._itunes_zip_prefix is not None:
-                from crush.core.vfs import open_itunes_backup_from_zip
+                # The whole ZIP, its backup(s) opened in place: what the ZIP
+                # holds beside a backup is never left out.
+                from crush.core.mounted import ZipWithITunesBackupVFS
 
                 vfs = self._session.add_source_vfs(
-                    open_itunes_backup_from_zip(
-                        self._path, self._itunes_zip_prefix, password=self._password
-                    )
+                    ZipWithITunesBackupVFS(self._path, password=self._password)
                 )
             else:
                 vfs = self._session.add_source(
@@ -1552,7 +1552,12 @@ class MainWindow(QMainWindow):
         import crush.parsers  # noqa: F401 — triggers parser registration
         from crush.core.registry import ParserRegistry
 
-        parser = ParserRegistry.best(node, vfs)
+        try:
+            # Choosing a parser reads the file's first bytes.
+            parser = ParserRegistry.best(node, vfs)
+        except OSError as exc:
+            self._warn_unreadable(node, exc)
+            return
         if parser is None:
             self._status.showMessage(
                 translate("MainWindow", "No parser found for {name}").format(name=node.name)
@@ -1619,12 +1624,12 @@ class MainWindow(QMainWindow):
         if mode == "hex":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.base import ParseResult
-            hex_bytes = self._read_hex_bytes(vfs, node)
+            hex_bytes, why = self._read_hex_bytes(vfs, node)
             if hex_bytes is None:
                 QMessageBox.warning(
                     self,
                     translate("MainWindow", "Hex view"),
-                    translate("MainWindow", "Unable to load hex view."),
+                    translate("MainWindow", "Unable to load hex view: {reason}").format(reason=why),
                 )
                 return
             result = ParseResult(viewer_type="hex", data=hex_bytes)
@@ -1635,7 +1640,11 @@ class MainWindow(QMainWindow):
         if mode == "text":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.base import ParseResult
-            raw = vfs.read(node)
+            try:
+                raw = vfs.read(node)
+            except OSError as exc:
+                self._warn_unreadable(node, exc)
+                return
             try:
                 text = raw.decode("utf-8")
             except Exception:
@@ -1840,6 +1849,9 @@ class MainWindow(QMainWindow):
             return vfs.verify_acquisition()
 
         def _on_done(result: object) -> None:
+            if "recorded_files" in result:  # type: ignore[operator]
+                _on_recorded_files_done(result)  # type: ignore[arg-type]
+                return
             stored: dict[str, str] = result.get("stored") or {}  # type: ignore[attr-defined]
             match = result.get("match")  # type: ignore[attr-defined]
             checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
@@ -1936,6 +1948,36 @@ class MainWindow(QMainWindow):
                     result, findings, holds_files=isinstance(vfs, LogicalEvidenceVFS),
                 ),
             ).exec()
+
+        def _on_recorded_files_done(result: dict[str, Any]) -> None:
+            # A UFD records a hash of each file of the extraction, not of a disk.
+            files: list[dict[str, Any]] = result.get("recorded_files") or []
+            # An entry with a status wasn't checked at all (a UFDX extraction
+            # that wasn't opened); it has no recorded hash of its own.
+            unchecked = [f["name"] for f in files if f.get("status") is not None]
+            missing = [f["name"] for f in files if not f.get("found") and f.get("status") is None]
+            bad = [f["name"] for f in files if f.get("found") and not f.get("match")]
+            findings = []
+            if unchecked:
+                findings.append(translate(
+                    "MainWindow", "{count} listed extraction(s) could not be checked."
+                ).format(count=f"{len(unchecked):,}"))
+            if bad:
+                findings.append(translate(
+                    "MainWindow", "{count} file(s) do not match their recorded hash."
+                ).format(count=f"{len(bad):,}"))
+            if missing:
+                findings.append(translate(
+                    "MainWindow", "{count} file(s) with a recorded hash were not found."
+                ).format(count=f"{len(missing):,}"))
+            if not files:
+                tag = translate("MainWindow", "{path}  [verify: no stored hash]")
+            elif result.get("match"):
+                tag = translate("MainWindow", "{path}  [verify: MATCH]")
+            else:
+                tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+            self._status.showMessage(tag.format(path=node.path))
+            VerifyResultDialog(self, title, verify_report_html(result, findings)).exec()
 
         def _on_error(message: str) -> None:
             QMessageBox.warning(
@@ -3095,6 +3137,14 @@ class MainWindow(QMainWindow):
         if node.is_dir:
             metadata["Files"] = f"{vfs.file_count(node):,}"
             metadata["Total size"] = _format_size(vfs.total_size(node))
+            # A UFDR holds only part of the extraction: how many of the
+            # folder's files Cellebrite counted there, and how many it holds.
+            # A UFD/UFDX: what it records, on its root and each extraction.
+            from crush.core.ufd import UFDVFS, UFDXVFS
+            from crush.core.vfs import UFDRVFS
+
+            if isinstance(vfs, (UFDRVFS, UFDVFS, UFDXVFS)):
+                metadata.update(vfs.node_info(node) or {})
         else:
             metadata["Size"] = _format_size(node.size)
         if node.status:
@@ -3236,7 +3286,7 @@ class MainWindow(QMainWindow):
             base_view = self._wrap_with_hint_banner(base_view, hint_banner)
         widget: QWidget = base_view
         if self._always_hex:
-            hex_bytes = self._read_hex_bytes(vfs, node)
+            hex_bytes, why = self._read_hex_bytes(vfs, node)
             if hex_bytes is not None:
                 from crush.viewers.hex_viewer import HexViewer
                 tabbed = QTabWidget()
@@ -3246,10 +3296,11 @@ class MainWindow(QMainWindow):
             else:
                 tabbed = QTabWidget()
                 tabbed.addTab(base_view, translate("MainWindow", "View"))
-                tabbed.addTab(
-                    QLabel(translate("MainWindow", "Unable to load hex view.")),
-                    translate("MainWindow", "Hex"),
+                label = QLabel(
+                    translate("MainWindow", "Unable to load hex view: {reason}").format(reason=why)
                 )
+                label.setWordWrap(True)
+                tabbed.addTab(label, translate("MainWindow", "Hex"))
                 widget = tabbed
 
         existing_idx = -1
@@ -3802,8 +3853,10 @@ class MainWindow(QMainWindow):
             translate(
                 "MainWindow",
                 "An iTunes backup structure was detected inside this ZIP file.\n\n"
-                "Open it as an iTunes backup (reconstructed filesystem tree)?\n"
-                'Choosing "No" opens the file as a regular ZIP archive instead.',
+                "Open it as an iTunes backup (reconstructed filesystem tree)? Everything "
+                "else the ZIP holds is shown too.\n"
+                'Choosing "No" opens the file as a regular ZIP archive instead, the '
+                "backup as its stored files.",
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -4275,7 +4328,18 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._logger.warning("INTEGRITY hash failed for %s: %s", node.path, exc)
 
-    def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> bytes | None:
+    def _warn_unreadable(self, node: VFSNode, exc: BaseException) -> None:
+        """*node*'s content couldn't be read: say why (e.g. a UFDR that
+        lists a file but doesn't hold it), in the status bar and a box."""
+        text = translate("MainWindow", "Could not read {path!r}: {exc}").format(
+            path=node.path, exc=i18n.exception_text(exc)
+        )
+        self._status.showMessage(text)
+        QMessageBox.warning(self, translate("MainWindow", "Cannot open file"), text)
+
+    def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> tuple[bytes | None, str]:
+        """The node's bytes, or None and why they couldn't be read."""
+
         def _read() -> bytes:
             with vfs.open(node) as src:
                 return src.read()
@@ -4289,12 +4353,12 @@ class MainWindow(QMainWindow):
                         translate("MainWindow", "Loading {name}…").format(name=node.name),
                         _read,
                     ),
-                )
-            return _read()
+                ), ""
+            return _read(), ""
         except Exception as exc:
             if hasattr(self, "_logger"):
                 self._logger.warning("Failed to read hex bytes for %s: %s", node.path, exc)
-            return None
+            return None, i18n.exception_text(exc)
 
     def _stop_animated_themes(self) -> None:
         for window in self._open_windows:

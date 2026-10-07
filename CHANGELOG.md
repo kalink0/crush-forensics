@@ -16,6 +16,10 @@ All notable changes to Crush will be documented in this file.
 - Added to ZIP archives -> Support for the times in a member's extra fields and local header, each shown with where it is stored.
 - Added to opening evidence -> Support for EnCase L01 and FTK Imager AD1 logical evidence, also AD-encrypted, with each file's recorded hashes.
 - Added to Verify Acquisition Hash -> Support for logical evidence, including every file's recorded hash.
+- Added to Cellebrite UFDR -> Support for the items Cellebrite derived from a file, such as decrypted app databases.
+- Added to Cellebrite UFDR -> Support for showing how many of a folder's extraction files the UFDR holds.
+- Added to opening evidence -> Support for Cellebrite UFD and UFDX, including an iTunes backup in a dump opened with the recorded BackupPassword. ([@jensstigaard](https://github.com/jensstigaard), [#137](https://github.com/kalink0/crush-forensics/issues/137))
+- Added to Verify Acquisition Hash -> Support for the file hashes a UFD records.
 
 ### Bug Fixes
 
@@ -26,6 +30,10 @@ All notable changes to Crush will be documented in this file.
 - Fixed an online-only NTFS cloud placeholder reading as zeros. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Fixed an NTFS-compressed file reading short when a compression unit ends early. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 - Fixed a locked BitLocker volume showing as an empty FAT32 volume. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
+- Fixed UFDR files listed twice under one path showing as a single file.
+- Fixed empty UFDR files, and files whose content is stored under another category, showing as not located.
+- Fixed a ZIP opened as an iTunes backup leaving out everything the ZIP holds beside the backup.
+- Fixed opening a file whose content can't be read (double-click, Open as Text, Open as Hex) failing without saying why.
 
 ### Changed
 
@@ -35,6 +43,8 @@ All notable changes to Crush will be documented in this file.
 - Opening a container normally points at Open Disk Image… or asks to open it as one. ([#138](https://github.com/kalink0/crush-forensics/pull/138))
 - A hint that the opened file opens otherwise (as a disk image, a ZIP, an archive) is shown as a banner above it, with a button to open it that way, not only in the status bar.
 - Verify Acquisition Hash shows each hash and check in a block of its own, the computed value green when it matches and red when it doesn't.
+- Opening a Cellebrite UFDR and indexing its file types is faster.
+- An iTunes backup in a ZIP is extracted without the rest of the ZIP.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.57 and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.12.0. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 
 ## v0.21.0 - 2026-09-30
