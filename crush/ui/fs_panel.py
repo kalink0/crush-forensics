@@ -285,6 +285,13 @@ class FilesystemPanel(QWidget):
         self._tree.expand(self._proxy.mapFromSource(self._model.indexFromItem(row[0])))
         if root_node.children:
             self._add_placeholder(row[0])
+
+        # Search results are of the sources replaced: gone with them, as
+        # when a source is closed (close_vfs).
+        self._search_gen += 1
+        self._search_model.setRowCount(0)
+        self._filter.clear()
+
         self._start_prescan([vfs], self._prescan_gen)
         self.load_finished.emit()
         self._logger.debug("FilesystemPanel.load_vfs: emitted load_finished")

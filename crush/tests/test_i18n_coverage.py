@@ -26,6 +26,7 @@ PACKAGE = Path(__file__).resolve().parents[1]
 CONVERTED: list[str] = [
     "ui/about_dialog.py",
     "ui/busy_dialog.py",
+    "ui/drop_overlay.py",
     "ui/extract_dialog.py",
     "ui/format_info_dialog.py",
     "ui/format_reference.py",
