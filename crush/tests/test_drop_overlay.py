@@ -27,6 +27,11 @@ def _mime(*paths: Path) -> QMimeData:
     return mime
 
 
+def _dropped(path: Path) -> str:
+    """*path* as a drop delivers it (QUrl.toLocalFile: "/" on every platform)."""
+    return QUrl.fromLocalFile(str(path)).toLocalFile()
+
+
 def _drop(mime: QMimeData, x: float) -> QDropEvent:
     return QDropEvent(
         QPointF(x, 100), Qt.DropAction.CopyAction, mime,
@@ -70,7 +75,7 @@ def test_folder_is_refused_as_disk_image(tmp_path: Path) -> None:
 def test_only_local_files_count(qapp: QApplication, tmp_path: Path) -> None:
     mime = QMimeData()
     mime.setUrls([QUrl("https://example.org/x.E01"), QUrl.fromLocalFile(str(tmp_path / "a"))])
-    assert local_paths(mime) == [str(tmp_path / "a")]
+    assert local_paths(mime) == [_dropped(tmp_path / "a")]
 
 
 # -- the window ----------------------------------------------------------------------
@@ -141,7 +146,7 @@ def test_drag_entering_the_window_reaches_the_zones_first(
     assert viewer.entered == 0
     QApplication.sendEvent(window.windowHandle(), _drop(mime, 900))
     assert window.calls == [
-        (str(path), {"open_after_load": True, "append_to_tree": True, "as_disk_image": True})
+        (_dropped(path), {"open_after_load": True, "append_to_tree": True, "as_disk_image": True})
     ]
 
 
@@ -200,7 +205,7 @@ def test_drag_entering_over_the_refused_zone_can_still_drop_on_open(
     for _, kw in window.calls:
         kw.pop("batch")
     assert window.calls == [
-        (str(item), {"open_after_load": True, "append_to_tree": True}) for item in items
+        (_dropped(item), {"open_after_load": True, "append_to_tree": True}) for item in items
     ]
     assert not window._drop_overlay.isVisible()
 
@@ -237,7 +242,7 @@ def test_window_taking_the_drag_itself_routes_it_through_the_zones(
     window.dragMoveEvent(move)
     assert move.isAccepted()
     window.dropEvent(_routed_drop(mime, 100))
-    assert [p for p, _ in window.calls] == [str(folder)]
+    assert [p for p, _ in window.calls] == [_dropped(folder)]
 
 
 def test_drop_on_open_zone_opens_every_item_as_before(window: Any, tmp_path: Path) -> None:
@@ -250,7 +255,7 @@ def test_drop_on_open_zone_opens_every_item_as_before(window: Any, tmp_path: Pat
     batches = {id(kw.pop("batch")) for _, kw in window.calls}
     assert len(batches) == 1  # one drop, opened in one go
     assert window.calls == [
-        (str(f), {"open_after_load": True, "append_to_tree": True}) for f in files
+        (_dropped(f), {"open_after_load": True, "append_to_tree": True}) for f in files
     ]
     assert not overlay.isVisible()
 
@@ -262,7 +267,7 @@ def test_drop_on_disk_image_zone_opens_it_as_disk_image(window: Any, tmp_path: P
     overlay.activate([str(path)])
     overlay.dropEvent(_drop(_mime(path), 900))
     assert window.calls == [
-        (str(path), {"open_after_load": True, "append_to_tree": True, "as_disk_image": True})
+        (_dropped(path), {"open_after_load": True, "append_to_tree": True, "as_disk_image": True})
     ]
 
 

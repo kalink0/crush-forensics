@@ -492,7 +492,11 @@ def test_replace_with_the_next_source_queued_reports_the_source_asked_about(
     assert seen == [False]
     assert win._fs_panel._vfs_list == [a]
     assert recent == [str(a_path)]
-    assert f"Loaded: {a_path}" in statuses
+    # A load note (e.g. macOS's access-time note) follows after "  — ".
+    assert any(
+        s == f"Loaded: {a_path}" or s.startswith(f"Loaded: {a_path}  — ")
+        for s in statuses
+    )
     assert [p for p, _ in started] == [str(b_path)]  # after A was shown
 
     b = _finish_b(win, b_path)
