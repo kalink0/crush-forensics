@@ -12,6 +12,8 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, cast
 import logging
@@ -581,6 +583,25 @@ def _split_virtual_path(virtual_path: str) -> list[str]:
     return [p for p in re.split(r"[\\/]+", rel) if p not in ("", ".")]
 
 
+@dataclass
+class _LoadState:
+    """What handling one loaded source needs, as _load_source left it --
+    taken before a modal dialog, so the handling never reads the next
+    source's state (MainWindow._hold_load_queue)."""
+
+    path: str
+    batch: object | None
+    as_disk_image: bool
+    itunes_zip_prefix: str | None
+    embedded_zip: bool
+    focus_path: str | None
+    source_hash: tuple[str, int, str] | None
+    open_after_load: bool
+    append_to_tree: bool
+    progress: LoadingDialog | None
+    tree_build_started: float | None
+
+
 class MainWindow(QMainWindow):
     _open_windows: list[MainWindow] = []
     _AMERICA_INTRO_MS = 650
@@ -1138,8 +1159,64 @@ class MainWindow(QMainWindow):
     def _on_source_hashed(self, digest: str, size: int, path: str) -> None:
         self._loading_source_hash = (digest, size, path)
 
+    # -- the load queue while a dialog is open ---------------------------------
+    #
+    # A modal dialog runs a nested event loop: the finished load thread's
+    # signal would start the next queued source inside it, overwriting the
+    # state (_loading_*, _progress, ...) of the source the dialog is about.
+    # So the queue holds while one is open, and a load that came due then
+    # starts once the last hold ends -- none lost, none started twice.
+
+    @contextmanager
+    def _hold_load_queue(self) -> Iterator[None]:
+        self._load_queue_holds = getattr(self, "_load_queue_holds", 0) + 1
+        try:
+            yield
+        finally:
+            self._load_queue_holds -= 1
+            if not self._load_queue_holds and getattr(self, "_queued_load_due", False):
+                self._queued_load_due = False
+                self._start_next_queued_load()
+
+    def _capture_load_state(self) -> _LoadState:
+        return _LoadState(
+            path=getattr(self, "_loading_path", ""),
+            batch=getattr(self, "_loading_batch", None),
+            as_disk_image=getattr(self, "_loading_as_disk_image", False),
+            itunes_zip_prefix=getattr(self, "_loading_itunes_zip_prefix", None),
+            embedded_zip=getattr(self, "_loading_embedded_zip", False),
+            focus_path=getattr(self, "_pending_focus_path", None),
+            source_hash=getattr(self, "_loading_source_hash", None),
+            open_after_load=getattr(self, "_open_after_load", False),
+            append_to_tree=getattr(self, "_append_to_tree", False),
+            progress=getattr(self, "_progress", None),
+            tree_build_started=getattr(self, "_tree_build_started", None),
+        )
+
+    def _restore_load_state(self, state: _LoadState) -> None:
+        """The window's loading state back to *state*, for what reads it
+        later on (_on_tree_loaded)."""
+        self._loading_path = state.path
+        self._loading_batch = state.batch
+        self._loading_as_disk_image = state.as_disk_image
+        self._loading_itunes_zip_prefix = state.itunes_zip_prefix
+        self._loading_embedded_zip = state.embedded_zip
+        self._pending_focus_path = state.focus_path
+        self._loading_focus_path = state.focus_path
+        self._loading_source_hash = state.source_hash
+        self._open_after_load = state.open_after_load
+        self._append_to_tree = state.append_to_tree
+        if state.progress is not None:
+            self._progress = state.progress
+        if state.tree_build_started is not None:
+            self._tree_build_started = state.tree_build_started
+
     def _on_load_finished(self, vfs: VFS) -> None:
-        batch = getattr(self, "_loading_batch", None)
+        with self._hold_load_queue():
+            self._show_loaded_source(vfs, self._capture_load_state())
+
+    def _show_loaded_source(self, vfs: VFS, state: _LoadState) -> None:
+        batch = state.batch
         if (
             vfs.root().is_dir
             and batch is not None
@@ -1148,24 +1225,25 @@ class MainWindow(QMainWindow):
         ):
             # A tree of its own after another item opened in the same go:
             # replacing would leave only the last of them (_load_source).
-            self._hand_over_to_new_window(vfs)
+            self._hand_over_to_new_window(vfs, state)
             return
         self._placed_batch = batch
-        replaces = not (getattr(self, "_append_to_tree", False) and not vfs.root().is_dir)
+        replaces = not (state.append_to_tree and not vfs.root().is_dir)
         if replaces and self._fs_panel._vfs_list:
             # Decided here, once loaded, where it is known what replaces the
             # tree -- the one check for every way of opening.
-            answer = self._ask_replace_sources(vfs)
+            answer = self._ask_replace_sources(vfs, state)
             if answer == "new_window":
-                self._hand_over_to_new_window(vfs, asked=True)
+                self._hand_over_to_new_window(vfs, state, asked=True)
                 return
             if answer == "cancel":
-                self._cancel_loaded_source(vfs)
+                self._cancel_loaded_source(vfs, state)
                 return
+            self._restore_load_state(state)
         self._logger.debug("Load worker finished; preparing tree build")
-        if hasattr(self, "_progress"):
-            self._progress.set_text(translate("MainWindow", "Building tree…"))
-        if getattr(self, "_open_after_load", False) and not vfs.root().is_dir:
+        if state.progress is not None:
+            state.progress.set_text(translate("MainWindow", "Building tree…"))
+        if state.open_after_load and not vfs.root().is_dir:
             self._pending_open = (vfs.root(), vfs)
         if getattr(self, "_tree_loaded_connected", False):
             try:
@@ -1177,7 +1255,7 @@ class MainWindow(QMainWindow):
         self._tree_loaded_connected = True
         self._loading_vfs = vfs
         self._tree_loaded = False
-        append = getattr(self, "_append_to_tree", False) and not vfs.root().is_dir
+        append = state.append_to_tree and not vfs.root().is_dir
         self._logger.debug("Dispatching to FilesystemPanel (%s)", "append" if append else "load")
         if append:
             self._fs_panel.append_vfs(vfs)
@@ -1193,15 +1271,14 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._ensure_tree_loaded)
 
     def _replace_sources_box(
-        self, vfs: VFS
+        self, vfs: VFS, path: str
     ) -> tuple[QMessageBox, dict[QAbstractButton, Literal["replace", "new_window", "cancel"]]]:
-        """The question before *vfs* replaces the sources this window shows,
-        and what each of its buttons answers. Replace is the default."""
+        """The question before *vfs* (opened from *path*) replaces the
+        sources this window shows, and what each of its buttons answers.
+        Replace is the default."""
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle(
-            translate("MainWindow", "Open {name}").format(name=Path(self._loading_path).name)
-        )
+        box.setWindowTitle(translate("MainWindow", "Open {name}").format(name=Path(path).name))
         box.setText(translate("MainWindow", "Close the sources open in this window?"))
         box.setInformativeText(
             "\n".join(source.root().name for source in self._fs_panel._vfs_list)
@@ -1217,25 +1294,26 @@ class MainWindow(QMainWindow):
         box.setEscapeButton(cancel)
         return box, {replace: "replace", new_window: "new_window", cancel: "cancel"}
 
-    def _ask_replace_sources(self, vfs: VFS) -> Literal["replace", "new_window", "cancel"]:
-        progress = getattr(self, "_progress", None)
-        if progress is not None:
-            progress.hide()
-        box, answers = self._replace_sources_box(vfs)
+    def _ask_replace_sources(
+        self, vfs: VFS, state: _LoadState
+    ) -> Literal["replace", "new_window", "cancel"]:
+        if state.progress is not None:
+            state.progress.hide()
+        box, answers = self._replace_sources_box(vfs, state.path)
         box.exec()
         answer = answers.get(box.clickedButton(), "cancel")
-        if answer == "replace" and progress is not None:
-            progress.show()
+        if answer == "replace" and state.progress is not None:
+            state.progress.show()
         return answer
 
-    def _cancel_loaded_source(self, vfs: VFS) -> None:
+    def _cancel_loaded_source(self, vfs: VFS, state: _LoadState) -> None:
         """The analyst kept the open sources: the source loaded for it is
         not shown, and closed."""
         self.session.remove_source(vfs)
-        if hasattr(self, "_progress"):
-            self._progress.close()
+        if state.progress is not None:
+            state.progress.close()
         self._pending_focus_path = None
-        path = self._loading_path
+        path = state.path
         # Its INTEGRITY line may already be in the log: this says it was
         # never opened in the end.
         self._logger.info("Not opened, cancelled to keep the open sources: %s", path)
@@ -1245,18 +1323,19 @@ class MainWindow(QMainWindow):
             )
         )
 
-    def _hand_over_to_new_window(self, vfs: VFS, asked: bool = False) -> None:
+    def _hand_over_to_new_window(
+        self, vfs: VFS, state: _LoadState, asked: bool = False
+    ) -> None:
         """Show a source this window loaded in a window of its own, open as
         it is -- not loaded (or hashed) a second time. *asked*: the analyst
         chose it (_ask_replace_sources), rather than it being a later item
         of an opened batch."""
         self.session.detach_source(vfs)
-        if hasattr(self, "_progress"):
-            self._progress.close()
-        path = self._loading_path
-        focus_path = self._pending_focus_path
-        self._pending_focus_path = None
-        batch = getattr(self, "_loading_batch", None)
+        if state.progress is not None:
+            state.progress.close()
+        self._pending_focus_path = None  # the focus goes with the source
+        path = state.path
+        batch = state.batch
         if batch is None or batch is not getattr(self, "_handover_batch", None):
             self._handover_batch = batch
             self._handover_count = 0
@@ -1282,10 +1361,10 @@ class MainWindow(QMainWindow):
         window._adopt_loaded_source(
             vfs,
             path,
-            as_disk_image=getattr(self, "_loading_as_disk_image", False),
-            open_after_load=getattr(self, "_open_after_load", False),
-            focus_path=focus_path,
-            source_hash=getattr(self, "_loading_source_hash", None),
+            as_disk_image=state.as_disk_image,
+            open_after_load=state.open_after_load,
+            focus_path=state.focus_path,
+            source_hash=state.source_hash,
         )
 
     def _adopt_loaded_source(
@@ -1322,15 +1401,19 @@ class MainWindow(QMainWindow):
         self._on_load_finished(vfs)
 
     def _on_load_failed(self, message: str, shown: str) -> None:
+        with self._hold_load_queue():
+            self._report_load_failed(self._capture_load_state(), message, shown)
+
+    def _report_load_failed(self, state: _LoadState, message: str, shown: str) -> None:
         self._logger.debug("Load worker failed: %s", message)
-        if hasattr(self, "_progress"):
-            self._progress.close()
+        if state.progress is not None:
+            state.progress.close()
         self._status.showMessage(
             translate("MainWindow", "Error loading source: {message}").format(message=shown)
         )
         self._logger.error("Load error: %s", message)
 
-        path = getattr(self, "_loading_path", None)
+        path = state.path
         offer_hex = bool(path) and Path(path).is_file()
 
         box = QMessageBox(self)
@@ -1368,6 +1451,13 @@ class MainWindow(QMainWindow):
         self._show_viewer_tabs()
 
     def _on_tree_loaded(self) -> None:
+        with self._hold_load_queue():
+            self._finish_tree_load(self._capture_load_state(), getattr(self, "_loading_vfs", None))
+
+    def _finish_tree_load(self, state: _LoadState, loaded_vfs: VFS | None) -> None:
+        """What follows a source's tree being shown. Reads only *state* and
+        *loaded_vfs*: dialogs here (the disk image warning, those of the
+        file opened) must not let another source's state in."""
         self._logger.debug("Tree load finished")
         self._tree_loaded = True
         if getattr(self, "_tree_loaded_connected", False):
@@ -1376,10 +1466,10 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self._tree_loaded_connected = False
-        if hasattr(self, "_progress"):
-            self._progress.close()
-        self._logger.info("Loaded: %s", self._loading_path)
-        loaded_vfs = getattr(self, "_loading_vfs", None)
+        if state.progress is not None:
+            state.progress.close()
+        path = state.path
+        self._logger.info("Loaded: %s", path)
         notes = [
             note for note in (
                 getattr(loaded_vfs, "fallback_note", ""), getattr(loaded_vfs, "load_note", ""),
@@ -1387,30 +1477,28 @@ class MainWindow(QMainWindow):
         ]
         if notes:
             for note in notes:
-                self._logger.warning("%s: %s", self._loading_path, note)
+                self._logger.warning("%s: %s", path, note)
             text = "; ".join(render_value(note, localized=True) for note in notes)
             self._status.showMessage(
                 translate("MainWindow", "Loaded: {loading_path}  — {text}").format(
-                    loading_path=self._loading_path, text=text
+                    loading_path=path, text=text
                 )
             )
         else:
             self._status.showMessage(
-                translate("MainWindow", "Loaded: {loading_path}").format(
-                    loading_path=self._loading_path
-                )
+                translate("MainWindow", "Loaded: {loading_path}").format(loading_path=path)
             )
         from crush.core.vfs import LogicalEvidenceVFS, RawImageVFS
 
         # Logical evidence asked for as a disk image opens as what it is
         # (Open Disk Image… is how an AD-encrypted set gets its password),
         # and is reopened the way it was opened.
-        asked_as_image = getattr(self, "_loading_as_disk_image", False)
+        asked_as_image = state.as_disk_image
         opened_as_image = isinstance(loaded_vfs, RawImageVFS) or (
             asked_as_image and isinstance(loaded_vfs, LogicalEvidenceVFS)
         )
-        self._add_to_recent_files(self._loading_path, as_disk_image=opened_as_image)
-        if getattr(self, "_loading_as_disk_image", False) and not opened_as_image:
+        self._add_to_recent_files(path, as_disk_image=opened_as_image)
+        if asked_as_image and not opened_as_image:
             # Asked for explicitly, so a status-bar line alone is too easy to miss.
             QMessageBox.warning(
                 self,
@@ -1421,24 +1509,24 @@ class MainWindow(QMainWindow):
                         "{name} could not be read as a disk image and was opened as a "
                         "folder instead.\n\n{reason}",
                     )
-                    if Path(self._loading_path).is_dir() else
+                    if Path(path).is_dir() else
                     translate(
                         "MainWindow",
                         "{name} could not be read as a disk image and was opened as a "
                         "single file instead.\n\n{reason}",
                     )
                 ).format(
-                    name=Path(self._loading_path).name,
+                    name=Path(path).name,
                     reason=render_value(getattr(loaded_vfs, "fallback_note", ""), localized=True),
                 ),
             )
-        if hasattr(self, "_tree_build_started"):
-            elapsed = time.monotonic() - self._tree_build_started
-            if hasattr(self, "_loading_vfs"):
-                root = self._loading_vfs.root()
+        if state.tree_build_started is not None:
+            elapsed = time.monotonic() - state.tree_build_started
+            if loaded_vfs is not None:
+                root = loaded_vfs.root()
                 try:
-                    file_count = self._loading_vfs.file_count(root)
-                    total_size = self._loading_vfs.total_size(root)
+                    file_count = loaded_vfs.file_count(root)
+                    total_size = loaded_vfs.total_size(root)
                     self._logger.info(
                         "Load + initial tree render: %.3f s (files: %s, size: %s)",
                         elapsed,
@@ -1449,12 +1537,12 @@ class MainWindow(QMainWindow):
                     self._logger.info("Load + initial tree render: %.3f s", elapsed)
             else:
                 self._logger.info("Load + initial tree render: %.3f s", elapsed)
-        focus_path = self._pending_focus_path
+        focus_path = state.focus_path
         self._pending_focus_path = None
         focus_handled = False
-        if focus_path:
+        if focus_path and loaded_vfs is not None:
             from crush.core.vfs import resolve_relative_path
-            vfs = self._loading_vfs
+            vfs = loaded_vfs
             root = vfs.root()
             if not root.is_dir:
                 # Not an error worth blocking on -- the single-file case below
@@ -1463,23 +1551,20 @@ class MainWindow(QMainWindow):
                     translate(
                         "MainWindow",
                         "--focus ignored: {path!r} is a single file, not a folder/archive",
-                    ).format(path=self._loading_path)
+                    ).format(path=path)
                 )
                 self._logger.warning(
-                    "--focus ignored: %r is a single file, not a folder/archive",
-                    self._loading_path,
+                    "--focus ignored: %r is a single file, not a folder/archive", path,
                 )
             else:
                 target = resolve_relative_path(root, focus_path)
                 if target is None:
                     self._status.showMessage(
                         translate("MainWindow", "--focus: {focus!r} not found in {path!r}").format(
-                            focus=focus_path, path=self._loading_path
+                            focus=focus_path, path=path
                         )
                     )
-                    self._logger.warning(
-                        "--focus: %r not found in %r", focus_path, self._loading_path
-                    )
+                    self._logger.warning("--focus: %r not found in %r", focus_path, path)
                 else:
                     self._fs_panel._navigate_to_node(target, vfs)
                     self._open_node(target, vfs)
@@ -3997,6 +4082,17 @@ class MainWindow(QMainWindow):
 
     def _on_load_thread_finished(self) -> None:
         self._load_thread = None
+        if getattr(self, "_load_queue_holds", 0):
+            # A dialog about the source just loaded is open: started when
+            # it is answered (_hold_load_queue).
+            if self._load_queue:
+                self._queued_load_due = True
+            return
+        self._start_next_queued_load()
+
+    def _start_next_queued_load(self) -> None:
+        if self._thread_is_running(getattr(self, "_load_thread", None)):
+            return  # its end starts the next one
         if self._load_queue:
             (
                 path, open_after_load, append_to_tree, itunes_zip_prefix, password, focus_path,
@@ -4018,11 +4114,19 @@ class MainWindow(QMainWindow):
     def _on_password_required(
         self, was_wrong: bool, reason: str = "", needs: str = "password"
     ) -> None:
-        if hasattr(self, "_progress"):
-            self._progress.close()
+        with self._hold_load_queue():
+            self._ask_secret_and_retry(self._capture_load_state(), was_wrong, reason, needs)
 
-        if getattr(self, "_loading_as_disk_image", False):
-            self._ask_disk_image_secret(was_wrong, reason, needs)
+    def _ask_secret_and_retry(
+        self, state: _LoadState, was_wrong: bool, reason: str, needs: str
+    ) -> None:
+        """Ask for what opens the source of *state* and load it again with
+        that -- *state*'s source, whatever loads while the prompt is open."""
+        if state.progress is not None:
+            state.progress.close()
+
+        if state.as_disk_image:
+            self._ask_disk_image_secret(state, was_wrong, reason, needs)
             return
 
         title = "Incorrect Password" if was_wrong else "Password Required"
@@ -4040,15 +4144,15 @@ class MainWindow(QMainWindow):
             return
 
         self._load_source(
-            self._loading_path,
-            open_after_load=self._open_after_load,
-            append_to_tree=self._append_to_tree,
-            itunes_zip_prefix=getattr(self, "_loading_itunes_zip_prefix", None),
+            state.path,
+            open_after_load=state.open_after_load,
+            append_to_tree=state.append_to_tree,
+            itunes_zip_prefix=state.itunes_zip_prefix,
             password=password,
-            focus_path=getattr(self, "_loading_focus_path", None),
-            embedded_zip=getattr(self, "_loading_embedded_zip", False),
-            as_disk_image=getattr(self, "_loading_as_disk_image", False),
-            batch=getattr(self, "_loading_batch", None),
+            focus_path=state.focus_path,
+            embedded_zip=state.embedded_zip,
+            as_disk_image=state.as_disk_image,
+            batch=state.batch,
         )
 
     def _maybe_confirm_itunes_backup_zip(self, path: str) -> str | None:
@@ -4124,14 +4228,16 @@ class MainWindow(QMainWindow):
         )
         return answer == QMessageBox.StandardButton.Yes
 
-    def _ask_disk_image_secret(self, was_wrong: bool, reason: str, needs: str) -> None:
+    def _ask_disk_image_secret(
+        self, state: _LoadState, was_wrong: bool, reason: str, needs: str
+    ) -> None:
         """Ask for what opens an encrypted disk image -- its password, or the
         private key file of a certificate it is sealed to -- and load it
         again with that."""
         from crush.ui.disk_image_key_dialog import DiskImageKeyDialog
 
         needs, self._disk_image_needs = _disk_image_retry_needs(
-            getattr(self, "_disk_image_needs", None), self._loading_path, was_wrong, needs,
+            getattr(self, "_disk_image_needs", None), state.path, was_wrong, needs,
         )
         dialog = DiskImageKeyDialog(self, reason=reason, was_wrong=was_wrong, needs=needs)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -4140,15 +4246,15 @@ class MainWindow(QMainWindow):
             )
             return
         self._load_source(
-            self._loading_path,
-            open_after_load=self._open_after_load,
-            append_to_tree=self._append_to_tree,
+            state.path,
+            open_after_load=state.open_after_load,
+            append_to_tree=state.append_to_tree,
             password=dialog.password(),
-            focus_path=getattr(self, "_loading_focus_path", None),
-            embedded_zip=getattr(self, "_loading_embedded_zip", False),
+            focus_path=state.focus_path,
+            embedded_zip=state.embedded_zip,
             as_disk_image=True,
             private_key=dialog.private_key(),
-            batch=getattr(self, "_loading_batch", None),
+            batch=state.batch,
         )
 
     def _on_export_thread_finished(self) -> None:

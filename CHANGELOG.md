@@ -37,6 +37,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed opening a file whose content can't be read (double-click, Open as Text, Open as Hex) failing without saying why.
 - Fixed a source replaced by opening a folder, archive or disk image staying open until its window closed.
 - Fixed the filter's search results still listing the previous source after it was replaced.
+- Fixed a password entered for one of several sources opened at once being tried on another, and the disk image warning's source being reported as another one.
 
 ### Changed
 
