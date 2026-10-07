@@ -2262,7 +2262,8 @@ MESSAGES: dict[str, str] = {
     ),
     "ufdr.not_exported_content": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Not contained in this UFDR: {path} -- Cellebrite didn't export its content",
+        "Not contained in this UFDR: {path} -- Cellebrite exported items derived from "
+        "this file, not the file's content",
         "ufdr.not_exported_content",
     ),
     "ufdr.partial_export": QT_TRANSLATE_NOOP(

@@ -329,12 +329,12 @@ def test_file_the_ufdr_lacks_gets_a_placeholder_beside_its_items(tmp_path: Path)
         "Not contained in this UFDR: Cellebrite exported items derived from this file, not "
         "the file. It records only its path and size (527,952 bytes); no content, hashes or times"
     )
-    with pytest.raises(UFDRContentNotLocatedError, match="didn't export its content"):
+    with pytest.raises(UFDRContentNotLocatedError, match="exported items derived from this file, not the file's content"):
         vfs.read(placeholder)
     with pytest.raises(UFDRContentNotLocatedError):
         vfs.peek(placeholder)
     info = vfs.node_info(placeholder)
-    assert info is not None and "didn't export" in str(info["Content status"])
+    assert info is not None and "not the file's content" in str(info["Content status"])
 
     assert vfs.read(item) == img
     info = vfs.node_info(item)

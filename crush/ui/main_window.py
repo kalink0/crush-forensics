@@ -1552,7 +1552,12 @@ class MainWindow(QMainWindow):
         import crush.parsers  # noqa: F401 — triggers parser registration
         from crush.core.registry import ParserRegistry
 
-        parser = ParserRegistry.best(node, vfs)
+        try:
+            # Choosing a parser reads the file's first bytes.
+            parser = ParserRegistry.best(node, vfs)
+        except OSError as exc:
+            self._warn_unreadable(node, exc)
+            return
         if parser is None:
             self._status.showMessage(
                 translate("MainWindow", "No parser found for {name}").format(name=node.name)
@@ -1619,12 +1624,12 @@ class MainWindow(QMainWindow):
         if mode == "hex":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.base import ParseResult
-            hex_bytes = self._read_hex_bytes(vfs, node)
+            hex_bytes, why = self._read_hex_bytes(vfs, node)
             if hex_bytes is None:
                 QMessageBox.warning(
                     self,
                     translate("MainWindow", "Hex view"),
-                    translate("MainWindow", "Unable to load hex view."),
+                    translate("MainWindow", "Unable to load hex view: {reason}").format(reason=why),
                 )
                 return
             result = ParseResult(viewer_type="hex", data=hex_bytes)
@@ -1635,7 +1640,11 @@ class MainWindow(QMainWindow):
         if mode == "text":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.base import ParseResult
-            raw = vfs.read(node)
+            try:
+                raw = vfs.read(node)
+            except OSError as exc:
+                self._warn_unreadable(node, exc)
+                return
             try:
                 text = raw.decode("utf-8")
             except Exception:
@@ -3277,7 +3286,7 @@ class MainWindow(QMainWindow):
             base_view = self._wrap_with_hint_banner(base_view, hint_banner)
         widget: QWidget = base_view
         if self._always_hex:
-            hex_bytes = self._read_hex_bytes(vfs, node)
+            hex_bytes, why = self._read_hex_bytes(vfs, node)
             if hex_bytes is not None:
                 from crush.viewers.hex_viewer import HexViewer
                 tabbed = QTabWidget()
@@ -3287,10 +3296,11 @@ class MainWindow(QMainWindow):
             else:
                 tabbed = QTabWidget()
                 tabbed.addTab(base_view, translate("MainWindow", "View"))
-                tabbed.addTab(
-                    QLabel(translate("MainWindow", "Unable to load hex view.")),
-                    translate("MainWindow", "Hex"),
+                label = QLabel(
+                    translate("MainWindow", "Unable to load hex view: {reason}").format(reason=why)
                 )
+                label.setWordWrap(True)
+                tabbed.addTab(label, translate("MainWindow", "Hex"))
                 widget = tabbed
 
         existing_idx = -1
@@ -4318,7 +4328,18 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._logger.warning("INTEGRITY hash failed for %s: %s", node.path, exc)
 
-    def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> bytes | None:
+    def _warn_unreadable(self, node: VFSNode, exc: BaseException) -> None:
+        """*node*'s content couldn't be read: say why (e.g. a UFDR that
+        lists a file but doesn't hold it), in the status bar and a box."""
+        text = translate("MainWindow", "Could not read {path!r}: {exc}").format(
+            path=node.path, exc=i18n.exception_text(exc)
+        )
+        self._status.showMessage(text)
+        QMessageBox.warning(self, translate("MainWindow", "Cannot open file"), text)
+
+    def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> tuple[bytes | None, str]:
+        """The node's bytes, or None and why they couldn't be read."""
+
         def _read() -> bytes:
             with vfs.open(node) as src:
                 return src.read()
@@ -4332,12 +4353,12 @@ class MainWindow(QMainWindow):
                         translate("MainWindow", "Loading {name}…").format(name=node.name),
                         _read,
                     ),
-                )
-            return _read()
+                ), ""
+            return _read(), ""
         except Exception as exc:
             if hasattr(self, "_logger"):
                 self._logger.warning("Failed to read hex bytes for %s: %s", node.path, exc)
-            return None
+            return None, i18n.exception_text(exc)
 
     def _stop_animated_themes(self) -> None:
         for window in self._open_windows:
