@@ -2386,6 +2386,12 @@ MESSAGES: dict[str, str] = {
         "The UFDX lists extraction {path} ({type}); it couldn't be read as a UFD",
         "ufdx.extraction_not_opened",
     ),
+    "ufdx.extraction_password_rejected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Extraction {path} ({type}): {reason}. One password is entered for the whole UFDX; "
+        "if its extractions need different ones, open each extraction's UFD on its own",
+        "ufdx.extraction_password_rejected",
+    ),
     # -- Timestamp column decoding (cell markers) ------------------------------
     "ts_decode.not_a_number": QT_TRANSLATE_NOOP(
         "ParseIssue",

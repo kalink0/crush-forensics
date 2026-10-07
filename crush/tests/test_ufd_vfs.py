@@ -304,11 +304,56 @@ def test_ufdx_opens_each_listed_extraction(tmp_path: Path) -> None:
 
 
 def test_ufdx_verify_covers_every_extraction(tmp_path: Path) -> None:
+    # The second listed extraction isn't there: a failed check, so the
+    # first one matching is no MATCH.
     vfs = open_vfs(_ufdx(tmp_path))
     assert vfs.acquisition() == "UFDX"
     result = vfs.verify_acquisition()
+    ffs, log = result["recorded_files"]
+    assert ffs["name"] == "EXTRACTION_FFS 01/EXTRACTION_FFS.zip" and ffs["match"]
+    assert log["name"] == "EXTRACTION_LOG 02/EXTRACTION_LOG.ufd"
+    assert not log["found"] and not log["match"] and log["computed"] is None
+    assert str(log["status"]) == (
+        "The UFDX lists extraction EXTRACTION_LOG 02\\EXTRACTION_LOG.ufd (Logical); it isn't there"
+    )
+    assert result["match"] is False
+    vfs.close()
+
+
+def test_ufdx_verify_matches_when_every_extraction_matches(tmp_path: Path) -> None:
+    ufdx = _ufdx(tmp_path)
+    ufdx.write_text(UFDX.replace(
+        '    <Extraction TransferType="Logical" Path="EXTRACTION_LOG 02\\EXTRACTION_LOG.ufd" />\n', "",
+    ))
+    vfs = open_vfs(ufdx)
+    result = vfs.verify_acquisition()
     assert [f["name"] for f in result["recorded_files"]] == ["EXTRACTION_FFS 01/EXTRACTION_FFS.zip"]
     assert result["match"] is True
+    vfs.close()
+
+
+def test_ufdx_verify_fails_for_an_extraction_not_read_as_ufd(tmp_path: Path) -> None:
+    ufdx = _ufdx(tmp_path)
+    log = ufdx.parent / "EXTRACTION_LOG 02"
+    log.mkdir()
+    (log / "EXTRACTION_LOG.ufd").write_bytes(b"not an INI file\n")
+    vfs = open_vfs(ufdx)
+    result = vfs.verify_acquisition()
+    entry = result["recorded_files"][1]
+    assert entry["name"] == "EXTRACTION_LOG 02/EXTRACTION_LOG.ufd" and not entry["found"]
+    assert str(entry["status"]).endswith("it couldn't be read as a UFD")
+    assert result["match"] is False
+    vfs.close()
+
+
+def test_ufdx_verify_report_names_the_extraction_not_checked(tmp_path: Path) -> None:
+    from crush.ui.verify_result_dialog import verify_report_html
+
+    vfs = open_vfs(_ufdx(tmp_path))
+    report = verify_report_html(vfs.verify_acquisition(), [])
+    assert "MISMATCH" in report and "MATCH — every file hash" not in report
+    assert "EXTRACTION_LOG 02/EXTRACTION_LOG.ufd" in report
+    assert "it isn&#x27;t there" in report or "it isn't there" in report
     vfs.close()
 
 
@@ -403,6 +448,53 @@ def test_no_backup_password_recorded_asks_for_one(
     ufd = _ufade(tmp_path, itunes_backup_keybag_factory, backup_password="secret", ufd_password="")
     with pytest.raises(PasswordRequiredError):
         open_vfs(ufd)
+
+
+def _ufade_ufdx(tmp_path: Path, factory: Any, passwords: list[tuple[str, str]]) -> Path:
+    """A .ufdx listing one UFADE extraction per (backup password, the
+    BackupPassword its .ufd records) in *passwords*."""
+    evidence = tmp_path / "ufdx"
+    evidence.mkdir()
+    lines = []
+    for i, (backup_password, ufd_password) in enumerate(passwords, 1):
+        build = tmp_path / f"build{i}"
+        build.mkdir()
+        _ufade(build, factory, backup_password=backup_password, ufd_password=ufd_password)
+        (build / "evidence").rename(evidence / f"EXTRACTION_{i:02}")
+        lines.append(
+            f'    <Extraction TransferType="Logical" Path="EXTRACTION_{i:02}\\Apple_iPhone.ufd" />'
+        )
+    ufdx = evidence / "EvidenceCollection.ufdx"
+    ufdx.write_text(
+        '<?xml version="1.0"?>\n<EvidenceCollection>\n  <Extractions>\n'
+        + "\n".join(lines) + "\n  </Extractions>\n</EvidenceCollection>\n"
+    )
+    return ufdx
+
+
+def test_ufdx_names_the_extraction_its_password_doesnt_open(
+    tmp_path: Path, itunes_backup_keybag_factory: Any,
+) -> None:
+    ufdx = _ufade_ufdx(tmp_path, itunes_backup_keybag_factory, [("12345", "12345"), ("secret", "12345")])
+    with pytest.raises(WrongPasswordError, match=r"^Extraction EXTRACTION_02\\Apple_iPhone.ufd "
+                       r"\(Logical\): The BackupPassword the UFD records doesn't open"):
+        open_vfs(ufdx)
+    with pytest.raises(WrongPasswordError, match="open each extraction's UFD on its own"):
+        open_vfs(ufdx, password="also wrong")
+
+
+def test_ufdx_typed_password_never_replaces_an_extractions_own(
+    tmp_path: Path, itunes_backup_keybag_factory: Any,
+) -> None:
+    # Typed for the second extraction, whose UFD records a wrong one: the
+    # first still opens with the BackupPassword its own UFD records.
+    ufdx = _ufade_ufdx(tmp_path, itunes_backup_keybag_factory, [("12345", "12345"), ("secret", "12345")])
+    vfs = open_vfs(ufdx, password="secret")
+    first = _find(vfs.root(), "EXTRACTION_01", "FileDump", "Backup Service", UDID, "Snapshot")
+    second = _find(vfs.root(), "EXTRACTION_02", "FileDump", "Backup Service", UDID, "Snapshot")
+    assert "(with the BackupPassword the UFD records)" in str(first.status)
+    assert "(with the password entered)" in str(second.status)
+    vfs.close()
 
 
 def test_only_the_backups_members_are_extracted(

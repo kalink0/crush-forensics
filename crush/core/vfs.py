@@ -1337,6 +1337,11 @@ class ITunesBackupVFS(VFS):
         manifest_key = self._keybag.unwrap_manifest_key(cast(bytes, manifest_plist["ManifestKey"]))
         return ios_keybag.aes_cbc_decrypt_and_unpad(manifest_key, raw)
 
+    @property
+    def password(self) -> str:
+        """The password it was opened with ("" for none)."""
+        return self._password
+
     def close(self) -> None:
         if self._cleanup_dir is not None:
             shutil.rmtree(self._cleanup_dir, ignore_errors=True)
@@ -3296,14 +3301,16 @@ def itunes_backup_prefixes(zf: zipfile.ZipFile) -> list[str]:
 
 
 def open_itunes_backup_from_zip(
-    path: str | Path, prefix: str, *, password: str = ""
+    path: str | Path, prefix: str, *, password: str = "", fallback_password: str = ""
 ) -> ITunesBackupVFS:
     """Extract a wrapped iTunes backup out of a zip and open it.
 
     Only the backup's own members (those under *prefix*) are extracted --
     the ZIP may be a whole extraction of tens of GB around it -- after
     checking the temp directory has room for them. The extracted copy is
-    removed again when the returned VFS is closed.
+    removed again when the returned VFS is closed. *fallback_password* is
+    tried, on the same extracted copy, when *password* doesn't open it;
+    the returned VFS's `password` says which one did.
     """
     with zipfile.ZipFile(path) as zf:
         members = [i for i in zf.infolist() if i.filename.startswith(prefix)]
@@ -3321,7 +3328,12 @@ def open_itunes_backup_from_zip(
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
     try:
-        return ITunesBackupVFS(tmp_dir / prefix, password=password, _cleanup_dir=tmp_dir)
+        try:
+            return ITunesBackupVFS(tmp_dir / prefix, password=password, _cleanup_dir=tmp_dir)
+        except (PasswordRequiredError, WrongPasswordError):
+            if not fallback_password:
+                raise
+            return ITunesBackupVFS(tmp_dir / prefix, password=fallback_password, _cleanup_dir=tmp_dir)
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise

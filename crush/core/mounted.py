@@ -119,14 +119,15 @@ class _MountVFS(VFS):
         typed_password: str, recorded_password: str,
     ) -> None:
         """The iTunes backup in ZIP folder *child*, opened as the backup --
-        with the password the analyst typed, else the one the source
-        records (a UFD's BackupPassword). A password error goes to the
+        with the password the source records (a UFD's BackupPassword), else
+        the one the analyst typed: a password typed for another source of a
+        UFDX never replaces one that opens. A password error goes to the
         caller (the analyst is asked); any other failure shows the folder's
         stored files instead, its status saying why."""
         prefix = "" if child.path == "/" else child.path.lstrip("/") + "/"
         try:
             backup = open_itunes_backup_from_zip(
-                file, prefix, password=typed_password or recorded_password,
+                file, prefix, password=recorded_password, fallback_password=typed_password,
             )
         except WrongPasswordError as exc:
             if typed_password or not recorded_password:
@@ -141,10 +142,10 @@ class _MountVFS(VFS):
             self._hold(copy, zip_vfs, child)
             return
         self._subs.append(backup)
-        if typed_password:
-            source = ParseIssue("vfs.password_typed")
-        elif recorded_password:
+        if recorded_password and backup.password == recorded_password:
             source = ParseIssue("ufd.password_from_ufd")
+        elif backup.password:
+            source = ParseIssue("vfs.password_typed")
         else:
             source = ParseIssue("vfs.password_none")
         copy.status = ParseIssue("vfs.itunes_backup_opened", {"password": source})

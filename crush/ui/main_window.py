@@ -1943,9 +1943,16 @@ class MainWindow(QMainWindow):
         def _on_recorded_files_done(result: dict[str, Any]) -> None:
             # A UFD records a hash of each file of the extraction, not of a disk.
             files: list[dict[str, Any]] = result.get("recorded_files") or []
-            missing = [f["name"] for f in files if not f.get("found")]
+            # An entry with a status wasn't checked at all (a UFDX extraction
+            # that wasn't opened); it has no recorded hash of its own.
+            unchecked = [f["name"] for f in files if f.get("status") is not None]
+            missing = [f["name"] for f in files if not f.get("found") and f.get("status") is None]
             bad = [f["name"] for f in files if f.get("found") and not f.get("match")]
             findings = []
+            if unchecked:
+                findings.append(translate(
+                    "MainWindow", "{count} listed extraction(s) could not be checked."
+                ).format(count=f"{len(unchecked):,}"))
             if bad:
                 findings.append(translate(
                     "MainWindow", "{count} file(s) do not match their recorded hash."

@@ -217,8 +217,9 @@ def verify_report_html(
 def _recorded_files_report(result: dict[str, Any], findings: list[str]) -> str:
     """The report for an acquisition that records a hash of each of its
     files rather than of a disk (a Cellebrite UFD): one block per file, a
-    file it names but that isn't there as a failed check, and its HMAC as
-    recorded but not checked."""
+    file it names but that isn't there as a failed check, an entry with a
+    status (a UFDX extraction that wasn't opened) as a failed check with its
+    reason, and its HMAC as recorded but not checked."""
     files: list[dict[str, Any]] = result.get("recorded_files") or []
     parts: list[str] = []
     if not files:
@@ -247,6 +248,15 @@ def _recorded_files_report(result: dict[str, Any], findings: list[str]) -> str:
             + "</h3>"
         )
     for entry in files:
+        status = entry.get("status")
+        if status is not None:
+            # Nothing was checked for it (a listed extraction that wasn't
+            # opened): why, in place of a stored and a computed value.
+            parts.append(
+                f"<p style='margin-bottom:2px'><b>{_esc(str(entry.get('name')))}</b></p>"
+                f"<p style='margin-left:16px; color:{_RED}'>{_esc(str(status))} <b>✗</b></p>"
+            )
+            continue
         title = translate("VerifyResultDialog", "{what} ({algorithm})").format(
             what=entry.get("name"), algorithm=entry.get("algorithm"),
         )

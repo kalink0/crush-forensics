@@ -37,6 +37,7 @@ from typing import Any
 
 from crush.core.issues import ParseIssue
 from crush.core.mounted import _MountVFS
+from crush.core.passwords import WrongPasswordError
 from crush.core.vfs import VFS, VFSNode, ZipVFS, join_notes
 
 _logger = logging.getLogger(__name__)
@@ -435,7 +436,9 @@ class UFDXVFS(_MountVFS):
         self._path = Path(path)
         self.ufdx = parse_ufdx(self._path)
         super().__init__(VFSNode(name=self._path.name, path="/", is_dir=True))
-        self._ufds: list[tuple[str, UFDVFS]] = []
+        # Every listed extraction in UFDX order, by its folder: its UFD, or
+        # why it wasn't opened (the .ufd's name as written beside it).
+        self._extractions: list[tuple[str, UFDVFS | tuple[str, ParseIssue]]] = []
         try:
             self._build(password)
         except Exception:
@@ -456,15 +459,25 @@ class UFDXVFS(_MountVFS):
             name = parts[-2] if len(parts) > 1 else (parts[-1] if parts else "(no path)")
             file = _resolve(self._path.parent, ref) if ref else None
             what = {"path": ref, "type": ex.get("TransferType", "")}
+            ufd_name = parts[-1] if parts else ""
             if file is None:
-                self._folder(self._root, name, ParseIssue("ufdx.extraction_missing", what))
+                issue = ParseIssue("ufdx.extraction_missing", what)
+                folder = self._folder(self._root, name, issue)
+                self._extractions.append((folder.name, (ufd_name, issue)))
                 continue
             try:
                 ufd = UFDVFS(file, password=password)
+            except WrongPasswordError as exc:
+                # One password is entered for the whole UFDX: say which
+                # extraction it didn't open.
+                reason = exc.args[0] if exc.args else ""
+                raise WrongPasswordError(ParseIssue(
+                    "ufdx.extraction_password_rejected", {**what, "reason": reason},
+                )) from exc
             except UFDOpenError as exc:
-                self._folder(self._root, name, ParseIssue(
-                    "ufdx.extraction_not_opened", what, detail=str(exc),
-                ))
+                issue = ParseIssue("ufdx.extraction_not_opened", what, detail=str(exc))
+                folder = self._folder(self._root, name, issue)
+                self._extractions.append((folder.name, (ufd_name, issue)))
                 continue
             self._subs.append(ufd)
             folder = self._folder(self._root, name, join_notes([
@@ -472,7 +485,7 @@ class UFDXVFS(_MountVFS):
             ]))
             self._own_info[folder.path] = ufd.node_info(ufd.root()) or {}
             self._hold(folder, ufd, ufd.root())
-            self._ufds.append((folder.name, ufd))
+            self._extractions.append((folder.name, ufd))
 
     def acquisition(self) -> str | None:
         return "UFDX"
@@ -481,10 +494,19 @@ class UFDXVFS(_MountVFS):
         self, progress: Callable[[int, int], None] | None = None
     ) -> dict[str, Any]:
         """Every listed .ufd's recorded file hashes, each named with its
-        extraction's folder."""
+        extraction's folder. A listed extraction that is missing or couldn't
+        be read is a failed check, with the reason as its status."""
         files: list[dict[str, Any]] = []
         hmacs: list[str] = []
-        for name, ufd in self._ufds:
+        for name, ufd in self._extractions:
+            if not isinstance(ufd, UFDVFS):
+                ufd_name, issue = ufd
+                files.append({
+                    "name": f"{name}/{ufd_name}" if ufd_name else name,
+                    "algorithm": None, "stored": None, "computed": None,
+                    "found": False, "match": False, "status": issue,
+                })
+                continue
             files.extend(verify_ufd_files(ufd.ufd, progress, label_prefix=f"{name}/"))
             hmac = ufd.ufd.get("Hash", "HMAC")
             if hmac:
