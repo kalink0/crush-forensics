@@ -363,18 +363,33 @@ class TestFatReadings:
 
 
 class TestDisplay:
-    def _rows(self, panel) -> list[tuple[str, str]]:
+    def _rows(self, panel) -> dict[str, list[str]]:
+        """Each labelled row: its label and the texts of its field, top to
+        bottom (one QLabel, or the labels of a stored-times column)."""
         from PySide6.QtWidgets import QFormLayout
 
-        rows = []
+        rows: dict[str, list[str]] = {}
         for i in range(panel._layout.rowCount()):
             label = panel._layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
             field = panel._layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
-            if label is not None and field is not None and isinstance(field.widget(), QLabel):
-                rows.append((label.widget().text(), field.widget().text()))
+            if label is None or field is None:
+                continue
+            widget = field.widget()
+            if isinstance(widget, QLabel):
+                texts = [widget.text()]
+            else:
+                layout = widget.layout()
+                texts = [
+                    layout.itemAt(j).widget().text()
+                    for j in range(layout.count())
+                    if isinstance(layout.itemAt(j).widget(), QLabel)
+                ]
+            rows[label.widget().text()] = texts
         return rows
 
-    def test_properties_show_reading_and_source(self, qapp, tmp_path: Path) -> None:
+    def test_properties_group_values_by_kind(self, qapp, tmp_path: Path) -> None:
+        """One row per kind; each value says its zone, followed by where it
+        is stored and, if any, its note."""
         from crush.ui.props_panel import PropertiesPanel
 
         path = _zip(tmp_path / "x.zip", [
@@ -384,17 +399,33 @@ class TestDisplay:
         panel = PropertiesPanel()
         panel.update_properties(_child(vfs.root(), "a.txt"), {}, vfs)
         rows = self._rows(panel)
-        assert (
-            "Modified (as stored, no time zone):",
-            "1980-00-00 00:00:00 — ZIP DOS date/time (central directory); "
+        assert rows["Modified:"] == [
+            "1980-00-00 00:00:00 (as stored, no time zone)",
+            "ZIP DOS date/time (central directory)",
             "not a valid date/time; stored words: date 0x0000, time 0x0000",
-        ) in rows
-        assert (
-            "Modified (UTC):",
-            "2024-05-01 12:00:00 UTC — ZIP extra field Info-ZIP extended timestamp "
-            "(0x5455, central directory)",
-        ) in rows
-        assert ("Accessed:", "—") in rows
+            "2024-05-01 12:00:00 UTC",
+            "ZIP extra field Info-ZIP extended timestamp (0x5455, central directory)",
+        ]
+        assert rows["Accessed:"] == ["—"]
+        assert rows["Changed:"] == ["—"]
+        assert rows["Birth:"] == ["—"]
+
+    def test_properties_without_stored_times_name_the_kind_only(
+        self, qapp, tmp_path: Path
+    ) -> None:
+        """A source with no stored times (a folder) shows its instants with
+        the same labels; the value carries "UTC"."""
+        from crush.ui.props_panel import PropertiesPanel
+
+        (tmp_path / "d").mkdir()
+        (tmp_path / "d" / "a.txt").write_bytes(b"a")
+        vfs = open_vfs(tmp_path / "d")
+        node = _child(vfs.root(), "a.txt")
+        panel = PropertiesPanel()
+        panel.update_properties(node, {}, vfs)
+        rows = self._rows(panel)
+        assert rows["Modified:"][0].endswith(" UTC")
+        assert not any("(UTC)" in label for label in rows)
 
     def test_search_column_marks_reading(self, qapp, tmp_path: Path) -> None:
         from crush.ui.search_panel import SearchPanel

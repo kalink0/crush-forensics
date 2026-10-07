@@ -78,14 +78,20 @@ Every release attaches its own audit result, including failures: [latest audit r
 
 ## Screenshots
 
-| SQLite summary (Windows) | BLOB Inspector (Linux) |
+| Start screen (Linux) | SQLite summary (Windows) |
 |---|---|
-| ![](crush/docs/pictures/example_ios_win_sqlite_summary.png) | ![](crush/docs/pictures/example_BLOB_inspector.png) |
-| **Value Inspector (Linux)** | **Format reference (Linux)** |
-| ![](crush/docs/pictures/example_value_inspector.png) | ![](crush/docs/pictures/example_lin_file_formats.png) |
+| ![](crush/docs/pictures/example_start_screen.png) | ![](crush/docs/pictures/example_ios_win_sqlite_summary.png) |
+| **BLOB Inspector (Linux)** | **Value Inspector (Linux)** |
+| ![](crush/docs/pictures/example_BLOB_inspector.png) | ![](crush/docs/pictures/example_value_inspector.png) |
 
 <details>
 <summary>More screenshots</summary>
+
+Drag & drop files (Linux)
+![Drag & drop zones (Linux)](crush/docs/pictures/example_drag_drop.png)
+
+Format reference (Linux)
+![Format reference (Linux)](crush/docs/pictures/example_lin_file_formats.png)
 
 iOS SEGB (Windows)
 ![iOS SEGB (Windows)](crush/docs/pictures/example_ios_win_segb.png)

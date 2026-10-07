@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -109,10 +110,12 @@ class PropertiesPanel(QScrollArea):
             if not_read is not None:
                 self._add_note(render_value(not_read, localized=True))
         else:
-            self._add_timestamp(translate("PropertiesPanel", "Modified (UTC)"), node.modified)
-            self._add_timestamp(translate("PropertiesPanel", "Accessed (UTC)"), node.accessed)
-            self._add_timestamp(translate("PropertiesPanel", "Changed (UTC)"), node.changed)
-            self._add_timestamp(translate("PropertiesPanel", "Birth (UTC)"), node.birth)
+            # The label names the kind only; the value says its zone, as
+            # for stored times (_add_stored_times).
+            self._add_timestamp(translate("PropertiesPanel", "Modified"), node.modified)
+            self._add_timestamp(translate("PropertiesPanel", "Accessed"), node.accessed)
+            self._add_timestamp(translate("PropertiesPanel", "Changed"), node.changed)
+            self._add_timestamp(translate("PropertiesPanel", "Birth"), node.birth)
 
             has_modified = bool(node.modified)
             has_others = bool(node.accessed or node.changed or node.birth)
@@ -294,39 +297,29 @@ class PropertiesPanel(QScrollArea):
         self._layout.addRow(note)
 
     def _add_stored_times(self, times: list[StoredTime]) -> None:
-        """Each timestamp as the source stores it, with where it comes from:
-        an instant in UTC, or a reading with no time zone as stored."""
+        """Each timestamp as the source stores it, grouped by kind: one row
+        per kind, holding every stored value of it in stored order. A value
+        says its zone (UTC, or a reading as stored with no time zone); below
+        it, where it is stored and what else to know about it."""
         names = {
-            MODIFIED: (
-                translate("PropertiesPanel", "Modified"),
-                translate("PropertiesPanel", "Modified (UTC)"),
-                translate("PropertiesPanel", "Modified (as stored, no time zone)"),
-            ),
-            ACCESSED: (
-                translate("PropertiesPanel", "Accessed"),
-                translate("PropertiesPanel", "Accessed (UTC)"),
-                translate("PropertiesPanel", "Accessed (as stored, no time zone)"),
-            ),
-            CHANGED: (
-                translate("PropertiesPanel", "Changed"),
-                translate("PropertiesPanel", "Changed (UTC)"),
-                translate("PropertiesPanel", "Changed (as stored, no time zone)"),
-            ),
-            BIRTH: (
-                translate("PropertiesPanel", "Birth"),
-                translate("PropertiesPanel", "Birth (UTC)"),
-                translate("PropertiesPanel", "Birth (as stored, no time zone)"),
-            ),
+            MODIFIED: translate("PropertiesPanel", "Modified"),
+            ACCESSED: translate("PropertiesPanel", "Accessed"),
+            CHANGED: translate("PropertiesPanel", "Changed"),
+            BIRTH: translate("PropertiesPanel", "Birth"),
         }
         for kind in KINDS:
-            plain, utc_label, reading_label = names[kind]
             rows = [t for t in times if t.kind == kind]
             if not rows:
-                self._add_timestamp(plain, 0.0)
+                self._add_timestamp(names[kind], 0.0)
                 continue
-            for t in rows:
+            box = QWidget()
+            column = QVBoxLayout(box)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(0)
+            for i, t in enumerate(rows):
+                if i:
+                    column.addSpacing(6)
                 if t.utc is not None:
-                    label = utc_label
                     ts = unix_to_utc(t.utc)
                     value = (
                         ts.strftime("%Y-%m-%d %H:%M:%S UTC") if ts is not None
@@ -334,23 +327,33 @@ class PropertiesPanel(QScrollArea):
                             value=t.utc)
                     )
                 elif t.reading:
-                    label, value = reading_label, t.reading
+                    value = translate(
+                        "PropertiesPanel", "{reading} (as stored, no time zone)"
+                    ).format(reading=t.reading)
                 else:
-                    label, value = plain, "—"
-                text = translate("PropertiesPanel", "{value} — {source}").format(
-                    value=value, source=render_value(t.source, localized=True),
-                )
+                    value = "—"
+                column.addWidget(self._time_label(value))
+                column.addWidget(self._time_label(
+                    render_value(t.source, localized=True), "color: gray; font-size: 10px;",
+                ))
                 if t.note is not None:
-                    text = translate("PropertiesPanel", "{text}; {note}").format(
-                        text=text, note=render_value(t.note, localized=True),
-                    )
-                lbl = QLabel(text)
-                lbl.setTextFormat(Qt.TextFormat.PlainText)
-                lbl.setWordWrap(True)
-                lbl.setTextInteractionFlags(_SELECTABLE)
-                self._layout.addRow(
-                    translate("PropertiesPanel", "{label}:").format(label=label), lbl
-                )
+                    column.addWidget(self._time_label(
+                        render_value(t.note, localized=True),
+                        "color: gray; font-size: 10px; font-style: italic;",
+                    ))
+            self._layout.addRow(
+                translate("PropertiesPanel", "{label}:").format(label=names[kind]), box
+            )
+
+    @staticmethod
+    def _time_label(text: str, style: str = "") -> QLabel:
+        lbl = QLabel(text)
+        lbl.setTextFormat(Qt.TextFormat.PlainText)
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(_SELECTABLE)
+        if style:
+            lbl.setStyleSheet(style)
+        return lbl
 
     def _add_timestamp(self, label: str, ts_value: float) -> None:
         if ts_value:
