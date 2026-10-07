@@ -119,14 +119,16 @@ def main() -> None:
     if language_note:
         logging.getLogger("crush.i18n").warning("%s", language_note)
         window.statusBar().showMessage(language_note)
+    batch = object()  # opened in one go: no folder/archive/image replaces another
     for path in open_paths:
         window._load_source(
-            path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path
+            path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path,
+            batch=batch,
         )
     for path in args.image_paths or []:
         window._load_source(
             path, open_after_load=True, append_to_tree=True, focus_path=args.focus_path,
-            as_disk_image=True,
+            as_disk_image=True, batch=batch,
         )
     sys.exit(app.exec())
 

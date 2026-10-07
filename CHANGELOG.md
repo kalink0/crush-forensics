@@ -20,6 +20,7 @@ All notable changes to Crush will be documented in this file.
 - Added to Cellebrite UFDR -> Support for showing how many of a folder's extraction files the UFDR holds.
 - Added to opening evidence -> Support for Cellebrite UFD and UFDX, including an iTunes backup in a dump opened with the recorded BackupPassword. ([@jensstigaard](https://github.com/jensstigaard), [#137](https://github.com/kalink0/crush-forensics/issues/137))
 - Added to Verify Acquisition Hash -> Support for the file hashes a UFD records.
+- Added to drag & drop -> Support for opening a disk image, on its own zone over the window.
 
 ### Bug Fixes
 
@@ -34,6 +35,9 @@ All notable changes to Crush will be documented in this file.
 - Fixed empty UFDR files, and files whose content is stored under another category, showing as not located.
 - Fixed a ZIP opened as an iTunes backup leaving out everything the ZIP holds beside the backup.
 - Fixed opening a file whose content can't be read (double-click, Open as Text, Open as Hex) failing without saying why.
+- Fixed a source replaced by opening a folder, archive or disk image staying open until its window closed.
+- Fixed the filter's search results still listing the previous source after it was replaced.
+- Fixed a password entered for one of several sources opened at once being tried on another, and the disk image warning's source being reported as another one.
 
 ### Changed
 
@@ -45,6 +49,9 @@ All notable changes to Crush will be documented in this file.
 - Verify Acquisition Hash shows each hash and check in a block of its own, the computed value green when it matches and red when it doesn't.
 - Opening a Cellebrite UFDR and indexing its file types is faster.
 - An iTunes backup in a ZIP is extracted without the rest of the ZIP.
+- Open Disk Image… picks one file; the other parts of a set are joined from it as before.
+- Of several folders, archives, backups or disk images opened at once, each after the first opens in a new window instead of replacing the one before.
+- Opening a folder, archive, backup or disk image in a window that shows a source asks first whether to replace it, open it in a new window, or cancel.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.57 and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.12.0. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
 
 ## v0.21.0 - 2026-09-30

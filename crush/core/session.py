@@ -58,6 +58,12 @@ class Session:
         self.sources.append(vfs)
         return vfs
 
+    def detach_source(self, vfs: VFS) -> VFS:
+        """Hand an open source to another session (another window) without
+        closing it."""
+        self.sources = [item for item in self.sources if item is not vfs]
+        return vfs
+
     def remove_source(self, vfs: VFS) -> None:
         if vfs in self.sources:
             self.sources = [item for item in self.sources if item is not vfs]
