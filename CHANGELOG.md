@@ -33,6 +33,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed UFDR files listed twice under one path showing as a single file.
 - Fixed empty UFDR files, and files whose content is stored under another category, showing as not located.
 - Fixed a ZIP opened as an iTunes backup leaving out everything the ZIP holds beside the backup.
+- Fixed opening a file whose content can't be read (double-click, Open as Text, Open as Hex) failing without saying why.
 
 ### Changed
 
