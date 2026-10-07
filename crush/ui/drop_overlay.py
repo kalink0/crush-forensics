@@ -133,7 +133,10 @@ class DropOverlay(QWidget):
             return
         if paths != self._paths:
             self.activate(paths)
-        self._track(event)
+        # Always taken, whichever zone the drag enters over: an ignored
+        # enter ends the drag for the overlay, and it could no longer be
+        # moved to the zone that takes it. Refused only per move (_track).
+        event.acceptProposedAction()
 
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         self._track(event)
@@ -161,10 +164,16 @@ class DropOverlay(QWidget):
 
     def _track(self, event: QDragMoveEvent) -> None:
         zone = zone_at(self.width(), event.position().x())
+        refused = zone == "disk_image" and bool(self._refusal)
         if zone != self._hover:
             self._hover = zone
             self.update()
-        if zone == "disk_image" and self._refusal:
+            if refused:
+                # Said when the drag reaches the zone, not only on a drop
+                # there, which the platform may never deliver.
+                self.refused.emit(self._refusal)
+        if refused:
+            # Moves keep coming, so moving back to Open takes the drop.
             event.ignore()
         else:
             event.acceptProposedAction()

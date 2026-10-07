@@ -24,6 +24,9 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QCloseEvent,
     QDragEnterEvent,
+    QDragLeaveEvent,
+    QDragMoveEvent,
+    QDropEvent,
     QShowEvent,
     QPalette,
     QColor,
@@ -3809,6 +3812,18 @@ class MainWindow(QMainWindow):
         if paths:
             self._drop_overlay.activate(paths)
             event.acceptProposedAction()
+
+    # Should the window stay the drag's target, the overlay (covering it at
+    # the same coordinates) decides: a drag the window takes is never one
+    # that silently drops nothing.
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        self._drop_overlay.dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
+        self._drop_overlay.deactivate()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        self._drop_overlay.dropEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._status.showMessage(translate("MainWindow", "Closing…"))

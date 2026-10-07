@@ -145,6 +145,101 @@ def test_drag_entering_the_window_reaches_the_zones_first(
     ]
 
 
+def _routed(window: Any, event: Any) -> Any:
+    """*event* sent to the window as the platform sends it: Qt hands it to
+    the widget under the position."""
+    QApplication.sendEvent(window.windowHandle(), event)
+    return event
+
+
+def _enter(mime: QMimeData, x: float) -> QDragEnterEvent:
+    return QDragEnterEvent(
+        QPointF(x, 300).toPoint(), Qt.DropAction.CopyAction, mime,
+        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def _routed_move(mime: QMimeData, x: float) -> QDragMoveEvent:
+    return QDragMoveEvent(
+        QPointF(x, 300).toPoint(), Qt.DropAction.CopyAction, mime,
+        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def _routed_drop(mime: QMimeData, x: float) -> QDropEvent:
+    return QDropEvent(
+        QPointF(x, 300), Qt.DropAction.CopyAction, mime,
+        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
+
+
+@pytest.mark.parametrize("kind", ["two files", "folder"])
+def test_drag_entering_over_the_refused_zone_can_still_drop_on_open(
+    window: Any, tmp_path: Path, kind: str
+) -> None:
+    """Entering over Open as Disk Image with what it refuses must not end
+    the drag: it is refused there, said in the status bar, and taken on
+    Open once moved there."""
+    if kind == "folder":
+        items = [tmp_path / "case"]
+        items[0].mkdir()
+    else:
+        items = [tmp_path / "disk.E01", tmp_path / "disk.E02"]
+        for item in items:
+            item.write_bytes(b"x")
+    window.show()
+    mime = _mime(*items)
+
+    assert _routed(window, _enter(mime, 900)).isAccepted()
+    assert window._drop_overlay.isVisible()
+    assert not _routed(window, _routed_move(mime, 900)).isAccepted()
+    assert window._status.currentMessage()
+    assert _routed(window, _routed_move(mime, 100)).isAccepted()
+    _routed(window, _routed_drop(mime, 100))
+
+    for _, kw in window.calls:
+        kw.pop("batch")
+    assert window.calls == [
+        (str(item), {"open_after_load": True, "append_to_tree": True}) for item in items
+    ]
+    assert not window._drop_overlay.isVisible()
+
+
+def test_zones_take_a_drag_entering_over_the_refused_zone(
+    window: Any, tmp_path: Path
+) -> None:
+    files = [tmp_path / "disk.001", tmp_path / "disk.002"]
+    for f in files:
+        f.write_bytes(b"x")
+    overlay = window._drop_overlay
+    overlay.activate([str(f) for f in files])
+    enter = _enter(_mime(*files), 900)
+    overlay.dragEnterEvent(enter)
+    assert enter.isAccepted()
+
+
+def test_window_taking_the_drag_itself_routes_it_through_the_zones(
+    window: Any, tmp_path: Path
+) -> None:
+    """Should the window stay the drag's target, it never shows "allowed"
+    and then drops nothing: the zones decide."""
+    folder = tmp_path / "case"
+    folder.mkdir()
+    window.show()
+    mime = _mime(folder)
+    enter = _enter(mime, 900)
+    window.dragEnterEvent(enter)
+    assert enter.isAccepted()
+    move = _routed_move(mime, 900)
+    window.dragMoveEvent(move)
+    assert not move.isAccepted()
+    move = _routed_move(mime, 100)
+    window.dragMoveEvent(move)
+    assert move.isAccepted()
+    window.dropEvent(_routed_drop(mime, 100))
+    assert [p for p, _ in window.calls] == [str(folder)]
+
+
 def test_drop_on_open_zone_opens_every_item_as_before(window: Any, tmp_path: Path) -> None:
     files = [tmp_path / "a.db", tmp_path / "b.E01"]
     for f in files:
