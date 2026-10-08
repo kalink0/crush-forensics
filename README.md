@@ -33,8 +33,8 @@ Running from source: see [Development setup](#development-setup).
 | Mobile backups | iOS (iTunes/Finder) and Android (`adb backup`) — browsable as a file tree (iOS rebuilt from `Manifest.db` instead of hashed names), encrypted backups supported |
 | Disk images | Raw and forensic acquisitions (E01 and others) with common desktop, mobile and embedded/flash filesystems — no mounting, no admin rights. Built on [ewfprobe](https://github.com/abrignoni/ewfprobe) and [qnxprobe](https://github.com/abrignoni/qnxprobe) by Alexis Brignoni. |
 | Logical evidence | EnCase L01 and FTK Imager AD1 (also AD-encrypted) — the collected files with their recorded hashes |
-| Cellebrite UFD / UFDX | The extraction(s) they describe: each dump as a folder, an iTunes backup in a dump opened with the recorded BackupPassword, recorded file hashes verifiable |
-| Cellebrite UFDR (10.x) | The exported files under their device paths with Cellebrite's recorded hashes, the items it derived from files (e.g. decrypted app databases), and per folder how many of the extraction's files the UFDR holds (filesystem only) |
+| Cellebrite UFD / UFDX | ZIP-based extractions — browsed as a file tree, recorded hashes verifiable; physical images and other dump types not supported |
+| Cellebrite UFDR (10.x) | File system and derived files (e.g. decrypted app databases) — browsed under their device paths, recorded hashes verifiable |
 | Folders & files | Any folder or single file |
 
 Not a full disk-forensics suite: no carving, no journal analysis, no snapshots, no RAID/LVM. Exact formats, filesystems and limitations: [Format Support & Parser Limitations](crush/docs/format-support.md).

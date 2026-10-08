@@ -2,7 +2,9 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.22.0 - 2026-10-08
+
+**Focus: EnCase L01 and FTK Imager AD1 logical evidence; Cellebrite UFD/UFDX and UFDR refinements; qnxprobe 1.57 / ewfprobe 0.12 with AFF4, Apple disk images, virtual disks and encrypted containers; ZIP, FAT and archive times as stored; the format database as an online reference; drop zones and source replacement prompts; bundled peach updated to v0.9.2.**
 
 ### New Features
 
@@ -54,6 +56,7 @@ All notable changes to Crush will be documented in this file.
 - Opening a folder, archive, backup or disk image in a window that shows a source asks first whether to replace it, open it in a new window, or cancel.
 - The Properties panel shows each timestamp kind once, every value with its time zone and below it where it is stored.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.57 and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.12.0. ([@abrignoni](https://github.com/abrignoni), [#138](https://github.com/kalink0/crush-forensics/pull/138))
+- Bundled [peach](https://github.com/kalink0/peach-forensics) updated to v0.9.2; Windows builds no longer need the Visual C++ Redistributable. See its [release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.9.2).
 
 ## v0.21.0 - 2026-09-30
 

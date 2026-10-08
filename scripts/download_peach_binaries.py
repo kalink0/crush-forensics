@@ -28,7 +28,7 @@ from pathlib import Path
 
 # The only place the bundled version is set: the release and nightly
 # workflows run this script too.
-VERSION = "0.9.1"
+VERSION = "0.9.2"
 
 # (release_asset_name, target_filename_in_bin_dir, sha256)
 # sha256 of the release asset (GitHub shows it as the asset's digest).
@@ -38,17 +38,17 @@ _ASSETS: list[tuple[str, str, str]] = [
     (
         f"peach-linux-v{VERSION}.tar.gz",
         "peach-linux",
-        "896a912242e3f0485d477a7036dd5a33131b12deb2c4fa78562e453ca5f88324",
+        "124a7d6236783d708bb1931bd3ff823215d2e9679ae55ded3c692ff9560c6068",
     ),
     (
         f"peach-macos-v{VERSION}.tar.gz",
         "peach-macos",
-        "ddd050fd4441095cf86557068f60ab182f2f8f0ca913aac2149925efc5b602de",
+        "27f8a4fd42e454c23164ca2876ebb3255405f81bcb419ab03404d81cdc0fd5d3",
     ),
     (
         f"peach-windows-v{VERSION}.zip",
         "peach-windows.exe",
-        "012cdf73d3e58f834b35890b258c8ee803c1a231199b112fe3814cec00b7ac42",
+        "13b4b289e88fb53f7808a5132f46ca9bc5e7e808adca7c364fb1ec46fb4ee4d5",
     ),
 ]
 
