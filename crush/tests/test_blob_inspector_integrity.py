@@ -128,6 +128,22 @@ def test_every_step_entry_is_reachable(qapp) -> None:
     assert last.bottom() < step_list.viewport().height()
     bar = panel._steps_scroll.verticalScrollBar()
     assert bar.maximum() > 0 and bar.value() == bar.maximum()  # the new step is in view
+
+    # A later resize (e.g. a step's hint wrapping to more lines) keeps the
+    # last step in view -- it used to stop a few pixels short of the end.
+    panel._steps[-1].set_hint("line\n" * 6)
+    loop = QEventLoop()
+    QTimer.singleShot(30, loop.quit)
+    loop.exec()
+    assert bar.value() == bar.maximum()
+
+    # Once the analyst scrolls, the column stays where they put it.
+    bar.triggerAction(bar.SliderAction.SliderToMinimum)
+    panel._steps[-1].set_hint("")
+    loop = QEventLoop()
+    QTimer.singleShot(30, loop.quit)
+    loop.exec()
+    assert bar.value() == 0
     dialog.close()
 
 

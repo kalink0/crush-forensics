@@ -565,8 +565,13 @@ class _BlobPanel(QWidget):
         self._steps_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self._steps_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._steps_scroll.setWidget(steps_container)
+        # After "Add step" the column follows the new (last) step through
+        # every resize the layout makes for it (the step, then its hint
+        # wrapping), until the analyst scrolls or removes a step.
         self._scroll_to_last_step = False
-        self._steps_scroll.verticalScrollBar().rangeChanged.connect(self._on_steps_range_changed)
+        steps_bar = self._steps_scroll.verticalScrollBar()
+        steps_bar.rangeChanged.connect(self._on_steps_range_changed)
+        steps_bar.actionTriggered.connect(self._stop_following_last_step)
         pipeline_col.addWidget(self._steps_scroll, stretch=1)
 
         self._add_btn = QPushButton(translate("_BlobPanel", "＋  Add step"))
@@ -802,15 +807,17 @@ class _BlobPanel(QWidget):
         self._steps.append(step)
         self._pipeline_layout.addWidget(step)
         self._recompute()
-        # Show the new step (the last one) once the layout has made room for it.
         self._scroll_to_last_step = True
 
     def _on_steps_range_changed(self, _minimum: int, maximum: int) -> None:
         if self._scroll_to_last_step:
-            self._scroll_to_last_step = False
             self._steps_scroll.verticalScrollBar().setValue(maximum)
 
+    def _stop_following_last_step(self, _action: int = 0) -> None:
+        self._scroll_to_last_step = False
+
     def _remove_step(self, step: _StepRow) -> None:
+        self._stop_following_last_step()
         idx = self._steps.index(step)
         self._steps.pop(idx)
         self._pipeline_layout.removeWidget(step)
