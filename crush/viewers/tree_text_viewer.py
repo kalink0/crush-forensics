@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 from crush.viewers.text_viewer import TextView
@@ -14,6 +15,10 @@ from crush.ui.i18n import translate
 
 class TreeTextViewer(QWidget):
     """Tabbed viewer: decoded tree structure alongside the raw/reconstructed text."""
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(
         self,

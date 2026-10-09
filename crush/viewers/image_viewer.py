@@ -159,6 +159,11 @@ class ImageViewer(QWidget):
         self._set_scale(1.0)
         QTimer.singleShot(0, self._fit)
 
+    def decoded_image(self) -> QImage | None:
+        """The decoded image as loaded (first frame, unrotated, unscaled);
+        None when it couldn't be decoded."""
+        return None if self._pixmap.isNull() else self._pixmap.toImage()
+
     def _fit(self) -> None:
         self._fit_to_window = True
         self._apply_fit_scale()

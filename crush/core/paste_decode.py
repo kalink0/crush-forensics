@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 - now Marco Neumann (kalink0)
-"""Pure-Python helpers for the Paste & Decode feature — no Qt dependency."""
+"""Pure-Python helpers for Tools → BLOB Inspector (pasted input) — no Qt dependency."""
 from __future__ import annotations
 
-import base64
 import re
+
+from crush.core.blob_decode import HEX_SEPARATORS, DecodeError, decode_base64, decode_hex
 
 # (display_label, filename_hint, parser_display_name)
 #   filename_hint        — passed to BytesVFS so extension-based parsers activate
@@ -32,40 +33,45 @@ ENCODING_HEX = "hex"
 ENCODING_BASE64 = "base64"
 ENCODING_UTF8 = "utf8"
 
+_HEX_CHARS = HEX_SEPARATORS | frozenset(b"0123456789abcdefABCDEF")
+
 
 def try_decode_input(text: str, encoding: str) -> tuple[bytes | None, str]:
     """Decode *text* according to *encoding*.
 
     Returns ``(bytes_or_None, status_message)``.
-    encoding is one of the ENCODING_* constants above.
+    encoding is one of the ENCODING_* constants above. Hex and Base64 are
+    decoded strictly (blob_decode); text is taken as it is, untrimmed.
     """
-    text = text.strip()
-    if not text:
+    stripped = text.strip()
+    if not stripped:
         return None, "Paste data above"
 
     if encoding in (ENCODING_HEX, ENCODING_AUTO):
-        cleaned = re.sub(r"[\s:_-]", "", text)
-        if re.fullmatch(r"[0-9a-fA-F]+", cleaned) and len(cleaned) % 2 == 0:
+        # Auto only tries hex when nothing but hex digits and separators is there.
+        if encoding == ENCODING_HEX or all(
+            c in _HEX_CHARS for c in stripped.encode("utf-8", errors="replace")
+        ):
             try:
-                data = bytes.fromhex(cleaned)
+                data = decode_hex(stripped.encode("utf-8", errors="replace")).data
                 return data, f"{len(data):,} bytes  (hex)"
-            except ValueError:
-                pass
-        if encoding == ENCODING_HEX:
-            return None, "Invalid hex input"
+            except DecodeError as exc:
+                if encoding == ENCODING_HEX:
+                    return None, f"Invalid hex input: {exc}"
 
     if encoding in (ENCODING_BASE64, ENCODING_AUTO):
-        # Strip line breaks (MIME wrapping) but not spaces — spaces indicate plain text
-        b64_candidate = re.sub(r"[\r\n]", "", text)
-        if re.fullmatch(r"[A-Za-z0-9+/=]+", b64_candidate) and len(b64_candidate) >= 4:
+        # Line breaks are MIME wrapping; any other whitespace means plain
+        # text to Auto (and is invalid Base64 when forced).
+        if encoding == ENCODING_BASE64 or (
+            len(stripped) >= 4 and re.fullmatch(r"[A-Za-z0-9+/=\r\n]+", stripped)
+        ):
             try:
-                data = base64.b64decode(b64_candidate + "==")
+                data = decode_base64(stripped.encode("utf-8", errors="replace")).data
                 return data, f"{len(data):,} bytes  (base64)"
-            except Exception:
-                pass
-        if encoding == ENCODING_BASE64:
-            return None, "Invalid base64 input"
+            except DecodeError as exc:
+                if encoding == ENCODING_BASE64:
+                    return None, f"Invalid base64 input: {exc}"
 
-    # UTF-8 text fallback
+    # UTF-8 text: the text as pasted, leading/trailing whitespace included
     data = text.encode("utf-8", errors="replace")
     return data, f"{len(data):,} bytes  (UTF-8 text)"

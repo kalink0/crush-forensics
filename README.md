@@ -55,7 +55,7 @@ Not a full disk-forensics suite: no carving, no journal analysis, no snapshots, 
 
 - **File format database** — magic-byte/extension identification with platform, forensic relevance and spec link, also for formats without a viewer.
 - **Value Inspector** — every plausible interpretation of a value at once: integers, floats, timestamp epochs, UUIDs, network addresses, sizes.
-- **BLOB Inspector** — chain decode/decompress steps (Base64, hex, zlib, gzip, lzfse) and render as hex, text, JSON, XML, plist, ABX or Protobuf. Available on any BLOB cell or pasted value.
+- **BLOB Inspector** — chain decode/decompress steps (Base64, hex, zlib, gzip, lzfse) and render as hex, text, JSON, XML, plist, ABX, Protobuf or image. Open the result as a new tab, or export it with a sidecar recording source, steps and SHA-256 hashes. Available on any BLOB cell or pasted value (Tools → BLOB Inspector).
 - **Hex provenance** — with the hex view open, selecting an entry in the SQLite, Protobuf, MMKV or Realm viewer shows exactly where its bytes are.
 - **Run Analyzer** — run curated modules ported from iLEAPP/ALEAPP against a directory; results as a sortable, searchable table.
 

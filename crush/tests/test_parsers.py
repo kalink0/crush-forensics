@@ -2493,34 +2493,32 @@ def test_leveldb_parse_record_has_offset(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# BlobInspector helpers: _is_image, _render_protobuf
+# BlobInspector helpers: _image_result, _render_protobuf
 # ---------------------------------------------------------------------------
 
-def test_is_image_png() -> None:
-    from crush.viewers.blob_inspector import _is_image
-    assert _is_image(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+def test_image_result_covers_the_image_parsers_signatures() -> None:
+    """The inspector recognises images by the same signatures as image files
+    (not only PNG/JPEG/GIF)."""
+    import io
+
+    from PIL import Image
+
+    from crush.viewers.blob_inspector import _image_result
+
+    for fmt, name in (("PNG", "PNG"), ("JPEG", "JPEG"), ("GIF", "GIF"), ("BMP", "BMP"),
+                      ("TIFF", "TIFF"), ("WEBP", "WebP")):
+        out = io.BytesIO()
+        Image.new("RGB", (4, 4), "red").save(out, fmt)
+        result = _image_result(out.getvalue())
+        assert result is not None and result.viewer_type == "image", fmt
+        assert result.metadata["Format"] == name
 
 
-def test_is_image_jpeg() -> None:
-    from crush.viewers.blob_inspector import _is_image
-    assert _is_image(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-
-
-def test_is_image_gif87() -> None:
-    from crush.viewers.blob_inspector import _is_image
-    assert _is_image(b"GIF87a" + b"\x00" * 100)
-
-
-def test_is_image_gif89() -> None:
-    from crush.viewers.blob_inspector import _is_image
-    assert _is_image(b"GIF89a" + b"\x00" * 100)
-
-
-def test_is_image_negative() -> None:
-    from crush.viewers.blob_inspector import _is_image
-    assert not _is_image(b"SQLite format 3\x00" + b"\x00" * 100)
-    assert not _is_image(b"")
-    assert not _is_image(b"\x00\x01\x02\x03")
+def test_image_result_negative() -> None:
+    from crush.viewers.blob_inspector import _image_result
+    assert _image_result(b"SQLite format 3\x00" + b"\x00" * 100) is None
+    assert _image_result(b"") is None
+    assert _image_result(b"\x00\x01\x02\x03") is None
 
 
 def test_render_protobuf_simple() -> None:
@@ -3304,42 +3302,66 @@ def test_decode_message_warns_on_unexpected_end_group() -> None:
 
 def test_decode_base64_valid() -> None:
     import base64
-    from crush.viewers.blob_inspector import _decode_base64
+    from crush.core.blob_decode import decode_base64
     payload = b"hello world"
-    assert _decode_base64(base64.b64encode(payload)) == payload
+    assert decode_base64(base64.b64encode(payload)).data == payload
+
+
+def test_decode_base64_mime_line_breaks() -> None:
+    import base64
+    from crush.core.blob_decode import decode_base64
+    payload = bytes(range(200))
+    assert decode_base64(base64.encodebytes(payload)).data == payload
+
+
+def test_decode_base64_missing_padding_restored() -> None:
+    from crush.core.blob_decode import decode_base64
+    assert decode_base64(b"aGVsbG8").data == b"hello"
 
 
 def test_decode_base64_invalid() -> None:
-    from crush.viewers.blob_inspector import _decode_base64
-    assert _decode_base64(b"!!!not-base64!!!") is None
+    import pytest
+    from crush.core.blob_decode import DecodeError, decode_base64
+    with pytest.raises(DecodeError, match="invalid character 0x21"):
+        decode_base64(b"!!!not-base64!!!")
+    with pytest.raises(DecodeError, match="data after padding"):
+        decode_base64(b"aGVs==bG8=")
+    with pytest.raises(DecodeError, match="padding"):
+        decode_base64(b"aGVsbG8==")
+    with pytest.raises(DecodeError, match="left over"):
+        decode_base64(b"aGVsb")
+    with pytest.raises(DecodeError, match="invalid character 0x20"):
+        decode_base64(b"aGVs bG8=")
 
 
 def test_decode_hex_valid() -> None:
-    from crush.viewers.blob_inspector import _decode_hex
-    assert _decode_hex(b"deadbeef") == bytes.fromhex("deadbeef")
+    from crush.core.blob_decode import decode_hex
+    assert decode_hex(b"deadbeef").data == bytes.fromhex("deadbeef")
 
 
-def test_decode_hex_with_spaces() -> None:
-    from crush.viewers.blob_inspector import _decode_hex
-    assert _decode_hex(b"de ad be ef") == bytes.fromhex("deadbeef")
-
-
-def test_decode_hex_with_colons() -> None:
-    from crush.viewers.blob_inspector import _decode_hex
-    assert _decode_hex(b"de:ad:be:ef") == bytes.fromhex("deadbeef")
+def test_decode_hex_with_separators() -> None:
+    from crush.core.blob_decode import decode_hex
+    for text in (b"de ad be ef", b"de:ad:be:ef", b"de-ad_be\nef"):
+        assert decode_hex(text).data == bytes.fromhex("deadbeef")
 
 
 def test_decode_hex_invalid() -> None:
-    from crush.viewers.blob_inspector import _decode_hex
-    assert _decode_hex(b"zzzz") is None
+    import pytest
+    from crush.core.blob_decode import DecodeError, decode_hex
+    with pytest.raises(DecodeError, match="offset 0"):
+        decode_hex(b"zzzz")
+    with pytest.raises(DecodeError, match="odd number"):
+        decode_hex(b"abc")
+    with pytest.raises(DecodeError, match="0xc3 at offset 2"):
+        decode_hex("de\u00e9ad".encode())
 
 
 def test_intermediate_registry_dispatches() -> None:
     import base64
     from crush.viewers.blob_inspector import _INTERMEDIATE
     payload = b"hello"
-    assert _INTERMEDIATE["Base64 (decode)"](base64.b64encode(payload)) == payload
-    assert _INTERMEDIATE["Hex → Bytes"](b"deadbeef") == bytes.fromhex("deadbeef")
+    assert _INTERMEDIATE["Base64 (decode)"](base64.b64encode(payload)).data == payload
+    assert _INTERMEDIATE["Hex → Bytes"](b"deadbeef").data == bytes.fromhex("deadbeef")
 
 
 def test_intermediate_registry_unknown_returns_none() -> None:
@@ -3349,34 +3371,82 @@ def test_intermediate_registry_unknown_returns_none() -> None:
 
 def test_decode_base64url_valid() -> None:
     import base64
-    from crush.viewers.blob_inspector import _decode_base64url
-    payload = b"\xfb\xfc\xfd"
-    assert _decode_base64url(base64.urlsafe_b64encode(payload)) == payload
-
-
-def test_decode_base64url_url_chars_accepted() -> None:
-    """URL-safe alphabet (-_) must round-trip correctly."""
-    from crush.viewers.blob_inspector import _decode_base64url
-    # b"\xfb\xfc\xfd" encodes to "-_z9" in URL-safe b64 (contains - and _)
-    import base64
-    payload = b"\xfb\xfc\xfd"
-    url_encoded = base64.urlsafe_b64encode(payload)
-    assert _decode_base64url(url_encoded) == payload
+    from crush.core.blob_decode import decode_base64url
+    payload = b"\xfb\xfc\xfd"  # "-_z9": both URL-safe characters
+    assert decode_base64url(base64.urlsafe_b64encode(payload)).data == payload
 
 
 def test_decode_base64url_no_padding_needed() -> None:
-    """urlsafe_b64decode adds padding automatically — partial input must still decode."""
     import base64
-    from crush.viewers.blob_inspector import _decode_base64url
+    from crush.core.blob_decode import decode_base64url
     payload = b"hello"
-    # strip trailing padding; function must restore it
     stripped = base64.urlsafe_b64encode(payload).rstrip(b"=")
-    assert _decode_base64url(stripped) == payload
+    assert decode_base64url(stripped).data == payload
 
 
-def test_decode_lzfse_invalid_returns_none() -> None:
-    from crush.viewers.blob_inspector import _decode_lzfse
-    assert _decode_lzfse(b"not lzfse data at all") is None
+def test_decode_base64url_rejects_standard_alphabet() -> None:
+    import pytest
+    from crush.core.blob_decode import DecodeError, decode_base64url
+    with pytest.raises(DecodeError, match="invalid character 0x2b"):
+        decode_base64url(b"+/z9")
+
+
+def test_decode_lzfse_invalid_raises_with_reason() -> None:
+    import pytest
+    from crush.core.blob_decode import DecodeError, decompress_lzfse
+    with pytest.raises(DecodeError, match="LZFSE decoder rejected"):
+        decompress_lzfse(b"not lzfse data at all")
+
+
+def test_decompress_lzfse_stream_end_all_block_types() -> None:
+    """The block walker ends exactly at the stream's end for every block
+    type liblzfse writes (bvx-, bvxn, bvx2, several blocks)."""
+    import os
+
+    import liblzfse
+
+    from crush.core.blob_decode import decompress_lzfse
+    for payload in (
+        b"hi",                                                    # bvx-
+        b"hello world " * 20,                                     # bvxn
+        os.urandom(4096),                                         # bvx-
+        b"".join(b"line %d abc\n" % i for i in range(200_000)),  # several bvx2
+    ):
+        stream = liblzfse.compress(payload)
+        result = decompress_lzfse(stream + b"TRAIL")
+        assert result.data == payload
+        assert (result.trailing_offset, result.trailing_size) == (len(stream), 5)
+        assert not result.end_marker_missing
+        clean = decompress_lzfse(stream)
+        assert clean.trailing_offset is None
+
+
+def test_decompress_zlib_reports_trailing_and_truncation() -> None:
+    import zlib
+
+    import pytest
+
+    from crush.core.blob_decode import DecodeError, decompress_zlib
+    stream = zlib.compress(b"hello")
+    assert decompress_zlib(stream).trailing_offset is None
+    with pytest.raises(DecodeError, match="truncated"):
+        decompress_zlib(stream[:-3])
+    with pytest.raises(DecodeError, match="incorrect header check"):
+        decompress_zlib(b"xx")
+
+
+def test_decompress_gzip_members_and_trailing() -> None:
+    import gzip
+
+    from crush.core.blob_decode import decompress_gzip
+    two = gzip.compress(b"a") + gzip.compress(b"b")
+    assert decompress_gzip(two).data == b"ab"
+    result = decompress_gzip(two + b"XYZ")
+    assert result.data == b"ab"
+    assert (result.trailing_offset, result.trailing_size) == (len(two), 3)
+    broken = decompress_gzip(gzip.compress(b"a") + b"\x1f\x8bjunk")
+    assert broken.data == b"a"
+    assert broken.trailing_reason.startswith("member 2:")
 
 
 def test_intermediate_registry_has_new_steps() -> None:
@@ -3389,4 +3459,4 @@ def test_intermediate_registry_base64url_dispatches() -> None:
     import base64
     from crush.viewers.blob_inspector import _INTERMEDIATE
     payload = b"hello \xfb\xfc"
-    assert _INTERMEDIATE["Base64url (decode)"](base64.urlsafe_b64encode(payload)) == payload
+    assert _INTERMEDIATE["Base64url (decode)"](base64.urlsafe_b64encode(payload)).data == payload

@@ -162,7 +162,18 @@ class FreeDataViewer(QWidget):
                 )
             )
             if menu.exec(self._table.viewport().mapToGlobal(pos)) == inspect:
-                BlobInspector(raw, self).show()
+                block = self._blocks[row]
+                offset = int(block.get("offset", 0))
+                BlobInspector(
+                    raw, self,
+                    artifact_path=f"/virtual/realm/freed/{offset:#x}",
+                    provenance={
+                        "Source record": translate(
+                            "FreeDataViewer", "Freed block at offset {offset:#x} ({size:,} B)"
+                        ).format(offset=offset, size=len(raw)),
+                        "Inspected bytes": translate("FreeDataViewer", "the freed block's bytes"),
+                    },
+                ).show()
 
 
 def _create_realm_sqlite(
@@ -534,6 +545,10 @@ class RealmViewer(QWidget):
     # real new tab, the same mechanism already used for "Open as new tab"
     # on BLOB cells (TableViewer.open_bytes_requested).
     open_table_requested = Signal(str, dict)
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(self, data: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)
