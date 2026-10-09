@@ -6176,6 +6176,68 @@ FORMATS: list[dict[str, Any]] = [
         "last_reviewed": "2026-10-04"
     },
     {
+        "name": "Android Intrusion Log (Advanced Protection)",
+        "short_name": "Intrusion Log",
+        "category": "log",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Security event log of Android's Intrusion Logging, an opt-in part of Advanced "
+            "Protection Mode (Android 16 and later, linked Google account required; at "
+            "launch in May 2026 on Pixel devices only). Newline-delimited JSON without a "
+            "signature, one event per line, wrapped under its type: dns_event, "
+            "connect_event (both with the requesting package) and security_event "
+            "(SecurityLog API events such as app starts, package installs, ADB commands "
+            "and file transfers, lock and unlock attempts). event_time is in milliseconds "
+            "for DNS and connect events, in nanoseconds for security events; event_id is "
+            "not unique. Logs are collected about daily, end-to-end encrypted and kept in "
+            "the Google account for 12 months; 'Download and decrypt' writes them to "
+            "/sdcard/Download/Intrusion Logging/, where earlier downloads remain. Logs of "
+            "any device on the account can be downloaded on another one, so files found "
+            "on a device may belong to a different device. Missing events do not prove "
+            "absence: logging only covers the time it was enabled, may write fewer events "
+            "under heavy activity and misses DNS lookups done by an app's own resolver "
+            "(e.g. Chrome's Secure DNS). Overlapping downloads can repeat events. Private "
+            "browsing modes are logged as well.",
+            "Android Intrusion Log (Advanced Protection)",
+        ),
+        "platforms": ["Android"],
+        "parser_class": None,
+        "magic": [],
+        "extensions": [".txt"],
+        "links": [
+            (
+                "Log your Android device activity with Advanced Protection (Android Help)",
+                "https://support.google.com/android/answer/16927813",
+            ),
+            (
+                "Android Intrusion Logging as a new source of data for consensual forensic analysis (Amnesty International Security Lab, 2026)",
+                "https://securitylab.amnesty.org/latest/2026/05/android-intrusion-logging-as-a-new-source-of-data-for-consensual-forensic-analysis/",
+            ),
+            (
+                "SecurityLog API reference (Android developers)",
+                "https://developer.android.com/reference/android/app/admin/SecurityLog",
+            ),
+            (
+                "NetworkEvent API reference — timestamp in milliseconds (Android developers)",
+                "https://developer.android.com/reference/android/app/admin/NetworkEvent",
+            ),
+            (
+                "SecurityLog.java — event tags (Android Open Source Project)",
+                "https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/core/java/android/app/admin/SecurityLog.java",
+            ),
+            (
+                "Advanced Protection Mode (Android developers)",
+                "https://developer.android.com/privacy-and-security/advanced-protection-mode",
+            ),
+            (
+                "Check Android Intrusion Logs (Mobile Verification Toolkit documentation)",
+                "https://github.com/mvt-project/mvt/blob/main/docs/android/intrusion_logs.md",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-09",
+    },
+    {
         "name": "Syslog (RFC 3164 / RFC 5424)",
         "short_name": "Syslog",
         "category": "log",

@@ -63,6 +63,7 @@ hiberfil
 hive
 i
 ical
+intrusion-log
 ios-backup
 ips-crash
 isar
