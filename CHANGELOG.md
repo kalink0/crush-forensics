@@ -22,6 +22,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed the BLOB Inspector's pipeline opening too narrow to reach a step's last entry, and many steps being squeezed instead of scrolling.
 - Fixed the BLOB Inspector not saying when Protobuf fields below the nesting limit were shown as string/bytes.
 - Fixed Open as new tab doing nothing in tables inside the Realm viewer.
+- Fixed Run Analyzer offering no analyzer modules in the AppImage, macOS and Windows builds.
 
 ### Changed
 
