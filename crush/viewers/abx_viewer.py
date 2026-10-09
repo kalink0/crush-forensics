@@ -13,7 +13,7 @@ The data dict passed in has the shape:
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
     QSplitter,
@@ -28,6 +28,10 @@ from crush.ui.i18n import translate
 
 class AbxViewer(QWidget):
     """Split-pane viewer for Android Binary XML (ABX) files."""
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(self, data: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)

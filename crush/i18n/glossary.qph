@@ -356,11 +356,6 @@
     <definition>Do not translate -- Crush documentation name</definition>
   </phrase>
   <phrase>
-    <source>Paste &amp; Decode</source>
-    <target>Paste &amp; Decode</target>
-    <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>
-  </phrase>
-  <phrase>
     <source>Integrity Mode</source>
     <target>Integrity Mode</target>
     <definition>Do not translate -- Crush feature name -- stays English so it matches the Feature Reference</definition>

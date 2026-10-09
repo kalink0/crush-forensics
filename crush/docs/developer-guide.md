@@ -264,6 +264,14 @@ class MyFormatViewer(QWidget):
         pass
 ```
 
+If the viewer contains widgets that hand bytes on — the BLOB Inspector (`Inspect BLOB…`), a
+nested `TableViewer`'s *Open as new tab* — declare
+`open_bytes_with_format_requested = Signal(bytes, str, object, dict)` on the viewer class. The
+main window connects it for the viewer it shows, and nested widgets reach it through
+`crush/viewers/open_bytes.py` (`request_open_bytes()` walks up to the first connected viewer), so
+they don't forward the signal themselves. Without it, the inspector's *Open in new tab* is
+disabled and says why.
+
 Then register the viewer in `crush/viewers/__init__.py` inside `_register_builtin_viewers()`:
 
 ```python

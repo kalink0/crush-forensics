@@ -1381,9 +1381,9 @@ def test_blob_samples_db_not_modified() -> None:
     desc="blob_samples.db 'b64url_json': Base64url decode must yield JSON starting with {\"sub\"",
 )
 def test_blob_b64url_json_known_output() -> None:
-    from crush.viewers.blob_inspector import _decode_base64url
-    decoded = _decode_base64url(_blob_row("b64url_json"))
-    assert decoded is not None and decoded.lstrip().startswith(b'{"sub"')
+    from crush.core.blob_decode import decode_base64url
+    decoded = decode_base64url(_blob_row("b64url_json")).data
+    assert decoded.lstrip().startswith(b'{"sub"')
 
 
 @pytest.mark.forensic(
@@ -1392,9 +1392,9 @@ def test_blob_b64url_json_known_output() -> None:
     desc="blob_samples.db 'b64url_plist': Base64url decode must yield an XML plist",
 )
 def test_blob_b64url_plist_known_output() -> None:
-    from crush.viewers.blob_inspector import _decode_base64url
-    decoded = _decode_base64url(_blob_row("b64url_plist"))
-    assert decoded is not None and b"<?xml" in decoded and b"<plist" in decoded
+    from crush.core.blob_decode import decode_base64url
+    decoded = decode_base64url(_blob_row("b64url_plist")).data
+    assert b"<?xml" in decoded and b"<plist" in decoded
 
 
 @pytest.mark.forensic(
@@ -1403,9 +1403,10 @@ def test_blob_b64url_plist_known_output() -> None:
     desc="blob_samples.db 'lzfse_json': lzfse decompress must yield JSON with 'bundleId'",
 )
 def test_blob_lzfse_json_known_output() -> None:
-    from crush.viewers.blob_inspector import _decode_lzfse
-    decoded = _decode_lzfse(_blob_row("lzfse_json"))
-    assert decoded is not None and b'"bundleId"' in decoded
+    from crush.core.blob_decode import decompress_lzfse
+    result = decompress_lzfse(_blob_row("lzfse_json"))
+    assert b'"bundleId"' in result.data
+    assert result.trailing_offset is None and not result.end_marker_missing
 
 
 @pytest.mark.forensic(
@@ -1414,11 +1415,10 @@ def test_blob_lzfse_json_known_output() -> None:
     desc="blob_samples.db 'b64url_lzfse_json': two-step Base64url→lzfse pipeline must yield JSON",
 )
 def test_blob_b64url_lzfse_pipeline_known_output() -> None:
-    from crush.viewers.blob_inspector import _decode_base64url, _decode_lzfse
-    step1 = _decode_base64url(_blob_row("b64url_lzfse_json"))
-    assert step1 is not None, "Base64url step produced None"
-    step2 = _decode_lzfse(step1)
-    assert step2 is not None and b'"bundleId"' in step2
+    from crush.core.blob_decode import decode_base64url, decompress_lzfse
+    step1 = decode_base64url(_blob_row("b64url_lzfse_json")).data
+    step2 = decompress_lzfse(step1).data
+    assert b'"bundleId"' in step2
 
 
 @pytest.mark.forensic(
@@ -1430,23 +1430,62 @@ def test_blob_decode_functions_are_reproducible() -> None:
     import base64
     import liblzfse
     import zlib
-    from crush.viewers.blob_inspector import (
-        _decode_base64,
-        _decode_base64url,
-        _decode_hex,
-        _decode_lzfse,
-        _decode_zlib,
+    from crush.core.blob_decode import (
+        decode_base64,
+        decode_base64url,
+        decode_hex,
+        decompress_lzfse,
+        decompress_zlib,
     )
     payload = b'{"event": "login", "ts": 1718000000}'
     cases = [
-        (_decode_base64,    base64.b64encode(payload)),
-        (_decode_base64url, base64.urlsafe_b64encode(payload)),
-        (_decode_hex,       payload.hex().encode()),
-        (_decode_zlib,      zlib.compress(payload)),
-        (_decode_lzfse,     liblzfse.compress(payload)),
+        (decode_base64,    base64.b64encode(payload)),
+        (decode_base64url, base64.urlsafe_b64encode(payload)),
+        (decode_hex,       payload.hex().encode()),
+        (decompress_zlib,  zlib.compress(payload)),
+        (decompress_lzfse, liblzfse.compress(payload)),
     ]
     for fn, encoded in cases:
         assert fn(encoded) == fn(encoded), f"{fn.__name__} is not reproducible"
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="BLOB Inspector",
+    desc="Bytes after the end of a zlib, gzip or lzfse stream must be reported with offset and size, not dropped",
+)
+def test_blob_decode_reports_bytes_after_stream_end() -> None:
+    import gzip
+    import liblzfse
+    import zlib
+    from crush.core.blob_decode import decompress_gzip, decompress_lzfse, decompress_zlib
+    payload = b'{"event": "login"}'
+    for fn, stream in (
+        (decompress_zlib, zlib.compress(payload)),
+        (decompress_gzip, gzip.compress(payload)),
+        (decompress_lzfse, liblzfse.compress(payload)),
+    ):
+        result = fn(stream + b"APPENDED")
+        assert result.data == payload
+        assert (result.trailing_offset, result.trailing_size) == (len(stream), 8), fn.__name__
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="BLOB Inspector",
+    desc="Base64 and hex steps must reject characters outside their alphabet instead of skipping them",
+)
+def test_blob_decode_rejects_foreign_characters() -> None:
+    from crush.core.blob_decode import DecodeError, decode_base64, decode_base64url, decode_hex
+    for fn, text in (
+        (decode_base64, b"aGVs!!!bG8="),
+        (decode_base64, b"aGVs==bG8="),
+        (decode_base64url, b"aGVs bG8"),
+        (decode_hex, b"de ad zz ef"),
+        (decode_hex, "de\u00e9ad".encode()),
+    ):
+        with pytest.raises(DecodeError):
+            fn(text)
 
 
 # ---------------------------------------------------------------------------

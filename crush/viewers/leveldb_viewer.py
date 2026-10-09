@@ -6,7 +6,7 @@ from __future__ import annotations
 import csv
 from typing import Any
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QSortFilterProxyModel
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QSortFilterProxyModel, Signal
 from PySide6.QtGui import QColor, QFont, QStandardItem, QStandardItemModel, QTextCursor
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -370,15 +370,37 @@ class LevelDbRecordsWidget(QWidget):
         )
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
         if action == inspect_key and uk:
-            BlobInspector(uk, self).show()
+            self._inspect(row, uk, "user-key", translate("LevelDbRecordsWidget", "the record's user key"))
         elif action == inspect_val and val:
-            BlobInspector(val, self).show()
+            self._inspect(row, val, "value", translate("LevelDbRecordsWidget", "the record's value"))
         elif action == inspect_ikey and ik:
-            BlobInspector(ik, self).show()
+            self._inspect(
+                row, ik, "internal-key", translate("LevelDbRecordsWidget", "the record's internal key")
+            )
+
+    def _inspect(self, row: int, data: bytes, part: str, inspected: str) -> None:
+        """BLOB Inspector on one part of a record, with the record's
+        sequence number, state, file and offset as provenance."""
+        def cell(name: str) -> str:
+            item = self._model.item(row, _COLUMNS.index(name))
+            return item.text() if item is not None else ""
+
+        record = translate(
+            "LevelDbRecordsWidget", "Seq {seq} ({state}) in {file} at offset {offset}"
+        ).format(seq=cell("Seq"), state=cell("State"), file=cell("File"), offset=cell("Offset"))
+        path = f"/virtual/leveldb/{cell('File') or 'file'}/{cell('Offset') or row}/{part}"
+        BlobInspector(
+            data, self, artifact_path=path,
+            provenance={"Source record": record, "Inspected bytes": inspected},
+        ).show()
 
 
 class LevelDbViewer(QWidget):
     """LevelDB viewer with tabs: Overview | Files | Records | Deleted Records."""
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(self, data: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)

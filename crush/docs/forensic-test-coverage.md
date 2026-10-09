@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-229 checks in total.
+231 checks in total.
 
 ### Sources
 
@@ -100,7 +100,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 | | Source Immutability | No Side Effects | Read-only Media | Known-output Verification | Completeness | Reproducibility |
 |---|---|---|---|---|---|---|
-| [BLOB Inspector](#blob-inspector) | 1 | not tested | not tested | 4 | not tested | 1 |
+| [BLOB Inspector](#blob-inspector) | 1 | not tested | not tested | 4 | 2 | 1 |
 | [Value Inspector](#value-inspector) | n/a | n/a | n/a | 4 | 2 | 1 |
 | [Multi-Log Studio](#multi-log-studio) | not tested | not tested | not tested | not tested | not tested | not tested |
 
@@ -579,8 +579,10 @@ No forensic checks.
 - **Known-output Verification** — blob_samples.db 'b64url_plist': Base64url decode must yield an XML plist ([test_forensic.py](../../crush/tests/test_forensic.py), `test_blob_b64url_plist_known_output`)
 - **Known-output Verification** — blob_samples.db 'lzfse_json': lzfse decompress must yield JSON with 'bundleId' ([test_forensic.py](../../crush/tests/test_forensic.py), `test_blob_lzfse_json_known_output`)
 - **Known-output Verification** — blob_samples.db 'b64url_lzfse_json': two-step Base64url→lzfse pipeline must yield JSON ([test_forensic.py](../../crush/tests/test_forensic.py), `test_blob_b64url_lzfse_pipeline_known_output`)
+- **Completeness** — Bytes after the end of a zlib, gzip or lzfse stream must be reported with offset and size, not dropped ([test_forensic.py](../../crush/tests/test_forensic.py), `test_blob_decode_reports_bytes_after_stream_end`)
+- **Completeness** — Base64 and hex steps must reject characters outside their alphabet instead of skipping them ([test_forensic.py](../../crush/tests/test_forensic.py), `test_blob_decode_rejects_foreign_characters`)
 - **Reproducibility** — Blob Inspector decode functions must produce byte-identical output on repeated calls ([test_forensic.py](../../crush/tests/test_forensic.py), `test_blob_decode_functions_are_reproducible`)
-- *Not tested:* No Side Effects, Read-only Media, Completeness
+- *Not tested:* No Side Effects, Read-only Media
 
 #### Value Inspector
 

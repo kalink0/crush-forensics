@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QModelIndex, Qt, Signal
 from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -37,12 +37,25 @@ from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_item
 from crush.viewers.value_field import show_value
 
 
+def _index_path(index: QModelIndex) -> list[str]:
+    """The keys from the tree's root down to *index* (column 0 texts)."""
+    keys: list[str] = []
+    while index.isValid():
+        keys.append(str(index.siblingAtColumn(0).data() or ""))
+        index = index.parent()
+    return keys[::-1]
+
+
 class ProtobufViewer(QWidget):
     """Viewer for Protobuf data.
 
     data shape:
       {"raw": bytes, "decoded": {"entries": [...]}}
     """
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(self, data: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -614,7 +627,17 @@ class ProtobufTreeWidget(QWidget):
         action = menu.exec(self._tree.viewport().mapToGlobal(pos))
         if action == inspect_action:
             from crush.viewers.table_viewer import BlobInspector
-            BlobInspector(raw_bytes, self).show()
+            field_path = _index_path(index)
+            BlobInspector(
+                raw_bytes, self,
+                artifact_path="/virtual/protobuf/" + "/".join(field_path),
+                provenance={
+                    "Source field": " / ".join(field_path),
+                    "Inspected bytes": translate(
+                        "ProtobufTreeWidget", "the field's payload bytes"
+                    ),
+                },
+            ).show()
         elif action == copy_key:
             QApplication.clipboard().setText(key)
         elif action == copy_value:

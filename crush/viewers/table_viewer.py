@@ -103,6 +103,7 @@ from crush.core.issues import ParseIssue, render_value
 from crush.ui.busy_dialog import run_with_busy_dialog
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
+from crush.viewers.open_bytes import request_open_bytes
 from crush.viewers.hex_viewer import HexViewer
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import (
@@ -3131,11 +3132,14 @@ class TableViewer(QWidget):
                 self._preview_blob(
                     blob,
                     display_text=display_text if display_text and not is_placeholder else None,
+                    index=index,
                 )
             elif display_text:
                 self._preview_blob(
                     display_text.encode("utf-8", errors="replace"),
                     display_text=display_text,
+                    index=index,
+                    from_text=True,
                 )
             return
 
@@ -3223,10 +3227,13 @@ class TableViewer(QWidget):
                 if blob is not None:
                     is_blob_placeholder = display_val.startswith("<BLOB ") and display_val.endswith(" B>")
                     decoded = display_val if not is_blob_placeholder and display_val else None
-                    self._preview_blob(blob, display_text=decoded)
+                    self._preview_blob(blob, display_text=decoded, index=index)
                 elif display_val:
                     # SQL result cells: no raw bytes, but display text is the decoded content
-                    self._preview_blob(display_val.encode("utf-8", errors="replace"), display_text=display_val)
+                    self._preview_blob(
+                        display_val.encode("utf-8", errors="replace"),
+                        display_text=display_val, index=index, from_text=True,
+                    )
             return
         if self._db_path is None or self._wal_page_size == 0:
             return
@@ -3959,9 +3966,11 @@ class TableViewer(QWidget):
         elif action == blob_preview:
             decoded = display_str if (blob_bytes is not None and not is_blob_placeholder and display_str) else None
             if blob_bytes is not None:
-                self._preview_blob(blob_bytes, display_text=decoded)
+                self._preview_blob(blob_bytes, display_text=decoded, index=index)
             elif has_display:
-                self._preview_blob(display_str.encode("utf-8", errors="replace"))
+                self._preview_blob(
+                    display_str.encode("utf-8", errors="replace"), index=index, from_text=True
+                )
         elif action == blob_hex:
             if blob_bytes is not None:
                 self._open_blob_hex(blob_bytes)
@@ -3982,20 +3991,20 @@ class TableViewer(QWidget):
                 ) or "blob"
                 artifact_path, artifact_meta = self._virtual_cell_path_and_metadata(index, col_header)
                 if action == open_tab_auto:
-                    self.open_bytes_with_format_requested.emit(
-                        data_to_open, artifact_path, None, artifact_meta
+                    request_open_bytes(
+                        self, data_to_open, artifact_path, None, artifact_meta
                     )
                 elif action == open_tab_hex:
-                    self.open_bytes_with_format_requested.emit(
-                        data_to_open, artifact_path, "__hex__", artifact_meta
+                    request_open_bytes(
+                        self, data_to_open, artifact_path, "__hex__", artifact_meta
                     )
                 elif action == open_tab_text:
-                    self.open_bytes_with_format_requested.emit(
-                        data_to_open, artifact_path, "__text__", artifact_meta
+                    request_open_bytes(
+                        self, data_to_open, artifact_path, "__text__", artifact_meta
                     )
                 elif action == open_tab_proto:
-                    self.open_bytes_with_format_requested.emit(
-                        data_to_open, artifact_path, "Protobuf (schema-less)", artifact_meta
+                    request_open_bytes(
+                        self, data_to_open, artifact_path, "Protobuf (schema-less)", artifact_meta
                     )
 
     def _virtual_cell_path_and_metadata(
@@ -4189,8 +4198,30 @@ class TableViewer(QWidget):
         except Exception as exc:
             self._sql_status.setText(str(exc))
 
-    def _preview_blob(self, blob: bytes, *, display_text: str | None = None) -> None:
-        BlobInspector(blob, self, display_text=display_text).show()
+    def _preview_blob(
+        self,
+        blob: bytes,
+        *,
+        display_text: str | None = None,
+        index: QModelIndex | None = None,
+        from_text: bool = False,
+    ) -> None:
+        """Open the BLOB Inspector on a cell's bytes -- or, for a cell
+        without bytes (*from_text*), on its text encoded as UTF-8 -- with the
+        cell's table/query, column and row as provenance."""
+        path, meta = "", {}
+        if index is not None and index.isValid():
+            col_header = self._table_view.model().headerData(
+                index.column(), Qt.Orientation.Horizontal
+            ) or "blob"
+            path, meta = self._virtual_cell_path_and_metadata(index, col_header)
+        meta["Inspected bytes"] = (
+            translate("TableViewer", "the cell's text, UTF-8 encoded (the cell holds no bytes)")
+            if from_text else translate("TableViewer", "the cell's bytes")
+        )
+        BlobInspector(
+            blob, self, display_text=display_text, artifact_path=path, provenance=meta
+        ).show()
 
     def _resize_and_cap(self) -> None:
         model = self._table_view.model()

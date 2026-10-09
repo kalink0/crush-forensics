@@ -6,7 +6,7 @@ from __future__ import annotations
 import csv
 from typing import Any
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QSortFilterProxyModel
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QSortFilterProxyModel, Signal
 from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -338,7 +338,22 @@ class MMKVRecordsWidget(QWidget):
             # already-decoded content (a scalar's bytes are just a varint, not
             # human-readable on their own) — same "Decoded (from table)"
             # pattern already used for SEGB.
-            BlobInspector(value_bytes, self, display_text=full_value).show()
+            index_text = self._model.item(row, _COLUMNS.index("Index")).text()
+            state = self._model.item(row, _COLUMNS.index("State")).text()
+            BlobInspector(
+                value_bytes, self, display_text=full_value,
+                artifact_path=f"/virtual/mmkv/{index_text or row}/value",
+                provenance={
+                    "Source record": translate(
+                        "MMKVRecordsWidget", "Index {index} ({state})"
+                    ).format(index=index_text, state=state),
+                    "Source key": key,
+                    "Inspected bytes": translate(
+                        "MMKVRecordsWidget",
+                        "the value's bytes (MMKV's length prefix removed)",
+                    ),
+                },
+            ).show()
         elif action == copy_key:
             from PySide6.QtWidgets import QApplication
             QApplication.clipboard().setText(key)
@@ -373,6 +388,10 @@ class MMKVRecordsWidget(QWidget):
 
 class MMKVViewer(QWidget):
     """MMKV viewer with tabs: Overview | Records."""
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(self, data: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)

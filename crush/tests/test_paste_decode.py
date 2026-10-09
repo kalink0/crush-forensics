@@ -128,6 +128,26 @@ class TestTryDecodeInputForced:
         data, _ = try_decode_input("", ENCODING_UTF8)
         assert data is None
 
+    def test_utf8_mode_keeps_surrounding_whitespace(self) -> None:
+        data, _ = try_decode_input("  text\n", ENCODING_UTF8)
+        assert data == b"  text\n"
+
+    def test_base64_mode_rejects_data_after_padding(self) -> None:
+        # Lenient decoding returned b"hello" here, skipping the inner "=="
+        data, msg = try_decode_input("aGVs==bG8=", ENCODING_BASE64)
+        assert data is None
+        assert "data after padding" in msg
+
+    def test_base64_mode_reports_the_bad_character(self) -> None:
+        data, msg = try_decode_input("aGVs!bG8=", ENCODING_BASE64)
+        assert data is None
+        assert "offset 4" in msg
+
+    def test_hex_mode_reports_the_bad_character(self) -> None:
+        data, msg = try_decode_input("de ad zz", ENCODING_HEX)
+        assert data is None
+        assert "offset 6" in msg
+
 
 # ---------------------------------------------------------------------------
 # FORMATS — consistency: every parser_display_name matches a real parser

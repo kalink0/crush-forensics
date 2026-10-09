@@ -13,11 +13,6 @@ def test_pretty_json() -> None:
     assert '"a"' in pretty
 
 
-def test_try_base64_text() -> None:
-    decoded = formatters.try_base64_text(b"aGVsbG8=")
-    assert decoded == "hello"
-
-
 def test_try_plist_text() -> None:
     import plistlib
     blob = plistlib.dumps({"k": "v"}, fmt=plistlib.FMT_XML)

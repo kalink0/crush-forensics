@@ -2,6 +2,31 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- Added to the BLOB Inspector -> Support for every image format Crush recognises in files, shown in the Image Viewer with the image's metadata.
+- Added to the BLOB Inspector -> Support for opening the decoded bytes as a new tab, with their source and decode pipeline in the Properties panel.
+- Added to the BLOB Inspector -> Support for exporting the decoded bytes or a rendered image, with a sidecar JSON of source, steps and SHA-256 hashes.
+- Added to the BLOB Inspector -> Support for copying the decoded bytes as hex, Base64 or a Python literal.
+
+### Bug Fixes
+
+- Fixed the Tools menu showing Paste & Decode without its "&" (a blank on macOS, an underscore on Linux).
+- Fixed the BLOB Inspector's zlib and lzfse steps dropping bytes after the end of the stream without saying so; gzip failed on them.
+- Fixed the BLOB Inspector's Base64 and hex decoding skipping characters that don't belong instead of failing.
+- Fixed the BLOB Inspector showing failed steps, interpretations and unreadable pasted input without the reason.
+- Fixed the BLOB Inspector showing cut-off JSON and JSON with escaped quotes as confirmed JSON; escaped JSON is now its own marked reading.
+- Fixed pasted text in the BLOB Inspector losing its leading and trailing whitespace.
+- Fixed the BLOB Inspector's pipeline opening too narrow to reach a step's last entry, and many steps being squeezed instead of scrolling.
+- Fixed the BLOB Inspector not saying when Protobuf fields below the nesting limit were shown as string/bytes.
+- Fixed Open as new tab doing nothing in tables inside the Realm viewer.
+
+### Changed
+
+- Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
+
 ## v0.22.0 - 2026-10-08
 
 **Focus: EnCase L01 and FTK Imager AD1 logical evidence; Cellebrite UFD/UFDX and UFDR refinements; qnxprobe 1.57 / ewfprobe 0.12 with AFF4, Apple disk images, virtual disks and encrypted containers; ZIP, FAT and archive times as stored; the format database as an online reference; drop zones and source replacement prompts; bundled peach updated to v0.9.2.**

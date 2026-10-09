@@ -921,7 +921,7 @@ class MainWindow(QMainWindow):
         self._build_language_menu(view_menu)
 
         tools_menu = menu.addMenu(translate("MainWindow", "Tools"))
-        tools_menu.addAction(translate("MainWindow", "Paste & Decode…"), self._paste_decode)
+        tools_menu.addAction(translate("MainWindow", "BLOB Inspector…"), self._paste_decode)
         tools_menu.addAction(
             translate("MainWindow", "Value Inspector…"), self._open_value_inspector
         )
@@ -2539,7 +2539,13 @@ class MainWindow(QMainWindow):
 
     def _paste_decode(self) -> None:
         from crush.ui.paste_decode_dialog import PasteDecodeDialog
-        PasteDecodeDialog(self).show()
+        dialog = PasteDecodeDialog(self)
+        dialog.open_bytes_with_format_requested.connect(
+            lambda data, name, fmt, extra_metadata: self._open_bytes_with_format(
+                data, name, fmt, "", extra_metadata
+            )
+        )
+        dialog.show()
 
     def _open_value_inspector(self) -> None:
         from crush.viewers.value_inspector import ValueInspector
@@ -3558,6 +3564,9 @@ class MainWindow(QMainWindow):
     ) -> None:
         from crush.ui.viewer_factory import make_viewer
         base_view = make_viewer(result, node, vfs, self)
+        # What nested widgets (e.g. the BLOB Inspector) name as their source.
+        from crush.viewers.open_bytes import SOURCE_PATH_PROPERTY
+        base_view.setProperty(SOURCE_PATH_PROPERTY, node.path)
         if hasattr(base_view, "open_bytes_requested"):
             base_view.open_bytes_requested.connect(
                 lambda data, name, source_path=node.path: self._open_bytes_as_artifact(

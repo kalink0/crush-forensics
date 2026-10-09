@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 - now Marco Neumann (kalink0)
-"""Paste & Decode dialog — paste hex/base64/text and inspect the decoded bytes inline."""
+"""Tools → BLOB Inspector dialog — paste hex/base64/text and inspect the decoded bytes inline."""
 from __future__ import annotations
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QTimer
+from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -42,10 +42,14 @@ _EMPTY = b""
 class PasteDecodeDialog(QDialog):
     """Dialog that lets the user paste hex/base64/text and inspect the decoded bytes."""
 
+    # The inspector's "Open in new tab" -- connected by the main window
+    # (see crush/viewers/open_bytes.py).
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle(translate("PasteDecodeDialog", "Paste & Decode"))
+        self.setWindowTitle(translate("PasteDecodeDialog", "BLOB Inspector"))
         self.resize(900, 640)
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -108,9 +112,25 @@ class PasteDecodeDialog(QDialog):
         data, msg = _try_decode_input(text, encoding)
         if data is None:
             self._status_label.setText(msg)
-            self._status_label.setStyleSheet("color: gray;")
-            self._blob_panel.update_blob(_EMPTY)
+            if text.strip():
+                # Input that can't be read with the chosen encoding: the
+                # reason in red, and in the panel instead of empty bytes.
+                self._status_label.setStyleSheet("color: red;")
+                self._blob_panel.show_unreadable_input(msg)
+            else:
+                self._status_label.setStyleSheet("color: gray;")
+                self._blob_panel.update_blob(_EMPTY)
         else:
             self._status_label.setText(msg)
             self._status_label.setStyleSheet("color: green;")
+            # msg ends in the encoding the input was read as, e.g. "(hex)".
+            read_as = msg.rsplit("(", 1)[-1].rstrip(")") if "(" in msg else ""
+            self._blob_panel.set_provenance(
+                "/virtual/pasted",
+                {
+                    "Inspected bytes": translate(
+                        "PasteDecodeDialog", "pasted input, read as {encoding}"
+                    ).format(encoding=read_as)
+                },
+            )
             self._blob_panel.update_blob(data)

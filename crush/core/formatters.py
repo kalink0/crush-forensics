@@ -14,44 +14,45 @@ def pretty_json(text: str) -> str | None:
         return None
 
 
-def try_base64_text(blob: bytes) -> str | None:
-    try:
-        import base64
-        decoded = base64.b64decode(blob, validate=False)
-        return decoded.decode("utf-8", errors="replace")
-    except Exception:
-        return None
+def plist_text(blob: bytes) -> str:
+    """The plist in *blob* as text; raises with the parser's reason if it isn't one."""
+    import plistlib
+    from io import BytesIO
+    obj = plistlib.loads(blob)
+    if isinstance(obj, dict) and obj.get("$archiver") in ("NSKeyedArchiver", "NRKeyedArchiver"):
+        try:
+            from crush.third_party.ccl_bplist import (
+                load as bplist_load,
+                deserialise_NsKeyedArchiver,
+                set_object_converter,
+            )
+            from crush.parsers.plist_parser import _nska_converter
+            from typing import cast, Any as _Any
+            cast(_Any, set_object_converter)(_nska_converter)
+            raw = cast(_Any, bplist_load)(BytesIO(blob))
+            obj = cast(_Any, deserialise_NsKeyedArchiver)(raw)
+        except Exception:
+            pass
+    return pretty_object(obj)
 
 
 def try_plist_text(blob: bytes) -> str | None:
     try:
-        import plistlib
-        from io import BytesIO
-        obj = plistlib.loads(blob)
-        if isinstance(obj, dict) and obj.get("$archiver") in ("NSKeyedArchiver", "NRKeyedArchiver"):
-            try:
-                from crush.third_party.ccl_bplist import (
-                    load as bplist_load,
-                    deserialise_NsKeyedArchiver,
-                    set_object_converter,
-                )
-                from crush.parsers.plist_parser import _nska_converter
-                from typing import cast, Any as _Any
-                cast(_Any, set_object_converter)(_nska_converter)
-                raw = cast(_Any, bplist_load)(BytesIO(blob))
-                obj = cast(_Any, deserialise_NsKeyedArchiver)(raw)
-            except Exception:
-                pass
-        return pretty_object(obj)
+        return plist_text(blob)
     except Exception:
         return None
 
 
+def xml_text(blob: bytes) -> str:
+    """The XML in *blob*, pretty-printed; raises with the parser's reason if it isn't XML."""
+    from lxml import etree
+    root = etree.fromstring(blob)
+    return etree.tostring(root, pretty_print=True, encoding="unicode")
+
+
 def try_xml_text(blob: bytes) -> str | None:
     try:
-        from lxml import etree
-        root = etree.fromstring(blob)
-        return etree.tostring(root, pretty_print=True, encoding="unicode")
+        return xml_text(blob)
     except Exception:
         return None
 

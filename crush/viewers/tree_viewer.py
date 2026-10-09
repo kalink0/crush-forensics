@@ -7,7 +7,7 @@ import plistlib
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, QModelIndex, QPersistentModelIndex, Qt, QTimer
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QModelIndex, QPersistentModelIndex, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -226,6 +226,10 @@ def _byte_highlight_ranges_from_item(item: QStandardItem) -> list[tuple[int, int
 
 class TreeViewer(QWidget):
     """Viewer for plist / XML / any nested dict/list structure."""
+
+    # Bytes from a widget inside this viewer (a nested table, the BLOB
+    # Inspector, ...) to open as a new tab -- see crush/viewers/open_bytes.py.
+    open_bytes_with_format_requested = Signal(bytes, str, object, dict)
 
     def __init__(
         self,
@@ -492,6 +496,20 @@ class TreeViewer(QWidget):
                 return "\n".join(str(item) for item in obj).encode("utf-8", errors="replace")
             return str(obj).encode("utf-8", errors="replace")
 
+    @staticmethod
+    def _blob_origin(obj: Any) -> str:
+        """What _make_blob hands the BLOB Inspector for *obj*: its own bytes,
+        or a form Crush made from it -- said so, as those aren't stored bytes."""
+        if isinstance(obj, bytes):
+            return translate("TreeViewer", "the value's bytes")
+        if isinstance(obj, str):
+            return translate("TreeViewer", "the value's text, UTF-8 encoded")
+        return translate(
+            "TreeViewer",
+            "the value written out by Crush as an XML plist (or as text) -- not bytes "
+            "stored in the file",
+        )
+
     def _apply_filter(self, text: str) -> None:
         """Show/hide rows whose key or value contains the search text."""
         self._filter_timer.stop()
@@ -604,7 +622,20 @@ class TreeViewer(QWidget):
         action = menu.exec(self._tree.viewport().mapToGlobal(pos))
         if action == inspect_action:
             from crush.viewers.table_viewer import BlobInspector
-            BlobInspector(self._make_blob(obj), self).show()
+            keys: list[str] = []
+            walk = index
+            while walk.isValid():
+                keys.append(str(walk.siblingAtColumn(0).data() or ""))
+                walk = walk.parent()
+            keys.reverse()
+            BlobInspector(
+                self._make_blob(obj), self,
+                artifact_path="/virtual/tree/" + "/".join(keys),
+                provenance={
+                    "Source key": " / ".join(keys),
+                    "Inspected bytes": self._blob_origin(obj),
+                },
+            ).show()
         elif action == copy_key:
             QApplication.clipboard().setText(key)
         elif action == copy_value:

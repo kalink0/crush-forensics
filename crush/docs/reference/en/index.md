@@ -33,7 +33,6 @@
 - [Format Reference](format-reference.md)
 - [Exporting Files](exporting-files.md)
 - [Value Inspector](value-inspector.md)
-- [Paste & Decode](paste-decode.md)
 - [Integrity Mode](integrity-mode.md)
 - [Keyboard Shortcuts](keyboard-shortcuts.md)
 - [Tips for Forensic Workflows](tips-for-forensic-workflows.md)
