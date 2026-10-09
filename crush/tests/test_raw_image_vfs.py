@@ -339,6 +339,45 @@ class TestExfatAllocation:
         assert changed["a.bin"] == b""
         assert changed["c.bin"] == whole["c.bin"]
 
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="exFAT",
+        desc="An exFAT file whose FAT chain ends before its recorded size must fail to read, naming the chain, never read short",
+    )
+    def test_exfat_file_with_a_cut_cluster_chain_is_refused(self, tmp_path: Path) -> None:
+        """Clearing NoFatChain hands a.bin's allocation to the FAT, and one FAT
+        entry marking the end of the chain leaves it one cluster where its
+        size needs two. Without the check the read returned 4,096 of its
+        8,192 bytes and no error."""
+        import struct
+
+        volume = self._volume()
+        whole = self._live(bytes(volume), tmp_path, "whole.img")
+
+        stream = _exfat_stream_entry(volume, 13, 8192)
+        assert volume[stream + 1] == 0x03
+        volume[stream + 1] = 0x01  # AllocationPossible, NoFatChain clear
+        fat_offset = struct.unpack_from("<I", volume, 80)[0]
+        struct.pack_into("<I", volume, fat_offset * (1 << volume[108]) + 13 * 4, 0xFFFFFFFF)
+        _exfat_rewrite_checksum(volume, stream)
+
+        changed = self._live(bytes(volume), tmp_path, "cut.img")
+        assert isinstance(changed["a.bin"], RawImageFileUnreadableError)
+        assert "ends after 1 of the 2 clusters" in str(changed["a.bin"])
+        assert "only 4,096 of 8,192 bytes" in str(changed["a.bin"])
+        assert changed["c.bin"] == whole["c.bin"]
+
+        # the chunked read fails the same way, once the last chunk is taken
+        dst = tmp_path / "cut.img"
+        vfs = open_vfs(dst, as_disk_image=True)
+        try:
+            node = next(c for c in vfs.root().children[0].children if c.name == "a.bin")
+            with pytest.raises(RawImageFileUnreadableError, match="cluster chain"):
+                with vfs.open(node) as handle:
+                    handle.read()
+        finally:
+            vfs.close()
+
 
 class TestEwf:
     def test_open_vfs_returns_raw_image_vfs(self, raw_ntfs_e01: Path) -> None:
