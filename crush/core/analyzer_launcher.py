@@ -27,6 +27,20 @@ from crush.core import tempdir
 
 INTERNAL_CLI_SENTINEL = "--internal-analyzer-cli"
 
+# Curated allowlist of crush-analyze module ids Crush's own UI exposes.
+# crush-analyze's manifest can offer more than this (e.g. the two
+# "Application Snapshot" modules from the same vendored
+# applicationStateDB.py) -- not every module a LEAPP file happens to
+# declare is judged forensically relevant/mature enough for Crush's own
+# picker yet. See docs/design/analyzer-runner.md. Kept here, free of Qt,
+# so scripts/smoke_test_frozen_analyzers.py can check a frozen build
+# against the same list.
+CURATED_MODULE_IDS = frozenset({
+    "get_installed_apps",
+    "get_installedappsVending",
+    "get_package_info",
+})
+
 
 class AnalyzerRunError(Exception):
     """crush-analyze itself couldn't run at all (exit code 2, no JSON
