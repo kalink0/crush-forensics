@@ -14,7 +14,7 @@ from crush.core.issues import ParseIssue
 from crush.core.vfs import DirectoryVFS, VFSNode
 from crush.parsers.abx_decoder import AbxDecodeResult
 from crush.parsers.hex_fallback import HexFallbackParser, _parser_support
-from crush.parsers.leveldb_parser import LeveldbParser, _decode_internal_key
+from crush.parsers.leveldb_parser import LeveldbParser, _key_columns
 from crush.parsers.mmkv_parser import MMKVParser
 from crush.parsers.plist_parser import PlistParser
 from crush.parsers.protobuf_parser import MAX_DEPTH, ProtobufParser, _decode_message
@@ -113,9 +113,27 @@ def test_protobuf_shallow_message_has_no_nesting_row(tmp_path: Path) -> None:
 
 def test_leveldb_manifest_keys_are_not_truncated() -> None:
     long_key = "k" * 600
-    assert _decode_internal_key(long_key.encode() + bytes(8)) == long_key
+    assert _key_columns("k", long_key.encode() + bytes(8)) == {
+        "k_text": long_key, "k_hex": long_key.encode().hex(),
+    }
     binary_key = bytes(range(128, 228))
-    assert _decode_internal_key(binary_key + bytes(8)) == binary_key.hex()
+    assert _key_columns("k", binary_key + bytes(8)) == {"k_text": "", "k_hex": binary_key.hex()}
+
+
+def test_leveldb_key_text_and_hex_are_separate() -> None:
+    """Regression: a key was shown as text when it was UTF-8 and as hex
+    otherwise, unmarked -- the text key "deadbeef" read like the bytes
+    de ad be ef."""
+    text_key = _key_columns("k", b"deadbeef" + bytes(8))
+    hex_bytes = _key_columns("k", bytes.fromhex("deadbeef") + bytes(8))
+    assert text_key == {"k_text": "deadbeef", "k_hex": b"deadbeef".hex()}
+    assert hex_bytes == {"k_text": "", "k_hex": "deadbeef"}
+
+
+def test_leveldb_empty_user_key_is_empty() -> None:
+    """Regression: an internal key of exactly 8 bytes (empty user key)
+    showed its sequence/type tag as the key."""
+    assert _key_columns("k", bytes(range(8))) == {"k_text": "", "k_hex": ""}
 
 
 def test_leveldb_unreadable_file_is_listed_with_reason(tmp_path: Path) -> None:
@@ -254,7 +272,8 @@ def test_leveldb_file_numbers_are_decimal(tmp_path: Path) -> None:
 
     (row,) = result.data["files"]
     assert (row["name"], row["level"], row["size"]) == ("000010.log", 2, 999)
-    assert (row["smallest_key"], row["largest_key"]) == ("a", "z")
+    assert (row["smallest_key_text"], row["largest_key_text"]) == ("a", "z")
+    assert (row["smallest_key_hex"], row["largest_key_hex"]) == ("61", "7a")
     manifest = result.data["manifests"]["MANIFEST-000011 (current)"]
     assert manifest["Files by level"] == {"Level 2": "000010"}
     assert manifest["Compaction history"][0]["new"][0]["file"] == "000010"
@@ -428,6 +447,95 @@ def test_leveldb_unknown_log_record_type_says_which(tmp_path: Path) -> None:
     issue = result.data["manifests"]["Unreadable files"]["000001.log"]
     assert issue.code == "leveldb.read_stopped"
     assert f"Unknown record type 9 (length 3) at offset {len(first)}" in issue.detail
+
+
+def test_leveldb_unsupported_compression_type_is_named(tmp_path: Path) -> None:
+    """Regression: every compression type but 0 was decoded as Snappy, so a
+    block of another type (2 is zstd in newer LevelDB) failed with a Snappy
+    error that didn't say why."""
+    block = b"abcd"
+    trailer = bytes([2]) + bytes(4)  # compression type 2, CRC
+    handles = _varint(0) + _varint(0) + _varint(0) + _varint(len(block))  # metaindex, index
+    footer = handles.ljust(40, b"\x00") + struct.pack("<Q", 0xDB4775248B80FB57)
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "000005.ldb").write_bytes(block + trailer + footer)
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    issue = result.data["manifests"]["Unreadable files"]["000005.ldb"]
+    assert issue.code == "leveldb.file_unreadable"
+    assert "Compression type 2 of the block at offset 0" in issue.detail
+    assert "not supported" in issue.detail
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
+
+
+def _assert_rocksdb_not_read(result: Any, sign_file: str, sign: ParseIssue) -> None:
+    database = result.data["manifests"]["Database"]
+    assert database["Status"] == ParseIssue("leveldb.rocksdb_not_read")
+    assert database["RocksDB signs"][sign_file] == sign
+    assert sign_file in database["Files"]
+    assert result.data["records"] == []
+    assert result.metadata["Format"] == ParseIssue("leveldb.rocksdb_format")
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="LevelDB",
+    desc="A RocksDB directory (LevelDB's file names, other formats) must be recognised by content and not read as LevelDB",
+)
+def test_rocksdb_options_file_is_recognised(tmp_path: Path) -> None:
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "OPTIONS-000007").write_bytes(b"[Version]\n  rocksdb_version=8.11.3\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+    _assert_rocksdb_not_read(result, "OPTIONS-000007", ParseIssue("leveldb.rocksdb_options"))
+
+
+def test_rocksdb_table_magic_is_recognised(tmp_path: Path) -> None:
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "000009.sst").write_bytes(bytes(40) + struct.pack("<Q", 0x88E241B785F4CFF7))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+    _assert_rocksdb_not_read(result, "000009.sst", ParseIssue(
+        "leveldb.rocksdb_table", {"kind": "block-based table", "magic": "0x88e241b785f4cff7"},
+    ))
+
+
+def test_rocksdb_manifest_tag_is_recognised(tmp_path: Path) -> None:
+    """Regression: a MANIFEST tag LevelDB doesn't define was read past
+    silently, misreading the rest of the edit."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "MANIFEST-000001").write_bytes(_manifest_record(b"\xc8\x01" + _varint(0)))  # tag 200
+    (db / "CURRENT").write_bytes(b"MANIFEST-000001\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+    _assert_rocksdb_not_read(
+        result, "MANIFEST-000001", ParseIssue("leveldb.rocksdb_manifest_tag", {"tag": 200})
+    )
+
+
+def test_leveldb_unknown_manifest_tag_stops_that_manifest(tmp_path: Path) -> None:
+    """A tag neither LevelDB nor RocksDB defines stops reading the MANIFEST
+    there, saying where; the database is still read as LevelDB."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    first = _manifest_with_new_file(1, 1, 10)
+    (db / "MANIFEST-000001").write_bytes(first + _manifest_record(b"\x32" + _varint(7)))  # tag 50
+    (db / "CURRENT").write_bytes(b"MANIFEST-000001\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    manifest = result.data["manifests"]["MANIFEST-000001 (current)"]
+    status = manifest["Status"]
+    assert status.code == "leveldb.manifest_partial"
+    assert f"Unknown VersionEdit tag 50 at offset {len(first) + 7}" in status.detail
+    assert node.path.rstrip("/") in status.detail
+    assert manifest["Files by level"] == {"Level 1": "000001"}  # the edit before it counts
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
 
 
 def test_leveldb_empty_data_file_has_a_files_row(tmp_path: Path) -> None:

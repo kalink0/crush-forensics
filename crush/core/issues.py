@@ -1269,6 +1269,32 @@ MESSAGES: dict[str, str] = {
         "Named by a CURRENT that LevelDB treats as corrupt (no line break at its end)",
         "leveldb.named_by_invalid_current",
     ),
+    "leveldb.rocksdb_format": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "RocksDB (not supported)",
+        "leveldb.rocksdb_format",
+    ),
+    "leveldb.rocksdb_not_read": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "RocksDB database, not read: RocksDB uses LevelDB's file names, but its table, log "
+        "and MANIFEST formats differ, and read as LevelDB parts of it would come out wrong",
+        "leveldb.rocksdb_not_read",
+    ),
+    "leveldb.rocksdb_options": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "OPTIONS file naming a RocksDB version (rocksdb_version=)",
+        "leveldb.rocksdb_options",
+    ),
+    "leveldb.rocksdb_table": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table file ending in RocksDB's {kind} magic {magic}",
+        "leveldb.rocksdb_table",
+    ),
+    "leveldb.rocksdb_manifest_tag": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Tag {tag}, which RocksDB writes and LevelDB doesn't define",
+        "leveldb.rocksdb_manifest_tag",
+    ),
     "leveldb.manifest_empty": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Empty file (0 bytes)",

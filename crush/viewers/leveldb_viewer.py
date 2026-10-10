@@ -454,8 +454,10 @@ class LevelDbViewer(QWidget):
             QT_TRANSLATE_NOOP("GeneratedView", "Live"),
             QT_TRANSLATE_NOOP("GeneratedView", "Deleted"),
             QT_TRANSLATE_NOOP("GeneratedView", "Unknown"),
-            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key"),
-            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key (text)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key (hex)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key (text)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key (hex)"),
         )
         model = QStandardItemModel(0, len(columns))
         set_headers(model, columns)
@@ -474,8 +476,10 @@ class LevelDbViewer(QWidget):
                 _make_item(str(f.get("live", 0)), f.get("live", 0)),
                 _make_item(str(f.get("deleted", 0)), f.get("deleted", 0)),
                 _make_item(str(f.get("unknown", 0)), f.get("unknown", 0)),
-                _make_item(f.get("smallest_key", "")),
-                _make_item(f.get("largest_key", "")),
+                _make_item(f.get("smallest_key_text", "")),
+                _make_item(f.get("smallest_key_hex", "")),
+                _make_item(f.get("largest_key_text", "")),
+                _make_item(f.get("largest_key_hex", "")),
             ]
             # Color files that contain deleted records
             if f.get("deleted", 0) > 0:

@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import struct
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,25 @@ from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode, join_notes
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.ccl_leveldb import KeyState
-from crush.third_party.ccl_leveldb.ccl_leveldb import FileType, LdbFile, LogFile, ManifestFile
+from crush.parsers.leveldb_reader import UnknownVersionEditTag, open_data_file, open_manifest
+from crush.third_party.ccl_leveldb.ccl_leveldb import FileType, LogFile, ManifestFile
+
+# RocksDB, LevelDB's fork, uses the same file names (CURRENT, MANIFEST-,
+# ######.sst/.log) but other table, log and MANIFEST formats; it is told
+# apart by content. Values from the RocksDB source:
+# table/block_based/block_based_table_builder.cc, table/plain/
+# plain_table_builder.cc, table/cuckoo/cuckoo_table_builder.cc (table footer
+# magic), db/version_edit.h (MANIFEST tags), options/options_parser.cc and
+# file/filename.cc (OPTIONS-###### with "rocksdb_version=").
+_ROCKSDB_TABLE_MAGICS = {
+    0x88E241B785F4CFF7: "block-based table",
+    0x8242229663BF9564: "plain table",
+    0x4F3418EB7A8F13B8: "plain table (legacy)",
+    0x926789D0C5F17873: "cuckoo table",
+}
+_ROCKSDB_MANIFEST_TAGS = frozenset({10, 100, 102, 103, 200, 201, 202, 203, 300, 400, 401})
+_ROCKSDB_TAG_SAFE_IGNORE_MASK = 1 << 13  # every tag from here on is RocksDB's
+_OPTIONS_RE = re.compile(r"^OPTIONS-[0-9]+$")
 
 # LevelDB names its files after a decimal file number of at least six digits
 # ("%06llu", db/filename.cc), the number the MANIFEST records for them.
@@ -43,6 +62,39 @@ def _data_files(directory: Path) -> list[Path]:
     """The table and log files in *directory*, in file-number order."""
     found = [p for p in directory.iterdir() if p.is_file() and _DATA_FILE_RE.match(p.name)]
     return sorted(found, key=_file_number)
+
+
+def _is_rocksdb_tag(tag: int) -> bool:
+    return tag in _ROCKSDB_MANIFEST_TAGS or tag >= _ROCKSDB_TAG_SAFE_IGNORE_MASK
+
+
+def _rocksdb_file_signs(directory: Path, data_files: list[Path]) -> dict[str, ParseIssue]:
+    """What in the directory's files is RocksDB's, by file: an OPTIONS file
+    naming a RocksDB version, or a table file ending in a RocksDB magic."""
+    signs: dict[str, ParseIssue] = {}
+    for path in sorted(directory.iterdir(), key=lambda p: p.name):
+        if path.is_file() and _OPTIONS_RE.match(path.name):
+            try:
+                if b"rocksdb_version=" in path.read_bytes():
+                    signs[path.name] = ParseIssue("leveldb.rocksdb_options")
+            except OSError:
+                continue
+    for path in data_files:
+        if path.suffix.lower() == ".log":
+            continue
+        try:
+            with path.open("rb") as fh:
+                if fh.seek(0, 2) < 8:
+                    continue
+                fh.seek(-8, 2)
+                (magic,) = struct.unpack("<Q", fh.read(8))
+        except OSError:
+            continue
+        if magic in _ROCKSDB_TABLE_MAGICS:
+            signs[path.name] = ParseIssue(
+                "leveldb.rocksdb_table", {"kind": _ROCKSDB_TABLE_MAGICS[magic], "magic": f"0x{magic:016x}"}
+            )
+    return signs
 
 
 def _manifest_number(name: str) -> int | None:
@@ -92,13 +144,19 @@ def _try_utf8(raw: bytes) -> str | None:
         return None
 
 
-def _decode_internal_key(raw: bytes) -> str:
-    """Return displayable representation of an LDB internal key (strips 8-byte seq/type suffix)."""
-    user_key = raw[:-8] if len(raw) > 8 else raw
-    text = _try_utf8(user_key)
-    if text is not None:
-        return text
-    return user_key.hex()
+def _user_key(internal_key: bytes) -> bytes:
+    """The user key of an internal key: everything before its 8-byte
+    sequence/type tag (empty when the user key is). A key shorter than the
+    tag is returned whole."""
+    return internal_key[:-8] if len(internal_key) >= 8 else internal_key
+
+
+def _key_columns(prefix: str, internal_key: bytes) -> dict[str, str]:
+    """*internal_key*'s user key as text ("" when it isn't UTF-8) and as hex,
+    in separate fields -- so a text key can't be read as hex or the other
+    way round, as in the Records tab."""
+    user_key = _user_key(internal_key)
+    return {f"{prefix}_text": _try_utf8(user_key) or "", f"{prefix}_hex": user_key.hex()}
 
 
 class LeveldbParser(AbstractParser):
@@ -148,6 +206,9 @@ class LeveldbParser(AbstractParser):
                 evidence + "\\", evidence + "/"
             )
 
+        data_files = _data_files(tmp_dir)
+        rocksdb_signs = _rocksdb_file_signs(tmp_dir, data_files)
+
         # Every file is opened and read on its own: one that can't be read
         # is listed with the reason and the others are still read.
         # The MANIFEST that CURRENT names gives the files their level, size
@@ -155,7 +216,7 @@ class LeveldbParser(AbstractParser):
         current, current_shown, current_terminated = _current_manifest(tmp_dir, reason)
         if current is not None:
             try:
-                manifest = ManifestFile(current)
+                manifest = open_manifest(current)
             except Exception as exc:  # noqa: BLE001 -- listed by the loop below
                 _logger.debug("Could not open %s: %s", current.name, exc)
                 current_shown["Status"] = join_notes([
@@ -164,8 +225,8 @@ class LeveldbParser(AbstractParser):
                 ])
                 current = None
             else:
-                _, file_to_level, file_key_ranges, _ = _parse_manifest(manifest)
-                manifest.close()  # type: ignore[no-untyped-call]
+                _, file_to_level, file_key_ranges, _ = _parse_manifest(manifest, reason)
+                manifest.close()
         current_no = _manifest_number(current.name) if current is not None else None
 
         # Parse ALL MANIFEST files for the Overview, not just the current one (#6)
@@ -173,9 +234,12 @@ class LeveldbParser(AbstractParser):
             if not _MANIFEST_LISTED_RE.match(mpath.name):
                 continue
             try:
-                mf = ManifestFile(mpath)
-                mdata, _, _, partial = _parse_manifest(mf)
-                mf.close()  # type: ignore[no-untyped-call]
+                mf = open_manifest(mpath)
+                mdata, _, _, partial = _parse_manifest(mf, reason)
+                mf.close()
+                tag = partial.params.get("tag") if partial is not None else None
+                if tag is not None and _is_rocksdb_tag(tag):
+                    rocksdb_signs[mpath.name] = ParseIssue("leveldb.rocksdb_manifest_tag", {"tag": tag})
                 label = mpath.name + (" (current)" if mpath == current else "")
                 notes: list[Any] = [partial]
                 if mpath == current and not current_terminated:
@@ -199,18 +263,19 @@ class LeveldbParser(AbstractParser):
                 unreadable[mpath.name] = ParseIssue("leveldb.manifest_failed", detail=reason(exc))
         manifests_display["CURRENT"] = current_shown
 
+        if rocksdb_signs:
+            # Read as LevelDB, RocksDB's own tables, log records and MANIFEST
+            # fields would come out partly wrong, so nothing is read.
+            return _rocksdb_result(node, vfs, tmp_dir, rocksdb_signs)
+
         # Per-file counters: file_name → {type, level, total, live, deleted, unknown}
         file_stats: dict[str, dict[str, Any]] = {}
         records: list[dict[str, Any]] = []
-        data_files = _data_files(tmp_dir)
         not_whole = 0  # data files not read to their end
 
         for path in data_files:
             try:
-                # Any: the vendored __iter__ is annotated Iterable, not Iterator.
-                reader: Any = (
-                    LogFile(path) if path.suffix.lower() == ".log" else LdbFile(path)
-                )
+                reader = open_data_file(path)
             except Exception as exc:  # noqa: BLE001
                 _logger.warning("LevelDB: could not open %s in %s: %s", path.name, node.path, exc)
                 unreadable[path.name] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
@@ -268,8 +333,8 @@ class LeveldbParser(AbstractParser):
         for fstat in file_stats.values():
             kr = file_key_ranges.get(_file_number(Path(fstat["name"])))
             fstat["size"] = kr["size"] if kr else None
-            fstat["smallest_key"] = kr["smallest"] if kr else ""
-            fstat["largest_key"] = kr["largest"] if kr else ""
+            for field in ("smallest_key_text", "smallest_key_hex", "largest_key_text", "largest_key_hex"):
+                fstat[field] = kr[field] if kr else ""
 
         # Read LOG and LOG.old in full — no truncation (#10)
         log_files: dict[str, str] = {}
@@ -325,8 +390,38 @@ class LeveldbParser(AbstractParser):
         )
 
 
+def _rocksdb_result(
+    node: VFSNode, vfs: VFS, directory: Path, signs: dict[str, ParseIssue]
+) -> ParseResult:
+    """A RocksDB directory: what shows it is RocksDB, and every file in it,
+    none of them read."""
+    files = sorted(p.relative_to(directory).as_posix() for p in directory.rglob("*") if p.is_file())
+    return ParseResult(
+        viewer_type="leveldb",
+        data={
+            "manifests": {
+                "Database": {
+                    "Status": ParseIssue("leveldb.rocksdb_not_read"),
+                    "RocksDB signs": signs,
+                    "Files": files,
+                },
+            },
+            "files": [],
+            "records": [],
+            "log_files": {},
+        },
+        metadata={
+            "Format": ParseIssue("leveldb.rocksdb_format"),
+            "Files": f"{vfs.file_count(node):,}",
+            "Total size": f"{vfs.total_size(node):,} B",
+            "Parse warning": ParseIssue("leveldb.rocksdb_not_read"),
+        },
+    )
+
+
 def _parse_manifest(
     manifest: ManifestFile,
+    reason: Callable[[Exception], str] = str,
 ) -> tuple[dict[str, Any], dict[int, int], dict[int, dict[str, Any]], ParseIssue | None]:
     """Extract summary info, file-to-level map, and per-file key ranges from
     a ManifestFile, plus why reading stopped early (None: read to the end).
@@ -365,8 +460,8 @@ def _parse_manifest(
                 file_to_level[nf.file_no] = nf.level
                 file_key_ranges[nf.file_no] = {
                     "size": nf.file_size,
-                    "smallest": _decode_internal_key(nf.smallest_key),
-                    "largest": _decode_internal_key(nf.largest_key),
+                    **_key_columns("smallest_key", nf.smallest_key),
+                    **_key_columns("largest_key", nf.largest_key),
                 }
             if edit.new_files or edit.deleted_files:
                 entry: dict[str, Any] = {}
@@ -382,9 +477,12 @@ def _parse_manifest(
                     ]
                 if entry:
                     compaction_history.append(entry)
+    except UnknownVersionEditTag as exc:
+        _logger.debug("Manifest parse warning: %s", exc)
+        partial = ParseIssue("leveldb.manifest_partial", {"tag": exc.tag}, detail=reason(exc))
     except Exception as exc:
         _logger.debug("Manifest parse warning: %s", exc)
-        partial = ParseIssue("leveldb.manifest_partial", detail=str(exc))
+        partial = ParseIssue("leveldb.manifest_partial", detail=reason(exc))
 
     # Build levels summary: level → list of file numbers
     levels: dict[str, list[str]] = {}

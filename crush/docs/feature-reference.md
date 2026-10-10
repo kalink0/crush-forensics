@@ -535,6 +535,8 @@ If the PDF was saved more than once without a full rewrite (an "incremental upda
 
 Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) in a tabbed viewer.
 
+**RocksDB** (a fork of LevelDB) uses the same file names but other table, log and MANIFEST formats. A directory is recognised as RocksDB by its contents — an `OPTIONS-…` file naming a RocksDB version, a table file ending in a RocksDB table magic, or a MANIFEST tag only RocksDB writes — and is then not read: the Overview says so, lists what showed it is RocksDB, and lists every file. A MANIFEST tag that neither defines stops reading that MANIFEST at that point, with its offset.
+
 **Overview tab** — MANIFEST metadata for the database:
 - All `MANIFEST-*` files in the directory are parsed; the active one (pointed to by `CURRENT`) is labelled *(current)* and gives the Files tab its levels, sizes and key ranges. Older manifests expose compaction history from before the last recovery and may reference file numbers no longer on disk. A MANIFEST numbered higher than the one `CURRENT` names (LevelDB writes a new MANIFEST before it switches `CURRENT` to it) is marked as such.
 - **CURRENT** — the MANIFEST it names. When `CURRENT` is missing, can't be read, doesn't name a MANIFEST, or names one that isn't there or can't be read, no MANIFEST is labelled *(current)* and files have no level; the entry says why. A `CURRENT` without the line break LevelDB requires at its end is still followed; both it and the MANIFEST it names say that LevelDB treats it as corrupt.
@@ -550,7 +552,7 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 | Type | `Ldb` / `Log` |
 | Level | Compaction level (data files only) |
 | Size (B) | On-disk size from the MANIFEST (`—` for log files) |
-| Smallest Key / Largest Key | Inclusive key-range boundaries decoded as UTF-8 or hex |
+| Smallest Key / Largest Key (text) / (hex) | Inclusive key-range boundaries: the user key as UTF-8 text (empty when it isn't valid UTF-8) and as hex, in separate columns |
 | Live / Deleted / Unknown | Record counts; rows with deleted records are highlighted red |
 
 **Records tab** — all records across all files in a single table. Deleted records are shown inline in red alongside live records so the examiner sees the full write history.

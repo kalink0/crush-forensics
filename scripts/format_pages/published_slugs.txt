@@ -135,6 +135,7 @@ rdp-cache
 realm
 refs
 registry-hive
+rocksdb
 segb
 simg
 snss

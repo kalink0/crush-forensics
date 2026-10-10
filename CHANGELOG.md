@@ -33,11 +33,16 @@ All notable changes to Crush will be documented in this file.
 - Fixed LevelDB taking the highest-numbered MANIFEST as the current one instead of the one CURRENT names.
 - Fixed LevelDB's Overview listing a file on the level a later MANIFEST edit had deleted it from, and leaving out an empty MANIFEST.
 - Fixed zero padding after the last record of a LevelDB `.log` file stopping its read with an empty reason.
+- Fixed LevelDB's Files tab showing a key range as text or as hex without saying which, and an empty key as its sequence/type bytes.
+- Fixed a LevelDB block compressed with anything but Snappy failing with a Snappy error; the unsupported compression type is now named.
+- Fixed a RocksDB database, which uses LevelDB's file names, being read as LevelDB and partly misread; it is now recognised by its contents and reported as not supported.
+- Fixed a LevelDB MANIFEST tag LevelDB doesn't define being read past silently; reading that MANIFEST now stops there and says where.
 
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.60 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151))
+- Bundled [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) updated to v0.4 (from v0.1).
 
 ## v0.22.0 - 2026-10-08
 
