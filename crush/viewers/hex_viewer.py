@@ -62,7 +62,6 @@ _GUTTER_GAP = 2
 
 _COLOR_HIT = QColor(255, 230, 80)     # yellow — all matches
 _COLOR_CURRENT = QColor(255, 140, 0)  # orange — current match
-_MAX_FOCUS_RANGES = 5
 
 
 class _HexPlainTextEdit(QPlainTextEdit):
@@ -111,6 +110,10 @@ class HexViewer(QWidget):
         self._match_len: int = 0
         self._focus_range: tuple[int, int] | None = None
         self._focus_ranges: list[tuple[int, int]] = []
+        # Color index of each entry in _focus_ranges: the ranges of one
+        # group (e.g. every piece of a value spread over several pages)
+        # share one color.
+        self._focus_color_idx: list[int] = []
         self._suppress_focus_signal = False
         self._offset_mode = "hex"  # "hex" or "dec"
         self._compute_layout()
@@ -352,6 +355,7 @@ class HexViewer(QWidget):
         self._match_len = 0
         self._focus_range = None
         self._focus_ranges = []
+        self._focus_color_idx = []
         self._count_label.setText("")
         self._compute_layout()
         self._load_page()
@@ -366,14 +370,34 @@ class HexViewer(QWidget):
         *,
         scroll: bool = True,
     ) -> None:
-        """Highlight up to five half-open byte ranges."""
+        """Highlight every half-open byte range in *ranges*, each in its own color."""
+        self.highlight_byte_range_groups([[rng] for rng in ranges], scroll=scroll)
+
+    def highlight_byte_range_groups(
+        self,
+        groups: list[list[tuple[int, int]]],
+        *,
+        scroll: bool = True,
+    ) -> None:
+        """Highlight every half-open byte range in *groups*, one color per
+        group: the pieces of one value share its color. Colors repeat
+        after the palette's last one; later groups paint over earlier ones."""
         normalized: list[tuple[int, int]] = []
-        for start, end in ranges[:_MAX_FOCUS_RANGES]:
-            start = max(0, min(start, len(self._data)))
-            end = max(start, min(end, len(self._data)))
-            if end > start:
-                normalized.append((start, end))
+        color_idx: list[int] = []
+        color = 0
+        for group in groups:
+            used = False
+            for start, end in group:
+                start = max(0, min(start, len(self._data)))
+                end = max(start, min(end, len(self._data)))
+                if end > start:
+                    normalized.append((start, end))
+                    color_idx.append(color)
+                    used = True
+            if used:
+                color += 1
         self._focus_ranges = normalized
+        self._focus_color_idx = color_idx
         self._focus_range = normalized[0] if normalized else None
         if scroll and self._focus_range is not None and not self._focus_target_visible():
             target_page = self._focus_range[0] // _PAGE_BYTES
@@ -387,6 +411,7 @@ class HexViewer(QWidget):
         """Clear an externally selected byte-range highlight."""
         self._focus_range = None
         self._focus_ranges = []
+        self._focus_color_idx = []
         self._update_highlights()
 
     def _prev_page(self) -> None:
@@ -653,10 +678,10 @@ class HexViewer(QWidget):
 
         selections: list[QTextEdit.ExtraSelection] = []
         focus_colors = _focus_range_colors(self.palette())
-        for range_idx, (focus_start, focus_end) in enumerate(self._focus_ranges):
+        for (focus_start, focus_end), color in zip(self._focus_ranges, self._focus_color_idx):
             if focus_end > page_start and focus_start < page_end:
                 fmt_range = QTextCharFormat()
-                fmt_range.setBackground(focus_colors[range_idx % len(focus_colors)])
+                fmt_range.setBackground(focus_colors[color % len(focus_colors)])
                 clip_start = max(focus_start, page_start) - page_start
                 clip_end = min(focus_end, page_end) - page_start
                 self._append_match_selections(selections, fmt_range, clip_start, clip_end)
