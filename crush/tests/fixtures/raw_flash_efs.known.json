@@ -1,0 +1,185 @@
+{
+ "partitions": [
+  {
+   "base": 16384,
+   "deleted": [
+    {
+     "extents": [
+      [
+       33644,
+       1000,
+       "deleted"
+      ],
+      [
+       37432,
+       333,
+       "deleted"
+      ]
+     ],
+     "kind": "deleted file",
+     "mode": 33184,
+     "mtime": 1700000008,
+     "name": "old.log",
+     "parent_path": "log",
+     "recoverable": true,
+     "sha256": "68beedf4721f5e7262a0a85f6379b695982684b22905bdaef95d4b5cb9926951",
+     "size": 1333
+    },
+    {
+     "extents": [
+      [
+       37768,
+       280,
+       "deleted"
+      ],
+      [
+       38048,
+       120,
+       "deleted"
+      ]
+     ],
+     "kind": "deleted file",
+     "mode": 33152,
+     "mtime": 1700000009,
+     "name": "gone.bin",
+     "parent_path": null,
+     "recoverable": true,
+     "sha256": "ca4819a9103f0f0aa1e0e8fabed09f7c33cbcae4f16fb72bbbc2e1124fe1c773",
+     "size": 400
+    },
+    {
+     "extents": [],
+     "kind": "deleted file",
+     "mode": 33188,
+     "mtime": 1700000010,
+     "name": "broken.dat",
+     "parent_path": null,
+     "recoverable": false,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "size": 0
+    },
+    {
+     "extents": [
+      [
+       34644,
+       256,
+       "deleted, superseded"
+      ]
+     ],
+     "kind": "extents of a deleted file",
+     "mode": 33152,
+     "mtime": 1700000009,
+     "name": "gone.bin",
+     "parent_path": null,
+     "recoverable": true,
+     "sha256": "13e233bbb13dfb0c55e97a7d87dbc6933bae31576d23f5b924d8a3b0869cab24",
+     "size": 256
+    },
+    {
+     "extents": [
+      [
+       21220,
+       400,
+       "allocated, superseded"
+      ]
+     ],
+     "kind": "extents of a live file",
+     "mode": 33188,
+     "mtime": 1700000040,
+     "name": "current.log",
+     "parent_path": "log",
+     "recoverable": true,
+     "sha256": "8e531d1c9c48fd33497725c2e4b981d7d9e14ccfbef205098f8dbc90b3e52474",
+     "size": 400
+    },
+    {
+     "extents": [
+      [
+       17400,
+       200,
+       "deleted"
+      ],
+      [
+       21736,
+       96,
+       "deleted"
+      ]
+     ],
+     "kind": "extents with no name",
+     "mode": null,
+     "mtime": null,
+     "name": "",
+     "parent_path": null,
+     "recoverable": true,
+     "sha256": "0f6057c095a415664832266a35e0699782ec517c6ef4e54569dc4a3d4911945b",
+     "size": 296
+    }
+   ],
+   "dirs": {
+    "etc": {
+     "mode": 16877,
+     "mtime": 1700000001
+    },
+    "log": {
+     "mode": 16877,
+     "mtime": 1700000002
+    }
+   },
+   "files": {
+    "etc/config.txt": {
+     "mode": 33152,
+     "mtime": 1700000005,
+     "sha256": "006c22d26b381e2bb30baa0e160edc3e145b677c6d9fc9b6e14f25d6f3361ec5",
+     "size": 1417
+    },
+    "etc/empty": {
+     "mode": 33188,
+     "mtime": 1700000006,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "size": 0
+    },
+    "log/current.log": {
+     "mode": 33188,
+     "mtime": 1700000040,
+     "sha256": "76f92494bfd7a92b3ac3193cb58197580ad525692031f33bcfe4a5cef8d8a770",
+     "size": 1150
+    },
+    "readme.txt": {
+     "mode": 33188,
+     "mtime": 1700000030,
+     "sha256": "0063a1b6d6e0c63a2ab5484bb162d6a5e002f4f42f1287e6bbe3280f15ce218c",
+     "size": 300
+    }
+   },
+   "size": 24576,
+   "symlinks": {
+    "link": {
+     "mode": 41471,
+     "mtime": 1700000004,
+     "target": "etc/config.txt"
+    }
+   },
+   "unit_index": 2,
+   "unit_size": 4096,
+   "unit_total": 6
+  },
+  {
+   "base": 65536,
+   "deleted": [],
+   "dirs": {},
+   "files": {
+    "only.bin": {
+     "mode": 33060,
+     "mtime": 1700100001,
+     "sha256": "ad307810d30654f894701209ab2a1f23b37983d6ab6d30799d880b424b1f4e5d",
+     "size": 640
+    }
+   },
+   "size": 12288,
+   "symlinks": {},
+   "unit_index": 0,
+   "unit_size": 4096,
+   "unit_total": 3
+  }
+ ]
+}

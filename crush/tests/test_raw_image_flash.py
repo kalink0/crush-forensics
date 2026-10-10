@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""RawImageVFS on flash filesystems: SquashFS, JFFS2, UBI/UBIFS, YAFFS1/2.
+"""RawImageVFS on flash filesystems: SquashFS, JFFS2, UBI/UBIFS, YAFFS1/2, QNX EFS.
 
 The images and their `.sha256` oracles are abrignoni/qnxprobe's own
 MIT-licensed test fixtures (tests/fixtures at the vendored commit), renamed
@@ -7,13 +7,15 @@ with a `raw_flash_` prefix. Each oracle lists every regular file of the tree
 the image was built from (`*.src.sha256`) or of the tree as the filesystem's
 own writer left it after a history of renames and deletions
 (`*.history.sha256`, written by the Linux kernel's JFFS2/UBIFS drivers and
-by YAFFS's own core).
+by YAFFS's own core). The two EFS images hold the same two partitions in
+either byte order, and `efs.known.json` is what their builder put in them.
 """
 from __future__ import annotations
 
 import gzip
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -315,3 +317,99 @@ def test_uboot_environment_with_a_flipped_byte_is_not_claimed(tmp_path: Path) ->
     img.write_bytes(bytes(env))
     with pytest.raises(RawImageOpenError):
         RawImageVFS(img)
+
+
+_EFS_IMAGES = ["efs-le.img.gz", "efs-be.img.gz"]
+
+
+def _efs_known() -> list[dict[str, object]]:
+    known = json.loads((FIXTURES_DIR / "raw_flash_efs.known.json").read_text(encoding="utf-8"))
+    return known["partitions"]  # type: ignore[no-any-return]
+
+
+def _efs_volumes(vfs: RawImageVFS) -> list[VFSNode]:
+    """The EFS volume nodes, in the order the partitions lie in the image."""
+    order = [
+        f"lba{v['base'] // 512}" for v in sorted(vfs._handle.volumes, key=lambda v: v["base"])
+        if v.get("kind") == "efs"
+    ]
+    return [_child(vfs.root(), name) for name in order]
+
+
+@pytest.mark.parametrize("image", _EFS_IMAGES)
+def test_efs_partitions_in_a_flash_dump_are_found_in_either_byte_order(
+    tmp_path: Path, image: str
+) -> None:
+    """A flash dump with no partition table holds its EFS partitions one
+    after another; each becomes a volume listing the files its builder wrote,
+    with the same content, whichever byte order the partition is in."""
+    vfs = _open(tmp_path, image)
+    try:
+        known = _efs_known()
+        volumes = _efs_volumes(vfs)
+        assert len(volumes) == len(known) == 2
+        for volume, part in zip(volumes, known, strict=True):
+            prefix = volume.path.rstrip("/") + "/"
+            got = {
+                node.path.removeprefix(prefix): hashlib.sha256(vfs.read(node)).hexdigest()
+                for node in _regular_files(volume)
+            }
+            files: dict[str, dict[str, str]] = part["files"]  # type: ignore[assignment]
+            assert got == {path: rec["sha256"] for path, rec in files.items()}
+    finally:
+        vfs.close()
+
+
+@pytest.mark.parametrize("image", _EFS_IMAGES)
+def test_efs_deleted_file_is_recovered(tmp_path: Path, image: str) -> None:
+    """A deleted file whose extent chain still reads whole comes back under
+    `$Recovered` with its name, folder, mtime and the content its builder
+    wrote before deleting it."""
+    vfs = _open(tmp_path, image)
+    try:
+        part = _efs_known()[0]
+        deleted: list[dict[str, object]] = part["deleted"]  # type: ignore[assignment]
+        (want,) = [d for d in deleted if d["name"] == "old.log"]
+        node = _child(_child(_efs_volumes(vfs)[0], _RECOVERED), "old.log")
+        info = vfs.volume_info(node)
+        assert info is not None
+        assert info["kind"] == "deleted file"
+        assert info["original_folder"] == f"/{want['parent_path']}"
+        assert node.modified == want["mtime"]
+        data = vfs.read(node)
+        assert len(data) == node.size == want["size"]
+        assert hashlib.sha256(data).hexdigest() == want["sha256"]
+        assert vfs.peek(node, 16) == data[:16]
+        with vfs.open(node) as fh:
+            assert fh.read() == data
+    finally:
+        vfs.close()
+
+
+@pytest.mark.parametrize("image", _EFS_IMAGES)
+def test_efs_recovered_entries_match_what_the_builder_left(tmp_path: Path, image: str) -> None:
+    """Every entry the builder's record lists is under `$Recovered` once: the
+    readable ones with the recorded content, and the one whose extent chain
+    is broken refused with the reason instead of read short."""
+    vfs = _open(tmp_path, image)
+    try:
+        part = _efs_known()[0]
+        deleted: list[dict[str, object]] = part["deleted"]  # type: ignore[assignment]
+        recovered = _child(_efs_volumes(vfs)[0], _RECOVERED)
+        nodes = [n for n in recovered.children if not n.is_dir]
+        assert len(nodes) == len(deleted)
+
+        readable: list[str] = []
+        refused: list[VFSNode] = []
+        for node in nodes:
+            note = str(vfs.volume_info(node)["note"])  # type: ignore[index]
+            if "not recoverable" in note:
+                refused.append(node)
+            else:
+                readable.append(hashlib.sha256(vfs.read(node)).hexdigest())
+        assert sorted(readable) == sorted(str(d["sha256"]) for d in deleted if d["recoverable"])
+        assert len(refused) == sum(1 for d in deleted if not d["recoverable"]) == 1
+        with pytest.raises(RawImageFileUnreadableError, match="not recoverable"):
+            vfs.read(refused[0])
+    finally:
+        vfs.close()
