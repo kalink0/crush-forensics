@@ -164,7 +164,7 @@ crush                                             # or: python -m crush
 
 Crush builds on the work of the DFIR community:
 
-- [CCL Solutions Group](https://github.com/cclgroupltd) — bundled [ccl_bplist](https://github.com/cclgroupltd/ccl-bplist) (BSD 3-Clause), [ccl_segb](https://github.com/cclgroupltd/ccl_segb) (MIT), [ccl_leveldb](https://github.com/cclgroupltd/ccl-leveldb) (MIT)
+- [CCL Solutions Group](https://github.com/cclgroupltd) — bundled [ccl_bplist](https://github.com/cclgroupltd/ccl-bplist) (BSD 3-Clause), [ccl_segb](https://github.com/cclgroupltd/ccl_segb) (MIT), [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) (MIT)
 - [Mandiant](https://github.com/mandiant) — [macos-UnifiedLogs](https://github.com/mandiant/macos-UnifiedLogs) for Apple Unified Log parsing (Apache 2.0)
 - [Alexis Brignoni](https://github.com/abrignoni) — [ewfprobe](https://github.com/abrignoni/ewfprobe) and [qnxprobe](https://github.com/abrignoni/qnxprobe) (disk images and filesystems, MIT), [mmkv-parser](https://github.com/abrignoni/mmkv-parser) (MIT) and the [iLEAPP](https://github.com/abrignoni/iLEAPP)/[ALEAPP](https://github.com/abrignoni/ALEAPP) artifact scripts behind Run Analyzer (MIT)
 - Sibling projects: [peach-forensics](https://github.com/kalink0/peach-forensics) (log viewer) and [crush-analyze](https://github.com/kalink0/crush-analyze) (analyzer modules), both Apache 2.0

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.issues import render_value
 from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector
 from crush.viewers.tree_viewer import TreeViewer
@@ -58,7 +59,20 @@ _COLUMNS = [
     QT_TRANSLATE_NOOP("GeneratedView", "Value (text)"),
     QT_TRANSLATE_NOOP("GeneratedView", "Value (hex)"),
     QT_TRANSLATE_NOOP("GeneratedView", "Compressed"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Checksum"),
 ]
+
+
+def _checksum_text(checksum_ok: bool | None) -> str:
+    """The parser's checksum_ok as shown: True/False for a .log record's
+    stored checksum, None where it isn't checked (table blocks)."""
+    if checksum_ok is None:
+        return QT_TRANSLATE_NOOP("GeneratedView", "not checked")
+    if checksum_ok:
+        return QT_TRANSLATE_NOOP("GeneratedView", "matches")
+    return QT_TRANSLATE_NOOP("GeneratedView", "doesn't match")
+
+
 # Record states from the parser (shown translated, kept English for the filter).
 _STATES = (
     QT_TRANSLATE_NOOP("GeneratedView", "Live"),
@@ -248,6 +262,7 @@ class LevelDbRecordsWidget(QWidget):
                 (_text_preview(rec.get("value_text"), val_bytes), None),
                 (_hex_preview(val_bytes), None),
                 ("yes" if rec.get("compressed") else "no", None),  # translated below
+                (_checksum_text(rec.get("checksum_ok")), None),  # translated below
             ]
 
             items = []
@@ -265,6 +280,8 @@ class LevelDbRecordsWidget(QWidget):
                     else QT_TRANSLATE_NOOP("GeneratedView", "no")
                 ),
             )
+            checksum_item = items[_COLUMNS.index("Checksum")]
+            mark_generated(checksum_item, Gen(_checksum_text(rec.get("checksum_ok"))))
 
             # Store raw bytes for hex pane and inspector
             items[0].setData(uk_bytes, _KEY_BYTES_ROLE)
@@ -312,7 +329,7 @@ class LevelDbRecordsWidget(QWidget):
             "User Key (text)", "User Key (hex)",
             "Internal Key (hex)",
             "Value (text)", "Value (hex)",
-            "Compressed",
+            "Compressed", "Checksum",
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -338,6 +355,7 @@ class LevelDbRecordsWidget(QWidget):
                     rec.get("value_text") or "",
                     val.hex(),
                     "yes" if rec.get("compressed") else "no",
+                    _checksum_text(rec.get("checksum_ok")),
                 ])
 
     def _on_context_menu(self, pos) -> None:
@@ -454,8 +472,11 @@ class LevelDbViewer(QWidget):
             QT_TRANSLATE_NOOP("GeneratedView", "Live"),
             QT_TRANSLATE_NOOP("GeneratedView", "Deleted"),
             QT_TRANSLATE_NOOP("GeneratedView", "Unknown"),
-            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key"),
-            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key (text)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key (hex)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key (text)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Largest Key (hex)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Note"),
         )
         model = QStandardItemModel(0, len(columns))
         set_headers(model, columns)
@@ -474,8 +495,11 @@ class LevelDbViewer(QWidget):
                 _make_item(str(f.get("live", 0)), f.get("live", 0)),
                 _make_item(str(f.get("deleted", 0)), f.get("deleted", 0)),
                 _make_item(str(f.get("unknown", 0)), f.get("unknown", 0)),
-                _make_item(f.get("smallest_key", "")),
-                _make_item(f.get("largest_key", "")),
+                _make_item(f.get("smallest_key_text", "")),
+                _make_item(f.get("smallest_key_hex", "")),
+                _make_item(f.get("largest_key_text", "")),
+                _make_item(f.get("largest_key_hex", "")),
+                _make_item(render_value(f.get("note", ""), localized=True)),
             ]
             # Color files that contain deleted records
             if f.get("deleted", 0) > 0:
