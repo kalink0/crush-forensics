@@ -646,6 +646,25 @@ def _add_stream_nodes(
         read_map[stream_path] = _Entry(walker=None, node=None, size=0, stored=b"")
 
 
+def _check_cluster_chain(walker: Any, node: Any, size: int, got: int) -> None:
+    """Raise when a FAT32 or exFAT file read short because its cluster chain
+    ends before its recorded size.
+
+    The directory entry records the size and the allocation table records the
+    clusters, and a volume can hold the two in disagreement. The reader then
+    returns only what the chain reaches, with nothing lost past the end of the
+    image, so the short copy would otherwise pass for the whole file.
+    """
+    if got >= size:
+        return
+    cut = qnxprobe.chain_shortfall(walker, node)  # type: ignore[no-untyped-call]
+    if cut:
+        raise RawImageFileUnreadableError(
+            f"only {got:,} of {size:,} bytes can be read: the volume's cluster chain "
+            f"for this file ends after {cut[0]:,} of the {cut[1]:,} clusters its size needs"
+        )
+
+
 def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
     """Materialize one file's bytes via `walker.read_file(node, size)`.
 
@@ -672,6 +691,7 @@ def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
             f"only {present:,} of {size:,} bytes are in the image "
             f"(the image ends before the file does)"
         )
+    _check_cluster_chain(walker, node, size, got)
     return b"".join(chunks)
 
 
@@ -733,6 +753,7 @@ def stream_walker_file(walker: Any, node: Any, size: int) -> Iterator[bytes]:
             f"only {present:,} of {size:,} bytes are in the image "
             f"(the image ends before the file does)"
         )
+    _check_cluster_chain(walker, node, size, got)
 
 
 def stream_deleted_file(walker: Any, entry: Any, size: int) -> Iterator[bytes]:

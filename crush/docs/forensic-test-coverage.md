@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-231 checks in total.
+233 checks in total.
 
 ### Sources
 
@@ -54,7 +54,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 |---|---|---|---|---|---|---|
 | [NTFS](#ntfs) | not tested | not tested | not tested | 6 | not tested | not tested |
 | [FAT32](#fat32) | not tested | not tested | not tested | 2 | not tested | not tested |
-| [exFAT](#exfat) | not tested | not tested | not tested | 2 | not tested | not tested |
+| [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
 | [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [HFS+](#hfs) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -320,6 +320,8 @@ No forensic checks.
 
 #### exFAT
 
+- **Known-output Verification** — An empty exFAT file must read as no bytes, never as a cluster of other data from the volume ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_empty_exfat_file_reads_as_no_bytes`)
+- **Known-output Verification** — An exFAT file whose FAT chain ends before its recorded size must fail to read, naming the chain, never read short ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_file_with_a_cut_cluster_chain_is_refused`)
 - **Known-output Verification** — Three deliberately deleted exFAT test files must recover, names and content, to their reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_recovers_all_three_with_intact_names`)
 - **Known-output Verification** — exFAT entries show their stored date/time as stored, with the stored UTC offset shown and not applied ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_exfat_offset_shown_not_applied`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
