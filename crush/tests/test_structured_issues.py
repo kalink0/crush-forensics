@@ -333,8 +333,9 @@ def test_leveldb_unusable_current_takes_no_manifest_as_current(
 
 
 def test_leveldb_current_without_line_break_is_noted(tmp_path: Path) -> None:
-    """LevelDB requires CURRENT to end with a line break; one without it is
-    shown as it is, with a note, and still names the MANIFEST."""
+    """LevelDB treats a CURRENT without a line break at its end as corrupt.
+    The MANIFEST it names still gives the levels, and both CURRENT and that
+    MANIFEST say that LevelDB wouldn't accept it."""
     _db_with_two_manifests(tmp_path, b"MANIFEST-000001")
     node, vfs = _leveldb(tmp_path)
     result = LeveldbParser().parse(node, vfs)
@@ -344,7 +345,89 @@ def test_leveldb_current_without_line_break_is_noted(tmp_path: Path) -> None:
         "Active MANIFEST": "MANIFEST-000001",
         "Status": ParseIssue("leveldb.current_no_newline"),
     }
-    assert "MANIFEST-000001 (current)" in manifests
+    assert manifests["MANIFEST-000001 (current)"]["Status"] == ParseIssue(
+        "leveldb.named_by_invalid_current"
+    )
+    assert result.data["files"][0]["level"] == 1
+
+
+def _manifest_record(edit: bytes) -> bytes:
+    return struct.pack("<IHB", 0, len(edit), 1) + edit
+
+
+def test_leveldb_manifest_takes_deleted_files_out_of_their_level(tmp_path: Path) -> None:
+    """Regression: only a MANIFEST's added files were counted, so a file
+    compacted away was still listed on its old level."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    added_5 = _manifest_with_new_file(0, 5, 10)
+    compacted = _manifest_record(
+        b"\x06" + _varint(0) + _varint(5)  # deleted: file 5 from level 0
+        + _manifest_with_new_file(1, 6, 20)[7:]  # new: file 6 on level 1
+    )
+    (db / "MANIFEST-000001").write_bytes(added_5 + compacted)
+    (db / "CURRENT").write_bytes(b"MANIFEST-000001\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    manifest = result.data["manifests"]["MANIFEST-000001 (current)"]
+    assert manifest["Files by level"] == {"Level 1": "000006"}
+    assert manifest["Compaction history"][1]["deleted"] == [{"level": 0, "file": "000005"}]
+
+
+def test_leveldb_empty_manifest_named_by_current_is_shown(tmp_path: Path) -> None:
+    """Regression: an empty MANIFEST was left out of the Overview, so CURRENT
+    named a file that appeared nowhere."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])  # MANIFEST-000001 is empty
+    (db / "CURRENT").write_bytes(b"MANIFEST-000001\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert result.data["manifests"]["MANIFEST-000001 (current)"] == {
+        "Status": ParseIssue("leveldb.manifest_empty")
+    }
+
+
+def test_leveldb_invalid_current_shows_its_bytes(tmp_path: Path) -> None:
+    """A CURRENT that doesn't name a MANIFEST is shown byte for byte, not
+    with undecodable bytes replaced."""
+    raw = b"MANIFEST-\xff\x00\n"
+    _db_with_two_manifests(tmp_path, raw)
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+    assert result.data["manifests"]["CURRENT"]["Content"] == repr(raw)
+
+
+def test_leveldb_zero_padding_ends_a_log_block_quietly(tmp_path: Path) -> None:
+    """Regression: zero bytes after the last record of a .log stopped the
+    read with an empty reason. LevelDB skips a zero header as padding."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    (db / "000001.log").write_bytes(_make_log_entry(b"k", b"v", seq=1) + bytes(64))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
+    assert "Unreadable files" not in result.data["manifests"]
+    assert "Parse warning" not in result.metadata
+
+
+def test_leveldb_unknown_log_record_type_says_which(tmp_path: Path) -> None:
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    first = _make_log_entry(b"k", b"v", seq=1)
+    (db / "000001.log").write_bytes(first + struct.pack("<IHB", 0, 3, 9) + b"abc")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    issue = result.data["manifests"]["Unreadable files"]["000001.log"]
+    assert issue.code == "leveldb.read_stopped"
+    assert f"Unknown record type 9 (length 3) at offset {len(first)}" in issue.detail
 
 
 def test_leveldb_empty_data_file_has_a_files_row(tmp_path: Path) -> None:

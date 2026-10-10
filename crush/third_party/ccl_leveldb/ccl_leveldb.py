@@ -304,6 +304,15 @@ class LogFile:
                         break
                     crc, length, block_type = struct.unpack("<IHB", header)
 
+                    # Crush: a zero header is padding (log_reader.cc skips the
+                    # rest of the block without reporting it); inside a
+                    # fragmented record it cuts that record off.
+                    if block_type == LogEntryType.Zero and length == 0:
+                        if in_record:
+                            raise ValueError(f"Record starting at offset {start_block_offset} is cut "
+                                             f"off by zero padding at offset "
+                                             f"{idx * LogFile.LOG_BLOCK_SIZE + buff.tell() - 7} in {self.path}")
+                        break
                     if block_type == LogEntryType.Full:
                         if in_record:
                             raise ValueError(f"Full block whilst still building a block at offset "
@@ -330,7 +339,9 @@ class LogFile:
                         in_record = False
                         yield start_block_offset, block
                     else:
-                        raise ValueError()  # Cannot happen
+                        # Crush: say what was found instead of an empty ValueError.
+                        raise ValueError(f"Unknown record type {block_type} (length {length}) at offset "
+                                         f"{idx * LogFile.LOG_BLOCK_SIZE + buff.tell() - 7} in {self.path}")
 
     def __iter__(self) -> typing.Iterable[Record]:
         """Iterate Records in this Log file"""
@@ -500,6 +511,15 @@ class ManifestFile:
                         break
                     crc, length, block_type = struct.unpack("<IHB", header)
 
+                    # Crush: a zero header is padding (log_reader.cc skips the
+                    # rest of the block without reporting it); inside a
+                    # fragmented record it cuts that record off.
+                    if block_type == LogEntryType.Zero and length == 0:
+                        if in_record:
+                            raise ValueError(f"Record starting at offset {start_block_offset} is cut "
+                                             f"off by zero padding at offset "
+                                             f"{idx * LogFile.LOG_BLOCK_SIZE + buff.tell() - 7} in {self.path}")
+                        break
                     if block_type == LogEntryType.Full:
                         if in_record:
                             raise ValueError(f"Full block whilst still building a block at offset "
@@ -526,7 +546,9 @@ class ManifestFile:
                         in_record = False
                         yield start_block_offset, block
                     else:
-                        raise ValueError()  # Cannot happen
+                        # Crush: say what was found instead of an empty ValueError.
+                        raise ValueError(f"Unknown record type {block_type} (length {length}) at offset "
+                                         f"{idx * LogFile.LOG_BLOCK_SIZE + buff.tell() - 7} in {self.path}")
 
     def __iter__(self):
         for batch_offset, batch in self._get_batches():

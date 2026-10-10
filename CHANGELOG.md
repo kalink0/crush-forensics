@@ -31,6 +31,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed a LevelDB database with one unreadable data file showing none of its records; each file is now read on its own, and one that can't be read is listed with the reason and its path in the evidence. A data file with an upper-case extension (e.g. `.LOG`) is now read too.
 - Fixed LevelDB file numbers being read as hexadecimal: from file 10 on, the Overview named files that don't exist and the Files tab showed no level, size or key range, or another file's. File names with more than six digits are now read too.
 - Fixed LevelDB taking the highest-numbered MANIFEST as the current one instead of the one CURRENT names.
+- Fixed LevelDB's Overview listing a file on the level a later MANIFEST edit had deleted it from, and leaving out an empty MANIFEST.
+- Fixed zero padding after the last record of a LevelDB `.log` file stopping its read with an empty reason.
 
 ### Changed
 

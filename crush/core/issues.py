@@ -1260,8 +1260,24 @@ MESSAGES: dict[str, str] = {
     ),
     "leveldb.current_no_newline": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Does not end with a line break, which LevelDB requires of CURRENT",
+        "Does not end with a line break: LevelDB treats this CURRENT as corrupt and would "
+        "not open the database. The MANIFEST it names is still used here for the files' levels",
         "leveldb.current_no_newline",
+    ),
+    "leveldb.named_by_invalid_current": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Named by a CURRENT that LevelDB treats as corrupt (no line break at its end)",
+        "leveldb.named_by_invalid_current",
+    ),
+    "leveldb.manifest_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Empty file (0 bytes)",
+        "leveldb.manifest_empty",
+    ),
+    "leveldb.manifest_nothing_shown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Records no comparator, log or sequence numbers, or files",
+        "leveldb.manifest_nothing_shown",
     ),
     "leveldb.manifest_after_current": QT_TRANSLATE_NOOP(
         "ParseIssue",

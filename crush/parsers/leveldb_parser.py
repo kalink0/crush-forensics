@@ -52,35 +52,37 @@ def _manifest_number(name: str) -> int | None:
 
 def _current_manifest(
     directory: Path, reason: Callable[[Exception], str]
-) -> tuple[Path | None, dict[str, Any]]:
+) -> tuple[Path | None, dict[str, Any], bool]:
     """The MANIFEST that CURRENT names, as LevelDB finds it on opening
     (VersionSet::Recover): CURRENT holds the file name followed by a line
     break. None when CURRENT can't be used -- then no MANIFEST is taken as
     the current one, not even the highest-numbered. Also what the Overview
-    shows for CURRENT."""
+    shows for CURRENT, and whether it ends with the line break LevelDB
+    requires (one without is still followed here, and says so)."""
     path = directory / "CURRENT"
     if not path.is_file():
-        return None, {"Status": ParseIssue("leveldb.current_missing")}
+        return None, {"Status": ParseIssue("leveldb.current_missing")}, False
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        return None, {"Status": ParseIssue("leveldb.current_unreadable", detail=reason(exc))}
+        return None, {"Status": ParseIssue("leveldb.current_unreadable", detail=reason(exc))}, False
     text = raw.decode("utf-8", errors="replace")
-    name = text[:-1] if text.endswith("\n") else text
-    notes: list[Any] = [] if text.endswith("\n") else [ParseIssue("leveldb.current_no_newline")]
+    terminated = text.endswith("\n")
+    name = text[:-1] if terminated else text
+    notes: list[Any] = [] if terminated else [ParseIssue("leveldb.current_no_newline")]
     if _manifest_number(name) is None:
         return None, {
-            "Content": repr(text),
+            "Content": repr(raw),
             "Status": join_notes([*notes, ParseIssue("leveldb.current_invalid")]),
-        }
+        }, terminated
     shown: dict[str, Any] = {"Active MANIFEST": name}
     if not (directory / name).is_file():
         notes.append(ParseIssue("leveldb.current_target_missing", {"name": name}))
         shown["Status"] = join_notes(notes)
-        return None, shown
+        return None, shown, terminated
     if notes:
         shown["Status"] = join_notes(notes)
-    return directory / name, shown
+    return directory / name, shown, terminated
 
 def _try_utf8(raw: bytes) -> str | None:
     """Return UTF-8 decoded string, or None if not valid UTF-8."""
@@ -150,7 +152,7 @@ class LeveldbParser(AbstractParser):
         # is listed with the reason and the others are still read.
         # The MANIFEST that CURRENT names gives the files their level, size
         # and key range (#9).
-        current, current_shown = _current_manifest(tmp_dir, reason)
+        current, current_shown, current_terminated = _current_manifest(tmp_dir, reason)
         if current is not None:
             try:
                 manifest = ManifestFile(current)
@@ -176,16 +178,22 @@ class LeveldbParser(AbstractParser):
                 mf.close()  # type: ignore[no-untyped-call]
                 label = mpath.name + (" (current)" if mpath == current else "")
                 notes: list[Any] = [partial]
+                if mpath == current and not current_terminated:
+                    notes.append(ParseIssue("leveldb.named_by_invalid_current"))
                 number = _manifest_number(mpath.name)
                 if current_no is not None and number is not None and number > current_no:
                     # Written but never named by CURRENT, e.g. when LevelDB
                     # stopped between creating it and switching CURRENT.
                     notes.append(ParseIssue("leveldb.manifest_after_current"))
+                if not mdata and partial is None:
+                    notes.append(ParseIssue(
+                        "leveldb.manifest_empty" if mpath.stat().st_size == 0
+                        else "leveldb.manifest_nothing_shown"
+                    ))
                 status = join_notes(notes)
                 if status:
                     mdata = {"Status": status, **mdata}
-                if mdata:
-                    manifests_display[label] = mdata
+                manifests_display[label] = mdata
             except Exception as exc:  # noqa: BLE001
                 _logger.debug("Could not parse %s: %s", mpath.name, exc)
                 unreadable[mpath.name] = ParseIssue("leveldb.manifest_failed", detail=reason(exc))
@@ -321,8 +329,13 @@ def _parse_manifest(
     manifest: ManifestFile,
 ) -> tuple[dict[str, Any], dict[int, int], dict[int, dict[str, Any]], ParseIssue | None]:
     """Extract summary info, file-to-level map, and per-file key ranges from
-    a ManifestFile, plus why reading stopped early (None: read to the end)."""
-    file_to_level: dict[int, int] = dict(manifest.file_to_level)
+    a ManifestFile, plus why reading stopped early (None: read to the end).
+
+    The files and their levels are the state after every edit, as LevelDB
+    builds it (VersionSet::Builder::Apply): an edit's deleted files are
+    taken out first, then its new files added. (The vendored ManifestFile's
+    own file_to_level only adds.)"""
+    file_to_level: dict[int, int] = {}
     file_key_ranges: dict[int, dict[str, Any]] = {}  # fno → {size, smallest, largest}
 
     comparator: str | None = None
@@ -345,7 +358,11 @@ def _parse_manifest(
                 prev_log_number = edit.prev_log_number
             if edit.next_file_number is not None:
                 next_file_number = edit.next_file_number
+            for df in edit.deleted_files:
+                if file_to_level.get(df.file_no) == df.level:
+                    del file_to_level[df.file_no]
             for nf in edit.new_files:
+                file_to_level[nf.file_no] = nf.level
                 file_key_ranges[nf.file_no] = {
                     "size": nf.file_size,
                     "smallest": _decode_internal_key(nf.smallest_key),
