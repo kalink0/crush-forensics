@@ -13,28 +13,27 @@ from crush.core import tempdir
 from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.third_party.ccl_leveldb import KeyState, RawLevelDb
-from crush.third_party.ccl_leveldb.ccl_leveldb import LdbFile, LogFile, ManifestFile
+from crush.third_party.ccl_leveldb import KeyState
+from crush.third_party.ccl_leveldb.ccl_leveldb import FileType, LdbFile, LogFile, ManifestFile
 
+# Anchored: a copy such as "000005.ldb.bak" or "MANIFEST-000002.bak" is not
+# one of the database's own files (RawLevelDb's patterns match it).
 _DATA_FILE_RE = re.compile(r"^[0-9]{6}\.(ldb|log|sst)$", re.IGNORECASE)
+_MANIFEST_RE = re.compile(rf"^{ManifestFile.MANIFEST_FILENAME_PATTERN}$")
 _logger = logging.getLogger(__name__)
 
 
 def _data_files(directory: Path) -> list[Path]:
-    """The table and log files in *directory*, in file-number order -- the
-    files and order RawLevelDb reads."""
-    found = [
-        p for p in directory.iterdir()
-        if p.is_file() and re.match(RawLevelDb.DATA_FILE_PATTERN, p.name)
-    ]
+    """The table and log files in *directory*, in file-number order."""
+    found = [p for p in directory.iterdir() if p.is_file() and _DATA_FILE_RE.match(p.name)]
     return sorted(found, key=lambda p: int(p.stem, 16))
 
 
 def _latest_manifest(directory: Path) -> Path | None:
-    """The MANIFEST with the highest number, the one RawLevelDb opens."""
+    """The MANIFEST with the highest number (as RawLevelDb picked it)."""
     latest: tuple[int, Path | None] = (0, None)
     for p in directory.iterdir():
-        match = re.match(ManifestFile.MANIFEST_FILENAME_PATTERN, p.name)
+        match = _MANIFEST_RE.match(p.name)
         if p.is_file() and match and latest[0] < int(match.group(1), 16):
             latest = (int(match.group(1), 16), p)
     return latest[1]
@@ -163,23 +162,20 @@ class LeveldbParser(AbstractParser):
                 unreadable[path.name] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
                 not_whole += 1
                 continue
+            fname = path.name
+            # A row for every file that opens, even one holding no records.
+            fs = file_stats[fname] = {
+                "name": fname,
+                "type": (FileType.Log if isinstance(reader, LogFile) else FileType.Ldb).name,
+                "level": file_to_level.get(int(path.stem, 16), -1),
+                "total": 0,
+                "live": 0,
+                "deleted": 0,
+                "unknown": 0,
+            }
             from_file = 0
             try:
                 for record in reader:
-                    fname = path.name
-
-                    if fname not in file_stats:
-                        file_stats[fname] = {
-                            "name": fname,
-                            "type": record.file_type.name,
-                            "level": file_to_level.get(int(path.stem, 16), -1),
-                            "total": 0,
-                            "live": 0,
-                            "deleted": 0,
-                            "unknown": 0,
-                        }
-
-                    fs = file_stats[fname]
                     fs["total"] += 1
                     state_name = record.state.name
                     if record.state == KeyState.Live:

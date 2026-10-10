@@ -190,6 +190,53 @@ def test_leveldb_file_failing_midway_keeps_its_records_and_the_others(tmp_path: 
     )
 
 
+def test_leveldb_copies_beside_the_files_are_not_read_as_its_files(tmp_path: Path) -> None:
+    """Regression: "000005.ldb.bak" matched the unanchored data-file pattern
+    and made the whole parse fail; "MANIFEST-000002.bak" was taken as the
+    current MANIFEST."""
+    from crush.parsers.leveldb_parser import _latest_manifest
+
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "000005.ldb.bak").write_bytes(bytes(64))
+    (db / "MANIFEST-000002.bak").write_bytes(b"")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
+    assert "Parse warning" not in result.metadata
+    assert _latest_manifest(db) == db / "MANIFEST-000001"
+
+
+def test_leveldb_upper_case_log_extension_is_read(tmp_path: Path) -> None:
+    """Regression: a directory with "000007.LOG" was recognised as LevelDB,
+    but the file itself was never read and nothing said so."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"a", b"1")])
+    (db / "000007.LOG").write_bytes(_make_log_entry(b"b", b"2", seq=2))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"a", b"b"]
+
+
+def test_leveldb_empty_data_file_has_a_files_row(tmp_path: Path) -> None:
+    """A data file that opens but holds no records is listed with zero
+    records, not left out of the Files tab."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "000003.log").write_bytes(b"")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    rows = {f["name"]: f for f in result.data["files"]}
+    assert set(rows) == {"000001.log", "000003.log"}
+    assert (rows["000003.log"]["type"], rows["000003.log"]["total"]) == ("Log", 0)
+    assert "Parse warning" not in result.metadata
+
+
 def test_leveldb_with_every_file_readable_has_no_warning(tmp_path: Path) -> None:
     db = tmp_path / "db"
     _make_minimal_leveldb(db, [(b"k", b"v")])
