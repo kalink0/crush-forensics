@@ -4384,8 +4384,8 @@ class TableViewer(QWidget):
     def _sync_hex_pane(self, current: QModelIndex | None) -> None:
         """Table → Hex: highlight the current cell's row (and, when a
         specific column is selected, that column too, drawn on top) in the
-        embedded Hex pane. Reuses HexViewer.highlight_byte_ranges() as-is
-        (row ranges first so column ranges paint on top of them)."""
+        embedded Hex pane via HexViewer.highlight_byte_range_groups(): the
+        row's ranges are one group, the column's another, painted on top."""
         if not self._hex_panel.isVisible():
             return
 
@@ -4420,17 +4420,17 @@ class TableViewer(QWidget):
                     # ranges available, same shape as a real row's
                     # CellLocation -- prefer those over the coarse whole-frame
                     # range so selecting one column highlights just its bytes.
-                    ranges = list(stashed_row_ranges)
+                    groups = [list(stashed_row_ranges)]
                     stashed_col_ranges = row_item.data(_WAL_COLUMN_RANGES_ROLE)
                     if (
                         isinstance(stashed_col_ranges, list) and col_idx is not None
                         and 0 <= col_idx < len(stashed_col_ranges)
                         and stashed_col_ranges[col_idx]
                     ):
-                        ranges.extend(stashed_col_ranges[col_idx])
-                    self._highlight_stashed_byte_ranges(stashed_file_kind, ranges)
+                        groups.append(list(stashed_col_ranges[col_idx]))
+                    self._highlight_stashed_byte_ranges(stashed_file_kind, groups)
                 else:
-                    self._highlight_stashed_byte_ranges(stashed_file_kind, [stashed_byte_range])
+                    self._highlight_stashed_byte_ranges(stashed_file_kind, [[stashed_byte_range]])
                 return
 
         if (
@@ -4470,10 +4470,11 @@ class TableViewer(QWidget):
             file_label = f"{self._source_name}  ·  {self._cell_locator.label_for(location.file_kind)}"
         self._hex_file_label.setText(file_label)
 
-        ranges = list(location.row_ranges)
-        if location.column_ranges:
-            ranges.extend(location.column_ranges)
-        self._hex_viewer.highlight_byte_ranges(ranges)
+        # One color for every piece of the row, one on top of it for every
+        # piece of the column, however many pages each spans.
+        self._hex_viewer.highlight_byte_range_groups(
+            [list(location.row_ranges), list(location.column_ranges or [])]
+        )
 
     def _sync_wal_hex_pane(self, current: QModelIndex | None) -> None:
         """WAL Frames / Rollback Journal tab -> Hex: highlight the selected
@@ -4496,7 +4497,7 @@ class TableViewer(QWidget):
             return
 
         self._ensure_hex_pane_loaded()
-        self._highlight_stashed_byte_ranges(file_kind, [byte_range])
+        self._highlight_stashed_byte_ranges(file_kind, [[byte_range]])
 
     def _resolve_hex_file_kind(self, file_kind: str) -> tuple[Path | None, str]:
         """Return (path, human label) for a _STRUCTURE_FILE_KIND_ROLE value
@@ -4510,12 +4511,15 @@ class TableViewer(QWidget):
             return self._journal_path, "-journal file"
         return self._db_path, "db file"
 
-    def _highlight_stashed_byte_ranges(self, file_kind: str, ranges: list[tuple[int, int]]) -> None:
+    def _highlight_stashed_byte_ranges(
+        self, file_kind: str, groups: list[list[tuple[int, int]]]
+    ) -> None:
         """Switch the embedded Hex pane to *file_kind* if it isn't already
-        showing it, then highlight *ranges* -- shared by the WAL Frames /
-        Rollback Journal tabs (_sync_wal_hex_pane, always one whole-frame/
-        whole-record range) and any row with no rowid a CellLocator could
-        resolve, which carries its own byte range(s) directly instead
+        showing it, then highlight *groups* (one color each) -- shared by
+        the WAL Frames / Rollback Journal tabs (_sync_wal_hex_pane, always
+        one whole-frame/whole-record range) and any row with no rowid a
+        CellLocator could resolve, which carries its own byte range(s)
+        directly instead
         (_sync_hex_pane's fallback: a WAL-history or pre-rollback-state
         row's precise row/column ranges when available, else its one
         whole-page range; Freeblocks/Unallocated Space's one range)."""
@@ -4536,7 +4540,7 @@ class TableViewer(QWidget):
                     source_name=self._source_name, suffix=suffix
                 )
             )
-        self._hex_viewer.highlight_byte_ranges(ranges)
+        self._hex_viewer.highlight_byte_range_groups(groups)
 
     def _structure_item_from_index(self, index: QModelIndex) -> QStandardItem | None:
         if not index.isValid():
@@ -4586,7 +4590,9 @@ class TableViewer(QWidget):
                     source_name=self._source_name, suffix=suffix
                 )
             )
-        self._hex_viewer.highlight_byte_ranges(ranges)
+        # The ranges are the pieces of one item (a column's value spread
+        # over overflow pages): one color for all of them.
+        self._hex_viewer.highlight_byte_range_groups([ranges])
 
     def _on_hex_offset_focused(self, offset: int) -> None:
         """Hex → Table: clicking a byte in the pane selects the matching

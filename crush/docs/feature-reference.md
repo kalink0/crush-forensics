@@ -393,9 +393,9 @@ There is no text/content search across the whole structure tree — full search 
 
 The table view, WAL Frames, and File Structure pages all have a **Show Hex** toggle button that opens an embedded hex pane alongside the current view, bidirectionally synced with it: selecting a row/cell/structure item highlights its exact on-disk bytes, and clicking a highlighted byte in the hex pane selects the matching row/cell/item back.
 
-- **Table view:** selecting a cell highlights its whole row (pale) and that column's own bytes (stronger, drawn on top). A row whose current version is only in a not-yet-checkpointed `-wal` frame switches the pane to that file instead of the base file's stale bytes. A **Show WAL history** row (see above) gets the same column-precise treatment, keyed by its own frame bytes rather than a rowid.
+- **Table view:** selecting a cell highlights its whole row (pale) and that column's own bytes (stronger, drawn on top). A row or value that spans overflow pages is highlighted on every page, all pieces of it in the same colour. A row whose current version is only in a not-yet-checkpointed `-wal` frame switches the pane to that file instead of the base file's stale bytes. A **Show WAL history** row (see above) gets the same column-precise treatment, keyed by its own frame bytes rather than a rowid.
 - **WAL Frames:** selecting a frame highlights its exact header+page bytes in the `-wal` file.
-- **File Structure:** selecting any structure item — a header field, a page, a cell, a freeblock, an unallocated-space gap — highlights its exact bytes, across whichever of the base file or `-wal` file it actually lives in.
+- **File Structure:** selecting any structure item — a header field, a page, a cell, a freeblock, an unallocated-space gap — highlights its exact bytes (a column value on overflow pages on every page, in one colour), across whichever of the base file or `-wal` file it actually lives in.
 
 Freelist Recovery does not have the embedded Show Hex pane (its rows use double-click to open the whole containing page in an isolated tab instead, see above).
 

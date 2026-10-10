@@ -80,7 +80,9 @@ def test_highlight_ranges_callback_can_supply_multiple_ranges(qapp) -> None:
     assert widget.hex_viewer._focus_ranges == [(2, 3), (3, 4), (4, 6)]
 
 
-def test_hex_viewer_caps_focus_ranges_at_five(qapp) -> None:
+def test_hex_viewer_highlights_every_focus_range(qapp) -> None:
+    """Regression: only the first five ranges were highlighted, the rest
+    dropped without a word."""
     tree, model, parent, _child = _make_tree()
     widget = ByteMappedTreeHex(
         raw=bytes(range(16)),
@@ -93,4 +95,4 @@ def test_hex_viewer_caps_focus_ranges_at_five(qapp) -> None:
     tree.setCurrentIndex(model.indexFromItem(parent))
     widget._on_tree_selection_changed()
 
-    assert widget.hex_viewer._focus_ranges == [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+    assert widget.hex_viewer._focus_ranges == [(i, i + 1) for i in range(8)]
