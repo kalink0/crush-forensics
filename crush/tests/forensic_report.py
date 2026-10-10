@@ -100,6 +100,8 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
     "Disk image filesystems": (
         "NTFS",
         "FAT32",
+        "FAT16",
+        "FAT12",
         "exFAT",
         "ext2/3/4",
         "F2FS",

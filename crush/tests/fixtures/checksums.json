@@ -111,5 +111,14 @@
   "acquisition/dmg-sparsebundle.sparsebundle/token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "raw_flash_efs-le.img.gz": "74b2e343180f6073f6e1fe7d57ac723e7ab6a8937c236fba189f879f86726f74",
   "raw_flash_efs-be.img.gz": "d44bfdeb97d1c79b76f9a7dac48d9cee2cba07753eb7f171cc7a7354176034f6",
-  "raw_flash_efs.known.json": "5a792cba318b4bf0243576305a6247325bfa6499138e72fad66caa0b895f9bcc"
+  "raw_flash_efs.known.json": "5a792cba318b4bf0243576305a6247325bfa6499138e72fad66caa0b895f9bcc",
+  "raw_fat16.img.gz": "c7387260b0392ba89f041e5bd87dc2e7e054e4f9ff73733bf8281cc596d1cebe",
+  "raw_fat16.sha256": "aa540c9d213d3583142640564b4129c5cabfd481cb31d61d283cee5f6e57f538",
+  "raw_fat16.deleted.sha256": "585a2a00f54619bb5d7b70f68a73ae4ffd2608d9efedac39414b0cd101133162",
+  "raw_tfat16.img.gz": "c12c79b97e821129949ffaec4acf56cdd330f4abf2e27109de7e63e29403c490",
+  "raw_tfat16.sha256": "de0e5841ec6bc7bc5d30c329bd6afcf8bd9b18461ed866f62cb523fe36742ff2",
+  "raw_tfat16.deleted.sha256": "585a2a00f54619bb5d7b70f68a73ae4ffd2608d9efedac39414b0cd101133162",
+  "raw_fat12.img.gz": "30f1f8d22834d90385ab02229f41f21e107a8bfedf5ff6c1359577908a68b152",
+  "raw_fat12.sha256": "aa540c9d213d3583142640564b4129c5cabfd481cb31d61d283cee5f6e57f538",
+  "raw_fat12.deleted.sha256": "585a2a00f54619bb5d7b70f68a73ae4ffd2608d9efedac39414b0cd101133162"
 }

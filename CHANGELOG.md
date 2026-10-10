@@ -12,6 +12,8 @@ All notable changes to Crush will be documented in this file.
 - Added to the BLOB Inspector -> Support for copying the decoded bytes as hex, Base64 or a Python literal.
 - Added to raw disk images -> Support for QNX EFS partitions inside a raw flash image, in either byte order. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 - Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
+- Added to raw disk images -> Support for FAT16 and FAT12 volumes, with deleted-file recovery into `$Recovered`.
+- Added to raw disk images -> Support for Windows CE transaction-safe FAT (TFAT16 and TFAT32), read as FAT16 and FAT32.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for Unix millisecond, Unix microsecond and Windows FILETIME timestamp candidates.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
 - Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
@@ -53,7 +55,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.61 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153))
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.62 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153))
 - Bundled [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) updated to v0.4 (from v0.1).
 - The SEGB viewer's columns now follow the order of the fields' bytes in the record.
 

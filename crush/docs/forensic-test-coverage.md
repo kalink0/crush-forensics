@@ -54,6 +54,8 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 |---|---|---|---|---|---|---|
 | [NTFS](#ntfs) | not tested | not tested | not tested | 6 | not tested | not tested |
 | [FAT32](#fat32) | not tested | not tested | not tested | 2 | not tested | not tested |
+| [FAT16](#fat16) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [FAT12](#fat12) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
 | [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -317,6 +319,14 @@ No forensic checks.
 - **Known-output Verification** — Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_recovers_content_with_first_character_lost`)
 - **Known-output Verification** — FAT32 entries show their stored date/time as stored, with no time zone ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_fat32`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
+
+#### FAT16
+
+No forensic checks.
+
+#### FAT12
+
+No forensic checks.
 
 #### exFAT
 

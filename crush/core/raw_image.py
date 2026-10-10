@@ -4,8 +4,8 @@
 (+ `ewfprobe`) readers.
 
 qnxprobe reads MBR/GPT partition tables (512- and 4096-byte sectors) and then
-NTFS, FAT32, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX
-IFS, SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2 directly from a raw image,
+NTFS, FAT32, FAT16, FAT12, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS,
+EFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2 directly from a raw image,
 a bare partition or a flash dump — no mounting, no admin rights. ewfprobe reads
 a container -- an EWF (.E01) or other forensic acquisition, an Apple disk image,
 a virtual machine disk -- joining its files and decrypting it when given what
