@@ -272,14 +272,14 @@ def test_mmkv_viewer_passes_file_bytes_through_to_records_widget(qapp) -> None:
     assert records_widget._file_bytes == file_bytes
 
 
-def test_filter_buttons_show_record_count_per_state(qapp) -> None:
+def test_filter_buttons_show_record_count_per_state(qapp, widgets) -> None:
     records = [
         _rec(0, "a", "1", b"1"),
         _rec(1, "a", "0", b"0", state="Superseded"),
         _rec(2, "b", "x", b"x", state="Superseded"),
         _rec(3, "c", None, b"", state="Removed"),
     ]
-    widget = MMKVRecordsWidget(records)
+    widget = widgets(MMKVRecordsWidget(records))
     texts = {state: btn.text() for state, btn in widget._filter_buttons.items()}
     assert texts == {
         None: "All (4)",

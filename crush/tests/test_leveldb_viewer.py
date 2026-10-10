@@ -46,7 +46,7 @@ def _record(seq: int, value_text: str | None, value: bytes) -> dict:
     }
 
 
-def test_value_text_column_sorts_binary_placeholders_by_size(qapp) -> None:
+def test_value_text_column_sorts_binary_placeholders_by_size(qapp, widgets) -> None:
     """The "<binary N B>" placeholders sort by N (not as text, which put
     1042 B before 326 B), grouped apart from the text values."""
     records = [
@@ -56,7 +56,7 @@ def test_value_text_column_sorts_binary_placeholders_by_size(qapp) -> None:
         _record(4, "alpha", b"alpha"),
         _record(5, None, b"\x00" * 9),
     ]
-    widget = LevelDbRecordsWidget(records)
+    widget = widgets(LevelDbRecordsWidget(records))
     col = _COLUMNS.index("Value (text)")
     widget._proxy.sort(col, Qt.SortOrder.AscendingOrder)
     result = [widget._proxy.index(r, col).data() for r in range(widget._proxy.rowCount())]

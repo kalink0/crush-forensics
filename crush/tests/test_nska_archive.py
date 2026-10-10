@@ -555,7 +555,7 @@ def test_dictionary_with_an_object_key_resolves_and_stays_as_stored() -> None:
     assert list(result.data["NS.objects"]) == ["v"]
 
 
-def test_unresolved_archive_states_why_above_the_decoded_tab(qapp) -> None:  # noqa: ARG001
+def test_unresolved_archive_states_why_above_the_decoded_tab(qapp, widgets) -> None:  # noqa: ARG001, ANN001
     from PySide6.QtWidgets import QLabel
 
     from crush.viewers.tree_text_viewer import TreeTextViewer
@@ -565,12 +565,12 @@ def test_unresolved_archive_states_why_above_the_decoded_tab(qapp) -> None:  # n
     result = _parse_bytes(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
     assert isinstance(result.viewer_hints["status"], ParseIssue)
 
-    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    viewer = widgets(TreeTextViewer(result.data, **result.viewer_hints))
     label = viewer.findChild(QLabel, "tree_text_status")
     assert label is not None
     assert label.text().startswith("NSKeyedArchiver deserialization failed")
 
-    plain = TreeTextViewer({"a": 1}, raw_text="")
+    plain = widgets(TreeTextViewer({"a": 1}, raw_text=""))
     assert plain.findChild(QLabel, "tree_text_status") is None
 
 
