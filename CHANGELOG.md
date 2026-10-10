@@ -25,7 +25,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed an empty file on an exFAT raw disk image reading as one cluster of the volume's own bytes; it now reads as no bytes. ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149))
 - Fixed a FAT32 or exFAT file on a raw disk image reading short, without an error, when its cluster chain ends before its recorded size; reading it now says how many clusters the chain holds and how many the size needs. ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149))
 - Fixed Run Analyzer offering no analyzer modules in the AppImage, macOS and Windows builds.
-- Fixed the Hex pane highlighting only the first five byte ranges of a selection; a SQLite row or value spanning overflow pages lost its column highlight. Every piece of a row or value is now highlighted, in one colour.
+- Fixed the Hex pane highlighting only the first five byte ranges of a selection; a SQLite row or value spanning overflow pages lost its column highlight, and a repeated Protobuf field lost the highlight of its later occurrences. Every piece is now highlighted; in SQLite tables all pieces of a row or value share one colour.
 
 ### Changed
 

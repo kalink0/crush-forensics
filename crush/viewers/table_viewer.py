@@ -4384,8 +4384,8 @@ class TableViewer(QWidget):
     def _sync_hex_pane(self, current: QModelIndex | None) -> None:
         """Table → Hex: highlight the current cell's row (and, when a
         specific column is selected, that column too, drawn on top) in the
-        embedded Hex pane. Reuses HexViewer.highlight_byte_ranges() as-is
-        (row ranges first so column ranges paint on top of them)."""
+        embedded Hex pane via HexViewer.highlight_byte_range_groups(): the
+        row's ranges are one group, the column's another, painted on top."""
         if not self._hex_panel.isVisible():
             return
 
@@ -4516,9 +4516,10 @@ class TableViewer(QWidget):
     ) -> None:
         """Switch the embedded Hex pane to *file_kind* if it isn't already
         showing it, then highlight *groups* (one color each) -- shared by
-        the WAL Frames / Rollback Journal tabs (_sync_wal_hex_pane, always one whole-frame/
-        whole-record range) and any row with no rowid a CellLocator could
-        resolve, which carries its own byte range(s) directly instead
+        the WAL Frames / Rollback Journal tabs (_sync_wal_hex_pane, always
+        one whole-frame/whole-record range) and any row with no rowid a
+        CellLocator could resolve, which carries its own byte range(s)
+        directly instead
         (_sync_hex_pane's fallback: a WAL-history or pre-rollback-state
         row's precise row/column ranges when available, else its one
         whole-page range; Freeblocks/Unallocated Space's one range)."""
