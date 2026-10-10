@@ -186,14 +186,14 @@ def test_leveldb_table_file_without_magic_keeps_the_other_files(tmp_path: Path) 
     desc="A data file that fails partway must keep the records read before it, say where it stopped, and not stop the files after it",
 )
 def test_leveldb_file_failing_midway_keeps_its_records_and_the_others(tmp_path: Path) -> None:
-    """A file that fails partway keeps the records read before the failure,
-    says after how many it stopped, and the files after it are still read."""
-    from crush.tests.test_parsers import _make_log_entry
-
+    """A file whose records can't be read on (a batch announcing more
+    entries than it holds) keeps the records read before the failure, says
+    after how many it stopped, and the files after it are still read."""
     db = tmp_path / "db"
     db.mkdir()
-    middle_without_first = struct.pack("<IHB", 0, 0, 3)
-    (db / "000001.log").write_bytes(_make_log_entry(b"a", b"1", seq=1) + middle_without_first)
+    batch = struct.pack("<QI", 1, 2) + b"\x01" + _varint(1) + b"a" + _varint(1) + b"1"  # 2 announced
+    (db / "000001.log").write_bytes(_log_record(1, batch))
+    from crush.tests.test_parsers import _make_log_entry
     (db / "000002.log").write_bytes(_make_log_entry(b"b", b"2", seq=2))
     node, vfs = _leveldb(tmp_path)
     result = LeveldbParser().parse(node, vfs)
@@ -205,6 +205,34 @@ def test_leveldb_file_failing_midway_keeps_its_records_and_the_others(tmp_path: 
     assert "000002.log" not in result.data["manifests"]["Unreadable files"]
     assert result.metadata["Parse warning"] == ParseIssue(
         "leveldb.data_files_not_read", {"count": 1, "total": 2}
+    )
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="LevelDB",
+    desc="A damaged part of a .log must be skipped and named, and the records after it read, as LevelDB reads on",
+)
+def test_leveldb_damaged_log_part_is_skipped_and_reading_goes_on(tmp_path: Path) -> None:
+    """Regression: a record part without its start ended the whole file.
+    LevelDB (log_reader.cc) reports such a part, drops it and reads on."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    first = _make_log_entry(b"a", b"1", seq=1)
+    middle_without_first = struct.pack("<IHB", 0, 0, 3)
+    (db / "000001.log").write_bytes(first + middle_without_first + _make_log_entry(b"c", b"3", seq=3))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"a", b"c"]
+    issue = result.data["manifests"]["Unreadable files"]["000001.log"]
+    assert issue.code == "leveldb.parts_skipped"
+    assert issue.params["count"] == 1
+    assert f"Record part at offset {len(first)} has no start" in issue.detail
+    assert result.metadata["Parse warning"] == ParseIssue(
+        "leveldb.data_files_not_read", {"count": 1, "total": 1}
     )
 
 
@@ -370,8 +398,26 @@ def test_leveldb_current_without_line_break_is_noted(tmp_path: Path) -> None:
     assert result.data["files"][0]["level"] == 1
 
 
-def _manifest_record(edit: bytes) -> bytes:
-    return struct.pack("<IHB", 0, len(edit), 1) + edit
+def _crc32c(data: bytes) -> int:
+    """CRC-32C (Castagnoli), bit by bit -- kept apart from the code under test."""
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0x82F63B78 if crc & 1 else 0)
+    return crc ^ 0xFFFFFFFF
+
+
+def _log_record(record_type: int, data: bytes, *, good_crc: bool = True) -> bytes:
+    """One physical log-format record with LevelDB's masked CRC32C over its
+    type byte and data (log_writer.cc), or a wrong one."""
+    crc = _crc32c(bytes([record_type]) + data)
+    masked = ((((crc >> 15) | (crc << 17)) & 0xFFFFFFFF) + 0xA282EAD8) & 0xFFFFFFFF
+    return struct.pack("<IHB", masked if good_crc else masked ^ 1, len(data), record_type) + data
+
+
+def _manifest_record(edit: bytes, *, good_crc: bool = True) -> bytes:
+    return _log_record(1, edit, good_crc=good_crc)
 
 
 def test_leveldb_manifest_takes_deleted_files_out_of_their_level(tmp_path: Path) -> None:
@@ -434,19 +480,41 @@ def test_leveldb_zero_padding_ends_a_log_block_quietly(tmp_path: Path) -> None:
     assert "Parse warning" not in result.metadata
 
 
-def test_leveldb_unknown_log_record_type_says_which(tmp_path: Path) -> None:
+def test_leveldb_unknown_log_record_type_is_named_and_skipped(tmp_path: Path) -> None:
+    """An unknown record type is named with its offset, skipped, and the
+    records after it are read, as LevelDB reads on."""
     from crush.tests.test_parsers import _make_log_entry
 
     db = tmp_path / "db"
     db.mkdir()
     first = _make_log_entry(b"k", b"v", seq=1)
-    (db / "000001.log").write_bytes(first + struct.pack("<IHB", 0, 3, 9) + b"abc")
+    unknown = struct.pack("<IHB", 0, 3, 9) + b"abc"
+    (db / "000001.log").write_bytes(first + unknown + _make_log_entry(b"l", b"w", seq=2))
     node, vfs = _leveldb(tmp_path)
     result = LeveldbParser().parse(node, vfs)
 
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k", b"l"]
     issue = result.data["manifests"]["Unreadable files"]["000001.log"]
-    assert issue.code == "leveldb.read_stopped"
+    assert issue.code == "leveldb.parts_skipped"
     assert f"Unknown record type 9 (length 3) at offset {len(first)}" in issue.detail
+
+
+def test_leveldb_record_cut_off_by_the_end_of_the_file_is_named(tmp_path: Path) -> None:
+    """LevelDB drops a record the writer didn't finish before the file ends
+    without a word; Crush keeps the records before it and says so."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    first = _make_log_entry(b"k", b"v", seq=1)
+    (db / "000001.log").write_bytes(first + struct.pack("<IHB", 0, 50, 1) + b"only part")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
+    issue = result.data["manifests"]["Unreadable files"]["000001.log"]
+    assert issue.code == "leveldb.parts_skipped"
+    assert f"Record at offset {len(first)} gives a length of 50 bytes, past the end of the file" in issue.detail
 
 
 def test_leveldb_unsupported_compression_type_is_named(tmp_path: Path) -> None:
@@ -516,6 +584,63 @@ def test_rocksdb_manifest_tag_is_recognised(tmp_path: Path) -> None:
     _assert_rocksdb_not_read(
         result, "MANIFEST-000001", ParseIssue("leveldb.rocksdb_manifest_tag", {"tag": 200})
     )
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="LevelDB",
+    desc="A damaged MANIFEST record must not make a LevelDB look like RocksDB and leave all its records unread",
+)
+@pytest.mark.parametrize(("tag", "good_crc"), [
+    (9000, True),  # no tag RocksDB defines (it stops at 8203)
+    (200, False),  # a RocksDB tag, but in a record whose checksum doesn't match
+    (8193, False),
+])
+def test_damaged_manifest_record_is_not_taken_for_rocksdb(
+    tmp_path: Path, tag: int, good_crc: bool
+) -> None:
+    """Regression: any unknown tag from 8192 on counted as RocksDB, so a
+    damaged edit -- even in an old MANIFEST CURRENT doesn't name -- left
+    the whole database unread as "RocksDB (not supported)"."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "MANIFEST-000001").write_bytes(_manifest_record(_varint(tag) + _varint(0), good_crc=good_crc))
+    (db / "MANIFEST-000002").write_bytes(_manifest_with_new_file(1, 1, 10))
+    (db / "CURRENT").write_bytes(b"MANIFEST-000002\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert "Database" not in result.data["manifests"]
+    assert result.metadata["Format"] == "LevelDB"
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
+    status = result.data["manifests"]["MANIFEST-000001"]["Status"]
+    assert status.code == "leveldb.manifest_partial"
+    assert f"Unknown VersionEdit tag {tag}" in status.detail
+    match = "matches" if good_crc else "doesn't match"
+    assert f"the record's stored checksum {match}" in status.detail
+
+
+def test_leveldb_internal_key_shorter_than_its_tag_is_noted(tmp_path: Path) -> None:
+    """An internal key needs its 8-byte sequence/type tag (ParseInternalKey);
+    a shorter one is shown as stored, with a note on the file's row."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    (db / "000010.log").write_bytes(_make_log_entry(b"k", b"v", seq=1))
+    edit = (
+        b"\x07" + _varint(0) + _varint(10) + _varint(5)
+        + _varint(3) + b"abc" + _varint(9) + b"z" + bytes(8)  # smallest key: 3 bytes
+    )
+    (db / "MANIFEST-000011").write_bytes(_manifest_record(edit))
+    (db / "CURRENT").write_bytes(b"MANIFEST-000011\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    (row,) = result.data["files"]
+    assert (row["smallest_key_text"], row["smallest_key_hex"]) == ("abc", "616263")
+    assert row["note"] == ParseIssue("leveldb.smallest_key_short", {"length": 3})
+    assert (row["largest_key_text"], row["largest_key_hex"]) == ("z", "7a")
 
 
 def test_leveldb_unknown_manifest_tag_stops_that_manifest(tmp_path: Path) -> None:

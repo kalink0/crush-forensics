@@ -1225,9 +1225,26 @@ MESSAGES: dict[str, str] = {
     # -- LevelDB ----------------------------------------------------------
     "leveldb.data_files_not_read": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "{count:,} of {total:,} data files could not be read to the end; "
+        "{count:,} of {total:,} data files could not be read whole; "
         "Overview → Unreadable files says why",
         "leveldb.data_files_not_read",
+    ),
+    "leveldb.smallest_key_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Smallest key is {length} bytes, shorter than the 8-byte sequence/type tag an "
+        "internal key ends with, so it isn't a valid internal key; shown as stored",
+        "leveldb.smallest_key_short",
+    ),
+    "leveldb.largest_key_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Largest key is {length} bytes, shorter than the 8-byte sequence/type tag an "
+        "internal key ends with, so it isn't a valid internal key; shown as stored",
+        "leveldb.largest_key_short",
+    ),
+    "leveldb.parts_skipped": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} damaged part(s) skipped, reading on after each as LevelDB does: {detail}",
+        "leveldb.parts_skipped",
     ),
     "leveldb.current_missing": QT_TRANSLATE_NOOP(
         "ParseIssue",

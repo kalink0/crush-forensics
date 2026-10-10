@@ -5,16 +5,21 @@
 The vendored module is left exactly as published. Where its reading differs
 from LevelDB's own, a subclass here overrides the one method concerned:
 
-- log and MANIFEST records (_read_batches): a zero header is padding, as
-  LevelDB's log_reader.cc treats it, and an unknown record type is named
-  instead of raising an empty ValueError;
+- log and MANIFEST records (_read_batches), following LevelDB's
+  log_reader.cc: zero padding ends the block; in a .log, a damaged part
+  (an unknown record type, a fragment without its start or end, a length
+  past the block) is skipped and reading goes on -- where LevelDB skips
+  silently (padding, the writer stopping at the end of the file), Crush
+  still says so; each record's stored checksum is checked and reported
+  (LevelDB drops a record whose checksum doesn't match; Crush keeps it);
 - table blocks (_LdbFile._read_block): only compression types 0 (none) and
   1 (Snappy) are decoded, any other is named instead of being fed to the
   Snappy decoder;
 - MANIFEST edits (_decode_version_edit): a tag LevelDB doesn't define stops
   the edit with its offset, as VersionEdit::DecodeFrom does, instead of
-  being read past; and the MANIFEST isn't read in full on opening, so such
-  an edit doesn't make the whole file unopenable.
+  being read past, and says whether its record's checksum matches; and the
+  MANIFEST isn't read in full on opening, so such an edit doesn't make the
+  whole file unopenable.
 
 These are copies of the vendored methods with those changes. When
 ccl_leveldb is updated, compare them with the new version.
@@ -53,66 +58,116 @@ _NewFile = namedtuple("_NewFile", ["level", "file_no", "file_size", "smallest_ke
 
 class UnknownVersionEditTag(ValueError):
     """A VersionEdit tag LevelDB doesn't define. The fields after it can't be
-    skipped (their length depends on the tag), so the edit stops here."""
+    skipped (their length depends on the tag), so the edit stops here.
+    *checksum_ok*: whether the record holding the edit has a matching stored
+    checksum -- a damaged record yields arbitrary "tags"."""
 
-    def __init__(self, tag: int, offset: int, path: Path | None = None) -> None:
+    def __init__(
+        self, tag: int, offset: int, path: Path | None = None, checksum_ok: bool | None = None
+    ) -> None:
         self.tag = tag
         self.offset = offset
+        self.checksum_ok = checksum_ok
         where = f" in {path}" if path is not None else ""
-        super().__init__(f"Unknown VersionEdit tag {tag} at offset {offset}{where}")
+        crc = (
+            "" if checksum_ok is None
+            else " (the record's stored checksum matches)" if checksum_ok
+            else " (the record's stored checksum doesn't match)"
+        )
+        super().__init__(f"Unknown VersionEdit tag {tag} at offset {offset}{where}{crc}")
 
 
-def _read_batches(raw_blocks: Iterable[bytes], path: Path) -> Iterator[tuple[int, bytes]]:
-    """(offset, record) for every record of a log-format file (a .log or a
-    MANIFEST), joined from its fragments (db/log_format.h)."""
+def _checksum_ok(stored: int, record_type: int, data: bytes) -> bool:
+    """Whether a physical record's stored, masked CRC32C matches its type
+    byte and data (log_writer.cc EmitPhysicalRecord)."""
+    return bool(
+        ccl_simplesnappy.check_masked_crc(  # type: ignore[no-untyped-call]
+            stored, bytes([record_type]) + data
+        )
+    )
+
+
+def _read_batches(
+    raw_blocks: Iterable[bytes], path: Path, damaged: list[str] | None = None
+) -> Iterator[tuple[int, bytes, bool]]:
+    """(offset, record, stored checksums match) for every record of a
+    log-format file (a .log or a MANIFEST), joined from its fragments
+    (db/log_format.h, db/log_reader.cc).
+
+    With *damaged* (a list), a damaged part is described there and skipped,
+    and reading goes on, as LevelDB reads a .log. Without it, the first
+    damaged part raises ValueError, as LevelDB fails on a damaged MANIFEST.
+    Parts LevelDB drops without reporting (zero padding, a record the writer
+    didn't finish before the file ends) are still described."""
+
+    def problem(text: str) -> None:
+        if damaged is None:
+            raise ValueError(f"{text} in {path}")
+        damaged.append(text)
+
     in_record = False
     start_offset = 0
     record = b""
+    record_ok = True
     for idx, chunk in enumerate(raw_blocks):
+        last_block = len(chunk) < _BLOCK_SIZE  # the file's final, partial block
         with io.BytesIO(chunk) as buff:
-            while buff.tell() < _BLOCK_SIZE - 6:
-                header = buff.read(_HEADER_SIZE)
-                if len(header) < _HEADER_SIZE:
-                    break
-                _crc, length, record_type = struct.unpack("<IHB", header)
-                header_offset = idx * _BLOCK_SIZE + buff.tell() - _HEADER_SIZE
-                here = idx * _BLOCK_SIZE + buff.tell()
+            while len(chunk) - buff.tell() >= _HEADER_SIZE:
+                header_offset = idx * _BLOCK_SIZE + buff.tell()
+                crc, length, record_type = struct.unpack("<IHB", buff.read(_HEADER_SIZE))
+                here = header_offset + _HEADER_SIZE
 
                 if record_type == LogEntryType.Zero and length == 0:
-                    # Padding: log_reader.cc skips the rest of the block
-                    # without reporting it. Inside a fragmented record it
-                    # cuts that record off.
+                    # Padding: the rest of the block holds no records.
                     if in_record:
-                        raise ValueError(
-                            f"Record starting at offset {start_offset} is cut off by zero "
-                            f"padding at offset {header_offset} in {path}"
-                        )
+                        problem(f"Record starting at offset {start_offset} is cut off by "
+                                f"zero padding at offset {header_offset}")
+                        in_record = False
                     break
+                if len(chunk) - buff.tell() < length:
+                    end = "the end of the file" if last_block else "the end of its block"
+                    problem(f"Record at offset {header_offset} gives a length of {length:,} "
+                            f"bytes, past {end}; the rest of the block isn't read")
+                    in_record = False
+                    break
+                data = buff.read(length)
+                ok = _checksum_ok(crc, record_type, data)
+
                 if record_type == LogEntryType.Full:
-                    if in_record:
-                        raise ValueError(f"Full block whilst still building a block at offset {here} in {path}")
-                    yield here, buff.read(length)
+                    if in_record and record:
+                        problem(f"Record starting at offset {start_offset} has no end "
+                                f"before the record at offset {header_offset}")
+                    in_record = False
+                    yield here, data, ok
                 elif record_type == LogEntryType.First:
-                    if in_record:
-                        raise ValueError(f"First block whilst still building a block at offset {here} in {path}")
-                    start_offset = here
-                    record = buff.read(length)
-                    in_record = True
+                    if in_record and record:
+                        problem(f"Record starting at offset {start_offset} has no end "
+                                f"before the record at offset {header_offset}")
+                    start_offset, record, record_ok, in_record = here, data, ok, True
                 elif record_type == LogEntryType.Middle:
                     if not in_record:
-                        raise ValueError(f"Middle block whilst not building a block at offset {here} in {path}")
-                    record += buff.read(length)
+                        problem(f"Record part at offset {header_offset} has no start")
+                    else:
+                        record += data
+                        record_ok = record_ok and ok
                 elif record_type == LogEntryType.Last:
                     if not in_record:
-                        raise ValueError(f"Last block whilst not building a block at offset {here} in {path}")
-                    record += buff.read(length)
-                    in_record = False
-                    yield start_offset, record
+                        problem(f"Record part at offset {header_offset} has no start")
+                    else:
+                        in_record = False
+                        yield start_offset, record + data, record_ok and ok
                 else:
-                    raise ValueError(
-                        f"Unknown record type {record_type} (length {length}) at offset "
-                        f"{header_offset} in {path}"
-                    )
+                    problem(f"Unknown record type {record_type} (length {length}) at offset "
+                            f"{header_offset}")
+                    in_record = False
+            rest = chunk[buff.tell():]
+            if last_block and len(rest) < _HEADER_SIZE and any(rest):
+                # Fewer bytes than a header, not zero: a header the writer
+                # didn't finish before the file ends (log_reader.cc: EOF).
+                problem(f"Record header at offset {idx * _BLOCK_SIZE + buff.tell()} is cut off "
+                        f"by the end of the file")
+    if in_record:
+        problem(f"Record starting at offset {start_offset} has no end before the end of the file")
 
 
 def _decode_version_edit(buffer: bytes) -> VersionEdit:
@@ -163,10 +218,19 @@ def _decode_version_edit(buffer: bytes) -> VersionEdit:
 
 
 class _LogFile(LogFile):
-    """A .log file, its records read as LevelDB reads them."""
+    """A .log file, its records read as LevelDB reads them: a damaged part
+    is skipped and described in *damaged*, and reading goes on."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(path)
+        self.damaged: list[str] = []
 
     def _get_batches(self) -> Iterator[tuple[int, bytes]]:
-        return _read_batches(self._get_raw_blocks(), self.path)
+        self.damaged.clear()
+        for offset, record, _checksum_ok in _read_batches(
+            self._get_raw_blocks(), self.path, self.damaged
+        ):
+            yield offset, record
 
 
 class _LdbFile(LdbFile):
@@ -202,15 +266,20 @@ class _ManifestFile(ManifestFile):
         self._f = path.open("rb")
 
     def _get_batches(self) -> Iterator[tuple[int, bytes]]:
-        return _read_batches(self._get_raw_blocks(), self.path)
+        # A damaged part stops the MANIFEST, as it makes LevelDB fail.
+        for offset, record, _checksum_ok in _read_batches(self._get_raw_blocks(), self.path):
+            yield offset, record
 
     def __iter__(self) -> Iterator[VersionEdit]:
-        for batch_offset, batch in self._get_batches():
+        for batch_offset, batch, checksum_ok in _read_batches(self._get_raw_blocks(), self.path):
             try:
                 yield _decode_version_edit(batch)
             except UnknownVersionEditTag as exc:
-                # the offset in the file, not in the edit
-                raise UnknownVersionEditTag(exc.tag, batch_offset + exc.offset, self.path) from None
+                # the offset in the file, not in the edit, and whether the
+                # record holding it is the one that was written
+                raise UnknownVersionEditTag(
+                    exc.tag, batch_offset + exc.offset, self.path, checksum_ok
+                ) from None
 
 
 def open_data_file(path: Path) -> Any:

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.issues import render_value
 from crush.viewers.hex_viewer import HexViewer
 from crush.viewers.table_viewer import BlobInspector
 from crush.viewers.tree_viewer import TreeViewer
@@ -458,6 +459,7 @@ class LevelDbViewer(QWidget):
             QT_TRANSLATE_NOOP("GeneratedView", "Smallest Key (hex)"),
             QT_TRANSLATE_NOOP("GeneratedView", "Largest Key (text)"),
             QT_TRANSLATE_NOOP("GeneratedView", "Largest Key (hex)"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Note"),
         )
         model = QStandardItemModel(0, len(columns))
         set_headers(model, columns)
@@ -480,6 +482,7 @@ class LevelDbViewer(QWidget):
                 _make_item(f.get("smallest_key_hex", "")),
                 _make_item(f.get("largest_key_text", "")),
                 _make_item(f.get("largest_key_hex", "")),
+                _make_item(render_value(f.get("note", ""), localized=True)),
             ]
             # Color files that contain deleted records
             if f.get("deleted", 0) > 0:

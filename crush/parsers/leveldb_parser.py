@@ -9,7 +9,7 @@ import shutil
 import struct
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from crush.core import tempdir
 from crush.core.issues import ParseIssue
@@ -32,8 +32,14 @@ _ROCKSDB_TABLE_MAGICS = {
     0x4F3418EB7A8F13B8: "plain table (legacy)",
     0x926789D0C5F17873: "cuckoo table",
 }
-_ROCKSDB_MANIFEST_TAGS = frozenset({10, 100, 102, 103, 200, 201, 202, 203, 300, 400, 401})
-_ROCKSDB_TAG_SAFE_IGNORE_MASK = 1 << 13  # every tag from here on is RocksDB's
+# Every tag db/version_edit.h defines beyond LevelDB's: kMinLogNumberToKeep,
+# kNewFile2-4, the column family tags, kInAtomicGroup, the blob file tags,
+# and the forward-compatible ones after kTagSafeIgnoreMask (1 << 13): kDbId
+# up to kLastCompactedManifestFileSize. Only these, not "any tag from 8192
+# on": a damaged record yields arbitrary numbers.
+_ROCKSDB_MANIFEST_TAGS = frozenset(
+    {10, 100, 102, 103, 200, 201, 202, 203, 300, 400, 401} | set(range(8193, 8204))
+)
 _OPTIONS_RE = re.compile(r"^OPTIONS-[0-9]+$")
 
 # LevelDB names its files after a decimal file number of at least six digits
@@ -64,8 +70,15 @@ def _data_files(directory: Path) -> list[Path]:
     return sorted(found, key=_file_number)
 
 
-def _is_rocksdb_tag(tag: int) -> bool:
-    return tag in _ROCKSDB_MANIFEST_TAGS or tag >= _ROCKSDB_TAG_SAFE_IGNORE_MASK
+def _is_rocksdb_tag(partial: ParseIssue | None) -> bool:
+    """Whether a MANIFEST stopped at a tag RocksDB defines, in a record whose
+    stored checksum matches -- so the tag was written, not damage."""
+    if partial is None:
+        return False
+    return (
+        partial.params.get("tag") in _ROCKSDB_MANIFEST_TAGS
+        and partial.params.get("checksum_ok") is True
+    )
 
 
 def _rocksdb_file_signs(directory: Path, data_files: list[Path]) -> dict[str, ParseIssue]:
@@ -237,9 +250,10 @@ class LeveldbParser(AbstractParser):
                 mf = open_manifest(mpath)
                 mdata, _, _, partial = _parse_manifest(mf, reason)
                 mf.close()
-                tag = partial.params.get("tag") if partial is not None else None
-                if tag is not None and _is_rocksdb_tag(tag):
-                    rocksdb_signs[mpath.name] = ParseIssue("leveldb.rocksdb_manifest_tag", {"tag": tag})
+                if partial is not None and _is_rocksdb_tag(partial):
+                    rocksdb_signs[mpath.name] = ParseIssue(
+                        "leveldb.rocksdb_manifest_tag", {"tag": partial.params["tag"]}
+                    )
                 label = mpath.name + (" (current)" if mpath == current else "")
                 notes: list[Any] = [partial]
                 if mpath == current and not current_terminated:
@@ -293,6 +307,7 @@ class LeveldbParser(AbstractParser):
                 "unknown": 0,
             }
             from_file = 0
+            stopped: ParseIssue | None = None
             try:
                 for record in reader:
                     fs["total"] += 1
@@ -322,18 +337,28 @@ class LeveldbParser(AbstractParser):
                     from_file += 1
             except Exception as exc:  # noqa: BLE001
                 _logger.warning("LevelDB read error in %s of %s: %s", path.name, node.path, exc)
-                unreadable[path.name] = ParseIssue(
-                    "leveldb.read_stopped", {"count": from_file}, detail=reason(exc),
-                )
-                not_whole += 1
+                stopped = ParseIssue("leveldb.read_stopped", {"count": from_file}, detail=reason(exc))
             finally:
                 reader.close()
+            # Damaged parts of a .log the reader skipped, reading on as
+            # LevelDB does (leveldb_reader._read_batches).
+            damaged: list[str] = getattr(reader, "damaged", [])
+            file_notes: list[Any] = [stopped]
+            if damaged:
+                file_notes.append(ParseIssue(
+                    "leveldb.parts_skipped", {"count": len(damaged)}, detail="; ".join(damaged),
+                ))
+            if stopped is not None or damaged:
+                unreadable[path.name] = cast(ParseIssue, join_notes(file_notes))
+                not_whole += 1
 
         # Merge manifest key ranges and file sizes into file_stats (#8)
         for fstat in file_stats.values():
             kr = file_key_ranges.get(_file_number(Path(fstat["name"])))
             fstat["size"] = kr["size"] if kr else None
-            for field in ("smallest_key_text", "smallest_key_hex", "largest_key_text", "largest_key_hex"):
+            for field in (
+                "smallest_key_text", "smallest_key_hex", "largest_key_text", "largest_key_hex", "note",
+            ):
                 fstat[field] = kr[field] if kr else ""
 
         # Read LOG and LOG.old in full — no truncation (#10)
@@ -462,6 +487,14 @@ def _parse_manifest(
                     "size": nf.file_size,
                     **_key_columns("smallest_key", nf.smallest_key),
                     **_key_columns("largest_key", nf.largest_key),
+                    "note": join_notes([
+                        ParseIssue(code, {"length": len(key)})
+                        for code, key in (
+                            ("leveldb.smallest_key_short", nf.smallest_key),
+                            ("leveldb.largest_key_short", nf.largest_key),
+                        )
+                        if len(key) < 8
+                    ]),
                 }
             if edit.new_files or edit.deleted_files:
                 entry: dict[str, Any] = {}
@@ -479,7 +512,11 @@ def _parse_manifest(
                     compaction_history.append(entry)
     except UnknownVersionEditTag as exc:
         _logger.debug("Manifest parse warning: %s", exc)
-        partial = ParseIssue("leveldb.manifest_partial", {"tag": exc.tag}, detail=reason(exc))
+        partial = ParseIssue(
+            "leveldb.manifest_partial",
+            {"tag": exc.tag, "checksum_ok": exc.checksum_ok},
+            detail=reason(exc),
+        )
     except Exception as exc:
         _logger.debug("Manifest parse warning: %s", exc)
         partial = ParseIssue("leveldb.manifest_partial", detail=reason(exc))

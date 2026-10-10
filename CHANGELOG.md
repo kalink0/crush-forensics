@@ -37,6 +37,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed a LevelDB block compressed with anything but Snappy failing with a Snappy error; the unsupported compression type is now named.
 - Fixed a RocksDB database, which uses LevelDB's file names, being read as LevelDB and partly misread; it is now recognised by its contents and reported as not supported.
 - Fixed a LevelDB MANIFEST tag LevelDB doesn't define being read past silently; reading that MANIFEST now stops there and says where.
+- Fixed a damaged part of a LevelDB `.log` ending the read of the whole file; it is now skipped and named, and the records after it are read, as LevelDB reads on.
+- Fixed a LevelDB key range shorter than an internal key's tag showing in the Files tab without a note.
 
 ### Changed
 
