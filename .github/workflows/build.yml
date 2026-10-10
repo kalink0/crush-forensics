@@ -298,6 +298,20 @@ jobs:
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist\crush.exe -DestinationPath crush-windows-${{ github.ref_name }}.zip
 
+      # crush-analyze finds its vendored modules as .py files on disk; a
+      # frozen build only has them if its PyInstaller hook bundled them.
+      - name: Smoke test analyzer modules (Linux)
+        if: runner.os == 'Linux'
+        run: python scripts/smoke_test_frozen_analyzers.py ./crush-linux-${{ github.ref_name }}.AppImage --appimage-extract-and-run
+
+      - name: Smoke test analyzer modules (macOS)
+        if: runner.os == 'macOS'
+        run: python scripts/smoke_test_frozen_analyzers.py dist/crush.app/Contents/MacOS/crush
+
+      - name: Smoke test analyzer modules (Windows)
+        if: runner.os == 'Windows'
+        run: python scripts/smoke_test_frozen_analyzers.py dist\crush.exe
+
       - name: Upload release asset (Linux)
         if: runner.os == 'Linux'
         uses: softprops/action-gh-release@v2

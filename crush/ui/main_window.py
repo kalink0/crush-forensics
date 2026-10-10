@@ -3004,19 +3004,6 @@ class MainWindow(QMainWindow):
         except (FileNotFoundError, RuntimeError, OSError) as exc:
             QMessageBox.warning(self, translate("MainWindow", "Send to Peach"), i18n.exception_text(exc))
 
-    # Curated allowlist of crush-analyze module ids Crush's own UI exposes.
-    # crush-analyze's manifest can offer more than this (e.g. the two
-    # "Application Snapshot" modules from the same vendored
-    # applicationStateDB.py) -- not every module a LEAPP file happens to
-    # declare is judged forensically relevant/mature enough for Crush's own
-    # picker yet. See docs/design/analyzer-runner.md and the "ACTIVE TODO"
-    # note in that design's tracking memory for the decision behind this.
-    _ANALYZER_MODULE_ALLOWLIST = {
-        "get_installed_apps",
-        "get_installedappsVending",
-        "get_package_info",
-    }
-
     # Friendlier labels than crush-analyze's own manifest "name" field,
     # which is LEAPP's own internal artifact name (e.g. "Application
     # State"), not written with Crush's UI in mind. Falls back to the
@@ -3172,9 +3159,10 @@ class MainWindow(QMainWindow):
     def _run_analyzer_pick_and_run(
         self, node: VFSNode, vfs: VFS, modules: list[dict]
     ) -> None:
+        from crush.core.analyzer_launcher import CURATED_MODULE_IDS
         from crush.ui.busy_dialog import run_with_busy_dialog
 
-        curated = [m for m in modules if m["id"] in self._ANALYZER_MODULE_ALLOWLIST]
+        curated = [m for m in modules if m["id"] in CURATED_MODULE_IDS]
         if not curated:
             QMessageBox.information(
                 self,

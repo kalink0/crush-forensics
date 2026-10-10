@@ -24,6 +24,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed Open as new tab doing nothing in tables inside the Realm viewer.
 - Fixed an empty file on an exFAT raw disk image reading as one cluster of the volume's own bytes; it now reads as no bytes.
 - Fixed a FAT32 or exFAT file on a raw disk image reading short, without an error, when its cluster chain ends before its recorded size; reading it now says how many clusters the chain holds and how many the size needs.
+- Fixed Run Analyzer offering no analyzer modules in the AppImage, macOS and Windows builds.
 
 ### Changed
 
