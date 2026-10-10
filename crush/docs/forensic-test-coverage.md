@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-240 checks in total.
+241 checks in total.
 
 ### Sources
 
@@ -79,7 +79,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [SQLite WAL](#sqlite-wal) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
 | [Realm database](#realm-database) | 2 | 1 | 1 | 7 | not tested | 1 |
-| [LevelDB](#leveldb) | 2 | 1 | 1 | 3 | 4 | 1 |
+| [LevelDB](#leveldb) | 2 | 1 | 1 | 4 | 4 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Property list (plist)](#property-list-plist) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Android Binary XML (ABX)](#android-binary-xml-abx) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -431,6 +431,7 @@ No forensic checks.
 - **Read-only Media** — LevelDB parser must succeed when directory and files are read-only (0o555/0o444) ([test_forensic.py](../../crush/tests/test_forensic.py), `test_leveldb_read_only_media`)
 - **Known-output Verification** — File numbers must be read as LevelDB writes them (decimal), so a file's level, size and key range are its own ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_file_numbers_are_decimal`)
 - **Known-output Verification** — The current MANIFEST must be the one CURRENT names, not the highest-numbered; a higher-numbered one is shown and marked ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_current_names_the_manifest`)
+- **Known-output Verification** — A .log record whose stored checksum doesn't match must be shown and marked, not passed off as a normal record ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_log_record_with_wrong_checksum_is_marked`)
 - **Known-output Verification** — A RocksDB directory (LevelDB's file names, other formats) must be recognised by content and not read as LevelDB ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_rocksdb_options_file_is_recognised`)
 - **Completeness** — A data file that can't be opened must be listed with its reason and must not hide the other files' records ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_table_file_without_magic_keeps_the_other_files`)
 - **Completeness** — A data file that fails partway must keep the records read before it, say where it stopped, and not stop the files after it ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_file_failing_midway_keeps_its_records_and_the_others`)

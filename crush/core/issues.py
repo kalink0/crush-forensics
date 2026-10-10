@@ -1226,7 +1226,7 @@ MESSAGES: dict[str, str] = {
     "leveldb.data_files_not_read": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "{count:,} of {total:,} data files could not be read whole; "
-        "Overview → Unreadable files says why",
+        "Overview → Read problems says why",
         "leveldb.data_files_not_read",
     ),
     "leveldb.smallest_key_short": QT_TRANSLATE_NOOP(
@@ -1240,6 +1240,24 @@ MESSAGES: dict[str, str] = {
         "Largest key is {length} bytes, shorter than the 8-byte sequence/type tag an "
         "internal key ends with, so it isn't a valid internal key; shown as stored",
         "leveldb.largest_key_short",
+    ),
+    "leveldb.records_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} record(s) whose stored checksum doesn't match; shown, marked in the "
+        "Records tab (LevelDB doesn't apply them)",
+        "leveldb.records_checksum",
+    ),
+    "leveldb.records_checksum_total": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} record(s) whose stored checksum doesn't match; Overview → Read problems "
+        "says where",
+        "leveldb.records_checksum_total",
+    ),
+    "leveldb.manifest_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} edit(s) whose stored checksum doesn't match, read and counted here "
+        "(LevelDB doesn't apply them); at offsets {offsets}",
+        "leveldb.manifest_checksum",
     ),
     "leveldb.parts_skipped": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -1271,7 +1289,7 @@ MESSAGES: dict[str, str] = {
     ),
     "leveldb.current_target_unreadable": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "{name} could not be read (Unreadable files says why): no MANIFEST is taken "
+        "{name} could not be read (Read problems says why): no MANIFEST is taken "
         "as the current one, and files have no level",
         "leveldb.current_target_unreadable",
     ),

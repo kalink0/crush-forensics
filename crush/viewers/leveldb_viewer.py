@@ -59,7 +59,18 @@ _COLUMNS = [
     QT_TRANSLATE_NOOP("GeneratedView", "Value (text)"),
     QT_TRANSLATE_NOOP("GeneratedView", "Value (hex)"),
     QT_TRANSLATE_NOOP("GeneratedView", "Compressed"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Checksum"),
 ]
+
+
+def _checksum_text(checksum_ok: bool | None) -> str:
+    """The parser's checksum_ok as shown: True/False for a .log record's
+    stored checksum, None where it isn't checked (table blocks)."""
+    if checksum_ok is None:
+        return QT_TRANSLATE_NOOP("GeneratedView", "not checked")
+    if checksum_ok:
+        return QT_TRANSLATE_NOOP("GeneratedView", "matches")
+    return QT_TRANSLATE_NOOP("GeneratedView", "doesn't match")
 # Record states from the parser (shown translated, kept English for the filter).
 _STATES = (
     QT_TRANSLATE_NOOP("GeneratedView", "Live"),
@@ -249,6 +260,7 @@ class LevelDbRecordsWidget(QWidget):
                 (_text_preview(rec.get("value_text"), val_bytes), None),
                 (_hex_preview(val_bytes), None),
                 ("yes" if rec.get("compressed") else "no", None),  # translated below
+                (_checksum_text(rec.get("checksum_ok")), None),  # translated below
             ]
 
             items = []
@@ -266,6 +278,10 @@ class LevelDbRecordsWidget(QWidget):
                     else QT_TRANSLATE_NOOP("GeneratedView", "no")
                 ),
             )
+            checksum_item = items[_COLUMNS.index("Checksum")]
+            mark_generated(checksum_item, Gen(_checksum_text(rec.get("checksum_ok"))))
+            if rec.get("checksum_ok") is False:
+                checksum_item.setForeground(_STATE_COLORS["Deleted"])
 
             # Store raw bytes for hex pane and inspector
             items[0].setData(uk_bytes, _KEY_BYTES_ROLE)
@@ -313,7 +329,7 @@ class LevelDbRecordsWidget(QWidget):
             "User Key (text)", "User Key (hex)",
             "Internal Key (hex)",
             "Value (text)", "Value (hex)",
-            "Compressed",
+            "Compressed", "Checksum",
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -339,6 +355,7 @@ class LevelDbRecordsWidget(QWidget):
                     rec.get("value_text") or "",
                     val.hex(),
                     "yes" if rec.get("compressed") else "no",
+                    _checksum_text(rec.get("checksum_ok")),
                 ])
 
     def _on_context_menu(self, pos) -> None:

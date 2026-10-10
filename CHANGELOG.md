@@ -39,6 +39,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed a LevelDB MANIFEST tag LevelDB doesn't define being read past silently; reading that MANIFEST now stops there and says where.
 - Fixed a damaged part of a LevelDB `.log` ending the read of the whole file; it is now skipped and named, and the records after it are read, as LevelDB reads on.
 - Fixed a LevelDB key range shorter than an internal key's tag showing in the Files tab without a note.
+- Fixed LevelDB `.log` records and MANIFEST edits whose stored checksum doesn't match showing as ordinary ones; they are now marked.
 
 ### Changed
 

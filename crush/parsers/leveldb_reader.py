@@ -10,8 +10,9 @@ from LevelDB's own, a subclass here overrides the one method concerned:
   (an unknown record type, a fragment without its start or end, a length
   past the block) is skipped and reading goes on -- where LevelDB skips
   silently (padding, the writer stopping at the end of the file), Crush
-  still says so; each record's stored checksum is checked and reported
-  (LevelDB drops a record whose checksum doesn't match; Crush keeps it);
+  still says so; each record's stored checksum is checked -- a .log
+  record or MANIFEST edit whose checksum doesn't match is kept and marked
+  (LevelDB doesn't apply it);
 - table blocks (_LdbFile._read_block): only compression types 0 (none) and
   1 (Snappy) are decoded, any other is named instead of being fed to the
   Snappy decoder;
@@ -87,6 +88,17 @@ def _checksum_ok(stored: int, record_type: int, data: bytes) -> bool:
     )
 
 
+def _with_last(blocks: Iterable[bytes]) -> Iterator[tuple[bytes, bool]]:
+    """Each block with whether it is the file's last -- one block ahead, so a
+    file of exactly whole blocks knows its last one too."""
+    it = iter(blocks)
+    current = next(it, None)
+    while current is not None:
+        following = next(it, None)
+        yield current, following is None
+        current = following
+
+
 def _read_batches(
     raw_blocks: Iterable[bytes], path: Path, damaged: list[str] | None = None
 ) -> Iterator[tuple[int, bytes, bool]]:
@@ -109,8 +121,7 @@ def _read_batches(
     start_offset = 0
     record = b""
     record_ok = True
-    for idx, chunk in enumerate(raw_blocks):
-        last_block = len(chunk) < _BLOCK_SIZE  # the file's final, partial block
+    for idx, (chunk, last_block) in enumerate(_with_last(raw_blocks)):
         with io.BytesIO(chunk) as buff:
             while len(chunk) - buff.tell() >= _HEADER_SIZE:
                 header_offset = idx * _BLOCK_SIZE + buff.tell()
@@ -219,17 +230,23 @@ def _decode_version_edit(buffer: bytes) -> VersionEdit:
 
 class _LogFile(LogFile):
     """A .log file, its records read as LevelDB reads them: a damaged part
-    is skipped and described in *damaged*, and reading goes on."""
+    is skipped and described in *damaged*, and reading goes on.
+
+    *checksum_ok* is whether the stored checksums of the batch the record
+    just yielded comes from match: the vendored __iter__ yields every record
+    of one batch before it asks _get_batches for the next."""
 
     def __init__(self, path: Path) -> None:
         super().__init__(path)
         self.damaged: list[str] = []
+        self.checksum_ok = True
 
     def _get_batches(self) -> Iterator[tuple[int, bytes]]:
         self.damaged.clear()
-        for offset, record, _checksum_ok in _read_batches(
+        for offset, record, checksum_ok in _read_batches(
             self._get_raw_blocks(), self.path, self.damaged
         ):
+            self.checksum_ok = checksum_ok
             yield offset, record
 
 
@@ -257,13 +274,16 @@ class _LdbFile(LdbFile):
 
 
 class _ManifestFile(ManifestFile):
-    """A MANIFEST, read edit by edit only when iterated."""
+    """A MANIFEST, read edit by edit only when iterated. *checksum_mismatches*
+    lists the offsets of edits whose record's stored checksum doesn't match
+    (read and kept; LevelDB wouldn't apply them)."""
 
     def __init__(self, path: Path) -> None:  # no super(): it reads every edit
         if not re.match(ManifestFile.MANIFEST_FILENAME_PATTERN, path.name):
             raise ValueError("Invalid name for Manifest")
         self.path = path
         self._f = path.open("rb")
+        self.checksum_mismatches: list[int] = []
 
     def _get_batches(self) -> Iterator[tuple[int, bytes]]:
         # A damaged part stops the MANIFEST, as it makes LevelDB fail.
@@ -271,7 +291,10 @@ class _ManifestFile(ManifestFile):
             yield offset, record
 
     def __iter__(self) -> Iterator[VersionEdit]:
+        self.checksum_mismatches = []
         for batch_offset, batch, checksum_ok in _read_batches(self._get_raw_blocks(), self.path):
+            if not checksum_ok:
+                self.checksum_mismatches.append(batch_offset)
             try:
                 yield _decode_version_edit(batch)
             except UnknownVersionEditTag as exc:

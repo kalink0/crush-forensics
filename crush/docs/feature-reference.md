@@ -542,7 +542,7 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 - **CURRENT** — the MANIFEST it names. When `CURRENT` is missing, can't be read, doesn't name a MANIFEST, or names one that isn't there or can't be read, no MANIFEST is labelled *(current)* and files have no level; the entry says why. A `CURRENT` without the line break LevelDB requires at its end is still followed; both it and the MANIFEST it names say that LevelDB treats it as corrupt.
 - Comparator name, last sequence number, log number, and prev log number (when present). A MANIFEST that records none of these and no files (or is empty) is still listed, with a note.
 - Files grouped by compaction level, as the MANIFEST's edits leave them: a file a later edit deleted (e.g. compacted away) is no longer listed on its old level; the compaction history still shows both edits.
-- **Unreadable files** — every file that could not be opened or read to its end, with the reason (and, for one that stopped partway, after how many records). Each file is read on its own: one damaged file doesn't hide the others' records, and the records read from it before the failure are shown. In a `.log`, a damaged part (an unknown record type, a record part without its start or end, a length past its block or the file) is skipped and reading goes on after it, as LevelDB itself reads a log; each skipped part is listed with its offset — including those LevelDB drops without a word, such as a record the writer didn't finish before the file ends. The Properties panel's **Parse warning** says how many data files were affected.
+- **Read problems** — every file that could not be opened or read to its end, or holds records whose stored checksum doesn't match, with the reason (and, for one that stopped partway, after how many records). Each file is read on its own: one damaged file doesn't hide the others' records, and the records read from it before the failure are shown. In a `.log`, a damaged part (an unknown record type, a record part without its start or end, a length past its block or the file) is skipped and reading goes on after it, as LevelDB itself reads a log; each skipped part is listed with its offset — including those LevelDB drops without a word, such as a record the writer didn't finish before the file ends. Every `.log` record's and MANIFEST edit's stored checksum is checked: one that doesn't match is kept (LevelDB wouldn't apply it), marked in the Records tab's **Checksum** column or counted in the MANIFEST's **Checksum** entry with its offsets. The Properties panel's **Parse warning** says how many data files and records were affected.
 
 **Files tab** — one row per data file (`.ldb` / `.sst`) and WAL log file that could be opened, including one that holds no records:
 
@@ -567,6 +567,7 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 | User Key (text) / (hex) | Key decoded as UTF-8 and as hex |
 | Value (text) / (hex) | Value decoded as UTF-8 and as hex |
 | Internal Key (hex) | Full internal key (user key + 8-byte sequence/type suffix) for `.ldb`/`.sst` records |
+| Checksum | For a `.log` record, whether its stored checksum matches (*matches* / *doesn't match*); *not checked* for `.ldb`/`.sst` records, whose block checksums aren't checked |
 
 Toolbar controls:
 

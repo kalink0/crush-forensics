@@ -2349,15 +2349,32 @@ def _varint(n: int) -> bytes:
     return bytes(out)
 
 
-def _make_log_entry(key: bytes, value: bytes | None, seq: int) -> bytes:
-    """Build one LevelDB log record (Full type). CRC is zeroed — ccl_leveldb doesn't validate it."""
+def _crc32c(data: bytes) -> int:
+    """CRC-32C (Castagnoli), bit by bit -- kept apart from the code under test."""
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0x82F63B78 if crc & 1 else 0)
+    return crc ^ 0xFFFFFFFF
+
+
+def _log_record(record_type: int, data: bytes, *, good_crc: bool = True) -> bytes:
+    """One physical log-format record with LevelDB's masked CRC32C over its
+    type byte and data (log_writer.cc), or a wrong one."""
+    crc = _crc32c(bytes([record_type]) + data)
+    masked = ((((crc >> 15) | (crc << 17)) & 0xFFFFFFFF) + 0xA282EAD8) & 0xFFFFFFFF
+    return struct.pack("<IHB", masked if good_crc else masked ^ 1, len(data), record_type) + data
+
+
+def _make_log_entry(key: bytes, value: bytes | None, seq: int, *, good_crc: bool = True) -> bytes:
+    """Build one LevelDB log record (Full type) holding a one-entry batch."""
     batch = struct.pack("<QI", seq, 1)
     if value is not None:
         batch += b"\x01" + _varint(len(key)) + key + _varint(len(value)) + value
     else:
         batch += b"\x00" + _varint(len(key)) + key
-    header = struct.pack("<IHB", 0, len(batch), 1)  # CRC=0, length, type=Full
-    return header + batch
+    return _log_record(1, batch, good_crc=good_crc)
 
 
 def _make_minimal_leveldb(

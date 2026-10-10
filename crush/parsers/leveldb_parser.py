@@ -286,6 +286,7 @@ class LeveldbParser(AbstractParser):
         file_stats: dict[str, dict[str, Any]] = {}
         records: list[dict[str, Any]] = []
         not_whole = 0  # data files not read to their end
+        records_bad_checksum = 0
 
         for path in data_files:
             try:
@@ -307,9 +308,16 @@ class LeveldbParser(AbstractParser):
                 "unknown": 0,
             }
             from_file = 0
+            bad_checksum = 0
             stopped: ParseIssue | None = None
+            # .log records: whether their batch's stored checksum matches;
+            # table blocks' checksums aren't checked (None).
+            checks_log = isinstance(reader, LogFile)
             try:
                 for record in reader:
+                    checksum_ok = bool(reader.checksum_ok) if checks_log else None
+                    if checksum_ok is False:
+                        bad_checksum += 1
                     fs["total"] += 1
                     state_name = record.state.name
                     if record.state == KeyState.Live:
@@ -333,6 +341,7 @@ class LeveldbParser(AbstractParser):
                         "value_bytes": val,
                         "value_text": _try_utf8(val),
                         "compressed": record.was_compressed,
+                        "checksum_ok": checksum_ok,
                     })
                     from_file += 1
             except Exception as exc:  # noqa: BLE001
@@ -348,8 +357,12 @@ class LeveldbParser(AbstractParser):
                 file_notes.append(ParseIssue(
                     "leveldb.parts_skipped", {"count": len(damaged)}, detail="; ".join(damaged),
                 ))
-            if stopped is not None or damaged:
+            if bad_checksum:
+                file_notes.append(ParseIssue("leveldb.records_checksum", {"count": bad_checksum}))
+                records_bad_checksum += bad_checksum
+            if stopped is not None or damaged or bad_checksum:
                 unreadable[path.name] = cast(ParseIssue, join_notes(file_notes))
+            if stopped is not None or damaged:
                 not_whole += 1
 
         # Merge manifest key ranges and file sizes into file_stats (#8)
@@ -372,7 +385,7 @@ class LeveldbParser(AbstractParser):
                     _logger.debug("Could not read %s: %s", log_name, exc)
                     unreadable[log_name] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
         if unreadable:
-            manifests_display["Unreadable files"] = unreadable
+            manifests_display["Read problems"] = unreadable
 
         total = len(records)
         live_count = sum(1 for r in records if r["state"] == "Live")
@@ -386,10 +399,14 @@ class LeveldbParser(AbstractParser):
             "Files": f"{vfs.file_count(node):,}",
             "Total size": f"{vfs.total_size(node):,} B",
         }
-        if not_whole:
-            meta["Parse warning"] = ParseIssue(
-                "leveldb.data_files_not_read", {"count": not_whole, "total": len(data_files)},
-            )
+        warning = join_notes([
+            ParseIssue("leveldb.data_files_not_read", {"count": not_whole, "total": len(data_files)})
+            if not_whole else None,
+            ParseIssue("leveldb.records_checksum_total", {"count": records_bad_checksum})
+            if records_bad_checksum else None,
+        ])
+        if warning:
+            meta["Parse warning"] = warning
 
         data: dict[str, Any] = {
             "manifests": manifests_display,
@@ -528,6 +545,12 @@ def _parse_manifest(
         levels.setdefault(key, []).append(_file_label(fno))
 
     manifest_data: dict[str, Any] = {}
+    mismatches: list[int] = getattr(manifest, "checksum_mismatches", [])
+    if mismatches:
+        manifest_data["Checksum"] = ParseIssue(
+            "leveldb.manifest_checksum",
+            {"count": len(mismatches), "offsets": ", ".join(f"{o:,}" for o in mismatches)},
+        )
     if comparator:
         manifest_data["Comparator"] = comparator
     if last_sequence is not None:
