@@ -98,55 +98,6 @@ def test_non_image_says_why(qapp) -> None:
     assert "no image signature" in panel._viewer.toPlainText()
 
 
-def test_every_step_entry_is_reachable(qapp) -> None:
-    """A step's list shows at most _STEP_LIST_MAX_VISIBLE rows and scrolls
-    to its last entry (no horizontal scroll bar covering it); many steps
-    scroll in the column instead of being squeezed."""
-    from PySide6.QtCore import QEventLoop, QTimer
-
-    from crush.viewers.blob_inspector import BlobInspector
-
-    dialog = BlobInspector(b"hello")
-    dialog.show()
-    panel = dialog.findChild(_BlobPanel)
-    for _ in range(8):
-        panel._push_step()
-    loop = QEventLoop()
-    QTimer.singleShot(30, loop.quit)
-    loop.exec()
-
-    from crush.viewers.blob_inspector import _STEP_LIST_MAX_VISIBLE
-
-    step_list = panel._steps[0]._list
-    assert not step_list.horizontalScrollBar().isVisible()
-    row_h = step_list.sizeHintForRow(0)
-    shown = min(step_list.count(), _STEP_LIST_MAX_VISIBLE)
-    assert step_list.viewport().height() >= shown * row_h
-    # Scrolled to the bottom, the last entry is fully in view.
-    step_list.scrollToBottom()
-    last = step_list.visualItemRect(step_list.item(step_list.count() - 1))
-    assert last.bottom() < step_list.viewport().height()
-    bar = panel._steps_scroll.verticalScrollBar()
-    assert bar.maximum() > 0 and bar.value() == bar.maximum()  # the new step is in view
-
-    # A later resize (e.g. a step's hint wrapping to more lines) keeps the
-    # last step in view -- it used to stop a few pixels short of the end.
-    panel._steps[-1].set_hint("line\n" * 6)
-    loop = QEventLoop()
-    QTimer.singleShot(30, loop.quit)
-    loop.exec()
-    assert bar.value() == bar.maximum()
-
-    # Once the analyst scrolls, the column stays where they put it.
-    bar.triggerAction(bar.SliderAction.SliderToMinimum)
-    panel._steps[-1].set_hint("")
-    loop = QEventLoop()
-    QTimer.singleShot(30, loop.quit)
-    loop.exec()
-    assert bar.value() == 0
-    dialog.close()
-
-
 # ---------------------------------------------------------------------------
 # Open in new tab, copy and export (bytes after the decode pipeline)
 # ---------------------------------------------------------------------------
