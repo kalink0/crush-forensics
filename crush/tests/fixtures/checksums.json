@@ -108,5 +108,8 @@
   "acquisition/dmg-sparsebundle.sparsebundle/bands/1.gz": "a290f6c0db588606161a6315ea98d1a4f5befd4b2194a42d5ec0515acd8e51c6",
   "acquisition/dmg-sparsebundle.sparsebundle/bands/2.gz": "6c1994b0c6b3ebb142bb8cec414bb766465592cb83ae1051782de5966d33a4b4",
   "acquisition/dmg-sparsebundle.sparsebundle/lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "acquisition/dmg-sparsebundle.sparsebundle/token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  "acquisition/dmg-sparsebundle.sparsebundle/token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "raw_flash_efs-le.img.gz": "74b2e343180f6073f6e1fe7d57ac723e7ab6a8937c236fba189f879f86726f74",
+  "raw_flash_efs-be.img.gz": "d44bfdeb97d1c79b76f9a7dac48d9cee2cba07753eb7f171cc7a7354176034f6",
+  "raw_flash_efs.known.json": "5a792cba318b4bf0243576305a6247325bfa6499138e72fad66caa0b895f9bcc"
 }

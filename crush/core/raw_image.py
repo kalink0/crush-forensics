@@ -443,7 +443,7 @@ def _add_deleted_files_node(
     """A flat `$Recovered` child of the volume, one leaf per entry the
     walker's deleted-file enumeration yields: deleted_files() on NTFS/FAT32/
     exFAT, recover_deleted() on YAFFS2/JFFS2/UBIFS (and UBI, for the UBIFS
-    volumes it holds) -- the filesystems qnxprobe has this for. Not
+    volumes it holds) and QNX EFS -- the filesystems qnxprobe has this for. Not
     reassembled into the deleted files' original folders: that needs
     mapping each entry's `parent` handle back onto a live directory that
     may itself be gone, which is real additional complexity for a placement

@@ -64,7 +64,7 @@ On NTFS, a file's recorded size is not always what the volume stores for it:
 
 ### Deleted files
 
-For **NTFS, FAT32, exFAT, YAFFS2, JFFS2 and UBIFS** volumes (the filesystems the underlying reader has this for), a `$Recovered` folder appears alongside the live files. On NTFS/FAT32/exFAT it contains every directory/MFT record still on disk whose entry is marked free but hasn't yet been overwritten — this is filesystem-level deletion, not the Recycle Bin. A file sitting in `$Recycle.Bin` (NTFS) is a completely ordinary, live file from the filesystem's point of view and already appears in the normal tree; `$Recovered` is a level below that: records for files already removed from (or bypassing) the Recycle Bin, recoverable only because the filesystem hasn't reused that specific record/directory slot for something else yet.
+For **NTFS, FAT32, exFAT, YAFFS2, JFFS2, UBIFS and QNX EFS** volumes (the filesystems the underlying reader has this for), a `$Recovered` folder appears alongside the live files. On NTFS/FAT32/exFAT it contains every directory/MFT record still on disk whose entry is marked free but hasn't yet been overwritten — this is filesystem-level deletion, not the Recycle Bin. A file sitting in `$Recycle.Bin` (NTFS) is a completely ordinary, live file from the filesystem's point of view and already appears in the normal tree; `$Recovered` is a level below that: records for files already removed from (or bypassing) the Recycle Bin, recoverable only because the filesystem hasn't reused that specific record/directory slot for something else yet.
 
 - Every entry is listed, including ones judged **not recoverable** (data clusters already reused, attributes overflowed the record, or it's a deleted directory — recursing into a deleted directory's own contents isn't attempted). The Properties panel states the reason; attempting to open one of these shows a clear error rather than wrong or partial bytes.
 - Recovered files are placed **flat** under `$Recovered`, not reassembled into the folder structure they were originally deleted from.
@@ -77,6 +77,13 @@ For **NTFS, FAT32, exFAT, YAFFS2, JFFS2 and UBIFS** volumes (the filesystems the
 - Where the recovery had to decide something the flash doesn't record, the status says so. On YAFFS2, deleting a file first writes a size-0 header for it; a file truncated to 0 just before its deletion leaves the same header, so such a file is recovered as the header before that one describes it, with a **recovery note** saying this.
 - A file whose last copy was superseded several times (e.g. rewritten, then deleted) can appear more than once, numbered like other same-named entries.
 - YAFFS1 deleted files are not recovered: its chunks carry only a 2-bit serial number, which can't say which copy of a page a deleted file last held.
+
+**QNX EFS** marks an extent deleted in its header, and its content can still be on the flash behind it. A directory entry is an extent too, so a deleted file's name and modification time can stay the same way. Each one the reader finds is listed in `$Recovered`:
+
+- A deleted file is readable when its chain of extents still reads from start to end. When it does not, the file is listed by name as not recoverable, with the reason.
+- Runs of deleted or superseded extents that no such file accounts for are listed too. These are pieces: an earlier version of part of a file, which may still be a live file, or what is left of a file whose directory entry is gone. A piece is named after the file a directory entry still leads to it from, or is unnamed, and its **recovery note** says what it is.
+- EFS directories record no size, so the size shown is the number of bytes the entry's extents hold.
+- A name is what the directory data on the flash leads to, not proof that the data belonged to that file.
 
 ### Verifying an acquisition
 
@@ -91,7 +98,7 @@ What a container records about its own data besides a hash of the disk is recomp
 - **Named streams of deleted files** are not listed in `$Recovered`.
 - **No other filesystems yet** — notably Btrfs, XFS, and LittleFS (common on smartwatches and other small embedded/IoT devices) are not covered by the underlying reader.
 - **No snapshot support** — NTFS Volume Shadow Copies and APFS snapshots are not read; only the filesystem's current, live state (plus the deleted-file recovery above) is available.
-- **Deleted-file recovery is NTFS/FAT32/exFAT/YAFFS2/JFFS2/UBIFS only** — ext2/3/4, F2FS, HFS+, APFS, YAFFS1, SquashFS (read-only, nothing is deleted) and the QNX filesystems have no equivalent in the underlying reader.
+- **Deleted-file recovery is NTFS/FAT32/exFAT/YAFFS2/JFFS2/UBIFS/QNX EFS only** — ext2/3/4, F2FS, HFS+, APFS, YAFFS1, SquashFS (read-only, nothing is deleted) and the other QNX filesystems have no equivalent in the underlying reader.
 - **Flash readers and real devices** — SquashFS and JFFS2 have been validated only against images written by their own tools and the Linux kernel; YAFFS2 and UBIFS have also been read off real device dumps (see the qnxprobe README).
 
 ---

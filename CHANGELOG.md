@@ -10,6 +10,8 @@ All notable changes to Crush will be documented in this file.
 - Added to the BLOB Inspector -> Support for opening the decoded bytes as a new tab, with their source and decode pipeline in the Properties panel.
 - Added to the BLOB Inspector -> Support for exporting the decoded bytes or a rendered image, with a sidecar JSON of source, steps and SHA-256 hashes.
 - Added to the BLOB Inspector -> Support for copying the decoded bytes as hex, Base64 or a Python literal.
+- Added to raw disk images -> Support for QNX EFS partitions inside a raw flash image, in either byte order.
+- Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`.
 
 ### Bug Fixes
 
@@ -30,7 +32,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.59 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149))
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.60 (from v1.57).
 
 ## v0.22.0 - 2026-10-08
 
