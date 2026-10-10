@@ -32,6 +32,20 @@ _COCOA_MAX = 3_155_673_600.0
 _CHROME_MIN = 12_591_158_400_000_000
 _CHROME_MAX = 15_778_800_000_000_000
 
+# Integer timestamps counted in sub-second ticks, the same formats the table
+# viewer's timestamp decoding offers (crush/core/ts_decode.py TS_FORMATS):
+# (label, ticks per second, epoch offset to Unix in seconds). Each is
+# checked against the same 2000 … 2100 window; the windows don't overlap.
+_TICK_FORMATS: list[tuple[str, int, int]] = [
+    (QT_TRANSLATE_NOOP("GeneratedView", "Unix timestamp (ms)"), 1_000, 0),
+    (QT_TRANSLATE_NOOP("GeneratedView", "Unix timestamp (µs)"), 1_000_000, 0),
+    (
+        QT_TRANSLATE_NOOP("GeneratedView", "Windows FILETIME (100 ns)"),
+        10_000_000,
+        _FILETIME_OFFSET,
+    ),
+]
+
 
 class Interpretation(NamedTuple):
     label: str
@@ -67,6 +81,7 @@ def interpret_varint(value: int) -> list[Interpretation]:
             )
         )
 
+    out.extend(_tick_interpretations(value))
     return out
 
 
@@ -116,6 +131,7 @@ def interpret_fixed64(raw: bytes) -> list[Interpretation]:
             )
         )
 
+    out.extend(_tick_interpretations(uint64))
     return out
 
 
@@ -144,6 +160,30 @@ def interpret_fixed32(raw: bytes) -> list[Interpretation]:
         )
 
     return out
+
+
+def _tick_interpretations(value: int) -> list[Interpretation]:
+    """Sub-second-tick timestamp candidates (_TICK_FORMATS) for *value*,
+    shown down to the format's own resolution."""
+    out: list[Interpretation] = []
+    for label, per_second, offset in _TICK_FORMATS:
+        low = (_UNIX_S_MIN + offset) * per_second
+        high = (_UNIX_S_MAX + offset) * per_second
+        if low <= value <= high:
+            out.append(Interpretation(label, _fmt_ticks(value, per_second, offset)))
+    return out
+
+
+def _fmt_ticks(value: int, per_second: int, offset: int) -> str:
+    """*value* ticks of 1/*per_second* s since an epoch *offset* seconds
+    before Unix's, with the fraction kept exactly (integer arithmetic, no
+    float rounding)."""
+    whole, frac = divmod(value, per_second)
+    dt = unix_to_utc(whole - offset)
+    if dt is None:
+        return f"{value}"
+    digits = len(str(per_second)) - 1
+    return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{frac:0{digits}d} UTC"
 
 
 def _fmt_ts(unix_seconds: float) -> str:

@@ -24,9 +24,6 @@ from crush.third_party.ccl_segb import ccl_segb1, ccl_segb2
 _MAIN = "main"  # SEGB has one physical file -- no base/WAL split to model.
 _TABLE = "SEGB"
 
-# Column indices, matching segb_parser.py's _COLUMNS_V1/_COLUMNS_V2 order.
-_V1_STATE, _V1_TS1, _V1_TS2, _V1_CRC_STORED, _V1_PAYLOAD_SIZE, _V1_PAYLOAD = 2, 3, 4, 5, 8, 9
-_V2_STATE, _V2_CREATION, _V2_TRAILER_OFFSET, _V2_ENTRY_END, _V2_CRC_STORED, _V2_PAYLOAD = 2, 3, 4, 5, 6, 10
 
 
 def _clip(rng: tuple[int, int], limit: int) -> tuple[int, int] | None:
@@ -39,18 +36,18 @@ def _clip(rng: tuple[int, int], limit: int) -> tuple[int, int] | None:
 
 def _v1_ranges(
     data_start_offset: int, payload_size: int, file_len: int
-) -> tuple[list[tuple[int, int]], dict[int, tuple[int, int]]]:
+) -> tuple[list[tuple[int, int]], dict[str, tuple[int, int]]]:
     header_start = data_start_offset - ccl_segb1.RECORD_HEADER_LENGTH
     row = _clip((header_start, data_start_offset + payload_size), file_len)
     raw_columns = {
-        _V1_STATE: (header_start + 4, header_start + 8),
-        _V1_TS1: (header_start + 8, header_start + 16),
-        _V1_TS2: (header_start + 16, header_start + 24),
-        _V1_CRC_STORED: (header_start + 24, header_start + 28),
-        _V1_PAYLOAD_SIZE: (header_start, header_start + 4),
-        _V1_PAYLOAD: (data_start_offset, data_start_offset + payload_size),
+        "Payload Size": (header_start, header_start + 4),
+        "State": (header_start + 4, header_start + 8),
+        "Timestamp1": (header_start + 8, header_start + 16),
+        "Timestamp2": (header_start + 16, header_start + 24),
+        "CRC Stored": (header_start + 24, header_start + 28),
+        "Payload": (data_start_offset, data_start_offset + payload_size),
     }
-    columns = {idx: clipped for idx, rng in raw_columns.items() if (clipped := _clip(rng, file_len)) is not None}
+    columns = {name: clipped for name, rng in raw_columns.items() if (clipped := _clip(rng, file_len)) is not None}
     return ([row] if row is not None else []), columns
 
 
@@ -60,23 +57,23 @@ def _v2_ranges(
     entry_end_offset: int,
     payload_size: int,
     file_len: int,
-) -> tuple[list[tuple[int, int]], dict[int, tuple[int, int]]]:
+) -> tuple[list[tuple[int, int]], dict[str, tuple[int, int]]]:
     entry_data_end = ccl_segb2.HEADER_LENGTH + entry_end_offset
     trailer_end = trailer_offset + ccl_segb2.TRAILER_ENTRY_LENGTH
     raw_rows = [(data_start_offset, entry_data_end), (trailer_offset, trailer_end)]
     rows = [clipped for rng in raw_rows if (clipped := _clip(rng, file_len)) is not None]
     raw_columns = {
-        _V2_STATE: (trailer_offset + 4, trailer_offset + 8),
-        _V2_CREATION: (trailer_offset + 8, trailer_offset + 16),
-        _V2_TRAILER_OFFSET: (trailer_offset, trailer_end),
-        _V2_ENTRY_END: (trailer_offset, trailer_offset + 4),
-        _V2_CRC_STORED: (data_start_offset, data_start_offset + 4),
-        _V2_PAYLOAD: (
+        "CRC Stored": (data_start_offset, data_start_offset + 4),
+        "Payload": (
             data_start_offset + ccl_segb2.ENTRY_HEADER_LENGTH,
             data_start_offset + ccl_segb2.ENTRY_HEADER_LENGTH + payload_size,
         ),
+        "Trailer Offset": (trailer_offset, trailer_end),
+        "Entry End Offset": (trailer_offset, trailer_offset + 4),
+        "State": (trailer_offset + 4, trailer_offset + 8),
+        "Creation": (trailer_offset + 8, trailer_offset + 16),
     }
-    columns = {idx: clipped for idx, rng in raw_columns.items() if (clipped := _clip(rng, file_len)) is not None}
+    columns = {name: clipped for name, rng in raw_columns.items() if (clipped := _clip(rng, file_len)) is not None}
     return rows, columns
 
 
@@ -84,8 +81,9 @@ def _v2_ranges(
 class SegbCellLocator:
     """Byte-provenance lookup for one open SEGB v1/v2 file's decoded rows.
 
-    *rows* must be segb_parser.py's own row lists (same order as
-    _COLUMNS_V1/_COLUMNS_V2), keyed here by their position (0-based) -- the
+    *rows* must be segb_parser.py's own row lists, *columns* their column
+    names (_COLUMNS_V1/_COLUMNS_V2; each value is found by its name, not a
+    fixed position). Rows are keyed here by their position (0-based) -- the
     same value segb_parser.py threads through data["SEGB"]["rowids"] so a
     TableViewer row's _ROWID_ROLE lines up with this locator's lookup key.
     """
@@ -93,6 +91,7 @@ class SegbCellLocator:
     file_bytes: bytes
     version: str  # "v1" or "v2"
     rows: list[list[Any]]
+    columns: list[str]
     _row_ranges: dict[int, list[tuple[int, int]]] = field(default_factory=dict, init=False)
     _col_ranges: dict[int, dict[int, tuple[int, int]]] = field(default_factory=dict, init=False)
     # Rows whose offsets couldn't be read, with why (see why_not_located).
@@ -100,17 +99,29 @@ class SegbCellLocator:
 
     def __post_init__(self) -> None:
         file_len = len(self.file_bytes)
+        col_index = {name: i for i, name in enumerate(self.columns)}
         for idx, row in enumerate(self.rows):
             try:
+
+                def value(name: str, row: list[Any] = row) -> int:
+                    return int(row[col_index[name]])
+
                 if self.version == "v1":
-                    row_ranges, columns = _v1_ranges(int(row[1]), int(row[8]), file_len)
+                    row_ranges, named = _v1_ranges(
+                        value("Offset"), value("Payload Size"), file_len
+                    )
                 elif self.version == "v2":
-                    row_ranges, columns = _v2_ranges(
-                        int(row[1]), int(row[4]), int(row[5]), int(row[9]), file_len
+                    row_ranges, named = _v2_ranges(
+                        value("Offset"),
+                        value("Trailer Offset"),
+                        value("Entry End Offset"),
+                        value("Payload Size"),
+                        file_len,
                     )
                 else:
                     continue
-            except (TypeError, ValueError, IndexError) as exc:
+                columns = {col_index[name]: rng for name, rng in named.items()}
+            except (TypeError, ValueError, IndexError, KeyError) as exc:
                 self._row_failures[idx] = ParseIssue("locate.segb_record_offsets", detail=str(exc))
                 continue
             if not row_ranges:

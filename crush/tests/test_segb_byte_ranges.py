@@ -12,7 +12,7 @@ import zlib
 
 from crush.core.segb_offsets import SegbCellLocator
 from crush.core.vfs import BytesVFS
-from crush.parsers.segb_parser import SegbParser
+from crush.parsers.segb_parser import _COLUMNS_V1, SegbParser
 from crush.third_party.ccl_segb.ccl_segb1 import HEADER_LENGTH as V1_HEADER_LENGTH
 from crush.third_party.ccl_segb.ccl_segb1 import MAGIC as V1_MAGIC
 from crush.third_party.ccl_segb.ccl_segb2 import MAGIC as V2_MAGIC
@@ -200,6 +200,40 @@ def test_out_of_bounds_offsets_are_dropped_not_wrong() -> None:
     """A corrupt/hand-edited data_start_offset pointing past the actual
     file content must never produce a highlight range that runs off the
     end of the real bytes -- drop it instead of guessing."""
-    fake_row = [0, 10_000_000, "Written", "t1", "t2", 0, 0, True, 5, ("", b"xxxxx")]
-    locator = SegbCellLocator(file_bytes=b"short file", version="v1", rows=[fake_row])
+    fake_row = [0, 10_000_000, 5, "Written", "t1", "t2", 0, 0, True, ("", b"xxxxx")]
+    locator = SegbCellLocator(
+        file_bytes=b"short file", version="v1", rows=[fake_row], columns=_COLUMNS_V1
+    )
     assert locator.locate_cell("SEGB", 0, 0) is None
+
+
+def test_stored_columns_follow_the_byte_layout() -> None:
+    """Stored fields appear in the order of their bytes (v1: record header
+    then payload; v2: entry header, payload, trailer entry); every stored
+    field's cell range starts after the previous one's."""
+    for raw, name in (
+        (_build_segb1([(b"payload", int(EntryState.Written))]), "s.segb1"),
+        (_build_segb2([(b"payload", int(EntryState.Written))]), "s.segb2"),
+    ):
+        data, _ = _parse(raw, name)
+        table = data["SEGB"]
+        derived = table["derived_columns"]
+        stored = [c for c in table["columns"] if c not in derived]
+        locator = data["__cell_locator"]
+        starts = []
+        for col in stored:
+            location = locator.locate_cell("SEGB", 0, table["columns"].index(col))
+            assert location is not None and location.column_ranges, (name, col)
+            starts.append(location.column_ranges[0][0])
+        assert starts == sorted(starts), (name, list(zip(stored, starts)))
+
+
+def test_derived_columns_are_named_with_a_reason() -> None:
+    v1, _ = _parse(_build_segb1([(b"x", int(EntryState.Written))]), "s.segb1")
+    v2, _ = _parse(_build_segb2([(b"x", int(EntryState.Written))]), "s.segb2")
+    assert set(v1["SEGB"]["derived_columns"]) == {"Index", "Offset", "CRC Calc", "CRC Passed"}
+    assert set(v2["SEGB"]["derived_columns"]) == {
+        "Index", "Offset", "Trailer Offset", "CRC Calc", "CRC Passed", "Payload Size",
+    }
+    for table in (v1["SEGB"], v2["SEGB"]):
+        assert set(table["derived_columns"]) <= set(table["columns"])

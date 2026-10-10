@@ -66,22 +66,42 @@ def discover_segb_nodes(root: VFSNode, vfs: VFS) -> list[VFSNode]:
     return results
 
 
+# Stored fields in the order of their bytes in the record: v1's 32-byte
+# record header (length, state, two timestamps, CRC, 4 unknown bytes) then
+# the payload; v2's 8-byte entry header (CRC, 4 unknown bytes), the payload,
+# and its trailer entry (end offset, state, creation) at the end of the file.
+# The unknown 4 bytes have no column -- their bytes are in the hex pane.
+# Columns the parser computes are listed in _DERIVED_V1/_DERIVED_V2.
 _COLUMNS_V1 = [
-    "Index", "Offset", "State",
-    "Timestamp1", "Timestamp2",
-    "CRC Stored", "CRC Calc", "CRC Passed",
-    "Payload Size",
+    "Index", "Offset",
+    "Payload Size", "State", "Timestamp1", "Timestamp2", "CRC Stored",
+    "CRC Calc", "CRC Passed",
     "Payload",
 ]
 
 _COLUMNS_V2 = [
-    "Index", "Offset", "State",
-    "Creation",
-    "Trailer Offset", "Entry End Offset",
-    "CRC Stored", "CRC Calc", "CRC Passed",
-    "Payload Size",
+    "Index", "Offset",
+    "CRC Stored",
     "Payload",
+    "Trailer Offset", "Entry End Offset", "State", "Creation",
+    "CRC Calc", "CRC Passed", "Payload Size",
 ]
+
+_DERIVED_COMMON: dict[str, ParseIssue] = {
+    "Index": ParseIssue("segb.derived_index"),
+    "CRC Calc": ParseIssue("segb.derived_crc_calc"),
+    "CRC Passed": ParseIssue("segb.derived_crc_passed"),
+}
+_DERIVED_V1: dict[str, ParseIssue] = {
+    **_DERIVED_COMMON,
+    "Offset": ParseIssue("segb.derived_offset_v1"),
+}
+_DERIVED_V2: dict[str, ParseIssue] = {
+    **_DERIVED_COMMON,
+    "Offset": ParseIssue("segb.derived_offset_v2"),
+    "Trailer Offset": ParseIssue("segb.derived_trailer_offset"),
+    "Payload Size": ParseIssue("segb.derived_payload_size_v2"),
+}
 
 
 class SegbParser(AbstractParser):
@@ -132,14 +152,21 @@ class SegbParser(AbstractParser):
                     "segb.payload_partial", {"count": partial_payloads},
                 )
             data: dict[str, Any] = {
-                "SEGB": {"columns": columns, "rows": rows, "rowids": list(range(len(rows)))}
+                "SEGB": {
+                    "columns": columns,
+                    "rows": rows,
+                    "rowids": list(range(len(rows))),
+                    "derived_columns": _DERIVED_V1 if version == "v1" else _DERIVED_V2,
+                }
             }
             tmp, sql_issue = _create_segb_sqlite(columns, rows)
             if tmp:
                 data["__db_path"] = str(tmp)
             if sql_issue is not None:
                 meta["SQL"] = sql_issue
-            data["__cell_locator"] = SegbCellLocator(file_bytes=raw, version=version, rows=rows)
+            data["__cell_locator"] = SegbCellLocator(
+                file_bytes=raw, version=version, rows=rows, columns=columns
+            )
             return ParseResult(
                 viewer_type="table",
                 data=data,
@@ -293,13 +320,13 @@ def _read_v1(stream: BytesIO) -> tuple[list[str], list[list[Any]], ParseIssue | 
                 rows.append([
                     idx,
                     entry.data_start_offset,
+                    len(entry.data),
                     entry.state.name,
                     _fmt_ts(entry.timestamp1),
                     _fmt_ts(entry.timestamp2),
                     entry.metadata_crc,
                     entry.actual_crc,
                     entry.crc_passed,
-                    len(entry.data),
                     (rendered, entry.data),
                 ])
             except Exception as exc:
@@ -322,15 +349,15 @@ def _read_v2(stream: BytesIO) -> tuple[list[str], list[list[Any]], ParseIssue | 
                 rows.append([
                     idx,
                     entry.data_start_offset,
-                    entry.state.name,
-                    _fmt_ts(entry.metadata.creation),
+                    entry.metadata_crc,
+                    (rendered, entry.data),
                     entry.metadata.metadata_offset,
                     entry.metadata.end_offset,
-                    entry.metadata_crc,
+                    entry.state.name,
+                    _fmt_ts(entry.metadata.creation),
                     entry.actual_crc,
                     entry.crc_passed,
                     len(entry.data),
-                    (rendered, entry.data),
                 ])
             except Exception as exc:
                 error = ParseIssue("segb.record_failed", {"index": idx}, detail=str(exc))

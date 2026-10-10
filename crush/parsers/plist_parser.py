@@ -10,11 +10,15 @@ from typing import Any, cast
 from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
-from crush.parsers.nska_archive import archive_stats, is_keyed_archive, root_class
+from crush.parsers.nska_archive import (
+    archive_stats,
+    convert_common_objects,
+    is_keyed_archive,
+    root_class,
+)
 from crush.third_party.ccl_bplist import (
     load as bplist_load,
     deserialise_NsKeyedArchiver,
-    NSKeyedArchiver_common_objects_convertor,
     set_object_converter,
 )
 
@@ -105,6 +109,8 @@ class PlistParser(AbstractParser):
             if nska_issue is not None:
                 meta["Status"] = nska_issue
             hints: dict[str, Any] = {"raw_text": raw_text}
+            if nska_issue is not None:
+                hints["status"] = nska_issue
             if is_keyed_archive(loaded):
                 meta.update(_archive_metadata(loaded))
                 # The archive as stored, in its own tab for every keyed
@@ -161,7 +167,7 @@ def _archive_metadata(archive: dict[str, Any]) -> dict[str, Any]:
 
 def _nska_converter(obj: Any) -> Any:
     """Wrapper around ccl_bplist's converter adding NSData, NSNull and NSDateComponents."""
-    result = cast(Any, NSKeyedArchiver_common_objects_convertor)(obj)
+    result = convert_common_objects(obj)
     if result is not obj or not isinstance(obj, dict):
         return result
     classname = ""

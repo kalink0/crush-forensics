@@ -192,6 +192,18 @@ def _decode_message(
                                     _bytes_preview(payload)["hex_preview"],
                                 )
                             ]
+                            # Text can be valid protobuf too ("120533877" reads
+                            # as field 6, fixed64): offer the string the
+                            # payload would be shown as if it weren't a message.
+                            if _looks_like_utf8(payload):
+                                text = payload.decode("utf-8")
+                                entry["interpretations"].append(
+                                    Interpretation(
+                                        QT_TRANSLATE_NOOP("GeneratedView", "string (UTF-8)"),
+                                        text,
+                                    )
+                                )
+                                text_parts.append(text)
                     if not nested_ok:
                         if _looks_like_utf8(payload):
                             text = payload.decode("utf-8", errors="replace")

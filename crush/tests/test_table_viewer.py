@@ -8,6 +8,7 @@ import struct
 from pathlib import Path
 
 from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtGui import QTextCursor
 
 from crush.core.sqlite_freeblocks import scan_database_freeblocks
 from crush.core.sqlite_unallocated import scan_database_unallocated
@@ -171,6 +172,109 @@ def test_running_query_clears_stale_cell_detail_box(qapp, tmp_path: Path) -> Non
 
     assert tv._cell_detail_view.toPlainText() == ""
     assert tv._cell_detail_label.text() == "—  No cell selected"
+
+
+def _select_text(tv: TableViewer, text: str) -> None:
+    """Select *text* in the SQL editor, the way the user marks a statement."""
+    start = tv._sql_input.toPlainText().index(text)
+    cursor = tv._sql_input.textCursor()
+    cursor.setPosition(start)
+    cursor.setPosition(start + len(text), QTextCursor.MoveMode.KeepAnchor)
+    tv._sql_input.setTextCursor(cursor)
+
+
+def test_run_sql_runs_only_the_marked_multiline_statement(qapp, widgets, tmp_path: Path) -> None:
+    """Regression: Qt's selectedText() separates lines with U+2029; the
+    replace() call turning it back into newlines lost that character twice,
+    so a marked statement got mangled and was rejected as not a SELECT."""
+    db_path = tmp_path / "t.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE t1 (id INTEGER, data TEXT)")
+    conn.execute("INSERT INTO t1 VALUES (1, 'alpha')")
+    conn.execute("INSERT INTO t1 VALUES (2, 'beta')")
+    conn.commit()
+    conn.close()
+
+    data = {"t1": {"columns": ["id", "data"], "rows": []}, "__db_path": str(db_path)}
+    tv = widgets(TableViewer(data, source_name="t.sqlite"))
+    marked = "SELECT data\nFROM t1\nWHERE id = 2"
+    tv._sql_input.setPlainText(f"SELECT * FROM t1;\n\n{marked};\n")
+    _select_text(tv, marked)
+    tv._run_sql()
+
+    assert tv._query_results_active
+    model = tv._table_view.model()
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 1)) == "beta"
+
+
+def test_run_sql_marked_statement_in_realm_table(qapp, widgets) -> None:
+    """The Realm viewer's Tables tab is a TableViewer over a temp SQLite
+    file (_create_realm_sqlite): running a marked statement works there too."""
+    from crush.viewers.realm_viewer import _create_realm_sqlite
+
+    table = {"columns": ["name", "age"], "rows": [["alice", 30], ["bob", 25]]}
+    tmp = _create_realm_sqlite({"class_Person": table})
+    assert tmp is not None
+    data = {"class_Person": table, "__db_path": str(tmp)}
+    tv = widgets(TableViewer(data, show_db_tabs=False))
+    tables = [
+        r[0] for r in sqlite3.connect(tmp).execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    ]
+    marked = f'SELECT name\nFROM "{tables[0]}"\nWHERE age < 30'
+    tv._sql_input.setPlainText(f"-- other\n{marked}\n")
+    _select_text(tv, marked)
+    tv._run_sql()
+
+    model = tv._table_view.model()
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 1)) == "bob"
+
+
+def test_derived_column_header_is_marked_with_reason(qapp, widgets) -> None:
+    from crush.core.issues import ParseIssue
+
+    data = {
+        "SEGB": {
+            "columns": ["Index", "State"],
+            "rows": [[0, "Written"]],
+            "derived_columns": {"Index": ParseIssue("segb.derived_index")},
+        }
+    }
+    tv = widgets(TableViewer(data, show_db_tabs=False))
+    model = tv._source_model
+    header = model.horizontalHeaderItem(1)
+    assert header.text() == "Index [derived]"
+    assert "not stored in the file" in header.toolTip()
+    assert "order the reader returned" in header.toolTip()
+    assert model.horizontalHeaderItem(2).text() == "State"
+    assert not model.horizontalHeaderItem(2).toolTip()
+    assert "not stored in the file" in model.horizontalHeaderItem(0).toolTip()  # Row
+
+    # Decoding the column as a timestamp and clearing it again keeps the reason.
+    tv._col_ts_formats[1] = "unix_s"
+    tv._apply_col_ts_format(1)
+    assert "not stored in the file" in header.toolTip()
+    tv._col_ts_formats.pop(1)
+    tv._revert_col_ts_format(1)
+    assert header.text() == "Index [derived]"
+    assert "order the reader returned" in header.toolTip()
+
+
+def test_query_result_row_header_has_tooltip(qapp, widgets, tmp_path: Path) -> None:
+    db_path = tmp_path / "t.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE t1 (id INTEGER)")
+    conn.execute("INSERT INTO t1 VALUES (1)")
+    conn.commit()
+    conn.close()
+    tv = widgets(TableViewer({"t1": {"columns": ["id"], "rows": []}, "__db_path": str(db_path)}))
+    tv._sql_input.setPlainText("SELECT id FROM t1")
+    tv._run_sql()
+    tip = tv._query_model.headerData(0, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+    assert "not stored in the file" in tip
 
 
 def test_format_wal_frame_content_uses_real_column_names() -> None:

@@ -172,12 +172,21 @@ class MMKVRecordsWidget(QWidget):
         toolbar.setMovable(False)
         toolbar.addWidget(QLabel(translate("MMKVRecordsWidget", "  Show: ")))
         self._filter_buttons: dict[str | None, QPushButton] = {}
+        # Each button names how many records it shows (like LevelDB's).
         for label, state in [
-            (translate("MMKVRecordsWidget", "All"), None),
+            (
+                translate("MMKVRecordsWidget", "All ({total})").format(
+                    total=len(self._records)
+                ),
+                None,
+            ),
             (translate("MMKVRecordsWidget", "Live"), "Live"),
             (translate("MMKVRecordsWidget", "Superseded"), "Superseded"),
             (translate("MMKVRecordsWidget", "Removed"), "Removed"),
         ]:
+            if state is not None:
+                count = sum(1 for r in self._records if r["state"] == state)
+                label = f"{label} ({count})"  # i18n: keep -- layout
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setFlat(True)

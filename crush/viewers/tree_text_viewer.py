@@ -5,8 +5,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QLabel, QTabWidget, QVBoxLayout, QWidget
+
+from crush.core.issues import ParseIssue, render_value
 
 from crush.viewers.text_viewer import TextView
 from crush.viewers.tree_viewer import TreeViewer
@@ -26,6 +28,7 @@ class TreeTextViewer(QWidget):
         parent: QWidget | None = None,
         raw_text: str | bytes = "",
         archive: Any = None,
+        status: ParseIssue | list[ParseIssue] | None = None,
     ) -> None:
         super().__init__(parent)
         self._raw_text = raw_text
@@ -33,6 +36,17 @@ class TreeTextViewer(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        # Why Decoded isn't the resolved structure (e.g. an NSKeyedArchiver
+        # archive that couldn't be resolved and is shown as stored): said
+        # above the tabs, not only in the Properties panel.
+        if status is not None:
+            label = QLabel(render_value(status, localized=True))
+            label.setObjectName("tree_text_status")
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            label.setStyleSheet("padding: 4px 8px; color: #cc8800;")
+            layout.addWidget(label)
 
         self._tabs = QTabWidget()
         # Only a tree resolved from an NSKeyedArchiver archive folds its class

@@ -126,6 +126,27 @@ def _no_real_external_open(monkeypatch: pytest.MonkeyPatch) -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
+def widgets():  # noqa: ANN201
+    """Register a top-level widget a test builds; it is closed and deleted
+    at the end of the test. Left to the garbage collector, such widgets
+    pile up across the session and have crashed a later test (Windows
+    access violation while building an unrelated widget)."""
+    import shiboken6
+
+    made: list = []
+
+    def keep(widget):  # noqa: ANN001, ANN202
+        made.append(widget)
+        return widget
+
+    yield keep
+    for widget in reversed(made):
+        if shiboken6.isValid(widget):
+            widget.close()
+            shiboken6.delete(widget)
+
+
+@pytest.fixture
 def realm_fixture(tmp_path: Path) -> Path:
     """Writable copy of minimal.realm placed in tmp_path."""
     src = FIXTURES_DIR / "minimal.realm"

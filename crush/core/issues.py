@@ -1032,6 +1032,12 @@ MESSAGES: dict[str, str] = {
         "undecoded object table: {detail}",
         "plist.nska_failed",
     ),
+    "plist.nska_failed_text": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "NSKeyedArchiver deserialization failed, so below is the archive's "
+        "undecoded object table: {detail}",
+        "plist.nska_failed_text",
+    ),
     "plist.format_nska_xml": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "XML (NSKeyedArchiver — not resolved)",
@@ -1519,6 +1525,41 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "SQL view unavailable: the temporary database could not be created: {detail}",
         "segb.sql_failed",
+    ),
+    "segb.derived_index": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the record's position in the order the reader returned the records",
+        "segb.derived_index",
+    ),
+    "segb.derived_offset_v1": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "file offset of the record's payload, right after its 32-byte record header",
+        "segb.derived_offset_v1",
+    ),
+    "segb.derived_offset_v2": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "file offset of the record's entry, i.e. of its stored CRC",
+        "segb.derived_offset_v2",
+    ),
+    "segb.derived_trailer_offset": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "file offset of the record's trailer entry",
+        "segb.derived_trailer_offset",
+    ),
+    "segb.derived_crc_calc": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "CRC32 that Crush computed over the payload",
+        "segb.derived_crc_calc",
+    ),
+    "segb.derived_crc_passed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "whether CRC Stored equals CRC Calc",
+        "segb.derived_crc_passed",
+    ),
+    "segb.derived_payload_size_v2": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "SEGB v2 stores no payload length; computed from the trailer's entry end offsets",
+        "segb.derived_payload_size_v2",
     ),
     # -- Hex fallback -------------------------------------------------------
     "hexfallback.read_error": QT_TRANSLATE_NOOP("ParseIssue", "{detail}", "hexfallback.read_error"),

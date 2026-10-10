@@ -101,6 +101,15 @@ def _text_preview(text: str | None, raw: bytes) -> str:
     return f"<binary {len(raw)} B>"
 
 
+def _text_sort_key(text: str | None, raw: bytes) -> str:
+    """Sort key for a _text_preview column: values without text (shown as
+    "<binary N B>") together and by size, text values by their full text.
+    One string type for both, so the proxy compares them consistently."""
+    if text is not None:
+        return "1" + text
+    return f"0{len(raw):020d}"
+
+
 def _make_item(display: str, sort_val: Any = None) -> QStandardItem:
     item = QStandardItem(display)
     item.setEditable(False)
@@ -257,9 +266,15 @@ class LevelDbRecordsWidget(QWidget):
                 (state, None),
                 (rec.get("file", ""), None),
                 (f"0x{offset:08x}", offset),
-                (_text_preview(rec.get("user_key_text"), uk_bytes), None),
+                (
+                    _text_preview(rec.get("user_key_text"), uk_bytes),
+                    _text_sort_key(rec.get("user_key_text"), uk_bytes),
+                ),
                 (_hex_preview(uk_bytes), None),
-                (_text_preview(rec.get("value_text"), val_bytes), None),
+                (
+                    _text_preview(rec.get("value_text"), val_bytes),
+                    _text_sort_key(rec.get("value_text"), val_bytes),
+                ),
                 (_hex_preview(val_bytes), None),
                 ("yes" if rec.get("compressed") else "no", None),  # translated below
                 (_checksum_text(rec.get("checksum_ok")), None),  # translated below

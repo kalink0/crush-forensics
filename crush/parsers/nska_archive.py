@@ -28,13 +28,32 @@ from __future__ import annotations
 import plistlib
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from crush.core.issues import ParseIssue
-from crush.third_party.ccl_bplist.ccl_bplist import BplistUID
+from crush.third_party.ccl_bplist.ccl_bplist import (
+    BplistUID,
+    NSKeyedArchiver_common_objects_convertor,
+    is_nsmutabledictionary,
+)
 
 ARCHIVERS = ("NSKeyedArchiver", "NRKeyedArchiver")
 _NULL = "$null"
+
+
+def convert_common_objects(obj: Any) -> Any:
+    """ccl_bplist's NSKeyedArchiver_common_objects_convertor, except that an
+    NSDictionary which can't become a Python dict stays as stored (its
+    `NS.keys` and `NS.objects`, paired by index) instead of failing the
+    whole archive: NSDictionary takes any NSCopying object as a key, e.g.
+    another dictionary (unhashable here), and keys that compare equal once
+    resolved would collapse."""
+    try:
+        return cast(Any, NSKeyedArchiver_common_objects_convertor)(obj)
+    except (TypeError, ValueError):
+        if cast(Any, is_nsmutabledictionary)(obj):
+            return obj
+        raise
 
 
 def is_keyed_archive(obj: Any) -> bool:

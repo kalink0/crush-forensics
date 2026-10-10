@@ -32,8 +32,8 @@ from cryptography.hazmat.primitives.keywrap import InvalidUnwrap, aes_key_unwrap
 
 from crush.core.issues import ParseIssue
 from crush.core.passwords import WrongPasswordError
+from crush.parsers.nska_archive import convert_common_objects
 from crush.third_party.ccl_bplist import (
-    NSKeyedArchiver_common_objects_convertor,
     deserialise_NsKeyedArchiver,
     load as bplist_load,
     set_object_converter,
@@ -147,7 +147,7 @@ def aes_cbc_decrypt_stream(key: bytes, chunks: Iterable[bytes]) -> Iterator[byte
 
 
 def _nsdata_converter(obj: object) -> object:
-    result = cast(Any, NSKeyedArchiver_common_objects_convertor)(obj)
+    result = convert_common_objects(obj)
     if result is not obj or not isinstance(obj, dict):
         return result
     class_meta = obj.get("$class")

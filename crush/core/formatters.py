@@ -31,8 +31,12 @@ def plist_text(blob: bytes) -> str:
             cast(_Any, set_object_converter)(_nska_converter)
             raw = cast(_Any, bplist_load)(BytesIO(blob))
             obj = cast(_Any, deserialise_NsKeyedArchiver)(raw)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Shown as stored -- and said so, instead of passing the
+            # unresolved object table off as the decoded archive.
+            from crush.core.issues import ParseIssue, render_value
+            note = render_value(ParseIssue("plist.nska_failed_text", detail=str(exc)), localized=True)
+            return f"# {note}\n\n{pretty_object(obj)}"
     return pretty_object(obj)
 
 

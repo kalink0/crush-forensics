@@ -2950,6 +2950,52 @@ def test_interpret_fixed64_uint64() -> None:
     assert "uint64" in val
 
 
+def test_interpret_varint_unix_ms_with_fraction() -> None:
+    from crush.parsers.proto_interp import interpret_varint
+    val = {i.label: i.value for i in interpret_varint(1_709_052_870_886)}
+    assert val["Unix timestamp (ms)"] == "2024-02-27 16:54:30.886 UTC"
+
+
+def test_interpret_varint_unix_us_and_filetime() -> None:
+    from crush.parsers.proto_interp import interpret_varint
+    us = {i.label: i.value for i in interpret_varint(1_709_052_870_886_123)}
+    assert us["Unix timestamp (µs)"] == "2024-02-27 16:54:30.886123 UTC"
+    # 2024-02-27 16:54:30.8861234 UTC as FILETIME (100 ns since 1601-01-01)
+    ft_value = (1_709_052_870 + 11_644_473_600) * 10_000_000 + 8_861_234
+    ft = {i.label: i.value for i in interpret_varint(ft_value)}
+    assert ft["Windows FILETIME (100 ns)"] == "2024-02-27 16:54:30.8861234 UTC"
+
+
+def test_interpret_sub_second_candidates_outside_window_absent() -> None:
+    from crush.parsers.proto_interp import interpret_varint
+    labels = {i.label for i in interpret_varint(1_673_049_600)}  # Unix seconds
+    assert not labels & {
+        "Unix timestamp (ms)", "Unix timestamp (µs)", "Windows FILETIME (100 ns)"
+    }
+
+
+def test_interpret_fixed64_uint64_unix_ms() -> None:
+    import struct
+    from crush.parsers.proto_interp import interpret_fixed64
+    val = {i.label: i.value for i in interpret_fixed64(struct.pack("<Q", 1_709_052_870_886))}
+    assert val["Unix timestamp (ms)"] == "2024-02-27 16:54:30.886 UTC"
+
+
+def test_protobuf_text_payload_parsing_as_message_keeps_string_candidate() -> None:
+    """Bytes that are grammatically valid protobuf are shown as a message;
+    the string the same bytes spell is offered as a candidate too."""
+    from crush.parsers.protobuf_parser import _decode_message
+    inner = b"\x0a\x07user_id" + b"\x12\x09120533877"  # "120533877" = field 6, fixed64
+    decoded, warning, text_index = _decode_message(b"\x3a" + bytes([len(inner)]) + inner)
+    assert warning is None
+    entry = decoded["entries"][0]["value"]["entries"][1]
+    assert entry["value"]["type"] == "message"
+    val = {i.label: i.value for i in entry["interpretations"]}
+    assert val["string (UTF-8)"] == "120533877"
+    assert val["raw bytes"] == "31 32 30 35 33 33 38 37 37"
+    assert "120533877" in text_index
+
+
 def test_interpret_fixed32_float() -> None:
     import struct
     from crush.parsers.proto_interp import interpret_fixed32

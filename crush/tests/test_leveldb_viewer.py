@@ -6,7 +6,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QStandardItemModel
 
-from crush.viewers.leveldb_viewer import _COLUMNS, _StateFilterProxy, _make_item
+from crush.viewers.leveldb_viewer import (
+    _COLUMNS,
+    LevelDbRecordsWidget,
+    _StateFilterProxy,
+    _make_item,
+)
 
 
 def test_seq_column_sorts_numerically_not_as_text(qapp) -> None:
@@ -30,3 +35,31 @@ def test_seq_column_sorts_numerically_not_as_text(qapp) -> None:
 
     result = [proxy.index(r, 0).data() for r in range(proxy.rowCount())]
     assert result == ["1", "2", "10", "20", "100"]
+
+
+def _record(seq: int, value_text: str | None, value: bytes) -> dict:
+    return {
+        "seq": seq, "state": "Live", "file": "000003.log", "offset": seq,
+        "user_key_text": f"k{seq}", "user_key_bytes": f"k{seq}".encode(),
+        "value_text": value_text, "value_bytes": value,
+        "internal_key_bytes": b"", "compressed": False, "checksum_ok": True,
+    }
+
+
+def test_value_text_column_sorts_binary_placeholders_by_size(qapp, widgets) -> None:
+    """The "<binary N B>" placeholders sort by N (not as text, which put
+    1042 B before 326 B), grouped apart from the text values."""
+    records = [
+        _record(1, None, b"\x00" * 1042),
+        _record(2, "beta", b"beta"),
+        _record(3, None, b"\x00" * 326),
+        _record(4, "alpha", b"alpha"),
+        _record(5, None, b"\x00" * 9),
+    ]
+    widget = widgets(LevelDbRecordsWidget(records))
+    col = _COLUMNS.index("Value (text)")
+    widget._proxy.sort(col, Qt.SortOrder.AscendingOrder)
+    result = [widget._proxy.index(r, col).data() for r in range(widget._proxy.rowCount())]
+    assert result == [
+        "<binary 9 B>", "<binary 326 B>", "<binary 1042 B>", "alpha", "beta",
+    ]
