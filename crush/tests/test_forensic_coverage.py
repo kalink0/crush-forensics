@@ -69,6 +69,8 @@ NOT_A_SOURCE: dict[str, str] = {
 WALKER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "NtfsWalker": ("NTFS",),
     "Fat32Walker": ("FAT32",),
+    "Fat16Walker": ("FAT16",),
+    "Fat12Walker": ("FAT12",),
     "ExfatWalker": ("exFAT",),
     "ExtWalker": ("ext2/3/4",),
     "F2fsWalker": ("F2FS",),
