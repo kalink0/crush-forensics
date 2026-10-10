@@ -194,18 +194,21 @@ def test_leveldb_copies_beside_the_files_are_not_read_as_its_files(tmp_path: Pat
     """Regression: "000005.ldb.bak" matched the unanchored data-file pattern
     and made the whole parse fail; "MANIFEST-000002.bak" was taken as the
     current MANIFEST."""
-    from crush.parsers.leveldb_parser import _latest_manifest
-
     db = tmp_path / "db"
     _make_minimal_leveldb(db, [(b"k", b"v")])
     (db / "000005.ldb.bak").write_bytes(bytes(64))
-    (db / "MANIFEST-000002.bak").write_bytes(b"")
+    (db / "MANIFEST-000001").write_bytes(_manifest_with_new_file(0, 1, 10))
+    (db / "MANIFEST-000002.bak").write_bytes(_manifest_with_new_file(3, 1, 20))
+    (db / "CURRENT").write_bytes(b"MANIFEST-000001\n")
     node, vfs = _leveldb(tmp_path)
     result = LeveldbParser().parse(node, vfs)
 
     assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
     assert "Parse warning" not in result.metadata
-    assert _latest_manifest(db) == db / "MANIFEST-000001"
+    manifests = result.data["manifests"]
+    assert "MANIFEST-000001 (current)" in manifests
+    assert "MANIFEST-000002.bak" in manifests  # shown, never current
+    assert result.data["files"][0]["level"] == 0
 
 
 def test_leveldb_upper_case_log_extension_is_read(tmp_path: Path) -> None:
@@ -220,6 +223,128 @@ def test_leveldb_upper_case_log_extension_is_read(tmp_path: Path) -> None:
     result = LeveldbParser().parse(node, vfs)
 
     assert [r["user_key_bytes"] for r in result.data["records"]] == [b"a", b"b"]
+
+
+def _manifest_with_new_file(level: int, file_no: int, size: int) -> bytes:
+    """A MANIFEST log record holding one VersionEdit that adds *file_no*."""
+    edit = (
+        b"\x07" + _varint(level) + _varint(file_no) + _varint(size)
+        + _varint(9) + b"a" + bytes(8) + _varint(9) + b"z" + bytes(8)
+    )
+    return struct.pack("<IHB", 0, len(edit), 1) + edit
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="LevelDB",
+    desc="File numbers must be read as LevelDB writes them (decimal), so a file's level, size and key range are its own",
+)
+def test_leveldb_file_numbers_are_decimal(tmp_path: Path) -> None:
+    """Regression: file numbers were read as hex, so 000010.log looked up
+    file 16 in the MANIFEST and the Overview listed it as "00000a"."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    (db / "000010.log").write_bytes(_make_log_entry(b"k", b"v", seq=1))
+    (db / "MANIFEST-000011").write_bytes(_manifest_with_new_file(2, 10, 999))
+    (db / "CURRENT").write_bytes(b"MANIFEST-000011\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    (row,) = result.data["files"]
+    assert (row["name"], row["level"], row["size"]) == ("000010.log", 2, 999)
+    assert (row["smallest_key"], row["largest_key"]) == ("a", "z")
+    manifest = result.data["manifests"]["MANIFEST-000011 (current)"]
+    assert manifest["Files by level"] == {"Level 2": "000010"}
+    assert manifest["Compaction history"][0]["new"][0]["file"] == "000010"
+
+
+def test_leveldb_file_numbers_past_six_digits(tmp_path: Path) -> None:
+    """LevelDB pads file numbers to at least six digits; a long-lived
+    database has longer names, read like any other."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    (db / "1000001.log").write_bytes(_make_log_entry(b"k", b"v", seq=1))
+    (db / "MANIFEST-1000000").write_bytes(_manifest_with_new_file(0, 1000001, 64))
+    (db / "CURRENT").write_bytes(b"MANIFEST-1000000\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"k"]
+    (row,) = result.data["files"]
+    assert (row["name"], row["level"], row["size"]) == ("1000001.log", 0, 64)
+    assert "MANIFEST-1000000 (current)" in result.data["manifests"]
+
+
+def _db_with_two_manifests(tmp_path: Path, current: bytes | None) -> Path:
+    """000001.log on level 1 per MANIFEST-000001 and on level 4 per the
+    higher-numbered MANIFEST-000002; CURRENT holds *current* (None: no
+    CURRENT file)."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "MANIFEST-000001").write_bytes(_manifest_with_new_file(1, 1, 10))
+    (db / "MANIFEST-000002").write_bytes(_manifest_with_new_file(4, 1, 20))
+    if current is not None:
+        (db / "CURRENT").write_bytes(current)
+    return db
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="LevelDB",
+    desc="The current MANIFEST must be the one CURRENT names, not the highest-numbered; a higher-numbered one is shown and marked",
+)
+def test_leveldb_current_names_the_manifest(tmp_path: Path) -> None:
+    """Regression: the highest-numbered MANIFEST was taken as current, e.g.
+    one LevelDB created but never switched CURRENT to."""
+    _db_with_two_manifests(tmp_path, b"MANIFEST-000001\n")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    manifests = result.data["manifests"]
+    assert "MANIFEST-000001 (current)" in manifests
+    assert manifests["MANIFEST-000002"]["Status"] == ParseIssue("leveldb.manifest_after_current")
+    assert manifests["CURRENT"] == {"Active MANIFEST": "MANIFEST-000001"}
+    assert (result.data["files"][0]["level"], result.data["files"][0]["size"]) == (1, 10)
+
+
+@pytest.mark.parametrize(("current", "issue"), [
+    (None, ParseIssue("leveldb.current_missing")),
+    (b"MANIFEST-000009\n", ParseIssue("leveldb.current_target_missing", {"name": "MANIFEST-000009"})),
+    (b"not a manifest\n", ParseIssue("leveldb.current_invalid")),
+])
+def test_leveldb_unusable_current_takes_no_manifest_as_current(
+    tmp_path: Path, current: bytes | None, issue: ParseIssue
+) -> None:
+    """Without a usable CURRENT nothing is guessed: no MANIFEST is labelled
+    current, files have no level, and every MANIFEST is still shown."""
+    _db_with_two_manifests(tmp_path, current)
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    manifests = result.data["manifests"]
+    assert manifests["CURRENT"]["Status"] == issue
+    assert not any(label.endswith("(current)") for label in manifests)
+    assert {"MANIFEST-000001", "MANIFEST-000002"} <= set(manifests)
+    assert (result.data["files"][0]["level"], result.data["files"][0]["size"]) == (-1, None)
+
+
+def test_leveldb_current_without_line_break_is_noted(tmp_path: Path) -> None:
+    """LevelDB requires CURRENT to end with a line break; one without it is
+    shown as it is, with a note, and still names the MANIFEST."""
+    _db_with_two_manifests(tmp_path, b"MANIFEST-000001")
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    manifests = result.data["manifests"]
+    assert manifests["CURRENT"] == {
+        "Active MANIFEST": "MANIFEST-000001",
+        "Status": ParseIssue("leveldb.current_no_newline"),
+    }
+    assert "MANIFEST-000001 (current)" in manifests
 
 
 def test_leveldb_empty_data_file_has_a_files_row(tmp_path: Path) -> None:

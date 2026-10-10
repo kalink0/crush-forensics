@@ -29,6 +29,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed Run Analyzer offering no analyzer modules in the AppImage, macOS and Windows builds.
 - Fixed the Hex pane highlighting only the first five byte ranges of a selection; a SQLite row or value spanning overflow pages lost its column highlight, and a repeated Protobuf field lost the highlight of its later occurrences. Every piece is now highlighted; in SQLite tables all pieces of a row or value share one colour.
 - Fixed a LevelDB database with one unreadable data file showing none of its records; each file is now read on its own, and one that can't be read is listed with the reason and its path in the evidence. A data file with an upper-case extension (e.g. `.LOG`) is now read too.
+- Fixed LevelDB file numbers being read as hexadecimal: from file 10 on, the Overview named files that don't exist and the Files tab showed no level, size or key range, or another file's. File names with more than six digits are now read too.
+- Fixed LevelDB taking the highest-numbered MANIFEST as the current one instead of the one CURRENT names.
 
 ### Changed
 

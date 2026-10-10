@@ -6,37 +6,81 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from crush.core import tempdir
 from crush.core.issues import ParseIssue
-from crush.core.vfs import VFS, VFSNode
+from crush.core.vfs import VFS, VFSNode, join_notes
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.ccl_leveldb import KeyState
 from crush.third_party.ccl_leveldb.ccl_leveldb import FileType, LdbFile, LogFile, ManifestFile
 
+# LevelDB names its files after a decimal file number of at least six digits
+# ("%06llu", db/filename.cc), the number the MANIFEST records for them.
 # Anchored: a copy such as "000005.ldb.bak" or "MANIFEST-000002.bak" is not
-# one of the database's own files (RawLevelDb's patterns match it).
-_DATA_FILE_RE = re.compile(r"^[0-9]{6}\.(ldb|log|sst)$", re.IGNORECASE)
-_MANIFEST_RE = re.compile(rf"^{ManifestFile.MANIFEST_FILENAME_PATTERN}$")
+# one of the database's own files. (The vendored reader takes the names as
+# hex and six digits only.)
+_DATA_FILE_RE = re.compile(r"^([0-9]{6,})\.(ldb|log|sst)$", re.IGNORECASE)
+_MANIFEST_RE = re.compile(r"^MANIFEST-([0-9]{6,})$")
+# Every MANIFEST-named file is shown in the Overview, copies included.
+_MANIFEST_LISTED_RE = re.compile(r"^MANIFEST-[0-9]{6,}")
 _logger = logging.getLogger(__name__)
+
+
+def _file_number(path: Path) -> int:
+    """The file number of a data file matched by _DATA_FILE_RE."""
+    return int(path.name.split(".", 1)[0])
+
+
+def _file_label(file_no: int) -> str:
+    """A file number written the way LevelDB names the file."""
+    return f"{file_no:06d}"
 
 
 def _data_files(directory: Path) -> list[Path]:
     """The table and log files in *directory*, in file-number order."""
     found = [p for p in directory.iterdir() if p.is_file() and _DATA_FILE_RE.match(p.name)]
-    return sorted(found, key=lambda p: int(p.stem, 16))
+    return sorted(found, key=_file_number)
 
 
-def _latest_manifest(directory: Path) -> Path | None:
-    """The MANIFEST with the highest number (as RawLevelDb picked it)."""
-    latest: tuple[int, Path | None] = (0, None)
-    for p in directory.iterdir():
-        match = _MANIFEST_RE.match(p.name)
-        if p.is_file() and match and latest[0] < int(match.group(1), 16):
-            latest = (int(match.group(1), 16), p)
-    return latest[1]
+def _manifest_number(name: str) -> int | None:
+    match = _MANIFEST_RE.match(name)
+    return int(match.group(1)) if match else None
+
+
+def _current_manifest(
+    directory: Path, reason: Callable[[Exception], str]
+) -> tuple[Path | None, dict[str, Any]]:
+    """The MANIFEST that CURRENT names, as LevelDB finds it on opening
+    (VersionSet::Recover): CURRENT holds the file name followed by a line
+    break. None when CURRENT can't be used -- then no MANIFEST is taken as
+    the current one, not even the highest-numbered. Also what the Overview
+    shows for CURRENT."""
+    path = directory / "CURRENT"
+    if not path.is_file():
+        return None, {"Status": ParseIssue("leveldb.current_missing")}
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        return None, {"Status": ParseIssue("leveldb.current_unreadable", detail=reason(exc))}
+    text = raw.decode("utf-8", errors="replace")
+    name = text[:-1] if text.endswith("\n") else text
+    notes: list[Any] = [] if text.endswith("\n") else [ParseIssue("leveldb.current_no_newline")]
+    if _manifest_number(name) is None:
+        return None, {
+            "Content": repr(text),
+            "Status": join_notes([*notes, ParseIssue("leveldb.current_invalid")]),
+        }
+    shown: dict[str, Any] = {"Active MANIFEST": name}
+    if not (directory / name).is_file():
+        notes.append(ParseIssue("leveldb.current_target_missing", {"name": name}))
+        shown["Status"] = join_notes(notes)
+        return None, shown
+    if notes:
+        shown["Status"] = join_notes(notes)
+    return directory / name, shown
 
 def _try_utf8(raw: bytes) -> str | None:
     """Return UTF-8 decoded string, or None if not valid UTF-8."""
@@ -104,46 +148,48 @@ class LeveldbParser(AbstractParser):
 
         # Every file is opened and read on its own: one that can't be read
         # is listed with the reason and the others are still read.
-        current_fno = -1
-        latest = _latest_manifest(tmp_dir)
-        if latest is not None:
+        # The MANIFEST that CURRENT names gives the files their level, size
+        # and key range (#9).
+        current, current_shown = _current_manifest(tmp_dir, reason)
+        if current is not None:
             try:
-                manifest = ManifestFile(latest)
+                manifest = ManifestFile(current)
             except Exception as exc:  # noqa: BLE001 -- listed by the loop below
-                _logger.debug("Could not open %s: %s", latest.name, exc)
+                _logger.debug("Could not open %s: %s", current.name, exc)
+                current_shown["Status"] = join_notes([
+                    current_shown.get("Status"),
+                    ParseIssue("leveldb.current_target_unreadable", {"name": current.name}),
+                ])
+                current = None
             else:
-                current_fno = manifest.file_no
                 _, file_to_level, file_key_ranges, _ = _parse_manifest(manifest)
                 manifest.close()  # type: ignore[no-untyped-call]
+        current_no = _manifest_number(current.name) if current is not None else None
 
-        # Parse ALL MANIFEST files for the Overview, not just the latest (#6)
-        _mfest_re = re.compile(ManifestFile.MANIFEST_FILENAME_PATTERN)
+        # Parse ALL MANIFEST files for the Overview, not just the current one (#6)
         for mpath in sorted(tmp_dir.iterdir(), key=lambda p: p.name):
-            if not _mfest_re.match(mpath.name):
+            if not _MANIFEST_LISTED_RE.match(mpath.name):
                 continue
             try:
                 mf = ManifestFile(mpath)
                 mdata, _, _, partial = _parse_manifest(mf)
-                fno = mf.file_no
                 mf.close()  # type: ignore[no-untyped-call]
-                label = mpath.name + (" (current)" if fno == current_fno else "")
-                if partial is not None:
-                    mdata = {"Status": partial, **mdata}
+                label = mpath.name + (" (current)" if mpath == current else "")
+                notes: list[Any] = [partial]
+                number = _manifest_number(mpath.name)
+                if current_no is not None and number is not None and number > current_no:
+                    # Written but never named by CURRENT, e.g. when LevelDB
+                    # stopped between creating it and switching CURRENT.
+                    notes.append(ParseIssue("leveldb.manifest_after_current"))
+                status = join_notes(notes)
+                if status:
+                    mdata = {"Status": status, **mdata}
                 if mdata:
                     manifests_display[label] = mdata
             except Exception as exc:  # noqa: BLE001
                 _logger.debug("Could not parse %s: %s", mpath.name, exc)
                 unreadable[mpath.name] = ParseIssue("leveldb.manifest_failed", detail=reason(exc))
-
-        # CURRENT file (#9)
-        current_file = tmp_dir / "CURRENT"
-        if current_file.exists():
-            try:
-                target = current_file.read_text(encoding="utf-8", errors="replace").strip()
-                manifests_display["CURRENT"] = {"Active MANIFEST": target}
-            except Exception as exc:  # noqa: BLE001
-                _logger.debug("Could not read CURRENT: %s", exc)
-                unreadable["CURRENT"] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
+        manifests_display["CURRENT"] = current_shown
 
         # Per-file counters: file_name → {type, level, total, live, deleted, unknown}
         file_stats: dict[str, dict[str, Any]] = {}
@@ -167,7 +213,7 @@ class LeveldbParser(AbstractParser):
             fs = file_stats[fname] = {
                 "name": fname,
                 "type": (FileType.Log if isinstance(reader, LogFile) else FileType.Ldb).name,
-                "level": file_to_level.get(int(path.stem, 16), -1),
+                "level": file_to_level.get(_file_number(path), -1),
                 "total": 0,
                 "live": 0,
                 "deleted": 0,
@@ -212,11 +258,7 @@ class LeveldbParser(AbstractParser):
 
         # Merge manifest key ranges and file sizes into file_stats (#8)
         for fstat in file_stats.values():
-            try:
-                fno = int(Path(fstat["name"]).stem, 16)
-            except ValueError:
-                continue
-            kr = file_key_ranges.get(fno)
+            kr = file_key_ranges.get(_file_number(Path(fstat["name"])))
             fstat["size"] = kr["size"] if kr else None
             fstat["smallest_key"] = kr["smallest"] if kr else ""
             fstat["largest_key"] = kr["largest"] if kr else ""
@@ -313,12 +355,12 @@ def _parse_manifest(
                 entry: dict[str, Any] = {}
                 if edit.new_files:
                     entry["new"] = [
-                        {"level": nf.level, "file": f"{nf.file_no:06x}", "size": nf.file_size}
+                        {"level": nf.level, "file": _file_label(nf.file_no), "size": nf.file_size}
                         for nf in edit.new_files
                     ]
                 if edit.deleted_files:
                     entry["deleted"] = [
-                        {"level": df.level, "file": f"{df.file_no:06x}"}
+                        {"level": df.level, "file": _file_label(df.file_no)}
                         for df in edit.deleted_files
                     ]
                 if entry:
@@ -331,7 +373,7 @@ def _parse_manifest(
     levels: dict[str, list[str]] = {}
     for fno, level in sorted(file_to_level.items()):
         key = f"Level {level}"
-        levels.setdefault(key, []).append(f"{fno:06x}")
+        levels.setdefault(key, []).append(_file_label(fno))
 
     manifest_data: dict[str, Any] = {}
     if comparator:

@@ -3,7 +3,8 @@
 Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) in a tabbed viewer.
 
 **Overview tab** — MANIFEST metadata for the database:
-- All `MANIFEST-*` files in the directory are parsed; the active one (pointed to by `CURRENT`) is labelled *(current)*. Older manifests expose compaction history from before the last recovery and may reference file numbers no longer on disk.
+- All `MANIFEST-*` files in the directory are parsed; the active one (pointed to by `CURRENT`) is labelled *(current)* and gives the Files tab its levels, sizes and key ranges. Older manifests expose compaction history from before the last recovery and may reference file numbers no longer on disk. A MANIFEST numbered higher than the one `CURRENT` names (LevelDB writes a new MANIFEST before it switches `CURRENT` to it) is marked as such.
+- **CURRENT** — the MANIFEST it names. When `CURRENT` is missing, can't be read, doesn't name a MANIFEST, or names one that isn't there or can't be read, no MANIFEST is labelled *(current)* and files have no level; the entry says why. A `CURRENT` without the line break LevelDB requires at its end is noted.
 - Comparator name, last sequence number, log number, and prev log number (when present).
 - Files grouped by compaction level.
 - **Unreadable files** — every file that could not be opened or read to its end, with the reason (and, for one that stopped partway, after how many records). Each file is read on its own: one damaged file doesn't hide the others' records, and the records read from it before the failure are shown. The Properties panel's **Parse warning** says how many data files were affected.

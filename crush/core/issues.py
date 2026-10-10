@@ -1229,6 +1229,45 @@ MESSAGES: dict[str, str] = {
         "Overview → Unreadable files says why",
         "leveldb.data_files_not_read",
     ),
+    "leveldb.current_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No CURRENT file: no MANIFEST is taken as the current one, and files have no level",
+        "leveldb.current_missing",
+    ),
+    "leveldb.current_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "CURRENT could not be read ({detail}): no MANIFEST is taken as the current one, "
+        "and files have no level",
+        "leveldb.current_unreadable",
+    ),
+    "leveldb.current_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "CURRENT does not name a MANIFEST: no MANIFEST is taken as the current one, "
+        "and files have no level",
+        "leveldb.current_invalid",
+    ),
+    "leveldb.current_target_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{name} is not in the directory: no MANIFEST is taken as the current one, "
+        "and files have no level",
+        "leveldb.current_target_missing",
+    ),
+    "leveldb.current_target_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{name} could not be read (Unreadable files says why): no MANIFEST is taken "
+        "as the current one, and files have no level",
+        "leveldb.current_target_unreadable",
+    ),
+    "leveldb.current_no_newline": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Does not end with a line break, which LevelDB requires of CURRENT",
+        "leveldb.current_no_newline",
+    ),
+    "leveldb.manifest_after_current": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Higher-numbered than the MANIFEST named by CURRENT",
+        "leveldb.manifest_after_current",
+    ),
     "leveldb.read_stopped": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Reading stopped after {count:,} records: {detail}",
