@@ -449,6 +449,55 @@ def test_normal_table_wal_history_row_hex_sync_highlights_column(qapp, tmp_path:
         writer.close()
 
 
+def test_overflow_cell_hex_sync_highlights_every_page_of_row_and_column(
+    qapp, tmp_path: Path
+) -> None:
+    """Regression: the Hex pane highlighted only the first five byte ranges.
+    A row spilling onto overflow pages already has more than five, so the
+    selected column -- passed after the row's ranges -- wasn't highlighted
+    at all. Every piece of the row must now be highlighted in one color,
+    and every piece of the column in a second one on top."""
+    from crush.core.vfs import DirectoryVFS
+    from crush.parsers.sqlite_parser import SQLiteParser
+
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    db_path = evidence_dir / "overflow.db"
+    big_body = "y" * 4000
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA page_size=512")
+    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO messages (body) VALUES (?)", (big_body,))
+    conn.commit()
+    conn.close()
+
+    vfs = DirectoryVFS(evidence_dir)
+    node = next(c for c in vfs.root().children if c.name == "overflow.db")
+    result = SQLiteParser().parse(node, vfs)
+
+    tv = TableViewer(result.data, source_name="overflow.db")
+    tv.show()
+    try:
+        tv._table_combo.setCurrentText("messages")
+        tv._load_table("messages")
+        model = tv._source_model
+        body_col = _find_column(model, "body")
+        tv._toggle_hex_pane()
+        tv._table_view.setCurrentIndex(tv._proxy_model.mapFromSource(model.index(0, body_col)))
+
+        ranges = tv._hex_viewer._focus_ranges
+        colors = tv._hex_viewer._focus_color_idx
+        row_ranges = [rng for rng, color in zip(ranges, colors) if color == 0]
+        column_ranges = [rng for rng, color in zip(ranges, colors) if color == 1]
+        assert set(colors) == {0, 1}
+        assert len(row_ranges) > 5  # past the old cap
+
+        raw = db_path.read_bytes()
+        assert b"".join(raw[start:end] for start, end in column_ranges) == big_body.encode()
+    finally:
+        tv.close()
+
+
 def test_wal_frames_hex_sync_highlights_selected_frame(qapp, tmp_path: Path) -> None:
     """Regression: the WAL Frames tab's rows were excluded from the embedded
     Hex pane's table<->hex sync entirely (_is_pseudo_table()), so selecting a

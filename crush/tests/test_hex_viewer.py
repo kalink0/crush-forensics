@@ -155,6 +155,52 @@ def test_goto_offset_parses_decimal_when_in_decimal_mode(qapp) -> None:
     assert hv._focus_range == (512, 528)
 
 
+def _focus_backgrounds(hv: HexViewer) -> list[tuple[int, int, int, int]]:
+    """Background of every focus-range selection painted on the page, in order."""
+    search_colors = {(255, 230, 80, 255), (255, 140, 0, 255)}
+    out = []
+    for sel in hv._text.extraSelections():
+        rgba = sel.format.background().color().getRgb()
+        if rgba not in search_colors:
+            out.append(rgba)
+    return out
+
+
+def test_every_focus_range_is_highlighted(qapp) -> None:
+    """Regression: highlight_byte_ranges() kept only the first five ranges
+    and dropped the rest without a word."""
+    hv = HexViewer(bytes(range(256)))
+    ranges = [(i * 16, i * 16 + 4) for i in range(8)]
+    hv.highlight_byte_ranges(ranges)
+
+    assert hv._focus_ranges == ranges
+    assert hv._focus_color_idx == list(range(8))
+    # One ASCII selection plus one per hex byte, for every range.
+    assert len(_focus_backgrounds(hv)) == 8 * (1 + 4)
+
+
+def test_range_group_is_one_color(qapp) -> None:
+    """The pieces of one value (e.g. a column over several overflow pages)
+    share one color; the next group gets the next."""
+    hv = HexViewer(bytes(range(256)))
+    pieces = [(0, 2), (32, 34), (64, 66), (96, 98), (128, 130), (160, 162)]
+    hv.highlight_byte_range_groups([pieces, [(200, 202)]])
+
+    assert hv._focus_ranges == [*pieces, (200, 202)]
+    assert hv._focus_color_idx == [0] * 6 + [1]
+    backgrounds = _focus_backgrounds(hv)
+    assert len(set(backgrounds[: 6 * 3])) == 1
+    assert backgrounds[-1] != backgrounds[0]
+
+
+def test_empty_range_group_takes_no_color(qapp) -> None:
+    hv = HexViewer(bytes(range(64)))
+    hv.highlight_byte_range_groups([[(5, 5), (900, 910)], [(0, 4)]])
+
+    assert hv._focus_ranges == [(0, 4)]
+    assert hv._focus_color_idx == [0]
+
+
 def test_goto_invalid_offset_reports_status_without_crashing(qapp) -> None:
     hv = _make_viewer(rows=2)
     hv._goto_offset_input.setText("zz")
