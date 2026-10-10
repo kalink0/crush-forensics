@@ -132,7 +132,7 @@ def _ack_body() -> str:
     <td><b>ccl_leveldb</b></td>
     <td>{desc['ccl_leveldb']}</td>
     <td class="lic">MIT</td>
-    <td><a href="https://github.com/cclgroupltd/ccl-leveldb">CCL Forensics</a></td>
+    <td><a href="https://github.com/cclgroupltd/ccl_chromium_reader">CCL Forensics</a></td>
   </tr>
   <tr class="alt">
     <td><b>mmkv-parser</b></td>

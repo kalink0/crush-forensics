@@ -1223,16 +1223,127 @@ MESSAGES: dict[str, str] = {
         "protobuf.depth_limit",
     ),
     # -- LevelDB ----------------------------------------------------------
-    "leveldb.open_failed": QT_TRANSLATE_NOOP("ParseIssue", "{detail}", "leveldb.open_failed"),
-    "leveldb.open_failed_hint": QT_TRANSLATE_NOOP(
+    "leveldb.data_files_not_read": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "LevelDB could not be opened",
-        "leveldb.open_failed_hint",
+        "{count:,} of {total:,} data files could not be read whole; "
+        "Overview → Read problems says why",
+        "leveldb.data_files_not_read",
     ),
-    "leveldb.format_parse_failed": QT_TRANSLATE_NOOP(
+    "leveldb.smallest_key_short": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "LevelDB (parse failed)",
-        "leveldb.format_parse_failed",
+        "Smallest key is {length} bytes, shorter than the 8-byte sequence/type tag an "
+        "internal key ends with, so it isn't a valid internal key; shown as stored",
+        "leveldb.smallest_key_short",
+    ),
+    "leveldb.largest_key_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Largest key is {length} bytes, shorter than the 8-byte sequence/type tag an "
+        "internal key ends with, so it isn't a valid internal key; shown as stored",
+        "leveldb.largest_key_short",
+    ),
+    "leveldb.records_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} record(s) whose stored checksum doesn't match; shown, marked in the "
+        "Records tab (LevelDB doesn't apply them)",
+        "leveldb.records_checksum",
+    ),
+    "leveldb.records_checksum_total": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} record(s) whose stored checksum doesn't match; Overview → Read problems "
+        "says where",
+        "leveldb.records_checksum_total",
+    ),
+    "leveldb.manifest_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} edit(s) whose stored checksum doesn't match, read and counted here "
+        "(LevelDB doesn't apply them); at offsets {offsets}",
+        "leveldb.manifest_checksum",
+    ),
+    "leveldb.parts_skipped": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} damaged part(s) skipped, reading on after each as LevelDB does: {detail}",
+        "leveldb.parts_skipped",
+    ),
+    "leveldb.current_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No CURRENT file: no MANIFEST is taken as the current one, and files have no level",
+        "leveldb.current_missing",
+    ),
+    "leveldb.current_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "CURRENT could not be read ({detail}): no MANIFEST is taken as the current one, "
+        "and files have no level",
+        "leveldb.current_unreadable",
+    ),
+    "leveldb.current_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "CURRENT does not name a MANIFEST: no MANIFEST is taken as the current one, "
+        "and files have no level",
+        "leveldb.current_invalid",
+    ),
+    "leveldb.current_target_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{name} is not in the directory: no MANIFEST is taken as the current one, "
+        "and files have no level",
+        "leveldb.current_target_missing",
+    ),
+    "leveldb.current_target_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{name} could not be read (Read problems says why): no MANIFEST is taken "
+        "as the current one, and files have no level",
+        "leveldb.current_target_unreadable",
+    ),
+    "leveldb.current_no_newline": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Does not end with a line break: LevelDB treats this CURRENT as corrupt and would "
+        "not open the database. The MANIFEST it names is still used here for the files' levels",
+        "leveldb.current_no_newline",
+    ),
+    "leveldb.named_by_invalid_current": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Named by a CURRENT that LevelDB treats as corrupt (no line break at its end)",
+        "leveldb.named_by_invalid_current",
+    ),
+    "leveldb.rocksdb_format": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "RocksDB (not supported)",
+        "leveldb.rocksdb_format",
+    ),
+    "leveldb.rocksdb_not_read": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "RocksDB database, not read: RocksDB uses LevelDB's file names, but its table, log "
+        "and MANIFEST formats differ, and read as LevelDB parts of it would come out wrong",
+        "leveldb.rocksdb_not_read",
+    ),
+    "leveldb.rocksdb_options": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "OPTIONS file naming a RocksDB version (rocksdb_version=)",
+        "leveldb.rocksdb_options",
+    ),
+    "leveldb.rocksdb_table": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table file ending in RocksDB's {kind} magic {magic}",
+        "leveldb.rocksdb_table",
+    ),
+    "leveldb.rocksdb_manifest_tag": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Tag {tag}, which RocksDB writes and LevelDB doesn't define",
+        "leveldb.rocksdb_manifest_tag",
+    ),
+    "leveldb.manifest_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Empty file (0 bytes)",
+        "leveldb.manifest_empty",
+    ),
+    "leveldb.manifest_nothing_shown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Records no comparator, log or sequence numbers, or files",
+        "leveldb.manifest_nothing_shown",
+    ),
+    "leveldb.manifest_after_current": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Higher-numbered than the MANIFEST named by CURRENT",
+        "leveldb.manifest_after_current",
     ),
     "leveldb.read_stopped": QT_TRANSLATE_NOOP(
         "ParseIssue",

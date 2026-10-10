@@ -67,6 +67,13 @@ Issues = "https://github.com/kalink0/crush-forensics/issues"
 [tool.setuptools.packages.find]
 include = ["crush*"]
 
+[tool.pytest.ini_options]
+# A run unpacks over 1 GB of containers and images into tmp_path; keep only
+# the files of failed tests, and only from the last run (default: every
+# test's, from the last three runs).
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 1
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

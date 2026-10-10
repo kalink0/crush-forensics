@@ -102,7 +102,7 @@ Limitations
 ### LevelDB
 - Parses LevelDB directories (`.ldb`/`.log`/`.sst` data files, `MANIFEST-*`, `CURRENT`, `LOG`) into a dedicated LevelDB Viewer.
 - Every record's key state is classified as **Live**, **Deleted**, or **Unknown** from the underlying key-value log — LevelDB marks a deleted key with a tombstone rather than erasing bytes immediately, so a deleted key's last value stays readable until compaction actually reclaims the space. The Records tab lists all states together with an All/Live/Deleted/Unknown filter and full-text search across key/value; the Files tab breaks out per-file Live/Deleted/Unknown counts.
-- Parses every `MANIFEST-*` file present (not just the current one) into an Overview tab, plus `CURRENT` and the full `LOG`/`LOG.old` content in their own tabs. A MANIFEST read only up to an error carries a `Status` entry; files that exist but can't be read or parsed are listed under **Unreadable files** with the reason. Key ranges are shown in full.
+- Parses every `MANIFEST-*` file present (not just the current one) into an Overview tab, plus `CURRENT` and the full `LOG`/`LOG.old` content in their own tabs. A MANIFEST read only up to an error carries a `Status` entry; files that exist but can't be read or parsed whole, or hold records whose stored checksum doesn't match, are listed under **Read problems** with the reason. Key ranges are shown in full.
 - Record rows expose key and value as text and hex; selecting a row shows Key / Value / Internal Key in an embedded Hex Viewer.
 
 Limitations

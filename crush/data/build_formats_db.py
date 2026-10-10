@@ -1585,6 +1585,104 @@ FORMATS: list[dict[str, Any]] = [
         "last_reviewed": "2026-10-04",
     },
     {
+        "name": "RocksDB Database",
+        "short_name": "RocksDB",
+        "category": "database",
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Key-value store developed by Facebook as a fork of LevelDB, used as the storage "
+            "engine of databases and server software and embedded in some applications. "
+            "Like LevelDB it is a directory, not a single file, and uses the same file names: "
+            "CURRENT, MANIFEST-###### (the database's version history: which table files exist "
+            "and on which level, per column family), ######.sst (sorted string tables) and "
+            "######.log (write-ahead log of recent writes). It also writes OPTIONS-###### (its "
+            "settings as text, including the RocksDB version that wrote them), IDENTITY and LOG. "
+            "The file formats differ from LevelDB's: block-based tables end in their own footer "
+            "magic and record their checksum type (CRC32C or xxHash), blocks can be compressed "
+            "with Snappy, zlib, bzip2, LZ4, ZSTD or Xpress, the MANIFEST records column families "
+            "and further per-file fields, and the write-ahead log can hold column family IDs, "
+            "merge operands and range deletions. Older versions wrote block-based tables with "
+            "LevelDB's footer magic. Column families divide one database into separate sets of "
+            "keys. Deleted and overwritten values remain in table and log files until compaction "
+            "rewrites them; a merge operand's final value depends on the application's merge "
+            "operator.",
+            "RocksDB Database",
+        ),
+        "platforms": ALL_PLATFORMS,
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": None,
+                "value": b"\xf7\xcf\xf4\x85\xb7\x41\xe2\x88",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Block-based table (.sst) footer magic 0x88e241b785f4cff7 (little-endian) in the last 8 bytes",
+                    "RocksDB Database",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"\x64\x95\xbf\x63\x96\x22\x42\x82",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Plain table (.sst) footer magic 0x8242229663bf9564 (little-endian) in the last 8 bytes",
+                    "RocksDB Database",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"\xb8\x13\x8f\x7a\xeb\x18\x34\x4f",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Plain table (.sst) with footer format 0: magic 0x4f3418eb7a8f13b8 (little-endian) in the last 8 bytes",
+                    "RocksDB Database",
+                ),
+            },
+            {
+                "offset": None,
+                "value": b"\x73\x78\xf1\xc5\xd0\x89\x67\x92",
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Cuckoo table (.sst) footer magic 0x926789d0c5f17873 (little-endian) in the last 8 bytes",
+                    "RocksDB Database",
+                ),
+            },
+        ],
+        "extensions": [".sst", ".log"],
+        "links": [
+            (
+                "RocksDB (official site)",
+                "https://rocksdb.org/",
+            ),
+            (
+                "RocksDB overview (RocksDB wiki)",
+                "https://github.com/facebook/rocksdb/wiki/RocksDB-Overview",
+            ),
+            (
+                "RocksDB BlockBasedTable format (RocksDB wiki)",
+                "https://github.com/facebook/rocksdb/wiki/Rocksdb-BlockBasedTable-Format",
+            ),
+            (
+                "MANIFEST (RocksDB wiki)",
+                "https://github.com/facebook/rocksdb/wiki/MANIFEST",
+            ),
+            (
+                "Write Ahead Log file format (RocksDB wiki)",
+                "https://github.com/facebook/rocksdb/wiki/Write-Ahead-Log-File-Format",
+            ),
+            (
+                "RocksDB Options file (RocksDB wiki)",
+                "https://github.com/facebook/rocksdb/wiki/RocksDB-Options-File",
+            ),
+            (
+                "Column families (RocksDB wiki)",
+                "https://github.com/facebook/rocksdb/wiki/Column-Families",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-10",
+    },
+    {
         "name": "MMKV Key-Value Store",
         "short_name": "MMKV",
         "category": "database",
