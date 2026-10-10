@@ -14,10 +14,30 @@ from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.ccl_leveldb import KeyState, RawLevelDb
-from crush.third_party.ccl_leveldb.ccl_leveldb import ManifestFile
+from crush.third_party.ccl_leveldb.ccl_leveldb import LdbFile, LogFile, ManifestFile
 
 _DATA_FILE_RE = re.compile(r"^[0-9]{6}\.(ldb|log|sst)$", re.IGNORECASE)
 _logger = logging.getLogger(__name__)
+
+
+def _data_files(directory: Path) -> list[Path]:
+    """The table and log files in *directory*, in file-number order -- the
+    files and order RawLevelDb reads."""
+    found = [
+        p for p in directory.iterdir()
+        if p.is_file() and re.match(RawLevelDb.DATA_FILE_PATTERN, p.name)
+    ]
+    return sorted(found, key=lambda p: int(p.stem, 16))
+
+
+def _latest_manifest(directory: Path) -> Path | None:
+    """The MANIFEST with the highest number, the one RawLevelDb opens."""
+    latest: tuple[int, Path | None] = (0, None)
+    for p in directory.iterdir():
+        match = re.match(ManifestFile.MANIFEST_FILENAME_PATTERN, p.name)
+        if p.is_file() and match and latest[0] < int(match.group(1), 16):
+            latest = (int(match.group(1), 16), p)
+    return latest[1]
 
 def _try_utf8(raw: bytes) -> str | None:
     """Return UTF-8 decoded string, or None if not valid UTF-8."""
@@ -75,119 +95,124 @@ class LeveldbParser(AbstractParser):
         file_to_level: dict[int, int] = {}
         file_key_ranges: dict[int, dict[str, Any]] = {}
 
-        try:
-            with RawLevelDb(tmp_dir) as db:
-                current_fno = db.manifest.file_no if db.manifest else -1
-
-                if db.manifest:
-                    _, file_to_level, file_key_ranges, _ = _parse_manifest(db.manifest)
-
-                # Parse ALL MANIFEST files for the Overview, not just the latest (#6)
-                _mfest_re = re.compile(ManifestFile.MANIFEST_FILENAME_PATTERN)
-                for mpath in sorted(tmp_dir.iterdir(), key=lambda p: p.name):
-                    if not _mfest_re.match(mpath.name):
-                        continue
-                    try:
-                        mf = ManifestFile(mpath)
-                        mdata, _, _, partial = _parse_manifest(mf)
-                        fno = mf.file_no
-                        mf.close()  # type: ignore[no-untyped-call]
-                        label = mpath.name + (" (current)" if fno == current_fno else "")
-                        if partial is not None:
-                            mdata = {"Status": partial, **mdata}
-                        if mdata:
-                            manifests_display[label] = mdata
-                    except Exception as exc:  # noqa: BLE001
-                        _logger.debug("Could not parse %s: %s", mpath.name, exc)
-                        unreadable[mpath.name] = ParseIssue("leveldb.manifest_failed", detail=str(exc))
-
-                # CURRENT file (#9)
-                current_file = tmp_dir / "CURRENT"
-                if current_file.exists():
-                    try:
-                        target = current_file.read_text(encoding="utf-8", errors="replace").strip()
-                        manifests_display["CURRENT"] = {"Active MANIFEST": target}
-                    except Exception as exc:  # noqa: BLE001
-                        _logger.debug("Could not read CURRENT: %s", exc)
-                        unreadable["CURRENT"] = ParseIssue("leveldb.file_unreadable", detail=str(exc))
-
-                # Per-file counters: file_name → {type, level, total, live, deleted, unknown}
-                file_stats: dict[str, dict[str, Any]] = {}
-
-                records: list[dict[str, Any]] = []
-                parse_warning: ParseIssue | None = None
-
-                try:
-                    for record in db.iterate_records_raw():
-                        fname = Path(record.origin_file).name
-
-                        if fname not in file_stats:
-                            try:
-                                fno = int(Path(record.origin_file).stem, 16)
-                            except ValueError:
-                                fno = -1
-                            file_stats[fname] = {
-                                "name": fname,
-                                "type": record.file_type.name,
-                                "level": file_to_level.get(fno, -1),
-                                "total": 0,
-                                "live": 0,
-                                "deleted": 0,
-                                "unknown": 0,
-                            }
-
-                        fs = file_stats[fname]
-                        fs["total"] += 1
-                        state_name = record.state.name
-                        if record.state == KeyState.Live:
-                            fs["live"] += 1
-                        elif record.state == KeyState.Deleted:
-                            fs["deleted"] += 1
-                        else:
-                            fs["unknown"] += 1
-
-                        uk = record.user_key
-                        val = record.value if record.value is not None else b""
-
-                        records.append({
-                            "seq": record.seq,
-                            "state": state_name,
-                            "file": fname,
-                            "offset": record.offset,
-                            "internal_key_bytes": record.key,
-                            "user_key_bytes": uk,
-                            "user_key_text": _try_utf8(uk),
-                            "value_bytes": val,
-                            "value_text": _try_utf8(val),
-                            "compressed": record.was_compressed,
-                        })
-
-                except Exception as exc:
-                    _logger.warning("LevelDB read error for %s: %s", node.path, exc)
-                    parse_warning = ParseIssue(
-                        "leveldb.read_stopped", {"count": len(records)}, detail=str(exc),
-                    )
-                    if not records:
-                        return ParseResult(
-                            viewer_type="tree",
-                            data=_open_failed_data(exc),
-                            metadata={
-                                "Format": ParseIssue("leveldb.format_parse_failed"),
-                                "Parse error": ParseIssue("leveldb.open_failed", detail=str(exc)),
-                                "Files": f"{vfs.file_count(node):,}",
-                            },
-                        )
-
-        except Exception as exc:
-            _logger.warning("LevelDB open error for %s: %s", node.path, exc)
-            return ParseResult(
-                viewer_type="tree",
-                data=_open_failed_data(exc),
-                metadata={
-                    "Format": ParseIssue("leveldb.format_parse_failed"),
-                    "Parse error": ParseIssue("leveldb.open_failed", detail=str(exc)),
-                },
+        def reason(exc: Exception) -> str:
+            # The reader names the files it opened, the working copies in
+            # tmp_dir; show where they are in the evidence instead.
+            evidence = node.path.rstrip("/")
+            return str(exc).replace(str(tmp_dir), evidence).replace(
+                evidence + "\\", evidence + "/"
             )
+
+        # Every file is opened and read on its own: one that can't be read
+        # is listed with the reason and the others are still read.
+        current_fno = -1
+        latest = _latest_manifest(tmp_dir)
+        if latest is not None:
+            try:
+                manifest = ManifestFile(latest)
+            except Exception as exc:  # noqa: BLE001 -- listed by the loop below
+                _logger.debug("Could not open %s: %s", latest.name, exc)
+            else:
+                current_fno = manifest.file_no
+                _, file_to_level, file_key_ranges, _ = _parse_manifest(manifest)
+                manifest.close()  # type: ignore[no-untyped-call]
+
+        # Parse ALL MANIFEST files for the Overview, not just the latest (#6)
+        _mfest_re = re.compile(ManifestFile.MANIFEST_FILENAME_PATTERN)
+        for mpath in sorted(tmp_dir.iterdir(), key=lambda p: p.name):
+            if not _mfest_re.match(mpath.name):
+                continue
+            try:
+                mf = ManifestFile(mpath)
+                mdata, _, _, partial = _parse_manifest(mf)
+                fno = mf.file_no
+                mf.close()  # type: ignore[no-untyped-call]
+                label = mpath.name + (" (current)" if fno == current_fno else "")
+                if partial is not None:
+                    mdata = {"Status": partial, **mdata}
+                if mdata:
+                    manifests_display[label] = mdata
+            except Exception as exc:  # noqa: BLE001
+                _logger.debug("Could not parse %s: %s", mpath.name, exc)
+                unreadable[mpath.name] = ParseIssue("leveldb.manifest_failed", detail=reason(exc))
+
+        # CURRENT file (#9)
+        current_file = tmp_dir / "CURRENT"
+        if current_file.exists():
+            try:
+                target = current_file.read_text(encoding="utf-8", errors="replace").strip()
+                manifests_display["CURRENT"] = {"Active MANIFEST": target}
+            except Exception as exc:  # noqa: BLE001
+                _logger.debug("Could not read CURRENT: %s", exc)
+                unreadable["CURRENT"] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
+
+        # Per-file counters: file_name → {type, level, total, live, deleted, unknown}
+        file_stats: dict[str, dict[str, Any]] = {}
+        records: list[dict[str, Any]] = []
+        data_files = _data_files(tmp_dir)
+        not_whole = 0  # data files not read to their end
+
+        for path in data_files:
+            try:
+                # Any: the vendored __iter__ is annotated Iterable, not Iterator.
+                reader: Any = (
+                    LogFile(path) if path.suffix.lower() == ".log" else LdbFile(path)
+                )
+            except Exception as exc:  # noqa: BLE001
+                _logger.warning("LevelDB: could not open %s in %s: %s", path.name, node.path, exc)
+                unreadable[path.name] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
+                not_whole += 1
+                continue
+            from_file = 0
+            try:
+                for record in reader:
+                    fname = path.name
+
+                    if fname not in file_stats:
+                        file_stats[fname] = {
+                            "name": fname,
+                            "type": record.file_type.name,
+                            "level": file_to_level.get(int(path.stem, 16), -1),
+                            "total": 0,
+                            "live": 0,
+                            "deleted": 0,
+                            "unknown": 0,
+                        }
+
+                    fs = file_stats[fname]
+                    fs["total"] += 1
+                    state_name = record.state.name
+                    if record.state == KeyState.Live:
+                        fs["live"] += 1
+                    elif record.state == KeyState.Deleted:
+                        fs["deleted"] += 1
+                    else:
+                        fs["unknown"] += 1
+
+                    uk = record.user_key
+                    val = record.value if record.value is not None else b""
+
+                    records.append({
+                        "seq": record.seq,
+                        "state": state_name,
+                        "file": fname,
+                        "offset": record.offset,
+                        "internal_key_bytes": record.key,
+                        "user_key_bytes": uk,
+                        "user_key_text": _try_utf8(uk),
+                        "value_bytes": val,
+                        "value_text": _try_utf8(val),
+                        "compressed": record.was_compressed,
+                    })
+                    from_file += 1
+            except Exception as exc:  # noqa: BLE001
+                _logger.warning("LevelDB read error in %s of %s: %s", path.name, node.path, exc)
+                unreadable[path.name] = ParseIssue(
+                    "leveldb.read_stopped", {"count": from_file}, detail=reason(exc),
+                )
+                not_whole += 1
+            finally:
+                reader.close()
 
         # Merge manifest key ranges and file sizes into file_stats (#8)
         for fstat in file_stats.values():
@@ -209,7 +234,7 @@ class LeveldbParser(AbstractParser):
                     log_files[log_name] = log_path.read_text(encoding="utf-8", errors="replace")
                 except Exception as exc:  # noqa: BLE001
                     _logger.debug("Could not read %s: %s", log_name, exc)
-                    unreadable[log_name] = ParseIssue("leveldb.file_unreadable", detail=str(exc))
+                    unreadable[log_name] = ParseIssue("leveldb.file_unreadable", detail=reason(exc))
         if unreadable:
             manifests_display["Unreadable files"] = unreadable
 
@@ -225,8 +250,10 @@ class LeveldbParser(AbstractParser):
             "Files": f"{vfs.file_count(node):,}",
             "Total size": f"{vfs.total_size(node):,} B",
         }
-        if parse_warning:
-            meta["Parse warning"] = parse_warning
+        if not_whole:
+            meta["Parse warning"] = ParseIssue(
+                "leveldb.data_files_not_read", {"count": not_whole, "total": len(data_files)},
+            )
 
         data: dict[str, Any] = {
             "manifests": manifests_display,
@@ -250,13 +277,6 @@ class LeveldbParser(AbstractParser):
             metadata=meta,
             text_index=" ".join(text_parts[:2000]),
         )
-
-
-def _open_failed_data(exc: Exception) -> dict[str, Any]:
-    return {
-        "error": ParseIssue("leveldb.open_failed", detail=str(exc)),
-        "hint": ParseIssue("leveldb.open_failed_hint"),
-    }
 
 
 def _parse_manifest(

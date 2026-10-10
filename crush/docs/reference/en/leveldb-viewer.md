@@ -6,8 +6,9 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 - All `MANIFEST-*` files in the directory are parsed; the active one (pointed to by `CURRENT`) is labelled *(current)*. Older manifests expose compaction history from before the last recovery and may reference file numbers no longer on disk.
 - Comparator name, last sequence number, log number, and prev log number (when present).
 - Files grouped by compaction level.
+- **Unreadable files** — every file that could not be opened or read to its end, with the reason (and, for one that stopped partway, after how many records). Each file is read on its own: one damaged file doesn't hide the others' records, and the records read from it before the failure are shown. The Properties panel's **Parse warning** says how many data files were affected.
 
-**Files tab** — one row per data file (`.ldb` / `.sst`) and WAL log file:
+**Files tab** — one row per data file (`.ldb` / `.sst`) and WAL log file that records were read from:
 
 | Column | Content |
 |---|---|

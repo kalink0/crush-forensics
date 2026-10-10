@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-233 checks in total.
+235 checks in total.
 
 ### Sources
 
@@ -79,7 +79,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [SQLite WAL](#sqlite-wal) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
 | [Realm database](#realm-database) | 2 | 1 | 1 | 7 | not tested | 1 |
-| [LevelDB](#leveldb) | 2 | 1 | 1 | not tested | not tested | 1 |
+| [LevelDB](#leveldb) | 2 | 1 | 1 | not tested | 2 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Property list (plist)](#property-list-plist) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Android Binary XML (ABX)](#android-binary-xml-abx) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -429,8 +429,10 @@ No forensic checks.
 - **Source Immutability** — LevelDB parser must not change mtime or ctime of source directory files ([test_forensic.py](../../crush/tests/test_forensic.py), `test_leveldb_does_not_change_timestamps`)
 - **No Side Effects** — LevelDB parsing must not create files next to the evidence directory ([test_forensic.py](../../crush/tests/test_forensic.py), `test_leveldb_no_sibling_files`)
 - **Read-only Media** — LevelDB parser must succeed when directory and files are read-only (0o555/0o444) ([test_forensic.py](../../crush/tests/test_forensic.py), `test_leveldb_read_only_media`)
+- **Completeness** — A data file that can't be opened must be listed with its reason and must not hide the other files' records ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_table_file_without_magic_keeps_the_other_files`)
+- **Completeness** — A data file that fails partway must keep the records read before it, say where it stopped, and not stop the files after it ([test_structured_issues.py](../../crush/tests/test_structured_issues.py), `test_leveldb_file_failing_midway_keeps_its_records_and_the_others`)
 - **Reproducibility** — Parsing the same LevelDB directory twice must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_leveldb_parse_is_reproducible`)
-- *Not tested:* Known-output Verification, Completeness
+- *Not tested:* Known-output Verification
 
 #### MMKV
 

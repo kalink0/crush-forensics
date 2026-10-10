@@ -10,8 +10,8 @@ All notable changes to Crush will be documented in this file.
 - Added to the BLOB Inspector -> Support for opening the decoded bytes as a new tab, with their source and decode pipeline in the Properties panel.
 - Added to the BLOB Inspector -> Support for exporting the decoded bytes or a rendered image, with a sidecar JSON of source, steps and SHA-256 hashes.
 - Added to the BLOB Inspector -> Support for copying the decoded bytes as hex, Base64 or a Python literal.
-- Added to raw disk images -> Support for QNX EFS partitions inside a raw flash image, in either byte order.
-- Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`.
+- Added to raw disk images -> Support for QNX EFS partitions inside a raw flash image, in either byte order. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
+- Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 
 ### Bug Fixes
 
@@ -28,11 +28,12 @@ All notable changes to Crush will be documented in this file.
 - Fixed a FAT32 or exFAT file on a raw disk image reading short, without an error, when its cluster chain ends before its recorded size; reading it now says how many clusters the chain holds and how many the size needs. ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149))
 - Fixed Run Analyzer offering no analyzer modules in the AppImage, macOS and Windows builds.
 - Fixed the Hex pane highlighting only the first five byte ranges of a selection; a SQLite row or value spanning overflow pages lost its column highlight, and a repeated Protobuf field lost the highlight of its later occurrences. Every piece is now highlighted; in SQLite tables all pieces of a row or value share one colour.
+- Fixed a LevelDB database with one unreadable data file showing none of its records; each file is now read on its own, and one that can't be read is listed with the reason and its path in the evidence.
 
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.60 (from v1.57).
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.60 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 
 ## v0.22.0 - 2026-10-08
 

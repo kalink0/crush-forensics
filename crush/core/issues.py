@@ -1223,16 +1223,11 @@ MESSAGES: dict[str, str] = {
         "protobuf.depth_limit",
     ),
     # -- LevelDB ----------------------------------------------------------
-    "leveldb.open_failed": QT_TRANSLATE_NOOP("ParseIssue", "{detail}", "leveldb.open_failed"),
-    "leveldb.open_failed_hint": QT_TRANSLATE_NOOP(
+    "leveldb.data_files_not_read": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "LevelDB could not be opened",
-        "leveldb.open_failed_hint",
-    ),
-    "leveldb.format_parse_failed": QT_TRANSLATE_NOOP(
-        "ParseIssue",
-        "LevelDB (parse failed)",
-        "leveldb.format_parse_failed",
+        "{count:,} of {total:,} data files could not be read to the end; "
+        "Overview → Unreadable files says why",
+        "leveldb.data_files_not_read",
     ),
     "leveldb.read_stopped": QT_TRANSLATE_NOOP(
         "ParseIssue",

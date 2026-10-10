@@ -129,6 +129,76 @@ def test_leveldb_unreadable_file_is_listed_with_reason(tmp_path: Path) -> None:
     assert unreadable["LOG"].code == "leveldb.file_unreadable"
 
 
+def _leveldb(tmp_path: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(tmp_path)
+    return next(c for c in vfs.root().children if c.name == "db"), vfs
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="LevelDB",
+    desc="A data file that can't be opened must be listed with its reason and must not hide the other files' records",
+)
+def test_leveldb_table_file_without_magic_keeps_the_other_files(tmp_path: Path) -> None:
+    """Regression: one .ldb without the SSTable magic made the whole database
+    "could not be opened", with none of the other files' records shown and
+    the reader's temporary copy named instead of the evidence path."""
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    (db / "000005.ldb").write_bytes(bytes(64))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert result.viewer_type == "leveldb"
+    assert [(r["user_key_bytes"], r["value_bytes"]) for r in result.data["records"]] == [
+        (b"k", b"v")
+    ]
+    issue = result.data["manifests"]["Unreadable files"]["000005.ldb"]
+    assert issue.code == "leveldb.file_unreadable"
+    assert "crush-leveldb-" not in issue.detail
+    assert node.path.rstrip("/") in issue.detail
+    assert result.metadata["Parse warning"] == ParseIssue(
+        "leveldb.data_files_not_read", {"count": 1, "total": 2}
+    )
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="LevelDB",
+    desc="A data file that fails partway must keep the records read before it, say where it stopped, and not stop the files after it",
+)
+def test_leveldb_file_failing_midway_keeps_its_records_and_the_others(tmp_path: Path) -> None:
+    """A file that fails partway keeps the records read before the failure,
+    says after how many it stopped, and the files after it are still read."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    middle_without_first = struct.pack("<IHB", 0, 0, 3)
+    (db / "000001.log").write_bytes(_make_log_entry(b"a", b"1", seq=1) + middle_without_first)
+    (db / "000002.log").write_bytes(_make_log_entry(b"b", b"2", seq=2))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"a", b"b"]
+    issue = result.data["manifests"]["Unreadable files"]["000001.log"]
+    assert issue.code == "leveldb.read_stopped"
+    assert issue.params["count"] == 1
+    assert "000002.log" not in result.data["manifests"]["Unreadable files"]
+    assert result.metadata["Parse warning"] == ParseIssue(
+        "leveldb.data_files_not_read", {"count": 1, "total": 2}
+    )
+
+
+def test_leveldb_with_every_file_readable_has_no_warning(tmp_path: Path) -> None:
+    db = tmp_path / "db"
+    _make_minimal_leveldb(db, [(b"k", b"v")])
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+    assert "Parse warning" not in result.metadata
+    assert "Unreadable files" not in result.data["manifests"]
+
+
 # -- MMKV -----------------------------------------------------------------------
 
 def _mmkv_store() -> bytes:
