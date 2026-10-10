@@ -71,6 +71,8 @@ def _checksum_text(checksum_ok: bool | None) -> str:
     if checksum_ok:
         return QT_TRANSLATE_NOOP("GeneratedView", "matches")
     return QT_TRANSLATE_NOOP("GeneratedView", "doesn't match")
+
+
 # Record states from the parser (shown translated, kept English for the filter).
 _STATES = (
     QT_TRANSLATE_NOOP("GeneratedView", "Live"),
@@ -280,8 +282,6 @@ class LevelDbRecordsWidget(QWidget):
             )
             checksum_item = items[_COLUMNS.index("Checksum")]
             mark_generated(checksum_item, Gen(_checksum_text(rec.get("checksum_ok"))))
-            if rec.get("checksum_ok") is False:
-                checksum_item.setForeground(_STATE_COLORS["Deleted"])
 
             # Store raw bytes for hex pane and inspector
             items[0].setData(uk_bytes, _KEY_BYTES_ROLE)

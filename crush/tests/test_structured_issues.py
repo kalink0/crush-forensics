@@ -532,9 +532,25 @@ def test_leveldb_manifest_edit_with_wrong_checksum_is_noted(tmp_path: Path) -> N
 
     manifest = result.data["manifests"]["MANIFEST-000001 (current)"]
     assert manifest["Checksum"] == ParseIssue(
-        "leveldb.manifest_checksum", {"count": 1, "offsets": f"{len(good) + 7:,}"}
+        "leveldb.manifest_checksum", {"count": 1, "offsets": f"{len(good):,}"}
     )
     assert manifest["Files by level"] == {"Level 1": "000001", "Level 2": "000002"}
+
+
+def test_leveldb_unfinished_record_is_named_by_its_header_offset(tmp_path: Path) -> None:
+    """A record whose first part has no end is named by the offset of that
+    part's header, as the other damaged parts are -- not of its data."""
+    from crush.tests.test_parsers import _make_log_entry
+
+    db = tmp_path / "db"
+    db.mkdir()
+    first = _make_log_entry(b"k", b"v", seq=1)
+    (db / "000001.log").write_bytes(first + _log_record(2, b"part"))
+    node, vfs = _leveldb(tmp_path)
+    result = LeveldbParser().parse(node, vfs)
+
+    issue = result.data["manifests"]["Read problems"]["000001.log"]
+    assert f"Record starting at offset {len(first)} has no end before the end of the file" in issue.detail
 
 
 def test_leveldb_record_cut_off_by_the_end_of_a_whole_block_file_is_named(tmp_path: Path) -> None:

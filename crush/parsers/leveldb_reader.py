@@ -110,7 +110,9 @@ def _read_batches(
     and reading goes on, as LevelDB reads a .log. Without it, the first
     damaged part raises ValueError, as LevelDB fails on a damaged MANIFEST.
     Parts LevelDB drops without reporting (zero padding, a record the writer
-    didn't finish before the file ends) are still described."""
+    didn't finish before the file ends) are still described. A described
+    record's offset is that of its (first) header; the yielded offset is that
+    of its data, as the vendored reader gives it."""
 
     def problem(text: str) -> None:
         if damaged is None:
@@ -118,7 +120,7 @@ def _read_batches(
         damaged.append(text)
 
     in_record = False
-    start_offset = 0
+    start_offset = start_header = 0
     record = b""
     record_ok = True
     for idx, (chunk, last_block) in enumerate(_with_last(raw_blocks)):
@@ -131,7 +133,7 @@ def _read_batches(
                 if record_type == LogEntryType.Zero and length == 0:
                     # Padding: the rest of the block holds no records.
                     if in_record:
-                        problem(f"Record starting at offset {start_offset} is cut off by "
+                        problem(f"Record starting at offset {start_header} is cut off by "
                                 f"zero padding at offset {header_offset}")
                         in_record = False
                     break
@@ -146,15 +148,16 @@ def _read_batches(
 
                 if record_type == LogEntryType.Full:
                     if in_record and record:
-                        problem(f"Record starting at offset {start_offset} has no end "
+                        problem(f"Record starting at offset {start_header} has no end "
                                 f"before the record at offset {header_offset}")
                     in_record = False
                     yield here, data, ok
                 elif record_type == LogEntryType.First:
                     if in_record and record:
-                        problem(f"Record starting at offset {start_offset} has no end "
+                        problem(f"Record starting at offset {start_header} has no end "
                                 f"before the record at offset {header_offset}")
-                    start_offset, record, record_ok, in_record = here, data, ok, True
+                    start_offset, start_header = here, header_offset
+                    record, record_ok, in_record = data, ok, True
                 elif record_type == LogEntryType.Middle:
                     if not in_record:
                         problem(f"Record part at offset {header_offset} has no start")
@@ -178,7 +181,7 @@ def _read_batches(
                 problem(f"Record header at offset {idx * _BLOCK_SIZE + buff.tell()} is cut off "
                         f"by the end of the file")
     if in_record:
-        problem(f"Record starting at offset {start_offset} has no end before the end of the file")
+        problem(f"Record starting at offset {start_header} has no end before the end of the file")
 
 
 def _decode_version_edit(buffer: bytes) -> VersionEdit:
@@ -275,8 +278,8 @@ class _LdbFile(LdbFile):
 
 class _ManifestFile(ManifestFile):
     """A MANIFEST, read edit by edit only when iterated. *checksum_mismatches*
-    lists the offsets of edits whose record's stored checksum doesn't match
-    (read and kept; LevelDB wouldn't apply them)."""
+    lists the header offsets of edits whose record's stored checksum doesn't
+    match (read and kept; LevelDB wouldn't apply them)."""
 
     def __init__(self, path: Path) -> None:  # no super(): it reads every edit
         if not re.match(ManifestFile.MANIFEST_FILENAME_PATTERN, path.name):
@@ -294,7 +297,8 @@ class _ManifestFile(ManifestFile):
         self.checksum_mismatches = []
         for batch_offset, batch, checksum_ok in _read_batches(self._get_raw_blocks(), self.path):
             if not checksum_ok:
-                self.checksum_mismatches.append(batch_offset)
+                # the record's (first) header, where its checksum is stored
+                self.checksum_mismatches.append(batch_offset - _HEADER_SIZE)
             try:
                 yield _decode_version_edit(batch)
             except UnknownVersionEditTag as exc:
