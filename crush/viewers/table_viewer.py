@@ -160,6 +160,9 @@ _WAL_COLUMN_RANGES_ROLE = Qt.ItemDataRole.UserRole + 25
 _TS_ORIGINAL_TEXT_ROLE = Qt.ItemDataRole.UserRole + 26
 _TS_ORIGINAL_FG_ROLE = Qt.ItemDataRole.UserRole + 27  # False = no foreground was set
 _TS_UNDECODED_COLOR = QColor("#cc8800")
+# A header's own tooltip (why a column is derived, what "Row" is), kept so the
+# timestamp decoding's header tooltip can give way to it and restore it.
+_HEADER_BASE_TIP_ROLE = Qt.ItemDataRole.UserRole + 29
 # Values a generated view gets from crush.core at runtime (so they can't be
 # marked where they're written). Marked here, translated by their English
 # text via _gen_text(); anything not listed is shown as it is.
@@ -174,6 +177,20 @@ _GENERATED_VALUES = (
     QT_TRANSLATE_NOOP("GeneratedView", "Freeblock (deleted)"),
     QT_TRANSLATE_NOOP("GeneratedView", "Unallocated slack"),
 )
+
+
+def _row_header_tooltip() -> str:
+    return translate(
+        "TableViewer",
+        "Crush's number for this row in the order it was read (table) or "
+        "returned (query) -- not stored in the file.",
+    )
+
+
+def _derived_header_tooltip(reason: object) -> str:
+    return translate(
+        "TableViewer", "Derived by Crush, not stored in the file: {reason}"
+    ).format(reason=render_value(reason, localized=True))
 
 
 def _ts_suffix(fmt: str) -> str:
@@ -300,7 +317,7 @@ class _QueryResultModel(QAbstractTableModel):
                 return _ts_header_tooltip(fmt, decoded, failed)
             english, display = _ts_header_pair(english, display, fmt, decoded, failed)
         elif role == Qt.ItemDataRole.ToolTipRole:
-            return None
+            return _row_header_tooltip() if section == 0 else None
         if role == _EXPORT_TEXT_ROLE:
             return english if english != display else None
         return display
@@ -1369,11 +1386,28 @@ class TableViewer(QWidget):
         )
         # "Row" and the source column are Crush's; the others are the
         # table's own column names (file data, never translated).
+        # A column the parser computed rather than read from the file
+        # (table["derived_columns"]: name -> why) is marked in its header.
+        derived: dict[str, Any] = table.get("derived_columns") or {}
         headers: list[str | _Gen] = [_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Row"))]
-        headers += columns
+        headers += [
+            _Gen(QT_TRANSLATE_NOOP("GeneratedView", "{name} [derived]"), name=col)
+            if col in derived
+            else col
+            for col in columns
+        ]
         if show_source_col:
             headers.append(source_col_name)
         _set_headers(self._source_model, headers)
+        header_tips = {0: _row_header_tooltip()}
+        header_tips.update(
+            {i + 1: _derived_header_tooltip(derived[col]) for i, col in enumerate(columns) if col in derived}
+        )
+        for col_idx, tip in header_tips.items():
+            h_item = self._source_model.horizontalHeaderItem(col_idx)
+            if h_item is not None:
+                h_item.setData(tip, _HEADER_BASE_TIP_ROLE)
+                h_item.setToolTip(tip)
 
         def _append_row(row_data: list[Any], source_label: _Gen | None = None,
                         row_color: object = None, rowid: int | None = None,
@@ -3754,7 +3788,9 @@ class TableViewer(QWidget):
 
     def _run_sql(self) -> None:
         cursor = self._sql_input.textCursor()
-        selected = cursor.selectedText().replace("", "\n").strip()
+        # selectedText() separates lines with U+2029 (paragraph separator).
+        # Kept as an escape: the invisible literal got lost twice in edits.
+        selected = cursor.selectedText().replace("\u2029", "\n").strip()
         sql = selected if selected else self._sql_input.toPlainText().strip()
         if not sql:
             self._sql_status.setStyleSheet("color: red;")
@@ -4121,7 +4157,9 @@ class TableViewer(QWidget):
             h_item.setText(display)
             h_item.setData(english if english != display else None, _EXPORT_TEXT_ROLE)
             h_item.setData(
-                _ts_header_tooltip(fmt, decoded_count, failed_count), Qt.ItemDataRole.ToolTipRole
+                _ts_header_tooltip(fmt, decoded_count, failed_count)
+                or h_item.data(_HEADER_BASE_TIP_ROLE),
+                Qt.ItemDataRole.ToolTipRole,
             )
 
     @staticmethod
@@ -4157,7 +4195,7 @@ class TableViewer(QWidget):
                     base_english if base_english and base_english != base else None,
                     _EXPORT_TEXT_ROLE,
                 )
-            h_item.setData(None, Qt.ItemDataRole.ToolTipRole)
+            h_item.setData(h_item.data(_HEADER_BASE_TIP_ROLE), Qt.ItemDataRole.ToolTipRole)
 
     def _copy_rows(self, rows: list[int]) -> None:
         lines: list[str] = []

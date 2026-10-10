@@ -520,3 +520,65 @@ def test_viewer_adds_the_archive_tab_only_when_given(qapp) -> None:  # noqa: ARG
 
     without = TreeTextViewer({"a": 1}, raw_text="")
     assert [without._tabs.tabText(i) for i in range(without._tabs.count())] == ["Decoded", "Text"]
+
+
+def _object_key_archive() -> dict:
+    """An NSDictionary whose key is itself an NSDictionary (NSDictionary
+    takes any NSCopying object as a key) -- not representable as a dict."""
+    dict_cls = {"$classname": "NSDictionary", "$classes": ["NSDictionary", "NSObject"]}
+    return _archive([
+        "$null",
+        {"$class": UID(2), "NS.keys": [UID(3)], "NS.objects": [UID(5)]},
+        dict_cls,
+        {"$class": UID(2), "NS.keys": [UID(4)], "NS.objects": [UID(4)]},
+        "k",
+        "v",
+    ])
+
+
+def _parse_bytes(raw: bytes):  # noqa: ANN202
+    from crush.core.vfs import BytesVFS
+
+    vfs = BytesVFS(raw, name="a.plist")
+    return PlistParser().parse(vfs.root(), vfs)
+
+
+def test_dictionary_with_an_object_key_resolves_and_stays_as_stored() -> None:
+    """Regression: "unhashable type" failed the whole archive. The
+    dictionary now keeps its NS.keys/NS.objects; everything else resolves."""
+    result = _parse_bytes(plistlib.dumps(_object_key_archive(), fmt=plistlib.FMT_BINARY))
+
+    assert result.metadata["Format"] == "binary (NSKeyedArchiver)"
+    assert "Status" not in result.metadata
+    assert "status" not in result.viewer_hints
+    assert list(result.data["NS.keys"]) == [{"k": "k"}]
+    assert list(result.data["NS.objects"]) == ["v"]
+
+
+def test_unresolved_archive_states_why_above_the_decoded_tab(qapp) -> None:  # noqa: ARG001
+    from PySide6.QtWidgets import QLabel
+
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    archive = _resolvable_graph()
+    archive["$version"] = 1
+    result = _parse_bytes(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+    assert isinstance(result.viewer_hints["status"], ParseIssue)
+
+    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    label = viewer.findChild(QLabel, "tree_text_status")
+    assert label is not None
+    assert label.text().startswith("NSKeyedArchiver deserialization failed")
+
+    plain = TreeTextViewer({"a": 1}, raw_text="")
+    assert plain.findChild(QLabel, "tree_text_status") is None
+
+
+def test_plist_text_states_an_unresolved_archive() -> None:
+    from crush.core.formatters import plist_text
+
+    archive = _resolvable_graph()
+    archive["$top"] = {"root": UID(99)}  # dangling
+    text = plist_text(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
+    assert text.startswith("# NSKeyedArchiver deserialization failed")
+    assert "$objects" in text

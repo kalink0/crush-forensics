@@ -509,6 +509,8 @@ Displays binary and XML property lists as a collapsible tree. Supports nested st
 
 For an NSKeyedArchiver archive (recognised by its `$archiver` key, binary or XML), **Decoded** shows the object graph resolved from `$top`'s `root` (from all of `$top` when it has no `root`); the **Stored archive** tab shows the archive as stored — every `$top` key and every `$objects` entry by index, with references as UIDs. The Properties panel names the root object's class and counts the archive's objects, those referenced more than once (class definitions counted separately), those no reference from `$top` reaches, and references to objects that don't exist, and lists `$top`'s keys.
 
+When an archive isn't resolved (XML form, references to objects that don't exist, a cycle, or resolving failed), **Decoded** shows the archive as stored, and a line above the tabs says why. An `NSDictionary` whose keys can't form a plain dictionary (a key that is itself an object such as another dictionary, or keys equal once resolved) keeps its `NS.keys` and `NS.objects` lists, paired by position; the rest of the archive is resolved.
+
 ### JSON Viewer
 
 Displays JSON files as a collapsible, searchable tree. Arrays and objects can be expanded or collapsed individually. Copy a node value via right-click.
@@ -565,7 +567,7 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 | Type | `Live`, `Deleted`, or `Unknown` |
 | Offset | Byte offset of the record within the source file (hex) |
 | User Key (text) / (hex) | Key decoded as UTF-8 and as hex |
-| Value (text) / (hex) | Value decoded as UTF-8 and as hex |
+| Value (text) / (hex) | Value decoded as UTF-8 and as hex. A key or value that isn't text shows `<binary N B>` in its text column; sorting a text column puts these together, ordered by size |
 | Internal Key (hex) | Full internal key (user key + 8-byte sequence/type suffix) for `.ldb`/`.sst` records |
 | Checksum | For a `.log` record, whether its stored checksum matches (*matches* / *doesn't match*); *not checked* for `.ldb`/`.sst` records, whose block checksums aren't checked |
 
@@ -604,7 +606,7 @@ Toolbar controls:
 
 | Control | Action |
 |---|---|
-| **All / Live / Superseded / Removed** | Filter records by state |
+| **All / Live / Superseded / Removed** | Filter records by state; each button shows how many records it holds |
 | **Search** | Case-insensitive filter across all columns, matching a large value's complete text even where the Value cell shows it truncated |
 | **Export CSV…** | Save currently visible rows, including the value's complete text and complete raw container as hex |
 
@@ -784,7 +786,9 @@ The Properties panel shows a **Stream** field — the Biome stream name (e.g. `D
 
 Protobuf payloads are decoded automatically: double fields in the plausible Cocoa-timestamp range get a `[possible Cocoa timestamp: ...]` hint next to the raw number (the value itself is never replaced — there is no schema to confirm the field really is a date), nested messages are expanded inline with a `[raw: N B: hex…]` hint alongside them (wire type 2 doesn't declare that the bytes really are a submessage), and repeated fields are collected into arrays. Double-clicking a Payload cell opens the raw protobuf bytes in the Blob Inspector.
 
-The table has an embedded **Show Hex** pane: selecting a row highlights its exact on-disk bytes (for v2, the trailer entry too, even though it physically lives at the end of the file), and selecting a specific column narrows the highlight to that field's own bytes where one exists (State, Timestamp/Creation, CRC Stored, Payload, and v2's Trailer Offset/Entry End Offset).
+Columns follow the order of the fields' bytes in the file: for v1 the 32-byte record header (Payload Size, State, Timestamp1, Timestamp2, CRC Stored) and then the payload; for v2 the 8-byte entry header (CRC Stored), the payload, and the record's trailer entry (Entry End Offset, State, Creation) at the end of the file. The 4 header bytes whose meaning isn't known have no column; they are in the Hex pane. Columns Crush computes rather than reads from the file are marked **[derived]** in their header, with what they are in the header's tooltip: Index, Offset, CRC Calc, CRC Passed, and for v2 Trailer Offset and Payload Size (v2 stores no payload length). The table's **Row** column is the viewer's own row number.
+
+The table has an embedded **Show Hex** pane: selecting a row highlights its exact on-disk bytes (for v2, the trailer entry too, even though it physically lives at the end of the file), and selecting a specific column narrows the highlight to that field's own bytes where one exists (State, Timestamp/Creation, CRC Stored, Payload, v1's Payload Size, and v2's Trailer Offset/Entry End Offset).
 
 A backing SQLite database is created on open so you can query records using the built-in SQL editor (with autocomplete). Two payload columns are available:
 
@@ -875,6 +879,9 @@ Opens via right-click → **Open as** → **Protobuf**. Performs a schema-less w
 | `bool` | only if value = 0 or 1 |
 | `Unix timestamp (s)` | 946 684 800 ≤ value ≤ 4 102 444 800 (2000–2100) |
 | `Chrome/WebKit timestamp (µs)` | 12 591 158 400 000 000 ≤ value ≤ 15 778 800 000 000 000 (µs since 1601-01-01) |
+| `Unix timestamp (ms)` | 946 684 800 000 ≤ value ≤ 4 102 444 800 000 (2000–2100), shown with milliseconds |
+| `Unix timestamp (µs)` | 946 684 800 000 000 ≤ value ≤ 4 102 444 800 000 000 (2000–2100), shown with microseconds |
+| `Windows FILETIME (100 ns)` | value in 2000–2100 as 100 ns ticks since 1601-01-01, shown with all seven fraction digits |
 
 **fixed64 (wire type 1)**
 
@@ -887,6 +894,7 @@ Opens via right-click → **Open as** → **Protobuf**. Performs a schema-less w
 | `Unix timestamp (double, s)` | double is finite AND 946 684 800 ≤ double ≤ 4 102 444 800 |
 | `Unix timestamp (uint64, s)` | 946 684 800 ≤ uint64 ≤ 4 102 444 800 |
 | `Chrome/WebKit timestamp (µs)` | 12 591 158 400 000 000 ≤ uint64 ≤ 15 778 800 000 000 000 |
+| `Unix timestamp (ms)` / `(µs)`, `Windows FILETIME (100 ns)` | same conditions as for varint, on the uint64 |
 
 **fixed32 (wire type 5)**
 
@@ -897,7 +905,7 @@ Opens via right-click → **Open as** → **Protobuf**. Performs a schema-less w
 | `float` | always, unless NaN or ±inf |
 | `Unix timestamp (uint32, s)` | 946 684 800 ≤ uint32 ≤ 4 102 444 800 |
 
-**length-delimited (wire type 2)** — decoded as nested message, UTF-8 string, or hex bytes; no interpretation child rows.
+**length-delimited (wire type 2)** — decoded as nested message, UTF-8 string, or hex bytes. Wire type 2 doesn't declare which: when the bytes parse as a nested message, it is shown as one, with child rows for the other readings of the same bytes — `raw bytes` (hex) always, and `string (UTF-8)` when they also read as text (e.g. `"120533877"` parses as field 6, fixed64).
 
 **start-group (3) / end-group (4)** — deprecated wire type; the group and its contents are silently skipped and parsing continues with the next field. A truncated group or an end-group tag at the top level produces a parse warning shown in the Properties panel.
 

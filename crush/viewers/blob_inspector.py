@@ -1065,7 +1065,9 @@ class _BlobPanel(QWidget):
             return False
         if self._plist_view is not None:
             self._plist_view.deleteLater()
-        self._plist_view = TreeTextViewer(result.data, self._plist_page, **result.viewer_hints)
+        # The status is on the summary's first line above; not twice.
+        hints = {k: v for k, v in result.viewer_hints.items() if k != "status"}
+        self._plist_view = TreeTextViewer(result.data, self._plist_page, **hints)
         self._plist_page.layout().addWidget(self._plist_view)
         # What the plist is and whether it was resolved on the first line,
         # the archive's counts on the second.

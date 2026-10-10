@@ -14,6 +14,9 @@ Opens via right-click → **Open as** → **Protobuf**. Performs a schema-less w
 | `bool` | only if value = 0 or 1 |
 | `Unix timestamp (s)` | 946 684 800 ≤ value ≤ 4 102 444 800 (2000–2100) |
 | `Chrome/WebKit timestamp (µs)` | 12 591 158 400 000 000 ≤ value ≤ 15 778 800 000 000 000 (µs since 1601-01-01) |
+| `Unix timestamp (ms)` | 946 684 800 000 ≤ value ≤ 4 102 444 800 000 (2000–2100), shown with milliseconds |
+| `Unix timestamp (µs)` | 946 684 800 000 000 ≤ value ≤ 4 102 444 800 000 000 (2000–2100), shown with microseconds |
+| `Windows FILETIME (100 ns)` | value in 2000–2100 as 100 ns ticks since 1601-01-01, shown with all seven fraction digits |
 
 **fixed64 (wire type 1)**
 
@@ -26,6 +29,7 @@ Opens via right-click → **Open as** → **Protobuf**. Performs a schema-less w
 | `Unix timestamp (double, s)` | double is finite AND 946 684 800 ≤ double ≤ 4 102 444 800 |
 | `Unix timestamp (uint64, s)` | 946 684 800 ≤ uint64 ≤ 4 102 444 800 |
 | `Chrome/WebKit timestamp (µs)` | 12 591 158 400 000 000 ≤ uint64 ≤ 15 778 800 000 000 000 |
+| `Unix timestamp (ms)` / `(µs)`, `Windows FILETIME (100 ns)` | same conditions as for varint, on the uint64 |
 
 **fixed32 (wire type 5)**
 
@@ -36,7 +40,7 @@ Opens via right-click → **Open as** → **Protobuf**. Performs a schema-less w
 | `float` | always, unless NaN or ±inf |
 | `Unix timestamp (uint32, s)` | 946 684 800 ≤ uint32 ≤ 4 102 444 800 |
 
-**length-delimited (wire type 2)** — decoded as nested message, UTF-8 string, or hex bytes; no interpretation child rows.
+**length-delimited (wire type 2)** — decoded as nested message, UTF-8 string, or hex bytes. Wire type 2 doesn't declare which: when the bytes parse as a nested message, it is shown as one, with child rows for the other readings of the same bytes — `raw bytes` (hex) always, and `string (UTF-8)` when they also read as text (e.g. `"120533877"` parses as field 6, fixed64).
 
 **start-group (3) / end-group (4)** — deprecated wire type; the group and its contents are silently skipped and parsing continues with the next field. A truncated group or an end-group tag at the top level produces a parse warning shown in the Properties panel.
 

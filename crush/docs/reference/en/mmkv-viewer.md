@@ -19,7 +19,7 @@ Toolbar controls:
 
 | Control | Action |
 |---|---|
-| **All / Live / Superseded / Removed** | Filter records by state |
+| **All / Live / Superseded / Removed** | Filter records by state; each button shows how many records it holds |
 | **Search** | Case-insensitive filter across all columns, matching a large value's complete text even where the Value cell shows it truncated |
 | **Export CSV…** | Save currently visible rows, including the value's complete text and complete raw container as hex |
 

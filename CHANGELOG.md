@@ -12,6 +12,10 @@ All notable changes to Crush will be documented in this file.
 - Added to the BLOB Inspector -> Support for copying the decoded bytes as hex, Base64 or a Python literal.
 - Added to raw disk images -> Support for QNX EFS partitions inside a raw flash image, in either byte order. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 - Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
+- Added to the Protobuf viewer and BLOB Inspector -> Support for Unix millisecond, Unix microsecond and Windows FILETIME timestamp candidates.
+- Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
+- Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
+- Added to the MMKV viewer -> Support for record counts on the state filter buttons.
 
 ### Bug Fixes
 
@@ -40,12 +44,18 @@ All notable changes to Crush will be documented in this file.
 - Fixed a damaged part of a LevelDB `.log` ending the read of the whole file; it is now skipped and named, and the records after it are read, as LevelDB reads on.
 - Fixed a LevelDB key range shorter than an internal key's tag showing in the Files tab without a note.
 - Fixed LevelDB `.log` records and MANIFEST edits whose stored checksum doesn't match showing as ordinary ones; they are now marked.
+- Fixed running a marked statement in the SQL editor of the SQLite and Realm viewers being rejected as not a SELECT.
+- Fixed an NSKeyedArchiver archive failing to resolve as a whole when an NSDictionary in it has an object as key; that dictionary now stays as stored.
+- Fixed an unresolved NSKeyedArchiver archive being shown under Decoded without saying so outside the Properties panel.
+- Fixed the Properties panel not showing a tab's file again when the already active tab is clicked, and changing the order of its rows after a tab switch.
+- Fixed LevelDB's text columns sorting `<binary N B>` values as text instead of by size.
 
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.61 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153))
 - Bundled [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) updated to v0.4 (from v0.1).
+- The SEGB viewer's columns now follow the order of the fields' bytes in the record.
 
 
 ## v0.22.0 - 2026-10-08

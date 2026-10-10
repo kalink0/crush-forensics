@@ -32,7 +32,7 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 | Type | `Live`, `Deleted`, or `Unknown` |
 | Offset | Byte offset of the record within the source file (hex) |
 | User Key (text) / (hex) | Key decoded as UTF-8 and as hex |
-| Value (text) / (hex) | Value decoded as UTF-8 and as hex |
+| Value (text) / (hex) | Value decoded as UTF-8 and as hex. A key or value that isn't text shows `<binary N B>` in its text column; sorting a text column puts these together, ordered by size |
 | Internal Key (hex) | Full internal key (user key + 8-byte sequence/type suffix) for `.ldb`/`.sst` records |
 | Checksum | For a `.log` record, whether its stored checksum matches (*matches* / *doesn't match*); *not checked* for `.ldb`/`.sst` records, whose block checksums aren't checked |
 

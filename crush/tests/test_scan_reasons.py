@@ -10,6 +10,7 @@ from typing import Any
 
 from crush.core.issues import ParseIssue
 from crush.core.segb_offsets import SegbCellLocator
+from crush.parsers.segb_parser import _COLUMNS_V2
 from crush.core.sqlite_freeblocks import extract_freeblocks, scan_database_freeblocks
 from crush.core.sqlite_freelist import carve_freelist_rows, walk_freelist_pages
 from crush.core.sqlite_structure import _display_cell_value
@@ -187,7 +188,10 @@ def test_structure_values_are_whole_and_single_line() -> None:
 
 
 def test_segb_locator_says_why_a_row_has_no_bytes() -> None:
-    locator = SegbCellLocator(file_bytes=bytes(64), version="v2", rows=[["0", "not-an-offset"]])
+    locator = SegbCellLocator(
+        file_bytes=bytes(64), version="v2", rows=[["0", "not-an-offset"]],
+        columns=_COLUMNS_V2,
+    )
     assert locator.locate_cell("SEGB", 0, None) is None
     reason = locator.why_not_located("SEGB", 0)
     assert reason is not None and reason.code == "locate.segb_record_offsets"

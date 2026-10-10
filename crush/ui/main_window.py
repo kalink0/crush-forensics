@@ -181,6 +181,16 @@ class _LoadSourceWorker(QObject):
         self.hashed.emit(digest, total, str(path))
 
 
+class _TabMetadata:
+    """A viewer tab's parser metadata, held as a plain Python object (see
+    where _show_result sets the "crush_metadata" property)."""
+
+    __slots__ = ("metadata",)
+
+    def __init__(self, metadata: dict[str, Any]) -> None:
+        self.metadata = metadata
+
+
 class _ClosableTabBar(QTabBar):
     def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "button") and event.button() == Qt.MouseButton.MiddleButton:
@@ -651,6 +661,9 @@ class MainWindow(QMainWindow):
         self._viewer_tabs.setDocumentMode(True)
         self._viewer_tabs.tabCloseRequested.connect(self._close_tab)
         self._viewer_tabs.currentChanged.connect(self._on_viewer_tab_changed)
+        # A click on the tab that already is current changes nothing for
+        # currentChanged, but the panel may show a tree selection by then.
+        self._viewer_tabs.tabBarClicked.connect(self._show_tab_properties)
         # Long VFS paths (issue #47) would otherwise grow the tab past the
         # viewport and push the native close button off-screen; cap the
         # width and elide in the middle so the close button always fits.
@@ -3616,7 +3629,9 @@ class MainWindow(QMainWindow):
             widget.setProperty("crush_source_path", source_path)
         widget.setProperty("crush_vfs", vfs)
         widget.setProperty("crush_node", node)
-        widget.setProperty("crush_metadata", result.metadata)
+        # Wrapped: a dict as a Qt property comes back as a QVariantMap,
+        # its keys sorted -- the panel's rows would change order.
+        widget.setProperty("crush_metadata", _TabMetadata(result.metadata))
         idx = self._viewer_tabs.addTab(widget, self._tab_base_label(node))
         self._viewer_tabs.setCurrentIndex(idx)
         self._refresh_tab_labels()
@@ -4503,7 +4518,14 @@ class MainWindow(QMainWindow):
         if app is None:
             return
         self._propagate_palette_recursive(widget, app.palette())
+        self._show_tab_properties(index)
 
+    def _show_tab_properties(self, index: int) -> None:
+        """Show the properties of the file (or analyzer result) in viewer
+        tab *index*."""
+        widget = self._viewer_tabs.widget(index) if index >= 0 else None
+        if widget is None:
+            return
         analyzer_result = widget.property("crush_analyzer_result")
         if analyzer_result is not None:
             self._props_panel.show_analyzer_result(
@@ -4516,7 +4538,8 @@ class MainWindow(QMainWindow):
         node = widget.property("crush_node")
         vfs = widget.property("crush_vfs")
         if node is not None and vfs is not None:
-            metadata = widget.property("crush_metadata") or {}
+            held = widget.property("crush_metadata")
+            metadata = held.metadata if isinstance(held, _TabMetadata) else {}
             self._props_panel.update_properties(node, metadata, vfs)
 
     def _apply_palette(self, pal: QPalette) -> None:
