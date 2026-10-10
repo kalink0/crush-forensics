@@ -32,7 +32,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.60 (from v1.57).
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.61 (from v1.57).
 
 ## v0.22.0 - 2026-10-08
 
