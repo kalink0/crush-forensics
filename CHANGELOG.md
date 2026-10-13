@@ -19,9 +19,14 @@ All notable changes to Crush will be documented in this file.
 - Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
 - Added to the MMKV viewer -> Support for record counts on the state filter buttons.
 - Added to the SQLite Table viewer -> Support for a Strings view of the database, -wal and -journal file, with each string's page and region.
+- Added to the SQLite Table viewer -> Support for decoding a column as Cocoa nanoseconds. ([@byteofthepython](https://github.com/byteofthepython), [#158](https://github.com/kalink0/crush-forensics/issues/158))
+- Added to the SQLite Table viewer -> Support for decoding a column as the other Value Inspector timestamp formats except GPS, including BLOB formats (SYSTEMTIME, BCD, UUID v1).
+- Added to the SQLite Table viewer -> Support for copying a decoded timestamp column as a plain-SQLite expression for use in queries.
+- Added to the Filesystem panel -> Support for Name and Path columns that widen to fit their content within the panel.
 
 ### Bug Fixes
 
+- Fixed the SQLite Table viewer's timestamp decoding dropping sub-second digits, and the Value Inspector rounding them.
 - Fixed the Hex pane's search field shrinking to a few characters next to a table or tree and in narrow tabs.
 - Fixed the filter field of the SQLite Table, Tree and Protobuf viewers sitting above the Hex pane instead of above the rows it filters.
 - Fixed the Tools menu showing Paste & Decode without its "&" (a blank on macOS, an underscore on Linux).

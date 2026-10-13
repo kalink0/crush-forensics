@@ -279,6 +279,8 @@ The left panel shows the loaded archive or folder as a tree.
   - **Show Format Info** — opens a popup showing the identified format name, category, platforms, parser support status, signatures, forensic relevance, reference links (opened in your browser) and the date of the last review. When the signatures match several formats equally, it lists those candidates instead of picking one. Also updates the Properties panel. Works for unsupported formats — useful for quickly understanding what a file is before deciding how to examine it
   - **Export…** — extract the file or folder to disk
 
+**Column widths:** the **Name** column widens to fit the names shown as folders are expanded, scrolled or the panel is resized — up to the room the other columns leave, so Size, Files, Total Size and Type stay in view; widen the panel to give it more. It doesn't shrink again when a folder is collapsed. A name that still doesn't fit is shortened in the middle (`IMG_2024…_edited.jpg.exe`), so its start and extension stay visible; the full name is in the tooltip. Dragging the column by hand turns the automatic width off until the next source is loaded. The search results list does the same for **Name** and **Path**.
+
 **Filtering:** type in the filter box at the top of the panel to search across the entire loaded tree. All searches are case-insensitive and match anywhere in the value.
 
 While the filter is active, the tree is replaced by a **flat search results list** showing every match with its full path — no need to navigate through parent folders. Clear the filter (or click the **×** button) to return to the normal tree.
@@ -438,18 +440,28 @@ Status feedback appears below the input field: red on error (with the error mess
 
 **Row limit notice:** if a table has more rows than the display limit, a notice appears in the row count. Use a SQL query with `LIMIT` / `WHERE` to load a specific subset.
 
-**Timestamp column decoding:** right-click any column header to decode integer/real values as timestamps — including numbers stored as text (`'1713884690406'`; only plain decimal numbers, nothing else is guessed). Choose a format from the **Decode column as timestamp** submenu:
+**Timestamp column decoding:** right-click any column header to decode its values as timestamps — including numbers stored as text (`'1713884690406'`; only plain decimal numbers, nothing else is guessed). Choose a format from the **Decode column as timestamp** submenu, grouped into Unix, Apple, Windows and Other:
 
-| Format | Epoch | Unit |
+| Format | Value | Epoch / layout |
 |---|---|---|
-| Unix — seconds | 1970-01-01 | s |
-| Unix — milliseconds | 1970-01-01 | ms |
-| Unix — microseconds | 1970-01-01 | µs |
-| Mac Absolute Time | 2001-01-01 | s |
-| Windows FILETIME | 1601-01-01 | 100 ns |
-| Chrome / WebKit | 1601-01-01 | µs |
+| Unix — seconds / milliseconds / microseconds | number | 1970-01-01 |
+| Cocoa / Mac Absolute Time — seconds / nanoseconds | number | 2001-01-01 |
+| HFS+ — seconds | number | 1904-01-01 |
+| Windows FILETIME — 100 ns | number | 1601-01-01 |
+| Windows SYSTEMTIME | BLOB or hex text, 16 bytes | 8 little-endian WORDs: year, month, day of week, day, hour, minute, second, ms |
+| .NET Ticks — 100 ns | number | 0001-01-01 |
+| OLE Automation Date — days | number | 1899-12-30; the fraction is the time of day, also for negative values |
+| FAT / exFAT (MS-DOS) | integer | 32-bit packed: date word high, time word low, 2 s resolution |
+| Chrome / WebKit — µs | number | 1601-01-01 |
+| Twitter / X Snowflake ID | integer | upper 42 bits: ms since 2010-11-04 01:42:54.657 UTC |
+| UUID v1 | UUID text, or 16-byte BLOB in RFC 9562 (big-endian) order | 100 ns since 1582-10-15 |
+| BCD | BLOB or hex text, 7 bytes | `YYYY MM DD HH mm SS`, two decimal digits per byte |
 
-Values are displayed as `YYYY-MM-DD HH:MM:SS UTC`. The column header shows the active format as a suffix (e.g. `created_at [unix ms]`). Sorting remains chronologically correct. A cell that can't be decoded (non-numeric text, or a value out of range for the chosen format) is shown as stored, in orange, with the reason in its tooltip; the header tooltip says how many values were affected, and the header reads `[… : none decodable]` if nothing in the column decoded. Empty and `NULL` cells are left alone. Select **Clear timestamp format** to revert to the raw values.
+Every timestamp format of the [Value Inspector](#value-inspector) is offered except GPS time. No plausibility window is applied: whatever the chosen format can represent is decoded.
+
+Values are displayed as `YYYY-MM-DD HH:MM:SS[.fraction] UTC`. The conversion is exact — integers stay integers and decimals are read digit for digit — and the fraction shows every sub-second digit the value carries (e.g. `.1234567` for a FILETIME, `.5` for 500 ms), none for a whole second. The column header shows the active format as a suffix (e.g. `created_at [unix ms]`). Sorting remains chronologically correct. A cell that can't be decoded (non-numeric text, a value out of range for the chosen format, a BLOB of the wrong length, invalid date fields, a UUID that isn't version 1) is shown as stored, in orange, with the reason in its tooltip; the header tooltip says how many values were affected, and the header reads `[… : none decodable]` if nothing in the column decoded. Empty and `NULL` cells are left alone, and so are BLOB cells under a number format. Select **Clear timestamp format** to revert to the raw values.
+
+**Timestamp as SQL:** once a column is decoded, **Copy as SQL expression** in the same header menu copies the bare conversion of that column for use in your own `SELECT` — plain SQLite, so it also runs in other SQLite tools. For a Unix-milliseconds column `created` it is `datetime("created" / 1000, 'unixepoch') || rtrim(printf('.%03d', "created" % 1000), '.0')`. It gives `YYYY-MM-DD HH:MM:SS[.fraction]` without a time zone, with every sub-second digit of an integer value, and is available for the Unix, Cocoa, HFS+, FILETIME, .NET Ticks, Chrome / WebKit, FAT and Snowflake formats and BCD. It has no per-row checks: it is exact for INTEGER values (and plain-digit text) — not negative ones for formats with sub-second units — and for BCD for 7-byte BLOBs. A REAL value loses its fraction, and other values give a wrong date or NULL; when copying, Crush says how many values of the column that applies to. OLE Automation Date, SYSTEMTIME and UUID v1 have no plain-SQLite conversion; the menu entry is greyed out for them, with the reason in its tooltip.
 
 **Cell inspection:** right-click any cell for options including:
 - **Inspect Cell…** — preview the raw value, attempt base64/plist/XML decode
@@ -1088,7 +1100,7 @@ Open it once from the *Tools* menu. The window stays on screen while you work; u
 |---|---|
 | **Integer** | Decimal, hex, signed/unsigned 32-bit and 64-bit. For hex-byte input (e.g. `c0 a8 01 01`) both big-endian (BE) and little-endian (LE) variants are shown. |
 | **Float** | 64-bit double (if input is a decimal float). Float32 and Double reinterpreted as raw bytes, in both BE and LE byte order (only for hex-byte input of exactly 4 or 8 bytes). |
-| **Timestamp** | Unix (s / ms / µs), Cocoa/Apple (s and ns since 2001-01-01), Chrome/WebKit (µs since 1601-01-01), Windows FILETIME / NTFS (100 ns since 1601-01-01), HFS+ / Mac OS (s since 1904-01-01), Microsoft .NET Ticks (100 ns since 0001-01-01), OLE Automation Date (days since 1899-12-30), Twitter / X Snowflake ID, FAT / exFAT MS-DOS (32-bit packed, 2 s resolution, epoch 1980-01-01), BCD (7 hex bytes `YYYY MM DD HH mm SS`), UUID v1 Timestamp (Gregorian epoch 1582-10-15), GPS Time (s and ns since 1980-01-06, no leap-second correction — GPS is currently ~18 s ahead of UTC), Windows SYSTEMTIME (16 hex bytes, millisecond precision). |
+| **Timestamp** | Unix (s / ms / µs), Cocoa/Apple (s and ns since 2001-01-01), Chrome/WebKit (µs since 1601-01-01), Windows FILETIME / NTFS (100 ns since 1601-01-01), HFS+ / Mac OS (s since 1904-01-01), Microsoft .NET Ticks (100 ns since 0001-01-01), OLE Automation Date (days since 1899-12-30), Twitter / X Snowflake ID, FAT / exFAT MS-DOS (32-bit packed, 2 s resolution, epoch 1980-01-01), BCD (7 hex bytes `YYYY MM DD HH mm SS`), UUID v1 Timestamp (Gregorian epoch 1582-10-15), GPS Time (s and ns since 1980-01-06, no leap-second correction — GPS is currently ~18 s ahead of UTC), Windows SYSTEMTIME (16 hex bytes, millisecond precision). Values are converted exactly and show every sub-second digit the value carries — the same conversion as the SQLite Table viewer's **Decode column as timestamp**. |
 | **UUID** | Formatted as `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` if input is a 32-digit hex string or already a UUID. |
 | **Network** | IPv4 big-endian and little-endian (4-byte values), MAC address (6-byte hex values). |
 | **Text** | ASCII rendering of hex bytes (non-printable shown as `.`); UTF-8 decoding if the bytes are valid UTF-8. |

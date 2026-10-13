@@ -2604,6 +2604,52 @@ MESSAGES: dict[str, str] = {
         "out of range for this format",
         "ts_decode.out_of_range",
     ),
+    "ts_decode.not_an_integer": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not an integer (this format packs bit fields)",
+        "ts_decode.not_an_integer",
+    ),
+    "ts_decode.not_bytes": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "neither a BLOB nor hex text",
+        "ts_decode.not_bytes",
+    ),
+    "ts_decode.wrong_length": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{length} bytes, this format has {expected}",
+        "ts_decode.wrong_length",
+    ),
+    "ts_decode.not_bcd": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not BCD (a nibble above 9)",
+        "ts_decode.not_bcd",
+    ),
+    "ts_decode.invalid_fields": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "date/time fields outside their valid ranges",
+        "ts_decode.invalid_fields",
+    ),
+    "ts_decode.not_a_uuid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not a UUID",
+        "ts_decode.not_a_uuid",
+    ),
+    "ts_decode.uuid_not_v1": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not a version 1 UUID",
+        "ts_decode.uuid_not_v1",
+    ),
+    # -- Timestamp decoding as a plain-SQLite expression (ts_sql) -------------
+    "ts_sql.fractional_days": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the value is a fractional day count, which plain SQLite can't convert exactly",
+        "ts_sql.fractional_days",
+    ),
+    "ts_sql.no_hex_to_number": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "plain SQLite has no way to turn hex bytes into numbers",
+        "ts_sql.no_hex_to_number",
+    ),
 }
 
 

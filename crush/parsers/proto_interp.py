@@ -32,8 +32,8 @@ _COCOA_MAX = 3_155_673_600.0
 _CHROME_MIN = 12_591_158_400_000_000
 _CHROME_MAX = 15_778_800_000_000_000
 
-# Integer timestamps counted in sub-second ticks, the same formats the table
-# viewer's timestamp decoding offers (crush/core/ts_decode.py TS_FORMATS):
+# Integer timestamps counted in sub-second ticks, a subset of the formats the
+# table viewer's timestamp decoding offers (crush/core/ts_decode.py TS_FORMATS):
 # (label, ticks per second, epoch offset to Unix in seconds). Each is
 # checked against the same 2000 … 2100 window; the windows don't overlap.
 _TICK_FORMATS: list[tuple[str, int, int]] = [

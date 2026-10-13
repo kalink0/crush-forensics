@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QPushButton,
     QPlainTextEdit,
     QSizePolicy,
@@ -98,6 +99,10 @@ from crush.core.sqlite_wal import (
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
 from crush.core.ts_decode import decode_cell as _decode_cell
+from crush.core.ts_sql import SQL_UNSUPPORTED as _TS_SQL_UNSUPPORTED
+from crush.core.ts_sql import sql_covers as _ts_sql_covers
+from crush.core.ts_sql import sql_expression as _ts_sql_expression
+from crush.core.ts_sql import sql_supported as _ts_sql_supported
 from crush.core.work_priority import (
     acquire_foreground_io,
     foreground_io,
@@ -199,7 +204,7 @@ def _derived_header_tooltip(reason: object) -> str:
 
 
 def _ts_suffix(fmt: str) -> str:
-    return next(s for key, _, s in _TS_FORMATS if key == fmt)
+    return next(s for key, _, s, _ in _TS_FORMATS if key == fmt)
 
 
 def _ts_header_pair(
@@ -336,13 +341,13 @@ class _QueryResultModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             if value is None:
                 return ""
-            if isinstance(value, (bytes, bytearray, memoryview)):
-                return f"<BLOB {len(value):,} B>"
             fmt = self._ts_formats.get(col)
             if fmt is not None:
                 decoded, _problem = _decode_cell(value, fmt)
                 if decoded is not None:
                     return decoded
+            if isinstance(value, (bytes, bytearray, memoryview)):
+                return f"<BLOB {len(value):,} B>"
             return str(value)
         if role == Qt.ItemDataRole.UserRole:
             if isinstance(value, memoryview):
@@ -353,11 +358,11 @@ class _QueryResultModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ForegroundRole:
             if value is None:
                 return Qt.GlobalColor.gray
-            if isinstance(value, (bytes, bytearray, memoryview)):
-                return Qt.GlobalColor.blue
             fmt = self._ts_formats.get(col)
             if fmt is not None and _decode_cell(value, fmt)[1] is not None:
                 return _TS_UNDECODED_COLOR
+            if isinstance(value, (bytes, bytearray, memoryview)):
+                return Qt.GlobalColor.blue
         if role == Qt.ItemDataRole.ToolTipRole:
             fmt = self._ts_formats.get(col)
             if fmt is not None:
@@ -365,6 +370,14 @@ class _QueryResultModel(QAbstractTableModel):
                 if problem is not None:
                     return _ts_cell_tooltip(fmt, problem)
         return None
+
+    def column_name(self, section: int) -> str:
+        """The query's own name for column *section* (no format suffix)."""
+        return self._headers[section]
+
+    def column_values(self, section: int) -> list[Any]:
+        """Column *section*'s values as the query returned them."""
+        return [row[section - 1] for row in self._rows]
 
     def set_timestamp_format(self, col: int, fmt: str | None) -> None:
         if fmt is None:
@@ -4603,13 +4616,45 @@ class TableViewer(QWidget):
         ts_submenu = menu.addMenu(translate("TableViewer", "Decode column as timestamp"))
         fmt_actions: dict[object, str] = {}
         active = self._col_ts_formats.get(col)
-        for key, label, _ in _TS_FORMATS:
-            act = ts_submenu.addAction(
+        group_menus: dict[str, QMenu] = {}
+        for key, label, _, group in _TS_FORMATS:
+            group_menu = group_menus.get(group)
+            if group_menu is None:
+                group_menu = ts_submenu.addMenu(
+                    translate("TimestampFormat", group)  # i18n: keep -- marked in ts_decode
+                )
+                group_menus[group] = group_menu
+            act = group_menu.addAction(
                 translate("TimestampFormat", label)  # i18n: keep -- marked in ts_decode
             )
             act.setCheckable(True)
             act.setChecked(active == key)
             fmt_actions[act] = key
+
+        sql_act = menu.addAction(translate("TableViewer", "Copy as SQL expression"))
+        menu.setToolTipsVisible(True)
+        if active is None:
+            sql_act.setEnabled(False)
+            sql_act.setToolTip(translate("TableViewer", "Decode the column as a timestamp first."))
+        elif not _ts_sql_supported(active):
+            sql_act.setEnabled(False)
+            sql_act.setToolTip(
+                translate("TableViewer", "No plain-SQLite expression for {format}: {reason}.").format(
+                    format=_ts_suffix(active),
+                    reason=render_value(_TS_SQL_UNSUPPORTED[active], localized=True),
+                )
+            )
+        else:
+            sql_act.setToolTip(
+                translate(
+                    "TableViewer",
+                    "Copies the plain-SQLite conversion of this column ({format}) for your own "
+                    "SELECT, here or in any other SQLite tool. It gives date and time without a "
+                    "time zone and has no checks: it is exact for INTEGER values (not negative, "
+                    "for formats with sub-second units). When copying, Crush says how many values "
+                    "of the column it doesn't convert exactly.",
+                ).format(format=_ts_suffix(active))
+            )
 
         menu.addSeparator()
         clear_act = menu.addAction(translate("TableViewer", "Clear timestamp format"))
@@ -4622,6 +4667,55 @@ class TableViewer(QWidget):
         elif chosen == clear_act:
             self._col_ts_formats.pop(col, None)
             self._revert_col_ts_format(col)
+        elif chosen == sql_act and active is not None:
+            QApplication.clipboard().setText(self._ts_sql_expression(col, active))
+            values = [
+                v for v in self._ts_stored_values(col)
+                if v is not None and not (isinstance(v, str) and not v.strip())
+            ]
+            uncovered = sum(1 for v in values if not _ts_sql_covers(v, active))
+            if uncovered:
+                QMessageBox.information(
+                    self,
+                    translate("TableViewer", "SQL expression copied"),
+                    translate(
+                        "TableViewer",
+                        "{uncovered:,} of {total:,} values in this column are not converted "
+                        "exactly by the copied expression: REAL values, negative values of a "
+                        "format with sub-second units, text other than plain digits, values "
+                        "out of range or with invalid date fields, and for BCD anything but a "
+                        "7-byte BLOB. For them it gives a wrong date or NULL.",
+                    ).format(uncovered=uncovered, total=len(values)),
+                )
+
+    def _ts_sql_expression(self, col: int, fmt: str) -> str:
+        """The plain-SQLite decode of column *col* as *fmt*, under the column's
+        own name (as the database or the query returned it)."""
+        if self._query_results_active and self._query_model is not None:
+            name = self._query_model.column_name(col)
+        else:
+            h_item = self._source_model.horizontalHeaderItem(col)
+            name = str(
+                (h_item.data(_TS_ORIGINAL_TEXT_ROLE) or h_item.data(Qt.ItemDataRole.UserRole))
+                if h_item is not None else ""
+            )
+        return _ts_sql_expression(name, fmt)
+
+    def _ts_stored_values(self, col: int) -> list[object]:
+        """Column *col*'s values as stored (not as currently decoded)."""
+        if self._query_results_active and self._query_model is not None:
+            return self._query_model.column_values(col)
+        values: list[object] = []
+        for row in range(self._source_model.rowCount()):
+            item = self._source_model.item(row, col)
+            if item is None:
+                continue
+            raw = item.data(Qt.ItemDataRole.UserRole)
+            if raw is None:
+                # A text cell: its stored text, from before a decode replaced it.
+                raw = item.data(_TS_ORIGINAL_TEXT_ROLE) or item.text()
+            values.append(raw)
+        return values
 
     def _apply_col_ts_format(self, col: int) -> None:
         fmt = self._col_ts_formats.get(col)
@@ -4637,13 +4731,13 @@ class TableViewer(QWidget):
                 continue
             self._reset_ts_cell(item)  # a re-apply starts from the as-stored cell
             raw = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(raw, (int, float)):
-                value: object = raw
+            if isinstance(raw, (int, float, bytes)):
+                value: object = raw  # a BLOB counts for the byte formats (SYSTEMTIME, BCD, UUID)
             elif raw is None:
                 # A plain text (or NULL) cell: no UserRole, the displayed text is the value.
                 value = item.text()
             else:
-                continue  # BLOB / list / dict cell -- not something a timestamp applies to
+                continue  # list / dict cell -- not something a timestamp applies to
             decoded, problem = _decode_cell(value, fmt)
             if decoded is not None:
                 item.setData(item.text(), _TS_ORIGINAL_TEXT_ROLE)

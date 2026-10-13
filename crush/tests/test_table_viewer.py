@@ -1131,7 +1131,7 @@ def test_open_bytes_with_format_requested_carries_metadata_dict(qapp) -> None:
 # ---------------------------------------------------------------------------
 
 _TS = 1713884690406
-_TS_DECODED = "2024-04-23 15:04:50 UTC"
+_TS_DECODED = "2024-04-23 15:04:50.406 UTC"
 
 
 def _ts_viewer():
@@ -1260,6 +1260,58 @@ def test_ts_decode_in_sql_result_view(qapp) -> None:
     _revert(tv, 2)
     assert cell(0, 2) == str(_TS)
     assert model.headerData(2, Qt.Orientation.Horizontal) == "txt"
+
+
+_SYSTEMTIME = struct.pack("<8H", 2024, 6, 4, 27, 14, 36, 42, 500)
+_SYSTEMTIME_DECODED = "2024-06-27 14:36:42.5 UTC"
+
+
+def test_ts_byte_format_decodes_blob_cells_and_reverts(qapp) -> None:
+    data = {"t": {"columns": ["st"], "rows": [[_SYSTEMTIME], [b"\x01\x02"], [_SYSTEMTIME.hex()]]}}
+    tv = TableViewer(data, source_name="b.sqlite")
+    tv._table_combo.setCurrentText("t")
+    blob_fg = _fg_name(tv, 0, 1)
+
+    _apply(tv, 1, "systemtime")
+    assert _cell(tv, 0, 1) == _SYSTEMTIME_DECODED
+    assert _cell(tv, 0, 1, Qt.ItemDataRole.UserRole) == _SYSTEMTIME  # raw bytes untouched
+    assert _cell(tv, 2, 1) == _SYSTEMTIME_DECODED  # hex text
+    assert _cell(tv, 1, 1) == "<BLOB 2 B>"  # wrong length: shown as stored, flagged
+    assert _fg_name(tv, 1, 1) == _TS_UNDECODED_COLOR.name()
+    assert "2 bytes" in _cell(tv, 1, 1, Qt.ItemDataRole.ToolTipRole)
+
+    _revert(tv, 1)
+    assert _cell(tv, 0, 1) == f"<BLOB {len(_SYSTEMTIME)} B>"
+    assert _fg_name(tv, 1, 1) == blob_fg
+    assert not _cell(tv, 1, 1, Qt.ItemDataRole.ToolTipRole)
+
+
+def test_ts_number_format_leaves_blob_cells_alone(qapp) -> None:
+    data = {"t": {"columns": ["n"], "rows": [[_SYSTEMTIME], [_TS]]}}
+    tv = TableViewer(data, source_name="b.sqlite")
+    tv._table_combo.setCurrentText("t")
+    _apply(tv, 1, "unix_ms")
+    assert _cell(tv, 0, 1) == f"<BLOB {len(_SYSTEMTIME)} B>"
+    assert not _cell(tv, 0, 1, Qt.ItemDataRole.ToolTipRole)
+    assert _cell(tv, 1, 1) == _TS_DECODED
+
+
+def test_ts_byte_format_in_sql_result_view(qapp) -> None:
+    tv = _ts_viewer()
+    tv._load_table_from_query({"columns": ["st"], "rows": [[_SYSTEMTIME], [b"\x01"]]})
+    model = tv._proxy_model
+
+    def cell(r: int, role=Qt.ItemDataRole.DisplayRole):
+        return model.data(model.index(r, 1), role)
+
+    _apply(tv, 1, "systemtime")
+    assert cell(0) == _SYSTEMTIME_DECODED
+    assert cell(0, Qt.ItemDataRole.UserRole) == _SYSTEMTIME
+    assert cell(1) == "<BLOB 1 B>"
+    assert cell(1, Qt.ItemDataRole.ForegroundRole) == _TS_UNDECODED_COLOR
+    _revert(tv, 1)
+    assert cell(0) == f"<BLOB {len(_SYSTEMTIME)} B>"
+    assert cell(1, Qt.ItemDataRole.ForegroundRole) == Qt.GlobalColor.blue
 
 
 def _find_column(model, header: str) -> int:
@@ -1568,3 +1620,35 @@ def test_leaving_strings_view_restores_normal_tables(qapp, widgets, tmp_path: Pa
     model = tv._table_view.model()
     assert tv._proxy_model.sourceModel() is tv._source_model
     assert model.rowCount() == 1  # the search text filters the table again
+
+
+def test_ts_sql_expression_uses_the_column_name_and_runs(qapp) -> None:
+    import sqlite3
+
+    tv = _ts_viewer()
+    _apply(tv, 2, "unix_ms")
+    expr = tv._ts_sql_expression(2, "unix_ms")
+    assert '"txt"' in expr and " AS " not in expr
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE t (n, txt, mixed)")
+        conn.execute("INSERT INTO t VALUES (?, ?, ?)", (_TS, str(_TS), "n/a"))
+        assert conn.execute(f"SELECT {expr} FROM t").fetchone()[0] == _TS_DECODED.removesuffix(" UTC")
+    finally:
+        conn.close()
+
+
+def test_ts_stored_values_are_the_stored_ones_not_the_decoded(qapp) -> None:
+    tv = _ts_viewer()
+    _apply(tv, 1, "unix_ms")
+    _apply(tv, 2, "unix_ms")
+    assert tv._ts_stored_values(1) == [_TS] * 3
+    assert tv._ts_stored_values(2) == [str(_TS), f" {_TS} ", str(_TS)]
+
+
+def test_ts_sql_expression_in_sql_result_view_uses_the_query_column(qapp) -> None:
+    tv = _ts_viewer()
+    tv._load_table_from_query({"columns": ["created"], "rows": [[_TS], [1.5]]})
+    _apply(tv, 1, "unix_ms")
+    assert '"created"' in tv._ts_sql_expression(1, "unix_ms")
+    assert tv._ts_stored_values(1) == [_TS, 1.5]

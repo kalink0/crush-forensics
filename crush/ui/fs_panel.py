@@ -29,6 +29,7 @@ from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
+from crush.ui.column_fit import ColumnFitter
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
@@ -220,7 +221,9 @@ class FilesystemPanel(QWidget):
         self._tree.setAlternatingRowColors(True)
         self._tree.setSortingEnabled(False)
         install_horizontal_wheel_scroll(self._tree)
-        self._tree.setColumnWidth(0, 160)
+        # Middle elision keeps a long name's start and its extension in view.
+        self._tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self._tree_fit = ColumnFitter(self._tree, {0: 160})
         self._tree.setColumnWidth(1, 65)
         self._tree.setColumnWidth(2, 60)
         self._tree.setColumnWidth(3, 90)
@@ -239,8 +242,8 @@ class FilesystemPanel(QWidget):
         self._search_view.setAlternatingRowColors(True)
         self._search_view.setSortingEnabled(True)
         install_horizontal_wheel_scroll(self._search_view)
-        self._search_view.setColumnWidth(0, 160)
-        self._search_view.setColumnWidth(1, 200)
+        self._search_view.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self._search_fit = ColumnFitter(self._search_view, {0: 160, 1: 200})
         self._search_view.setColumnWidth(2, 65)
         self._search_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._search_view.doubleClicked.connect(self._on_search_double_click)
@@ -291,6 +294,8 @@ class FilesystemPanel(QWidget):
         self._search_gen += 1
         self._search_model.setRowCount(0)
         self._filter.clear()
+        self._tree_fit.reset()
+        self._search_fit.reset()
 
         self._start_prescan([vfs], self._prescan_gen)
         self.load_finished.emit()
@@ -355,6 +360,8 @@ class FilesystemPanel(QWidget):
         self._search_gen += 1
         self._search_model.setRowCount(0)
         self._filter.clear()
+        self._tree_fit.reset()
+        self._search_fit.reset()
 
         if self._vfs_list:
             self._start_prescan(list(self._vfs_list), self._prescan_gen)
@@ -862,6 +869,7 @@ class FilesystemPanel(QWidget):
     def _on_search_results_ready(self, results: list[dict]) -> None:
         self._type_queue.clear()
         self._search_model.setRowCount(0)
+        self._search_fit.clear_content()
         for r in results:
             node: VFSNode = r['node']
             vfs: VFS = r['vfs']

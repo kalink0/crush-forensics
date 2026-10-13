@@ -279,7 +279,7 @@ class TestTimestamp:
         data = _struct.pack("<8H", 2024, 6, 4, 27, 14, 36, 42, 500)
         rows = _interpret(" ".join(f"{b:02x}" for b in data))
         ts = _value(rows, "Timestamp", "Windows SYSTEMTIME")
-        assert ts == "2024-06-27 14:36:42.500 UTC"
+        assert ts == "2024-06-27 14:36:42.5 UTC"
 
     def test_windows_systemtime_invalid_month(self) -> None:
         import struct as _struct
@@ -299,7 +299,7 @@ class TestTimestamp:
     def test_unix_s_with_fractional_component(self) -> None:
         rows = _interpret("1718000000.5")
         ts = _value(rows, "Timestamp", "Unix (s)")
-        assert ts == "2024-06-10 06:13:20.500000 UTC"
+        assert ts == "2024-06-10 06:13:20.5 UTC"
 
     def test_fractional_input_no_bitfield_formats(self) -> None:
         # Twitter Snowflake / FAT unpack exact bit fields (shift/mask) and can't

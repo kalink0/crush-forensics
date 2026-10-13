@@ -6,7 +6,7 @@ from __future__ import annotations
 import base64
 import struct
 import uuid as _uuid_mod
-from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, Qt
 from PySide6.QtGui import QClipboard, QColor, QFont
@@ -22,16 +22,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from crush.core.ts_decode import decode_ts
 from crush.ui.i18n import translate
 
 _MUTED = QColor(140, 140, 140)
 _GROUP_BG = QColor(240, 240, 240)
-
-# Reference epochs
-_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-_COCOA_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
-_CHROME_EPOCH = datetime(1601, 1, 1, tzinfo=timezone.utc)
-_HFS_EPOCH = datetime(1904, 1, 1, tzinfo=timezone.utc)
 
 # Plausible timestamp ranges: 1990-01-01 to 2100-01-01 (Unix seconds)
 _TS_S_MIN, _TS_S_MAX = 631_152_000, 4_102_444_800
@@ -61,15 +56,12 @@ _COCOA_NS_MIN = _COCOA_MIN * 1_000_000_000
 _COCOA_NS_MAX = _COCOA_MAX * 1_000_000_000
 
 # Microsoft .NET Ticks: 100ns intervals since 0001-01-01
-_NET_EPOCH = datetime(1, 1, 1, tzinfo=timezone.utc)
 _NET_EPOCH_OFFSET_S = 62_135_596_800   # seconds from 0001-01-01 to Unix epoch
 _NET_TICKS_PER_S = 10_000_000
-_NET_EPOCH_TICKS = _NET_EPOCH_OFFSET_S * _NET_TICKS_PER_S
 _TICKS_MIN = (_TS_S_MIN + _NET_EPOCH_OFFSET_S) * _NET_TICKS_PER_S
 _TICKS_MAX = (_TS_S_MAX + _NET_EPOCH_OFFSET_S) * _NET_TICKS_PER_S
 
 # OLE Automation Date: days (float) since 1899-12-30
-_OLE_EPOCH = datetime(1899, 12, 30, tzinfo=timezone.utc)
 _OLE_MIN = 32874.0   # 1990-01-01
 _OLE_MAX = 73050.0   # 2100-01-01
 
@@ -82,9 +74,6 @@ _TWITTER_EPOCH_MS = 1_288_834_974_657
 _FAT_TS_MIN = 0x0021_0000  # 1980-01-01 00:00:00
 _FAT_TS_MAX = 0xFF9F_BF7D  # 2107-12-31 23:59:58
 
-# UUID v1: 60-bit timestamp = 100ns intervals since Gregorian epoch 1582-10-15
-_UUID_V1_GREG_OFFSET = 0x01B21DD213814000  # 100ns intervals from 1582-10-15 to 1970-01-01
-
 # GPS Time: seconds (or nanoseconds) since 1980-01-06 00:00:00 UTC, NO leap seconds.
 # GPS is currently 18 s ahead of UTC; displayed values are raw GPS time (not UTC-corrected).
 _GPS_EPOCH_UNIX = 315_964_800   # Unix timestamp of GPS epoch 1980-01-06
@@ -92,30 +81,6 @@ _GPS_S_MIN = _TS_S_MIN - _GPS_EPOCH_UNIX    # ~315_187_200  (≈ 1990-01-01 in G
 _GPS_S_MAX = _TS_S_MAX - _GPS_EPOCH_UNIX    # ~3_786_480_000 (≈ 2100-01-01 in GPS seconds)
 _GPS_NS_MIN = _GPS_S_MIN * 1_000_000_000
 _GPS_NS_MAX = _GPS_S_MAX * 1_000_000_000
-
-
-def _fmt_dt(dt: datetime) -> str:
-    if dt.microsecond:
-        return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{dt.microsecond:06d} UTC"
-    return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def _safe_ts(ts_s: float) -> str | None:
-    # epoch + timedelta rather than datetime.fromtimestamp(): the latter is OS-clamped on
-    # Windows and rejects timestamps fromtimestamp() would otherwise handle fine on Linux/Mac.
-    try:
-        dt = _UNIX_EPOCH + timedelta(seconds=ts_s)
-    except (OverflowError, ValueError):
-        return None
-    return _fmt_dt(dt)
-
-
-def _bcd_byte(b: int) -> int | None:
-    """Decode a single BCD byte to decimal (0-99), or None if nibbles are not 0-9."""
-    hi, lo = (b >> 4) & 0xF, b & 0xF
-    if hi > 9 or lo > 9:
-        return None
-    return hi * 10 + lo
 
 
 _DECIMAL_SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB", "EB")
@@ -523,424 +488,119 @@ def _interpret(raw: str) -> list[_Row]:
     # -----------------------------------------------------------------------
     # Group: Timestamps
     # -----------------------------------------------------------------------
-    # `ts` drives the arithmetic-based formats (division/addition against an epoch) and falls
-    # back to the parsed float so a value with a fractional component (e.g. sub-ms noise
-    # appended to a ms epoch, "1760996870913.061") still resolves instead of being dropped.
+    # The plausibility windows below decide which formats are offered for a value
+    # (the inspector guesses; the table's "Decode column as timestamp" doesn't).
+    # The decoding itself is crush.core.ts_decode's, shared with the table, and
+    # exact: it gets the integer or the typed decimal digit for digit, so no
+    # sub-second digit is lost to float rounding.
+    # `ts` drives the window checks and falls back to the parsed float so a value
+    # with a fractional component (e.g. sub-ms noise appended to a ms epoch,
+    # "1760996870913.061") still resolves instead of being dropped.
     # `ts_int` stays integer-only, for the two formats below that unpack exact bit fields.
     ts_int = eff_int
     ts: int | float | None = eff_int if eff_int is not None else float_val
+    ts_exact: int | Decimal | None = eff_int
+    if ts_exact is None and float_val is not None:
+        try:
+            ts_exact = Decimal(raw)
+        except InvalidOperation:
+            ts_exact = None
 
-    if ts is not None and _TS_S_MIN <= ts <= _TS_S_MAX:
+    def ts_row(label: str, offered: bool, value: object, fmt: str) -> None:
         rows.append(
             R(
                 QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Unix (s)"),
-                _safe_ts(ts),
-            )
-        )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Unix (s)"),
-                None,
+                label,
+                decode_ts(value, fmt) if offered else None,
             )
         )
 
-    if ts is not None and _TS_MS_MIN <= ts <= _TS_MS_MAX:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Unix (ms)"),
-                _safe_ts(ts / 1_000),
-            )
-        )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Unix (ms)"),
-                None,
-            )
-        )
-
-    if ts is not None and _TS_US_MIN <= ts <= _TS_US_MAX:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Unix (µs)"),
-                _safe_ts(ts / 1_000_000),
-            )
-        )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Unix (µs)"),
-                None,
-            )
-        )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "Unix (s)"),
+        ts is not None and _TS_S_MIN <= ts <= _TS_S_MAX, ts_exact, "unix_s",
+    )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "Unix (ms)"),
+        ts is not None and _TS_MS_MIN <= ts <= _TS_MS_MAX, ts_exact, "unix_ms",
+    )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "Unix (µs)"),
+        ts is not None and _TS_US_MIN <= ts <= _TS_US_MAX, ts_exact, "unix_us",
+    )
 
     # Cocoa: seconds since 2001-01-01; for floats require > 1M to avoid false positives on
     # tiny values (Cocoa's plausible range dips below zero, unlike the other formats).
+    # Cocoa nanoseconds use the same guard -- _COCOA_NS_MIN is deep negative, so an
+    # unguarded float fallback would match trivial values.
     cocoa_src = ts if eff_int is not None else (float_val if float_val is not None and float_val > 1_000_000 else None)
-    if cocoa_src is not None and _COCOA_MIN <= cocoa_src <= _COCOA_MAX:
-        try:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
-                    _fmt_dt(_COCOA_EPOCH + timedelta(seconds=cocoa_src)),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
-                    None,
-                )
-            )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
-                None,
-            )
-        )
-
-    # Cocoa nanoseconds: ns since 2001-01-01; same float-magnitude guard as Cocoa (s) above —
-    # _COCOA_NS_MIN is deep negative, so an unguarded float fallback would match trivial values.
-    cocoa_ns_src = ts if eff_int is not None else (float_val if float_val is not None and float_val > 1_000_000 else None)
-    if cocoa_ns_src is not None and _COCOA_NS_MIN <= cocoa_ns_src <= _COCOA_NS_MAX:
-        try:
-            dt = _COCOA_EPOCH + timedelta(seconds=cocoa_ns_src / 1_000_000_000)
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
-                    _fmt_dt(dt),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
-                    None,
-                )
-            )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
-                None,
-            )
-        )
-
-    # Chrome / WebKit: µs since 1601-01-01
-    if ts is not None and _CHROME_US_MIN <= ts <= _CHROME_US_MAX:
-        try:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
-                    _fmt_dt(_CHROME_EPOCH + timedelta(microseconds=ts)),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
-                    None,
-                )
-            )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
-                None,
-            )
-        )
-
-    # Windows FILETIME: 100ns intervals since 1601-01-01
-    if ts is not None and _WIN_FT_MIN <= ts <= _WIN_FT_MAX:
-        try:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    "Windows FILETIME",
-                    _fmt_dt(_CHROME_EPOCH + timedelta(microseconds=ts / 10)),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows FILETIME", None)
-            )
-    else:
-        rows.append(R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows FILETIME", None))
-
-    # HFS+: seconds since 1904-01-01
-    if ts is not None and _HFS_MIN <= ts <= _HFS_MAX:
-        try:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
-                    _fmt_dt(_HFS_EPOCH + timedelta(seconds=ts)),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
-                    None,
-                )
-            )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
-                None,
-            )
-        )
-
-    # Microsoft .NET Ticks: 100ns intervals since 0001-01-01
-    if ts is not None and _TICKS_MIN <= ts <= _TICKS_MAX:
-        try:
-            unix_s = (ts - _NET_EPOCH_TICKS) / _NET_TICKS_PER_S
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    "Microsoft .NET Ticks",
-                    _safe_ts(unix_s),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Microsoft .NET Ticks", None)
-            )
-    else:
-        rows.append(
-            R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Microsoft .NET Ticks", None)
-        )
-
-    # OLE Automation Date: days (float) since 1899-12-30
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (s)"),
+        cocoa_src is not None and _COCOA_MIN <= cocoa_src <= _COCOA_MAX, ts_exact, "mac_abs",
+    )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "Cocoa / Apple (ns)"),
+        cocoa_src is not None and _COCOA_NS_MIN <= cocoa_src <= _COCOA_NS_MAX, ts_exact, "cocoa_ns",
+    )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "Chrome / WebKit (µs)"),
+        ts is not None and _CHROME_US_MIN <= ts <= _CHROME_US_MAX, ts_exact, "chrome",
+    )
+    ts_row(
+        "Windows FILETIME",
+        ts is not None and _WIN_FT_MIN <= ts <= _WIN_FT_MAX, ts_exact, "win_ft",
+    )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "HFS+ / Mac OS (s)"),
+        ts is not None and _HFS_MIN <= ts <= _HFS_MAX, ts_exact, "hfs",
+    )
+    ts_row(
+        "Microsoft .NET Ticks",
+        ts is not None and _TICKS_MIN <= ts <= _TICKS_MAX, ts_exact, "net_ticks",
+    )
     ole_val = float_val if float_val is not None else (float(eff_int) if eff_int is not None else None)
-    if ole_val is not None and _OLE_MIN <= ole_val <= _OLE_MAX:
-        try:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    "OLE Automation Date",
-                    _fmt_dt(_OLE_EPOCH + timedelta(days=ole_val)),
-                )
-            )
-        except (OverflowError, ValueError):
-            rows.append(
-                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "OLE Automation Date", None)
-            )
-    else:
-        rows.append(
-            R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "OLE Automation Date", None)
-        )
+    ts_row(
+        "OLE Automation Date",
+        ole_val is not None and _OLE_MIN <= ole_val <= _OLE_MAX, ts_exact, "ole",
+    )
 
     # Twitter / X Snowflake ID: upper 41 bits = ms since Twitter epoch (bit-packed, integer-only)
-    if ts_int is not None and ts_int >= (1 << 22):  # timestamp part must be > 0
-        tw_ms = (ts_int >> 22) + _TWITTER_EPOCH_MS
-        if _TS_MS_MIN <= tw_ms <= _TS_MS_MAX:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    "Twitter / X Snowflake",
-                    _safe_ts(tw_ms / 1000.0),
-                )
-            )
-        else:
-            rows.append(
-                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Twitter / X Snowflake", None)
-            )
-    else:
-        rows.append(
-            R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Twitter / X Snowflake", None)
-        )
-
+    ts_row(
+        "Twitter / X Snowflake",
+        ts_int is not None
+        and ts_int >= (1 << 22)  # timestamp part must be > 0
+        and _TS_MS_MIN <= (ts_int >> 22) + _TWITTER_EPOCH_MS <= _TS_MS_MAX,
+        ts_int,
+        "snowflake",
+    )
     # FAT / exFAT (MS-DOS): 32-bit packed date+time, 2-second resolution, epoch 1980-01-01
-    if ts_int is not None and _FAT_TS_MIN <= ts_int <= _FAT_TS_MAX:
-        date_word = (ts_int >> 16) & 0xFFFF
-        time_word = ts_int & 0xFFFF
-        fat_year  = ((date_word >> 9) & 0x7F) + 1980
-        fat_month = (date_word >> 5) & 0x0F
-        fat_day   = date_word & 0x1F
-        fat_hour  = (time_word >> 11) & 0x1F
-        fat_min   = (time_word >> 5) & 0x3F
-        fat_sec   = (time_word & 0x1F) * 2
-        if 1 <= fat_month <= 12 and 1 <= fat_day <= 31 and fat_hour <= 23 and fat_min <= 59 and fat_sec <= 58:
-            try:
-                dt = datetime(fat_year, fat_month, fat_day, fat_hour, fat_min, fat_sec, tzinfo=timezone.utc)
-                rows.append(
-                    R(
-                        QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                        QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
-                        _fmt_dt(dt),
-                    )
-                )
-            except (ValueError, OverflowError):
-                rows.append(
-                    R(
-                        QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                        QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
-                        None,
-                    )
-                )
-        else:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
-                    None,
-                )
-            )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
-                None,
-            )
-        )
-
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "FAT / exFAT (MS-DOS)"),
+        ts_int is not None and _FAT_TS_MIN <= ts_int <= _FAT_TS_MAX, ts_int, "fat",
+    )
     # BCD timestamp: 7 hex bytes = YYYY MM DD HH mm SS (each byte = 2 BCD digits)
-    if hex_bytes_val is not None and len(hex_bytes_val) == 7:
-        bcd = [_bcd_byte(b) for b in hex_bytes_val]
-        if all(v is not None for v in bcd):
-            by, bmo, bd, bh, bmi, bs = bcd[0] * 100 + bcd[1], bcd[2], bcd[3], bcd[4], bcd[5], bcd[6]  # type: ignore[operator]
-            if 1 <= bmo <= 12 and 1 <= bd <= 31 and bh <= 23 and bmi <= 59 and bs <= 59:
-                try:
-                    dt = datetime(by, bmo, bd, bh, bmi, bs, tzinfo=timezone.utc)
-                    rows.append(
-                        R(
-                            QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                            QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
-                            _fmt_dt(dt),
-                        )
-                    )
-                except (ValueError, OverflowError):
-                    rows.append(
-                        R(
-                            QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                            QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
-                            None,
-                        )
-                    )
-            else:
-                rows.append(
-                    R(
-                        QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                        QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
-                        None,
-                    )
-                )
-        else:
-            rows.append(
-                R(
-                    QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                    QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
-                    None,
-                )
-            )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
-                None,
-            )
-        )
-
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "BCD (YYYYMMDDHHmmSS)"),
+        hex_bytes_val is not None and len(hex_bytes_val) == 7, hex_bytes_val, "bcd",
+    )
     # UUID v1 timestamp: 60-bit, 100ns intervals since Gregorian epoch 1582-10-15
-    if uuid_obj is not None and uuid_obj.version == 1:
-        unix_s = (uuid_obj.time - _UUID_V1_GREG_OFFSET) / 10_000_000
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "UUID v1 Timestamp"),
-                _safe_ts(unix_s),
-            )
-        )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "UUID v1 Timestamp"),
-                None,
-            )
-        )
-
-    # GPS Time (s): seconds since 1980-01-06, no leap-second correction
-    if ts is not None and _GPS_S_MIN <= ts <= _GPS_S_MAX:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (s)"),
-                _safe_ts(ts + _GPS_EPOCH_UNIX),
-            )
-        )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (s)"),
-                None,
-            )
-        )
-
-    # GPS Time (ns): nanoseconds since 1980-01-06, no leap-second correction
-    if ts is not None and _GPS_NS_MIN <= ts <= _GPS_NS_MAX:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (ns)"),
-                _safe_ts(ts / 1_000_000_000 + _GPS_EPOCH_UNIX),
-            )
-        )
-    else:
-        rows.append(
-            R(
-                QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"),
-                QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (ns)"),
-                None,
-            )
-        )
-
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "UUID v1 Timestamp"),
+        uuid_obj is not None and uuid_obj.version == 1, str(uuid_obj), "uuid_v1",
+    )
+    # GPS Time: seconds / nanoseconds since 1980-01-06, no leap-second correction
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (s)"),
+        ts is not None and _GPS_S_MIN <= ts <= _GPS_S_MAX, ts_exact, "gps_s",
+    )
+    ts_row(
+        QT_TRANSLATE_NOOP("ValueInspector", "GPS Time (ns)"),
+        ts is not None and _GPS_NS_MIN <= ts <= _GPS_NS_MAX, ts_exact, "gps_ns",
+    )
     # Windows SYSTEMTIME: 16 hex bytes = 8×WORD LE (year, month, dow, day, h, m, s, ms)
-    if hex_bytes_val is not None and len(hex_bytes_val) == 16:
-        try:
-            st_year, st_month, st_dow, st_day, st_hour, st_min, st_sec, st_ms = struct.unpack_from("<8H", hex_bytes_val)
-            if (1 <= st_month <= 12 and 0 <= st_dow <= 6 and 1 <= st_day <= 31
-                    and st_hour <= 23 and st_min <= 59 and st_sec <= 59 and st_ms <= 999):
-                dt = datetime(st_year, st_month, st_day, st_hour, st_min, st_sec,
-                              st_ms * 1000, tzinfo=timezone.utc)
-                val = f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{st_ms:03d} UTC"
-                rows.append(
-                    R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", val)
-                )
-            else:
-                rows.append(
-                    R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", None)
-                )
-        except (struct.error, ValueError, OverflowError):
-            rows.append(
-                R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", None)
-            )
-    else:
-        rows.append(R(QT_TRANSLATE_NOOP("ValueInspector", "Timestamp"), "Windows SYSTEMTIME", None))
+    ts_row(
+        "Windows SYSTEMTIME",
+        hex_bytes_val is not None and len(hex_bytes_val) == 16, hex_bytes_val, "systemtime",
+    )
 
     # -----------------------------------------------------------------------
     # Group: UUID
