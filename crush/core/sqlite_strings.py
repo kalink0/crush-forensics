@@ -3,8 +3,7 @@
 attributed to the structure its bytes sit in.
 
 The string search itself is ``byte_strings.scan_strings`` (one rule for every
-Strings view). When the database header declares UTF-16 text (offset 56),
-that byte order is searched with the full UTF-16 range in all three files. This module splits each file into regions -- database
+Strings view). This module splits each file into regions -- database
 header, b-tree page areas, freelist/overflow/pointer-map pages, WAL frame
 headers, journal record fields -- and lists every region a string's bytes
 fall into.
@@ -39,13 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from crush.core.byte_strings import (
-    DEFAULT_MIN_CHARS,
-    ENCODING_UTF16BE,
-    ENCODING_UTF16LE,
-    StringHit,
-    scan_strings,
-)
+from crush.core.byte_strings import DEFAULT_MIN_CHARS, StringHit, scan_strings
 from crush.core.issues import ParseIssue
 from crush.core.sqlite_freelist import walk_freelist_pages
 from crush.core.sqlite_journal import parse_rollback_journal
@@ -110,10 +103,6 @@ _WAL_FRAME_HEADER_SIZE = 24
 
 FILE_LABELS = {FILE_BASE: "db file", FILE_WAL: "-wal file", FILE_JOURNAL: "-journal file"}
 
-# Database header offset 56, text encoding: 2 = UTF-16le, 3 = UTF-16be.
-# The -wal and -journal hold pages of the same database, so they follow it.
-_DECLARED_UTF16 = {2: ENCODING_UTF16LE, 3: ENCODING_UTF16BE}
-
 
 @dataclass(frozen=True, slots=True)
 class Region:
@@ -141,9 +130,6 @@ class FileStrings:
 @dataclass(slots=True)
 class SqliteStringsResult:
     min_chars: int
-    # The byte order searched with the full UTF-16 range because the db
-    # file's header (offset 56) declares UTF-16 text; None otherwise.
-    full_utf16: str | None = None
     files: list[FileStrings] = field(default_factory=list)
     problems: list[ParseIssue] = field(default_factory=list)
 
@@ -624,7 +610,6 @@ def scan_sqlite_strings(
             if page_size:
                 reserved = base_data[20]
                 usable = page_size - reserved
-                result.full_utf16 = _DECLARED_UTF16.get(_u32(base_data, 56))
             elif base_size:
                 problems.append(ParseIssue("strings.no_page_size"))
 
@@ -637,7 +622,7 @@ def scan_sqlite_strings(
 
         # --- base file -----------------------------------------------------
         if base_map is not None:
-            fs = FileStrings(FILE_BASE, base_size, scan_strings(base_data, min_chars, result.full_utf16))
+            fs = FileStrings(FILE_BASE, base_size, scan_strings(base_data, min_chars))
             if page_size:
                 walk_problems: list[ParseIssue] = []
                 roles = _walk_roles(read_base, page_count, page_size, usable,
@@ -654,7 +639,7 @@ def scan_sqlite_strings(
         # --- -wal ----------------------------------------------------------
         if wal_map is not None:
             wal_data, wal_size = wal_map
-            fs = FileStrings(FILE_WAL, wal_size, scan_strings(wal_data, min_chars, result.full_utf16))
+            fs = FileStrings(FILE_WAL, wal_size, scan_strings(wal_data, min_chars))
             if wal_size:
                 effective: _Roles | None = None
                 current_offsets: dict[int, int] = {}
@@ -685,7 +670,7 @@ def scan_sqlite_strings(
         # --- -journal ------------------------------------------------------
         if journal_map is not None:
             journal_data, journal_size = journal_map
-            fs = FileStrings(FILE_JOURNAL, journal_size, scan_strings(journal_data, min_chars, result.full_utf16))
+            fs = FileStrings(FILE_JOURNAL, journal_size, scan_strings(journal_data, min_chars))
             if journal_size:
                 fs.regions, journal_problems = _journal_regions(journal_data, journal_size, reserved)
                 problems.extend(journal_problems)

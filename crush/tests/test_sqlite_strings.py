@@ -217,31 +217,6 @@ def test_wal_without_header_is_reported(tmp_path: Path) -> None:
     assert [h.value for h in _file(result, "wal").hits] == ["stray text in a wal"]
 
 
-def test_declared_utf16_database_is_searched_with_full_range(tmp_path: Path) -> None:
-    db = tmp_path / "u16.db"
-    conn = sqlite3.connect(str(db))
-    conn.execute("PRAGMA encoding='UTF-16le'")
-    conn.execute("CREATE TABLE t (body TEXT)")
-    for text in ("Привет мир", "你好世界你好", "Hello World"):
-        conn.execute("INSERT INTO t VALUES (?)", (text,))
-    conn.commit()
-    conn.close()
-
-    result = scan_sqlite_strings(db)
-    assert result.full_utf16 == "UTF-16LE"
-    found = {(h.value, h.encoding) for h in _file(result, "base").hits}
-    for text in ("Привет мир", "你好世界你好", "Hello World"):
-        assert any(text in value and enc == "UTF-16LE (full range)" for value, enc in found)
-
-
-def test_utf8_database_keeps_the_latin1_utf16_rule(tmp_path: Path) -> None:
-    db = tmp_path / "t.db"
-    _make_db(db)
-    result = scan_sqlite_strings(db)
-    assert result.full_utf16 is None
-    assert not any("full range" in h.encoding for h in _file(result, "base").hits)
-
-
 def test_min_chars_threshold(tmp_path: Path) -> None:
     db = tmp_path / "t.db"
     _make_db(db)

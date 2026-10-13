@@ -17,15 +17,6 @@ whether the bytes are "really" text:
   Other scripts in UTF-16 are not found: almost every byte pair is a valid
   printable code unit, so the full range would turn binary data into
   "strings".
-- Full-range UTF-16, only for a byte order the caller names (*full_utf16*,
-  e.g. because the file itself declares UTF-16 text): every code unit except
-  C0/C1 controls (tab, LF, CR excepted), surrogates and U+FFFE/U+FFFF,
-  reported as "UTF-16LE (full range)" / "UTF-16BE (full range)" instead of
-  that order's Latin-1 scan. Runs are read in 2-byte steps at each of the two
-  byte alignments separately, so a run that would start one byte early can't
-  hide the correctly aligned reading; both readings are listed. In binary
-  data this finds many runs that are not text -- the label says which rule
-  found a run.
 - A run needs at least *min_chars* characters. That is a threshold, not a
   property of the data: shorter runs exist but are not listed.
 
@@ -46,8 +37,6 @@ ENCODING_ASCII = "ASCII"
 ENCODING_UTF8 = "UTF-8"
 ENCODING_UTF16LE = "UTF-16LE"
 ENCODING_UTF16BE = "UTF-16BE"
-ENCODING_UTF16LE_FULL = "UTF-16LE (full range)"
-ENCODING_UTF16BE_FULL = "UTF-16BE (full range)"
 
 # One alternative per character, so a {n,} quantifier counts characters.
 _UTF8_CHAR = (
@@ -67,15 +56,6 @@ _UTF8_CHAR = (
 # this class, so this finds exactly the same runs.
 _UTF8_BYTE_CLASS = rb"[\t\n\r\x20-\x7E\x80-\xBF\xC2-\xF4]"
 _UTF16_UNIT_BYTE = rb"[\t\n\r\x20-\x7E\xA0-\xFF]"
-# One full-range code unit, (low byte, high byte) for LE: high byte 00 only
-# with the printable low bytes above; 01-D7 and E0-FE with any low byte
-# (D8-DF are surrogates); FF with low byte 00-FD (no U+FFFE/U+FFFF).
-_UTF16LE_FULL_UNIT = (
-    _UTF16_UNIT_BYTE + rb"\x00|[\x00-\xFF][\x01-\xD7\xE0-\xFE]|[\x00-\xFD]\xFF"
-)
-_UTF16BE_FULL_UNIT = (
-    rb"\x00" + _UTF16_UNIT_BYTE + rb"|[\x01-\xD7\xE0-\xFE][\x00-\xFF]|\xFF[\x00-\xFD]"
-)
 _NON_ASCII = re.compile(rb"[\x80-\xFF]")
 
 
@@ -96,35 +76,12 @@ _CODECS = {
     ENCODING_UTF8: "utf-8",
     ENCODING_UTF16LE: "utf-16-le",
     ENCODING_UTF16BE: "utf-16-be",
-    ENCODING_UTF16LE_FULL: "utf-16-le",
-    ENCODING_UTF16BE_FULL: "utf-16-be",
 }
 
 
-def _aligned_runs(data: Any, unit: bytes, n: int, encoding: str) -> list[StringHit]:
-    """Runs of at least *n* *unit*s, read in 2-byte steps from offset 0 and,
-    separately, from offset 1 -- never shifting alignment within a pass."""
-    pattern = re.compile(rb"(?:[\x00-\xFF]{2})*?((?:" + unit + rb"){%d,})" % n)
-    hits: list[StringHit] = []
-    for start in (0, 1):
-        pos = start
-        while True:
-            match = pattern.match(data, pos)
-            if match is None:
-                break
-            raw = match.group(1)
-            hits.append(StringHit(match.start(1), len(raw), encoding, raw.decode(_CODECS[encoding])))
-            pos = match.end()
-    return hits
-
-
-def scan_strings(
-    data: Any, min_chars: int = DEFAULT_MIN_CHARS, full_utf16: str | None = None,
-) -> list[StringHit]:
+def scan_strings(data: Any, min_chars: int = DEFAULT_MIN_CHARS) -> list[StringHit]:
     """Every run in *data* (bytes, bytearray, memoryview or mmap) with at
-    least *min_chars* characters, ordered by offset (then encoding).
-    *full_utf16* (ENCODING_UTF16LE or ENCODING_UTF16BE) switches that byte
-    order to the full-range rule (see the module docstring)."""
+    least *min_chars* characters, ordered by offset (then encoding)."""
     n = max(1, int(min_chars))
     hits: list[StringHit] = []
 
@@ -138,15 +95,10 @@ def scan_strings(
             encoding = ENCODING_UTF8 if _NON_ASCII.search(raw) else ENCODING_ASCII
             hits.append(StringHit(base + match.start(), len(raw), encoding, raw.decode(_CODECS[encoding])))
 
-    for pattern, encoding, full_unit, full_encoding in (
-        (rb"(?:" + _UTF16_UNIT_BYTE + rb"\x00){%d,}", ENCODING_UTF16LE,
-         _UTF16LE_FULL_UNIT, ENCODING_UTF16LE_FULL),
-        (rb"(?:\x00" + _UTF16_UNIT_BYTE + rb"){%d,}", ENCODING_UTF16BE,
-         _UTF16BE_FULL_UNIT, ENCODING_UTF16BE_FULL),
+    for pattern, encoding in (
+        (rb"(?:" + _UTF16_UNIT_BYTE + rb"\x00){%d,}", ENCODING_UTF16LE),
+        (rb"(?:\x00" + _UTF16_UNIT_BYTE + rb"){%d,}", ENCODING_UTF16BE),
     ):
-        if full_utf16 == encoding:
-            hits.extend(_aligned_runs(data, full_unit, n, full_encoding))
-            continue
         for match in re.compile(pattern % n).finditer(data):
             raw = match.group()
             hits.append(StringHit(match.start(), len(raw), encoding, raw.decode(_CODECS[encoding])))

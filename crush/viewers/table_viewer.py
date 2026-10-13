@@ -3604,26 +3604,19 @@ class TableViewer(QWidget):
             self._row_count_label.setText(
                 translate("TableViewer", "({count:,} strings)").format(count=total)
             )
-        explanation = translate(
-            "TableViewer",
-            "Text runs in the raw bytes of the db file, -wal and -journal file. "
-            "ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed "
-            "multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and "
-            "U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. "
-            "Runs shorter than the minimum length are not listed. "
-            "\"type byte only\": no walk from the schema reaches this page copy; its kind "
-            "comes from its own b-tree type byte. With Show Hex on, selecting a row "
-            "marks the string in its file.",
-        )
-        if result.full_utf16:
-            explanation += " " + translate(
+        self._sql_status.setText(
+            translate(
                 "TableViewer",
-                "The database header declares {encoding} text, so that byte order is "
-                "searched with the full UTF-16 range (\"full range\" rows, every script, "
-                "both byte alignments); in binary bytes this also finds runs that are "
-                "not text.",
-            ).format(encoding=result.full_utf16)
-        self._sql_status.setText(explanation)
+                "Text runs in the raw bytes of the db file, -wal and -journal file. "
+                "ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed "
+                "multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and "
+                "U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. "
+                "Runs shorter than the minimum length are not listed. "
+                "\"type byte only\": no walk from the schema reaches this page copy; its kind "
+                "comes from its own b-tree type byte. With Show Hex on, selecting a row "
+                "marks the string in its file.",
+            )
+        )
 
     def _activate_strings_model(self, model: _StringsModel) -> None:
         """Show *model* through the proxy (the way _load_table_from_query()
