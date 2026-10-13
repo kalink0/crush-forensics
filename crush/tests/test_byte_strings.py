@@ -68,6 +68,36 @@ def test_utf16_outside_latin1_is_not_found() -> None:
     assert [h for h in _found(data) if h[2] == "UTF-16LE"] == []
 
 
+def test_full_range_utf16_only_for_the_named_byte_order() -> None:
+    text = "Привет мир 你好"
+    le = text.encode("utf-16-le")
+    full = [h for h in scan_strings(le, 4, bs.ENCODING_UTF16LE)
+            if h.encoding == bs.ENCODING_UTF16LE_FULL]
+    assert (0, len(le), text) in [(h.offset, h.length, h.value) for h in full]
+    # Without the switch, and for the other byte order, the Latin-1 rule applies.
+    assert not [h for h in scan_strings(le, 4) if "При" in h.value]
+    be = text.encode("utf-16-be")
+    assert not [h for h in scan_strings(be, 4, bs.ENCODING_UTF16LE) if h.value == text]
+
+
+def test_full_range_utf16_reads_both_alignments_separately() -> None:
+    """A byte before the text that pairs into a valid code unit must not
+    shift the reading: the correctly aligned run is listed as well."""
+    text = "Привет мир"
+    data = b"\x41" + text.encode("utf-16-le") + b"\x00\x00"
+    values = {(h.offset, h.value) for h in scan_strings(data, 4, bs.ENCODING_UTF16LE)
+              if h.encoding == bs.ENCODING_UTF16LE_FULL}
+    assert (1, text) in values
+
+
+def test_full_range_utf16_excludes_controls_and_surrogates() -> None:
+    data = "abcd".encode("utf-16-le") + b"\x01\x00" + "efgh".encode("utf-16-le") \
+        + b"\x00\xd8" + "ijkl".encode("utf-16-le")
+    values = [h.value for h in scan_strings(data, 4, bs.ENCODING_UTF16LE)
+              if h.encoding == bs.ENCODING_UTF16LE_FULL and h.offset % 2 == 0]
+    assert values == ["abcd", "efgh", "ijkl"]
+
+
 def test_utf16_same_bytes_also_read_shifted_are_both_listed() -> None:
     data = "abcde".encode("utf-16-le") + b"\x00"
     encodings = {h[2] for h in _found(data)}

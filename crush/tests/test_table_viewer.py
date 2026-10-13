@@ -1457,12 +1457,16 @@ def test_strings_view_min_length_filter_and_sort(qapp, widgets, tmp_path: Path) 
     value_col = _find_column(model, "Value")
 
     tv._search.setText("canary03")  # case-insensitive, like every view's filter
+    assert tv._strings_filter_timer.isActive()  # applied after a pause in typing
+    assert model.rowCount() == all_rows
+    tv._apply_filter(tv._search.text())  # what the timer does
     assert model.rowCount() >= 1
     assert all(
         "CANARY03" in model.data(model.index(r, value_col)) for r in range(model.rowCount())
     )
     assert "of" in tv._row_count_label.text()
     tv._search.setText("")
+    tv._apply_filter("")
     assert model.rowCount() == all_rows
 
     length_col = _find_column(model, "Length (B)")
@@ -1499,6 +1503,51 @@ def test_strings_view_says_when_nothing_is_found(qapp, widgets, tmp_path: Path) 
     model = tv._table_view.model()
     assert model.rowCount() == 1
     assert "No strings of at least 100000 characters found" in model.data(model.index(0, 0))
+
+
+def test_strings_view_does_not_claim_a_search_when_nothing_was_read(
+    qapp, widgets, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "gone.db"
+    _make_single_delete_db(db_path)
+    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="gone.db"))
+    db_path.unlink()  # unreadable by the time the view scans
+    _open_strings(tv)
+    model = tv._table_view.model()
+    assert "nothing was searched" in model.data(model.index(0, 0))
+    assert "could not be read" in tv._source_status.text()
+
+
+def test_strings_hex_offset_lookup_matches_a_full_walk(qapp, widgets, tmp_path: Path) -> None:
+    db_path = tmp_path / "single_delete.db"
+    _make_single_delete_db(db_path)
+    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="single_delete.db"))
+    _open_strings(tv)
+    model = tv._strings_model
+    size = db_path.stat().st_size
+
+    def walk(offset: int) -> int | None:
+        for row in range(model.rowCount()):
+            fs, _fi, hi = model._locate(row)
+            hit = fs.hits[hi]
+            if fs.file_kind == "base" and hit.offset <= offset < hit.end:
+                return row
+        return None
+
+    assert not model._sorted and not model._filter  # the bisection path
+    for offset in range(0, size, 7):
+        assert model.row_for_offset("base", offset) == walk(offset)
+
+
+def test_every_strings_region_word_is_marked_for_translation() -> None:
+    import crush.core.sqlite_strings as ss
+    from crush.viewers.table_viewer import _STRINGS_REGION_WORDS
+
+    words = {
+        value for name, value in vars(ss).items()
+        if name.startswith(("KIND_", "AREA_")) and isinstance(value, str)
+    }
+    assert words and words <= set(_STRINGS_REGION_WORDS)
 
 
 def test_leaving_strings_view_restores_normal_tables(qapp, widgets, tmp_path: Path) -> None:

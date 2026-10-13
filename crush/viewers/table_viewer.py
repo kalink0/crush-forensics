@@ -83,7 +83,7 @@ from crush.core.sqlite_structure import (
     build_page_detail_nodes,
     build_sqlite_structure_tree,
 )
-from crush.core.sqlite_strings import scan_sqlite_strings
+from crush.core.sqlite_strings import ATTRIBUTION_TYPE_BYTE, scan_sqlite_strings
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     SqliteCellLocator,
@@ -445,7 +445,7 @@ def _strings_region_pair(region: Any) -> tuple[str, str]:
             QT_TRANSLATE_NOOP("GeneratedView", "journal record {segment}/{record}"),
             segment=region.record[0], record=region.record[1],
         ))
-    if region.attribution == "type byte":
+    if region.attribution == ATTRIBUTION_TYPE_BYTE:
         parts.append(_Gen(
             QT_TRANSLATE_NOOP("GeneratedView", "{kind} (type byte only)"), kind=_Gen(region.kind),
         ))
@@ -455,6 +455,81 @@ def _strings_region_pair(region: Any) -> tuple[str, str]:
         parts.append(_Gen(region.area))
     pairs = [p.pair() for p in parts]
     return ", ".join(e for e, _d in pairs), ", ".join(d for _e, d in pairs)
+
+
+class _StringsTexts:
+    """Cell texts of the Strings view for one SqliteStringsResult, rows
+    numbered across its files. Holds no Qt objects, so the scan's worker
+    thread can build the filter text of every row (build_haystack()) along
+    with the scan -- translate() is thread-safe."""
+
+    COLUMNS = 7
+
+    def __init__(self, result: Any) -> None:
+        self.files = list(result.files)
+        self.starts: list[int] = []
+        total = 0
+        for fs in self.files:
+            self.starts.append(total)
+            total += len(fs.hits)
+        self.total = total
+        self.haystack: list[str] = []
+        self._region_text: dict[tuple[int, int], tuple[str, str]] = {}
+
+    def locate(self, g: int) -> tuple[Any, int, int]:
+        """(FileStrings, file index, hit index) of row *g*."""
+        fi = bisect.bisect_right(self.starts, g) - 1
+        return self.files[fi], fi, g - self.starts[fi]
+
+    def regions_pair(self, fi: int, fs: Any, hi: int) -> tuple[str, str]:
+        english: list[str] = []
+        display: list[str] = []
+        for ri in fs.hit_regions[hi]:
+            pair = self._region_text.get((fi, ri))
+            if pair is None:
+                pair = _strings_region_pair(fs.regions[ri])
+                self._region_text[(fi, ri)] = pair
+            english.append(pair[0])
+            display.append(pair[1])
+        return " | ".join(english), " | ".join(display)
+
+    @staticmethod
+    def pages(fs: Any, hi: int) -> list[int]:
+        pages: list[int] = []
+        for ri in fs.hit_regions[hi]:
+            page = fs.regions[ri].page
+            if page is not None and page not in pages:
+                pages.append(page)
+        return pages
+
+    def cell(self, fs: Any, fi: int, hi: int, col: int) -> tuple[str, str]:
+        """(English, display) text of one cell."""
+        hit = fs.hits[hi]
+        if col == 0:
+            return _Gen(_STRINGS_FILE_LABELS[fs.file_kind]).pair()
+        if col == 1:
+            text = str(hit.offset)
+        elif col == 2:
+            text = str(hit.length)
+        elif col == 3:
+            text = hit.encoding
+        elif col == 4:
+            text = ", ".join(str(p) for p in self.pages(fs, hi))
+        elif col == 5:
+            return self.regions_pair(fi, fs, hi)
+        else:
+            text = hit.value
+        return text, text
+
+    def build_haystack(self) -> None:
+        """Every row's shown cell texts, case-folded, for the filter."""
+        haystack: list[str] = []
+        for fi, fs in enumerate(self.files):
+            for hi in range(len(fs.hits)):
+                haystack.append("\x00".join(
+                    self.cell(fs, fi, hi, col)[1] for col in range(self.COLUMNS)
+                ).casefold())
+        self.haystack = haystack
 
 
 class _StringsModel(QAbstractTableModel):
@@ -474,69 +549,25 @@ class _StringsModel(QAbstractTableModel):
         QT_TRANSLATE_NOOP("GeneratedView", "Region"),
         QT_TRANSLATE_NOOP("GeneratedView", "Value"),
     )
-    _VALUE_COL = 6
 
-    def __init__(self, result: Any, parent: QObject | None = None) -> None:
+    def __init__(self, texts: _StringsTexts, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._files = list(result.files)
-        self._starts: list[int] = []
-        total = 0
-        for fs in self._files:
-            self._starts.append(total)
-            total += len(fs.hits)
-        self._total = total
-        self._order: list[int] = list(range(total))
+        self._t = texts
+        self._order: list[int] = list(range(texts.total))
         self._rows: list[int] = self._order
+        self._sorted = False
         self._filter = ""
-        self._haystack: list[str] | None = None
-        self._region_text: dict[tuple[int, int], tuple[str, str]] = {}
+        # Per file: hit start offsets and the longest hit (see row_for_offset).
+        self._hit_starts: dict[int, tuple[list[int], int]] = {}
 
     def total_rows(self) -> int:
-        return self._total
+        return self._t.total
 
     def _locate(self, row: int) -> tuple[Any, int, int]:
-        g = self._rows[row]
-        fi = bisect.bisect_right(self._starts, g) - 1
-        return self._files[fi], fi, g - self._starts[fi]
-
-    def _regions_pair(self, fi: int, fs: Any, hi: int) -> tuple[str, str]:
-        english: list[str] = []
-        display: list[str] = []
-        for ri in fs.hit_regions[hi]:
-            pair = self._region_text.get((fi, ri))
-            if pair is None:
-                pair = _strings_region_pair(fs.regions[ri])
-                self._region_text[(fi, ri)] = pair
-            english.append(pair[0])
-            display.append(pair[1])
-        return " | ".join(english), " | ".join(display)
-
-    def _pages(self, fs: Any, hi: int) -> list[int]:
-        pages: list[int] = []
-        for ri in fs.hit_regions[hi]:
-            page = fs.regions[ri].page
-            if page is not None and page not in pages:
-                pages.append(page)
-        return pages
+        return self._t.locate(self._rows[row])
 
     def _cell(self, fs: Any, fi: int, hi: int, col: int) -> tuple[str, str]:
-        """(English, display) text of one cell."""
-        hit = fs.hits[hi]
-        if col == 0:
-            return _Gen(_STRINGS_FILE_LABELS[fs.file_kind]).pair()
-        if col == 1:
-            text = str(hit.offset)
-        elif col == 2:
-            text = str(hit.length)
-        elif col == 3:
-            text = hit.encoding
-        elif col == 4:
-            text = ", ".join(str(p) for p in self._pages(fs, hi))
-        elif col == 5:
-            return self._regions_pair(fi, fs, hi)
-        else:
-            text = hit.value
-        return text, text
+        return self._t.cell(fs, fi, hi, col)
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._rows)
@@ -589,9 +620,7 @@ class _StringsModel(QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
 
         def key(g: int) -> Any:
-            fi = bisect.bisect_right(self._starts, g) - 1
-            fs = self._files[fi]
-            hi = g - self._starts[fi]
+            fs, fi, hi = self._t.locate(g)
             hit = fs.hits[hi]
             if column == 0:
                 return (fi, hit.offset)
@@ -602,15 +631,16 @@ class _StringsModel(QAbstractTableModel):
             if column == 3:
                 return hit.encoding
             if column == 4:
-                pages = self._pages(fs, hi)
+                pages = self._t.pages(fs, hi)
                 return pages[0] if pages else -1
             if column == 5:
-                return self._regions_pair(fi, fs, hi)[1]
+                return self._t.regions_pair(fi, fs, hi)[1]
             return hit.value.casefold()
 
         self._order = sorted(
-            range(self._total), key=key, reverse=order == Qt.SortOrder.DescendingOrder
+            range(self._t.total), key=key, reverse=order == Qt.SortOrder.DescendingOrder
         )
+        self._sorted = True
         self._apply_filter_rows()
         self.layoutChanged.emit()
 
@@ -627,29 +657,45 @@ class _StringsModel(QAbstractTableModel):
         if not self._filter:
             self._rows = self._order
             return
-        if self._haystack is None:
-            haystack = []
-            for fi, fs in enumerate(self._files):
-                for hi in range(len(fs.hits)):
-                    haystack.append("\x00".join(
-                        self._cell(fs, fi, hi, col)[1] for col in range(len(self._HEADERS))
-                    ).casefold())
-            self._haystack = haystack
+        if len(self._t.haystack) != self._t.total:
+            self._t.build_haystack()  # normally done on the scan's worker thread
         needle = self._filter
-        hay = self._haystack
+        hay = self._t.haystack
         self._rows = [g for g in self._order if needle in hay[g]]
 
     def row_for_offset(self, file_kind: str, offset: int) -> int | None:
-        """The first shown row whose string covers *offset* in *file_kind*."""
+        """The first shown row whose string covers *offset* in *file_kind*.
+        In scan order (not sorted, not filtered) rows are ordered by offset
+        within each file, so the candidates are found by bisection."""
+        if not self._sorted and not self._filter:
+            for fi, fs in enumerate(self._t.files):
+                if fs.file_kind != file_kind:
+                    continue
+                starts, longest = self._file_hit_starts(fi, fs)
+                lo = bisect.bisect_left(starts, offset - longest + 1)
+                hi_end = bisect.bisect_right(starts, offset)
+                for hi in range(lo, hi_end):
+                    if fs.hits[hi].end > offset:
+                        return self._t.starts[fi] + hi
+            return None
         for row, g in enumerate(self._rows):
-            fi = bisect.bisect_right(self._starts, g) - 1
-            fs = self._files[fi]
+            fs, _fi, hi = self._t.locate(g)
             if fs.file_kind != file_kind:
                 continue
-            hit = fs.hits[g - self._starts[fi]]
+            hit = fs.hits[hi]
             if hit.offset <= offset < hit.end:
                 return row
         return None
+
+    def _file_hit_starts(self, fi: int, fs: Any) -> tuple[list[int], int]:
+        cached = self._hit_starts.get(fi)
+        if cached is None:
+            cached = (
+                [h.offset for h in fs.hits],
+                max((h.length for h in fs.hits), default=1),
+            )
+            self._hit_starts[fi] = cached
+        return cached
 
 
 def _cap_columns(view: QTableView) -> None:
@@ -1139,7 +1185,7 @@ class TableViewer(QWidget):
         self._strings_label = QT_TRANSLATE_NOOP("GeneratedView", "Strings (generated)")
         # The last scan, keyed by its minimum length, and the model showing
         # it while the Strings view is active (see _load_strings()).
-        self._strings_cache: tuple[int, Any] | None = None
+        self._strings_cache: tuple[int, Any, _StringsTexts] | None = None
         self._strings_model: _StringsModel | None = None
         self._strings_active = False
         self._journal_result_cache: JournalParseResult | None = None
@@ -1306,7 +1352,15 @@ class TableViewer(QWidget):
         self._search.setPlaceholderText(translate("TableViewer", "Filter rows…"))
         self._search.setClearButtonEnabled(True)
         self._search.setMinimumWidth(self._search.fontMetrics().horizontalAdvance("0" * 20) + 12)
-        self._search.textChanged.connect(self._apply_filter)
+        self._search.textChanged.connect(self._on_search_text_changed)
+        # The Strings view filters in Python over every row: wait for a
+        # pause in typing there (same 200 ms as TreeViewer's filter).
+        self._strings_filter_timer = QTimer(self)
+        self._strings_filter_timer.setSingleShot(True)
+        self._strings_filter_timer.setInterval(200)
+        self._strings_filter_timer.timeout.connect(
+            lambda: self._apply_filter(self._search.text())
+        )
         search_row.addWidget(self._search, stretch=1)
 
         self._hex_toggle_btn = QPushButton(translate("TableViewer", "Show Hex"))
@@ -3493,19 +3547,24 @@ class TableViewer(QWidget):
             return
 
         min_chars = self._strings_min.value()
-        result = None
         if self._strings_cache is not None and self._strings_cache[0] == min_chars:
-            result = self._strings_cache[1]
+            _min, result, texts = self._strings_cache
         else:
             db_path = self._db_path
             wal_path = Path(str(db_path) + "-wal")
             wal = wal_path if wal_path.exists() else None
             journal = self._journal_path
+
+            def _work() -> tuple[Any, _StringsTexts]:
+                scanned = scan_sqlite_strings(db_path, wal, journal, min_chars)
+                # The filter text too, so the first keystroke doesn't build it.
+                cell_texts = _StringsTexts(scanned)
+                cell_texts.build_haystack()
+                return scanned, cell_texts
+
             try:
-                result = busy_call(
-                    self,
-                    translate("TableViewer", "Scanning for strings…"),
-                    lambda: scan_sqlite_strings(db_path, wal, journal, min_chars),
+                result, texts = busy_call(
+                    self, translate("TableViewer", "Scanning for strings…"), _work,
                 )
             except RuntimeError as exc:
                 self._sql_status.setStyleSheet("color: red;")
@@ -3516,40 +3575,55 @@ class TableViewer(QWidget):
                 )
                 self._row_count_label.setText("")
                 return
-            self._strings_cache = (min_chars, result)
+            self._strings_cache = (min_chars, result, texts)
 
         self._set_source_status(result.problems)
-        total = sum(len(fs.hits) for fs in result.files)
+        total = texts.total
         if not total:
             _set_headers(self._source_model, _gens(self._strings_label))
-            item = _gen_item(_Gen(
-                QT_TRANSLATE_NOOP(
-                    "GeneratedView", "No strings of at least {count} characters found"
-                ),
-                count=min_chars,
-            ))
+            item = _gen_item(
+                _Gen(
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView", "No strings of at least {count} characters found"
+                    ),
+                    count=min_chars,
+                )
+                if result.files
+                # Not one file could be read: nothing was searched (the
+                # reason is in the status line above).
+                else _Gen(QT_TRANSLATE_NOOP(
+                    "GeneratedView", "No file could be read -- nothing was searched"
+                ))
+            )
             item.setEditable(False)
             self._source_model.appendRow([item])
             self._row_count_label.setText("")
         else:
-            self._activate_strings_model(_StringsModel(result, self))
+            self._activate_strings_model(_StringsModel(texts, self))
             self._resize_and_cap()
             self._row_count_label.setText(
                 translate("TableViewer", "({count:,} strings)").format(count=total)
             )
-        self._sql_status.setText(
-            translate(
-                "TableViewer",
-                "Text runs in the raw bytes of the db file, -wal and -journal file. "
-                "ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed "
-                "multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and "
-                "U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. "
-                "Runs shorter than the minimum length are not listed. "
-                "\"type byte only\": no walk from the schema reaches this page copy; its kind "
-                "comes from its own b-tree type byte. With Show Hex on, selecting a row "
-                "marks the string in its file.",
-            )
+        explanation = translate(
+            "TableViewer",
+            "Text runs in the raw bytes of the db file, -wal and -journal file. "
+            "ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed "
+            "multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and "
+            "U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. "
+            "Runs shorter than the minimum length are not listed. "
+            "\"type byte only\": no walk from the schema reaches this page copy; its kind "
+            "comes from its own b-tree type byte. With Show Hex on, selecting a row "
+            "marks the string in its file.",
         )
+        if result.full_utf16:
+            explanation += " " + translate(
+                "TableViewer",
+                "The database header declares {encoding} text, so that byte order is "
+                "searched with the full UTF-16 range (\"full range\" rows, every script, "
+                "both byte alignments); in binary bytes this also finds runs that are "
+                "not text.",
+            ).format(encoding=result.full_utf16)
+        self._sql_status.setText(explanation)
 
     def _activate_strings_model(self, model: _StringsModel) -> None:
         """Show *model* through the proxy (the way _load_table_from_query()
@@ -4131,6 +4205,12 @@ class TableViewer(QWidget):
         )
         self._sql_input.setPlainText("PRAGMA integrity_check;")  # i18n: keep -- SQL
         self._sql_status.setText("")
+
+    def _on_search_text_changed(self, text: str) -> None:
+        if self._strings_active:
+            self._strings_filter_timer.start()
+            return
+        self._apply_filter(text)
 
     def _apply_filter(self, text: str) -> None:
         # File Structure has no text search of its own -- see _load_file_structure's

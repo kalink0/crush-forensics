@@ -263,9 +263,11 @@ class TreeViewer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Toolbar, two rows (Expand/Collapse, then search + Show Hex): narrow
-        # enough to sit above the tree half only when there is a Hex view,
-        # so the filter stays next to the rows it filters.
+        # Toolbar. With a Hex view it sits above the tree half only (so the
+        # filter stays next to the rows it filters) and takes two rows --
+        # Expand/Collapse, then search + Show Hex -- to stay narrow; without
+        # one it is a single full-width row as before.
+        has_hex = self._raw is not None
         toolbar = QWidget()
         toolbar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         tb_rows = QVBoxLayout(toolbar)
@@ -281,24 +283,32 @@ class TreeViewer(QWidget):
         self._collapse_all_btn.clicked.connect(self._collapse_all)
         buttons_row.addWidget(self._collapse_all_btn)
         buttons_row.addStretch()
-        tb_layout = QHBoxLayout()
-        tb_layout.setSpacing(8)
-        tb_rows.addLayout(tb_layout)
+        if has_hex:
+            tb_layout = QHBoxLayout()
+            tb_layout.setSpacing(8)
+            tb_rows.addLayout(tb_layout)
+        else:
+            tb_layout = buttons_row
         tb_layout.addWidget(QLabel(translate("TreeViewer", "Search:")))
 
         self._search = QLineEdit()
         self._search.setPlaceholderText(translate("TreeViewer", "Filter keys / values…"))
         self._search.setClearButtonEnabled(True)
-        self._search.setMinimumWidth(self._search.fontMetrics().horizontalAdvance("0" * 20) + 12)
+        if has_hex:
+            self._search.setMinimumWidth(
+                self._search.fontMetrics().horizontalAdvance("0" * 20) + 12
+            )
+        else:
+            self._search.setFixedWidth(200)
         # Each filter pass walks the whole tree: wait for a pause in typing.
         self._filter_timer = QTimer(self)
         self._filter_timer.setSingleShot(True)
         self._filter_timer.setInterval(200)
         self._filter_timer.timeout.connect(lambda: self._apply_filter(self._search.text()))
         self._search.textChanged.connect(lambda _text: self._filter_timer.start())
-        tb_layout.addWidget(self._search, stretch=1)
+        tb_layout.addWidget(self._search, stretch=1 if has_hex else 0)
         self._hex_toggle_btn: QPushButton | None = None
-        if self._raw is not None:
+        if has_hex:
             self._hex_toggle_btn = QPushButton(translate("TreeViewer", "Show Hex"))
             self._hex_toggle_btn.clicked.connect(self._toggle_hex_view)
             tb_layout.addWidget(self._hex_toggle_btn)

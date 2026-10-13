@@ -24,7 +24,6 @@ All notable changes to Crush will be documented in this file.
 
 - Fixed the Hex pane's search field shrinking to a few characters next to a table or tree and in narrow tabs.
 - Fixed the filter field of the SQLite Table, Tree and Protobuf viewers sitting above the Hex pane instead of above the rows it filters.
-
 - Fixed the Tools menu showing Paste & Decode without its "&" (a blank on macOS, an underscore on Linux).
 - Fixed the BLOB Inspector's zlib and lzfse steps dropping bytes after the end of the stream without saying so; gzip failed on them.
 - Fixed the BLOB Inspector's Base64 and hex decoding skipping characters that don't belong instead of failing.
