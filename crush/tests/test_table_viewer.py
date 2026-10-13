@@ -1508,10 +1508,12 @@ def test_strings_view_says_when_nothing_is_found(qapp, widgets, tmp_path: Path) 
 def test_strings_view_does_not_claim_a_search_when_nothing_was_read(
     qapp, widgets, tmp_path: Path
 ) -> None:
-    db_path = tmp_path / "gone.db"
+    db_path = tmp_path / "single_delete.db"
     _make_single_delete_db(db_path)
-    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="gone.db"))
-    db_path.unlink()  # unreadable by the time the view scans
+    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="single_delete.db"))
+    # Unreadable by the time the view scans. Not by deleting the file: the
+    # viewer holds it open, and Windows refuses to delete an open file.
+    tv._db_path = tmp_path / "missing.db"
     _open_strings(tv)
     model = tv._table_view.model()
     assert "nothing was searched" in model.data(model.index(0, 0))
