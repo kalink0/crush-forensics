@@ -59,7 +59,10 @@ def test_name_column_grows_on_expand(qapp, widgets) -> None:  # noqa: ANN001
     view.expand(view.model().index(0, 0))
     _settle()
     assert view.columnWidth(0) > 160
-    assert view.columnWidth(0) >= view.sizeHintForColumn(0)
+    # As wide as the name needs, or as the room the other columns leave -- which
+    # one applies depends on the platform's font metrics (Windows measures wider).
+    available = view.viewport().width() - view.columnWidth(1) - view.columnWidth(2)
+    assert view.columnWidth(0) == min(view.sizeHintForColumn(0), available)
 
 
 def test_name_column_leaves_room_for_other_columns(qapp, widgets) -> None:  # noqa: ANN001
