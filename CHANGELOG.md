@@ -18,8 +18,12 @@ All notable changes to Crush will be documented in this file.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
 - Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
 - Added to the MMKV viewer -> Support for record counts on the state filter buttons.
+- Added to the SQLite Table viewer -> Support for a Strings view of the database, -wal and -journal file, with each string's page and region.
 
 ### Bug Fixes
+
+- Fixed the Hex pane's search field shrinking to a few characters next to a table or tree and in narrow tabs.
+- Fixed the filter field of the SQLite Table, Tree and Protobuf viewers sitting above the Hex pane instead of above the rows it filters.
 
 - Fixed the Tools menu showing Paste & Decode without its "&" (a blank on macOS, an underscore on Linux).
 - Fixed the BLOB Inspector's zlib and lzfse steps dropping bytes after the end of the stream without saying so; gzip failed on them.

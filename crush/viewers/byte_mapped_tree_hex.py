@@ -35,10 +35,13 @@ class ByteMappedTreeHex(QWidget):
         range_for_item: ByteRangeGetter,
         highlight_ranges_for_item: ByteRangesGetter | None = None,
         selection_changed: TreeSelectionCallback | None = None,
+        header: QWidget | None = None,
         footer: QWidget | None = None,
         hex_visible: bool = True,
         parent: QWidget | None = None,
     ) -> None:
+        """*header* / *footer* sit above / below the tree, in the tree's
+        half of the split (e.g. the caller's toolbar with its filter)."""
         super().__init__(parent)
         self._tree = tree
         self._model = model
@@ -55,6 +58,8 @@ class ByteMappedTreeHex(QWidget):
         tree_layout = QVBoxLayout(tree_panel)
         tree_layout.setContentsMargins(0, 0, 0, 0)
         tree_layout.setSpacing(0)
+        if header is not None:
+            tree_layout.addWidget(header)
         tree_layout.addWidget(tree)
         if footer is not None:
             tree_layout.addWidget(footer)

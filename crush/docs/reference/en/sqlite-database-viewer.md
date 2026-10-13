@@ -60,6 +60,16 @@ Always shown. Displays the raw bytes sitting in the gap between a page's cell-po
 
 Freeblocks and Unallocated Space rows can also be double-clicked to open that row's whole containing page as an isolated tab in the Hex Viewer, same as Freelist Recovery above.
 
+#### Strings
+
+Always shown. Lists every text run in the raw bytes of the database file and, when present, its `-wal` and `-journal` file — one row per run at its own offset: equal values are not merged, nothing is trimmed, and there is no cap on the number of rows. Each row shows the file, offset and length in bytes, encoding, page, the region its bytes sit in, and the value.
+
+- **Encodings:** ASCII and UTF-8 (printable characters plus tab, LF and CR, and any well-formed multi-byte UTF-8 character; one row per run, labelled ASCII when it holds no multi-byte character), and UTF-16LE / UTF-16BE (only U+0020–U+007E and U+00A0–U+00FF plus tab, LF and CR, at even and odd offsets). Other scripts in UTF-16 are not found. The same bytes can show up both as a UTF-16LE run and, one byte shifted, as a UTF-16BE run; both are listed.
+- **Min. length** (toolbar, default 4 characters) is a threshold: shorter runs exist in the file but are not listed. Changing it scans again.
+- **Region** comes from the file format: in the database file the b-trees are walked from `sqlite_master`, overflow pages are the chains their cells point to, the freelist is its trunk chain, and pointer-map and lock-byte pages follow from the header and page size. On b-tree pages the area is named too: database header, page header, cell pointer array, unallocated, freeblock, cell content area, reserved bytes. In the `-wal`, the header and frame headers are their own regions, and a frame's page is labelled with its frame number and status; the frame the database currently reads a page from gets that page's role from the same walk with the `-wal` applied. A page copy no walk reaches — an older WAL frame, a journal record, an orphaned page — is labelled from its own b-tree type byte and marked **(type byte only)**. A string that runs across regions lists each of them.
+
+With **Show Hex** on, selecting a row marks the string's bytes in its own file (switching between database, `-wal` and `-journal` file as needed), and clicking a byte inside a string selects its row. A file that can't be read, an empty companion file, or a chain that couldn't be followed is named in the status line above the table.
+
 #### File Structure (generated)
 
 Always shown. A physical, page-by-page view of the database file itself — header fields, B-tree page headers, cell-pointer arrays, individual cells, freeblocks, and unallocated space — independent of the logical table/row view the other generated pages give you. Each page's own row/column detail is decoded lazily, only the first time you expand it, so opening a database with many rows stays responsive instead of decoding everything up front. Selecting a structure item and the embedded Show Hex pane (see below) stay in sync in both directions.
@@ -72,6 +82,7 @@ The table view, WAL Frames, and File Structure pages all have a **Show Hex** tog
 
 - **Table view:** selecting a cell highlights its whole row (pale) and that column's own bytes (stronger, drawn on top). A row or value that spans overflow pages is highlighted on every page, all pieces of it in the same colour. A row whose current version is only in a not-yet-checkpointed `-wal` frame switches the pane to that file instead of the base file's stale bytes. A **Show WAL history** row (see above) gets the same column-precise treatment, keyed by its own frame bytes rather than a rowid.
 - **WAL Frames:** selecting a frame highlights its exact header+page bytes in the `-wal` file.
+- **Strings:** selecting a row highlights the string's exact bytes in its own file.
 - **File Structure:** selecting any structure item — a header field, a page, a cell, a freeblock, an unallocated-space gap — highlights its exact bytes (a column value on overflow pages on every page, in one colour), across whichever of the base file or `-wal` file it actually lives in.
 
 Freelist Recovery does not have the embedded Show Hex pane (its rows use double-click to open the whole containing page in an isolated tab instead, see above).

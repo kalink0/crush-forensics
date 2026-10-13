@@ -1700,6 +1700,54 @@ MESSAGES: dict[str, str] = {
         "only pages in the -wal file were attributed",
         "sqlite_wal.table_map_no_file",
     ),
+    # -- SQLite Strings tab (sqlite_strings.py) ------------------------------
+    "strings.file_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The {file} could not be read; its strings are not listed: {detail}",
+        "strings.file_unreadable",
+    ),
+    "strings.file_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The {file} is empty (0 B)",
+        "strings.file_empty",
+    ),
+    "strings.no_page_size": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The db file has no valid SQLite header page size; its strings are listed "
+        "without page attribution",
+        "strings.no_page_size",
+    ),
+    "strings.wal_no_header": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The -wal file has no valid WAL header; its strings are listed without frame "
+        "attribution",
+        "strings.wal_no_header",
+    ),
+    "strings.journal_no_header": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The -journal file has no valid journal header ({reason}); its strings are listed "
+        "without record attribution",
+        "strings.journal_no_header",
+    ),
+    "strings.child_out_of_range": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{file}: a b-tree points to page {page:,}, outside the {pages:,} pages; "
+        "not followed",
+        "strings.child_out_of_range",
+    ),
+    "strings.overflow_chain_stopped": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{file}: an overflow chain from page {page:,} leads to page {target:,}, outside the "
+        "database or already part of a chain; not followed further, later pages of that "
+        "chain are not labelled as overflow",
+        "strings.overflow_chain_stopped",
+    ),
+    "strings.freeblock_chain_stopped": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{file}, page {page:,}: the freeblock chain is inconsistent at offset {offset:,}; "
+        "later freeblocks on this page are labelled as cell content area",
+        "strings.freeblock_chain_stopped",
+    ),
     # -- SQLite File Structure tab -------------------------------------------
     "sqlite_structure.page_size_unavailable": QT_TRANSLATE_NOOP(
         "ParseIssue",

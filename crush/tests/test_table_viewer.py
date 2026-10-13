@@ -1386,3 +1386,134 @@ def test_standalone_journal_show_hex_and_row_provenance_end_to_end(qapp, tmp_pat
     start, end = tv._hex_viewer._focus_ranges[0]
     assert b"before-crash" in journal_bytes[start:end]
     tv.close()  # shown widgets need an explicit close(), not just going out of scope
+
+
+# -- Strings view ------------------------------------------------------------
+
+_STRINGS = "Strings (generated)"
+
+
+def _open_strings(tv: TableViewer) -> None:
+    tv._table_combo.setCurrentIndex(tv._table_combo.findData(_STRINGS))
+    assert tv._current_table() == _STRINGS
+
+
+def _select(tv: TableViewer, row: int, col: int = 0) -> None:
+    tv._table_view.setCurrentIndex(tv._table_view.model().index(row, col))
+
+
+def test_strings_view_lists_db_and_wal_strings_and_marks_them_in_hex(
+    qapp, widgets, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "live.db"
+    writer = _make_live_wal_db(db_path)
+    try:
+        tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="live.db"))
+        tv.show()
+        _open_strings(tv)
+        assert tv._strings_min.isVisible()
+        model = tv._table_view.model()
+        assert model.rowCount() > 0
+        file_col, value_col = _find_column(model, "File"), _find_column(model, "Value")
+        region_col = _find_column(model, "Region")
+
+        # A string only in the -wal: selecting it switches the Hex pane to
+        # the -wal file and marks exactly its bytes there.
+        tv._toggle_hex_pane()
+        row = _find_row_containing(model, value_col, "hello-wal-content")
+        assert model.data(model.index(row, file_col)) == "-wal file"
+        assert "WAL frame" in model.data(model.index(row, region_col))
+        _select(tv, row, value_col)
+        assert tv._hex_file_kind == "wal"
+        (start, end), = tv._hex_viewer._focus_ranges
+        wal_bytes = Path(str(db_path) + "-wal").read_bytes()
+        value = model.data(model.index(row, value_col))
+        assert wal_bytes[start:end] == value.encode("ascii")
+        assert b"hello-wal-content" in wal_bytes[start:end]
+
+        # A db-file string switches back to the db file.
+        row = _find_row_containing(model, value_col, "SQLite format 3")
+        _select(tv, row)
+        assert tv._hex_file_kind == "base"
+        assert tv._hex_viewer._focus_ranges == [(0, 15)]
+
+        # Hex -> table: a byte inside a string selects that string's row.
+        tv._table_view.clearSelection()
+        tv._on_hex_offset_focused(3)
+        current = tv._table_view.currentIndex()
+        assert model.data(model.index(current.row(), value_col)) == "SQLite format 3"
+        tv.close()
+    finally:
+        writer.close()
+
+
+def test_strings_view_min_length_filter_and_sort(qapp, widgets, tmp_path: Path) -> None:
+    db_path = tmp_path / "single_delete.db"
+    _make_single_delete_db(db_path)
+    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="single_delete.db"))
+    _open_strings(tv)
+    model = tv._table_view.model()
+    all_rows = model.rowCount()
+    value_col = _find_column(model, "Value")
+
+    tv._search.setText("canary03")  # case-insensitive, like every view's filter
+    assert model.rowCount() >= 1
+    assert all(
+        "CANARY03" in model.data(model.index(r, value_col)) for r in range(model.rowCount())
+    )
+    assert "of" in tv._row_count_label.text()
+    tv._search.setText("")
+    assert model.rowCount() == all_rows
+
+    length_col = _find_column(model, "Length (B)")
+    tv._table_view.sortByColumn(length_col, Qt.SortOrder.DescendingOrder)
+    lengths = [int(model.data(model.index(r, length_col))) for r in range(model.rowCount())]
+    assert lengths == sorted(lengths, reverse=True)
+
+    tv._strings_min.setValue(20)  # rescans with the new threshold
+    model = tv._table_view.model()
+    assert 0 < model.rowCount() < all_rows
+    assert all(
+        len(model.data(model.index(r, value_col))) >= 20 for r in range(model.rowCount())
+    )
+
+
+def test_strings_view_reports_unreadable_companion(qapp, widgets, tmp_path: Path) -> None:
+    db_path = tmp_path / "single_delete.db"
+    _make_single_delete_db(db_path)
+    Path(str(db_path) + "-wal").write_bytes(b"")
+    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="single_delete.db"))
+    tv.show()
+    _open_strings(tv)
+    assert tv._source_status.isVisible()
+    assert "-wal file is empty" in tv._source_status.text()
+    tv.close()
+
+
+def test_strings_view_says_when_nothing_is_found(qapp, widgets, tmp_path: Path) -> None:
+    db_path = tmp_path / "single_delete.db"
+    _make_single_delete_db(db_path)
+    tv = widgets(TableViewer({"__db_path": str(db_path)}, source_name="single_delete.db"))
+    tv._strings_min.setValue(100_000)
+    _open_strings(tv)
+    model = tv._table_view.model()
+    assert model.rowCount() == 1
+    assert "No strings of at least 100000 characters found" in model.data(model.index(0, 0))
+
+
+def test_leaving_strings_view_restores_normal_tables(qapp, widgets, tmp_path: Path) -> None:
+    db_path = tmp_path / "single_delete.db"
+    _make_single_delete_db(db_path)
+    data = {
+        "__db_path": str(db_path),
+        "messages": {"columns": ["id", "body"], "rows": [[1, "alpha"], [2, "beta"]]},
+    }
+    tv = widgets(TableViewer(data, source_name="single_delete.db"))
+    _open_strings(tv)
+    tv._search.setText("alpha")
+    tv._table_combo.setCurrentIndex(tv._table_combo.findData("messages"))
+    assert not tv._strings_active
+    assert not tv._strings_min.isVisible()
+    model = tv._table_view.model()
+    assert tv._proxy_model.sourceModel() is tv._source_model
+    assert model.rowCount() == 1  # the search text filters the table again

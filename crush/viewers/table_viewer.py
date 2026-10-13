@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import bisect
 import csv
 import html
 import re
@@ -53,6 +54,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
     QTableView,
     QTreeView,
@@ -60,6 +62,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.byte_strings import DEFAULT_MIN_CHARS
 from crush.core.cell_locator import CellLocator
 from crush.core.sqlite_freeblocks import scan_database_freeblocks
 from crush.core.sqlite_freelist import (
@@ -80,6 +83,7 @@ from crush.core.sqlite_structure import (
     build_page_detail_nodes,
     build_sqlite_structure_tree,
 )
+from crush.core.sqlite_strings import scan_sqlite_strings
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
     SqliteCellLocator,
@@ -100,7 +104,8 @@ from crush.core.work_priority import (
     release_foreground_io,
 )
 from crush.core.issues import ParseIssue, render_value
-from crush.ui.busy_dialog import run_with_busy_dialog
+from crush.ui.busy_dialog import busy_call, run_with_busy_dialog
+from crush.ui.elided_label import ElidedLabel
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
 from crush.viewers.open_bytes import request_open_bytes
@@ -386,6 +391,265 @@ class _QueryResultModel(QAbstractTableModel):
                     Qt.ItemDataRole.ToolTipRole,
                 ],
             )
+
+
+_STRINGS_FILE_LABELS = {
+    "base": QT_TRANSLATE_NOOP("GeneratedView", "db file"),
+    "wal": QT_TRANSLATE_NOOP("GeneratedView", "-wal file"),
+    "journal": QT_TRANSLATE_NOOP("GeneratedView", "-journal file"),
+}
+# Region kinds and page areas sqlite_strings reports (its own English words).
+_STRINGS_REGION_WORDS = (
+    QT_TRANSLATE_NOOP("GeneratedView", "table leaf"),
+    QT_TRANSLATE_NOOP("GeneratedView", "table interior"),
+    QT_TRANSLATE_NOOP("GeneratedView", "index leaf"),
+    QT_TRANSLATE_NOOP("GeneratedView", "index interior"),
+    QT_TRANSLATE_NOOP("GeneratedView", "overflow"),
+    QT_TRANSLATE_NOOP("GeneratedView", "freelist trunk"),
+    QT_TRANSLATE_NOOP("GeneratedView", "freelist leaf"),
+    QT_TRANSLATE_NOOP("GeneratedView", "pointer map"),
+    QT_TRANSLATE_NOOP("GeneratedView", "lock-byte page"),
+    QT_TRANSLATE_NOOP("GeneratedView", "unattributed page"),
+    QT_TRANSLATE_NOOP("GeneratedView", "partial page"),
+    QT_TRANSLATE_NOOP("GeneratedView", "WAL header"),
+    QT_TRANSLATE_NOOP("GeneratedView", "WAL frame header"),
+    QT_TRANSLATE_NOOP("GeneratedView", "after last WAL frame"),
+    QT_TRANSLATE_NOOP("GeneratedView", "journal header"),
+    QT_TRANSLATE_NOOP("GeneratedView", "journal record page number"),
+    QT_TRANSLATE_NOOP("GeneratedView", "journal record checksum"),
+    QT_TRANSLATE_NOOP("GeneratedView", "after last journal record"),
+    QT_TRANSLATE_NOOP("GeneratedView", "no structure read"),
+    QT_TRANSLATE_NOOP("GeneratedView", "database header"),
+    QT_TRANSLATE_NOOP("GeneratedView", "page header"),
+    QT_TRANSLATE_NOOP("GeneratedView", "cell pointer array"),
+    QT_TRANSLATE_NOOP("GeneratedView", "unallocated"),
+    QT_TRANSLATE_NOOP("GeneratedView", "freeblock"),
+    QT_TRANSLATE_NOOP("GeneratedView", "cell content area"),
+    QT_TRANSLATE_NOOP("GeneratedView", "reserved bytes"),
+    QT_TRANSLATE_NOOP("GeneratedView", "page body (header values inconsistent)"),
+)
+
+
+def _strings_region_pair(region: Any) -> tuple[str, str]:
+    """One sqlite_strings Region as Crush's words, (English, display): the
+    WAL frame / journal record it sits in, its kind (and whether only the
+    page's type byte gave it), and its area within the page."""
+    parts: list[_Gen] = []
+    if region.frame is not None:
+        parts.append(_Gen(
+            QT_TRANSLATE_NOOP("GeneratedView", "WAL frame {frame:,} ({status})"),
+            frame=region.frame, status=_Gen(region.frame_status),
+        ))
+    if region.record is not None:
+        parts.append(_Gen(
+            QT_TRANSLATE_NOOP("GeneratedView", "journal record {segment}/{record}"),
+            segment=region.record[0], record=region.record[1],
+        ))
+    if region.attribution == "type byte":
+        parts.append(_Gen(
+            QT_TRANSLATE_NOOP("GeneratedView", "{kind} (type byte only)"), kind=_Gen(region.kind),
+        ))
+    else:
+        parts.append(_Gen(region.kind))
+    if region.area:
+        parts.append(_Gen(region.area))
+    pairs = [p.pair() for p in parts]
+    return ", ".join(e for e, _d in pairs), ", ".join(d for _e, d in pairs)
+
+
+class _StringsModel(QAbstractTableModel):
+    """The Strings view's rows, straight from a SqliteStringsResult -- one
+    row per hit, cells built only when shown. Sorts and filters itself
+    (see _NumericSortProxy.sort / TableViewer._apply_filter): a database
+    can hold millions of strings, far beyond what QStandardItems or a
+    Python lessThan() per comparison can handle."""
+
+    sorts_itself = True
+    _HEADERS = (
+        QT_TRANSLATE_NOOP("GeneratedView", "File"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Offset (B)"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Length (B)"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Encoding"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Page"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Region"),
+        QT_TRANSLATE_NOOP("GeneratedView", "Value"),
+    )
+    _VALUE_COL = 6
+
+    def __init__(self, result: Any, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._files = list(result.files)
+        self._starts: list[int] = []
+        total = 0
+        for fs in self._files:
+            self._starts.append(total)
+            total += len(fs.hits)
+        self._total = total
+        self._order: list[int] = list(range(total))
+        self._rows: list[int] = self._order
+        self._filter = ""
+        self._haystack: list[str] | None = None
+        self._region_text: dict[tuple[int, int], tuple[str, str]] = {}
+
+    def total_rows(self) -> int:
+        return self._total
+
+    def _locate(self, row: int) -> tuple[Any, int, int]:
+        g = self._rows[row]
+        fi = bisect.bisect_right(self._starts, g) - 1
+        return self._files[fi], fi, g - self._starts[fi]
+
+    def _regions_pair(self, fi: int, fs: Any, hi: int) -> tuple[str, str]:
+        english: list[str] = []
+        display: list[str] = []
+        for ri in fs.hit_regions[hi]:
+            pair = self._region_text.get((fi, ri))
+            if pair is None:
+                pair = _strings_region_pair(fs.regions[ri])
+                self._region_text[(fi, ri)] = pair
+            english.append(pair[0])
+            display.append(pair[1])
+        return " | ".join(english), " | ".join(display)
+
+    def _pages(self, fs: Any, hi: int) -> list[int]:
+        pages: list[int] = []
+        for ri in fs.hit_regions[hi]:
+            page = fs.regions[ri].page
+            if page is not None and page not in pages:
+                pages.append(page)
+        return pages
+
+    def _cell(self, fs: Any, fi: int, hi: int, col: int) -> tuple[str, str]:
+        """(English, display) text of one cell."""
+        hit = fs.hits[hi]
+        if col == 0:
+            return _Gen(_STRINGS_FILE_LABELS[fs.file_kind]).pair()
+        if col == 1:
+            text = str(hit.offset)
+        elif col == 2:
+            text = str(hit.length)
+        elif col == 3:
+            text = hit.encoding
+        elif col == 4:
+            text = ", ".join(str(p) for p in self._pages(fs, hi))
+        elif col == 5:
+            return self._regions_pair(fi, fs, hi)
+        else:
+            text = hit.value
+        return text, text
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._HEADERS)
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
+        if orientation != Qt.Orientation.Horizontal:
+            return None
+        english, display = _Gen(self._HEADERS[section]).pair()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return display
+        if role == _EXPORT_TEXT_ROLE:
+            return english if english != display else None
+        return None
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if not index.isValid():
+            return None
+        fs, fi, hi = self._locate(index.row())
+        col = index.column()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self._cell(fs, fi, hi, col)[1]
+        if role == _EXPORT_TEXT_ROLE:
+            english, display = self._cell(fs, fi, hi, col)
+            return english if english != display else None
+        if role == Qt.ItemDataRole.UserRole:
+            hit = fs.hits[hi]
+            if col == 1:
+                return hit.offset
+            if col == 2:
+                return hit.length
+            return None
+        if col == 0 and role == _STRUCTURE_FILE_KIND_ROLE:
+            return fs.file_kind
+        if col == 0 and role == _STRUCTURE_BYTE_RANGE_ROLE:
+            hit = fs.hits[hi]
+            return (hit.offset, hit.end)
+        return None
+
+    def sort(self, column: int, order: Qt.SortOrder = Qt.SortOrder.AscendingOrder) -> None:
+        if column < 0 or column >= len(self._HEADERS):
+            return
+        self.layoutAboutToBeChanged.emit()
+
+        def key(g: int) -> Any:
+            fi = bisect.bisect_right(self._starts, g) - 1
+            fs = self._files[fi]
+            hi = g - self._starts[fi]
+            hit = fs.hits[hi]
+            if column == 0:
+                return (fi, hit.offset)
+            if column == 1:
+                return hit.offset
+            if column == 2:
+                return hit.length
+            if column == 3:
+                return hit.encoding
+            if column == 4:
+                pages = self._pages(fs, hi)
+                return pages[0] if pages else -1
+            if column == 5:
+                return self._regions_pair(fi, fs, hi)[1]
+            return hit.value.casefold()
+
+        self._order = sorted(
+            range(self._total), key=key, reverse=order == Qt.SortOrder.DescendingOrder
+        )
+        self._apply_filter_rows()
+        self.layoutChanged.emit()
+
+    def set_filter(self, text: str) -> None:
+        """Keep rows where any cell's shown text contains *text*,
+        case-insensitively -- what the proxy's fixed-string filter does
+        for every other view."""
+        self.beginResetModel()
+        self._filter = text.casefold()
+        self._apply_filter_rows()
+        self.endResetModel()
+
+    def _apply_filter_rows(self) -> None:
+        if not self._filter:
+            self._rows = self._order
+            return
+        if self._haystack is None:
+            haystack = []
+            for fi, fs in enumerate(self._files):
+                for hi in range(len(fs.hits)):
+                    haystack.append("\x00".join(
+                        self._cell(fs, fi, hi, col)[1] for col in range(len(self._HEADERS))
+                    ).casefold())
+            self._haystack = haystack
+        needle = self._filter
+        hay = self._haystack
+        self._rows = [g for g in self._order if needle in hay[g]]
+
+    def row_for_offset(self, file_kind: str, offset: int) -> int | None:
+        """The first shown row whose string covers *offset* in *file_kind*."""
+        for row, g in enumerate(self._rows):
+            fi = bisect.bisect_right(self._starts, g) - 1
+            fs = self._files[fi]
+            if fs.file_kind != file_kind:
+                continue
+            hit = fs.hits[g - self._starts[fi]]
+            if hit.offset <= offset < hit.end:
+                return row
+        return None
 
 
 def _cap_columns(view: QTableView) -> None:
@@ -872,6 +1136,12 @@ class TableViewer(QWidget):
         self._unallocated_label = QT_TRANSLATE_NOOP(
             "GeneratedView", "Unallocated Space (generated)"
         )
+        self._strings_label = QT_TRANSLATE_NOOP("GeneratedView", "Strings (generated)")
+        # The last scan, keyed by its minimum length, and the model showing
+        # it while the Strings view is active (see _load_strings()).
+        self._strings_cache: tuple[int, Any] | None = None
+        self._strings_model: _StringsModel | None = None
+        self._strings_active = False
         self._journal_result_cache: JournalParseResult | None = None
         self._journal_result_loaded = False
         self._wal_frames_cache: list[dict] | None = None
@@ -915,6 +1185,7 @@ class TableViewer(QWidget):
                     self._add_generated_view(self._freelist_label)
                     self._add_generated_view(self._freeblocks_label)
                     self._add_generated_view(self._unallocated_label)
+                    self._add_generated_view(self._strings_label)
                 for name in table_names:
                     self._add_table_item(name)
                 if show_db_tabs:
@@ -945,12 +1216,17 @@ class TableViewer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Toolbar row: table selector + row count + search
+        # Toolbar, two rows: table selector + row count + per-view controls,
+        # then search + Show Hex.
         toolbar = QWidget()
-        toolbar.setFixedHeight(36)
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(8, 4, 8, 4)
+        toolbar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        toolbar_rows = QVBoxLayout(toolbar)
+        toolbar_rows.setContentsMargins(8, 4, 8, 4)
+        toolbar_rows.setSpacing(4)
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
         toolbar_layout.setSpacing(8)
+        toolbar_rows.addLayout(toolbar_layout)
 
         toolbar_layout.addWidget(QLabel(translate("TableViewer", "Table:")))
 
@@ -962,7 +1238,8 @@ class TableViewer(QWidget):
         )
         toolbar_layout.addWidget(self._table_combo)
 
-        self._row_count_label = QLabel("")
+        # Gives up its width first when the table half is narrow.
+        self._row_count_label = ElidedLabel("")
         toolbar_layout.addWidget(self._row_count_label)
 
         self._wal_toggle = QCheckBox(translate("TableViewer", "Show WAL history"))
@@ -992,23 +1269,49 @@ class TableViewer(QWidget):
         )
         toolbar_layout.addWidget(self._freelist_table_filter)
 
+        min_tip = translate(
+            "TableViewer",
+            "Threshold: only runs of at least this many characters are listed. "
+            "Shorter runs exist in the file but are not shown.",
+        )
+        self._strings_min_label = QLabel(translate("TableViewer", "Min. length:"))
+        self._strings_min_label.setToolTip(min_tip)
+        self._strings_min_label.setVisible(False)
+        toolbar_layout.addWidget(self._strings_min_label)
+        self._strings_min = QSpinBox()
+        self._strings_min.setRange(1, 1_000_000)
+        self._strings_min.setValue(DEFAULT_MIN_CHARS)
+        self._strings_min.setToolTip(min_tip)
+        # Rescan once the value is committed (Enter, focus out, arrows),
+        # not on every typed digit.
+        self._strings_min.setKeyboardTracking(False)
+        self._strings_min.setVisible(False)
+        self._strings_min.valueChanged.connect(self._on_strings_min_changed)
+        toolbar_layout.addWidget(self._strings_min)
+
         toolbar_layout.addStretch()
 
+        # Second row: the filter and the Hex toggle. Two rows keep the
+        # toolbar narrow enough to sit above the table half only (see
+        # table_side below) without widening the viewer when Hex is open.
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(8)
+        toolbar_rows.addLayout(search_row)
+
         search_label = QLabel(translate("TableViewer", "Search:"))
-        toolbar_layout.addWidget(search_label)
+        search_row.addWidget(search_label)
 
         self._search = QLineEdit()
         self._search.setPlaceholderText(translate("TableViewer", "Filter rows…"))
         self._search.setClearButtonEnabled(True)
-        self._search.setFixedWidth(200)
+        self._search.setMinimumWidth(self._search.fontMetrics().horizontalAdvance("0" * 20) + 12)
         self._search.textChanged.connect(self._apply_filter)
-        toolbar_layout.addWidget(self._search)
+        search_row.addWidget(self._search, stretch=1)
 
         self._hex_toggle_btn = QPushButton(translate("TableViewer", "Show Hex"))
         self._hex_toggle_btn.clicked.connect(self._toggle_hex_pane)
-        toolbar_layout.addWidget(self._hex_toggle_btn)
-
-        layout.addWidget(toolbar)
+        search_row.addWidget(self._hex_toggle_btn)
 
         # SQL section: input row + status row below
         self._sql_bar = QWidget()
@@ -1196,8 +1499,18 @@ class TableViewer(QWidget):
         hex_panel_layout.addWidget(self._hex_viewer, stretch=1)
         self._hex_panel.setVisible(False)
 
+        # The toolbar (table choice, filter, Show Hex) sits above the table
+        # half only, so the filter stays next to the rows it filters while
+        # the Hex pane uses the full height on the right.
+        table_side = QWidget()
+        table_side_layout = QVBoxLayout(table_side)
+        table_side_layout.setContentsMargins(0, 0, 0, 0)
+        table_side_layout.setSpacing(0)
+        table_side_layout.addWidget(toolbar)
+        table_side_layout.addWidget(splitter, stretch=1)
+
         hex_splitter = QSplitter(Qt.Orientation.Horizontal)
-        hex_splitter.addWidget(splitter)
+        hex_splitter.addWidget(table_side)
         hex_splitter.addWidget(self._hex_panel)
         hex_splitter.setStretchFactor(0, 1)
         hex_splitter.setStretchFactor(1, 1)
@@ -1272,6 +1585,8 @@ class TableViewer(QWidget):
     def _load_table_impl(self, table_name: str) -> None:
         self._freelist_table_filter.setVisible(False)
         self._freelist_table_filter_label.setVisible(False)
+        self._strings_min_label.setVisible(table_name == self._strings_label)
+        self._strings_min.setVisible(table_name == self._strings_label)
         # File Structure has no text search of its own -- see _apply_filter.
         self._search.setVisible(table_name != self._file_structure_label)
         if table_name != self._file_structure_label:
@@ -1312,6 +1627,11 @@ class TableViewer(QWidget):
             self._wal_toggle.setVisible(False)
             self._journal_toggle.setVisible(False)
             self._load_unallocated_space()
+            return
+        if table_name == self._strings_label:
+            self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
+            self._load_strings()
             return
         table = self._data.get(table_name)
         if table is None:
@@ -1758,6 +2078,7 @@ class TableViewer(QWidget):
             self._freelist_label,
             self._freeblocks_label,
             self._unallocated_label,
+            self._strings_label,
         ):
             self._load_table(current)
 
@@ -1774,6 +2095,7 @@ class TableViewer(QWidget):
             self._freelist_label,
             self._freeblocks_label,
             self._unallocated_label,
+            self._strings_label,
         ):
             self._load_table(current)
 
@@ -1790,6 +2112,7 @@ class TableViewer(QWidget):
             self._freelist_label,
             self._freeblocks_label,
             self._unallocated_label,
+            self._strings_label,
         ):
             self._load_table(current)
 
@@ -3151,6 +3474,111 @@ class TableViewer(QWidget):
             )
         )
 
+    def _on_strings_min_changed(self, _value: int) -> None:
+        if self._current_table() == self._strings_label:
+            self._load_table(self._strings_label)
+
+    def _load_strings(self) -> None:
+        """Every text run in the raw bytes of the db file and, when present,
+        its -wal and -journal file, each with the region its bytes sit in
+        (see crush.core.sqlite_strings). One row per run: equal values are
+        not merged, nothing is trimmed, nothing is capped."""
+        self._reset_source_model()
+        if self._db_path is None:
+            _set_headers(self._source_model, _gens(self._strings_label))
+            item = _gen_item(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Database file unavailable")))
+            item.setEditable(False)
+            self._source_model.appendRow([item])
+            self._row_count_label.setText("")
+            return
+
+        min_chars = self._strings_min.value()
+        result = None
+        if self._strings_cache is not None and self._strings_cache[0] == min_chars:
+            result = self._strings_cache[1]
+        else:
+            db_path = self._db_path
+            wal_path = Path(str(db_path) + "-wal")
+            wal = wal_path if wal_path.exists() else None
+            journal = self._journal_path
+            try:
+                result = busy_call(
+                    self,
+                    translate("TableViewer", "Scanning for strings…"),
+                    lambda: scan_sqlite_strings(db_path, wal, journal, min_chars),
+                )
+            except RuntimeError as exc:
+                self._sql_status.setStyleSheet("color: red;")
+                self._sql_status.setText(
+                    translate("TableViewer", "Error scanning for strings: {message}").format(
+                        message=str(exc)
+                    )
+                )
+                self._row_count_label.setText("")
+                return
+            self._strings_cache = (min_chars, result)
+
+        self._set_source_status(result.problems)
+        total = sum(len(fs.hits) for fs in result.files)
+        if not total:
+            _set_headers(self._source_model, _gens(self._strings_label))
+            item = _gen_item(_Gen(
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView", "No strings of at least {count} characters found"
+                ),
+                count=min_chars,
+            ))
+            item.setEditable(False)
+            self._source_model.appendRow([item])
+            self._row_count_label.setText("")
+        else:
+            self._activate_strings_model(_StringsModel(result, self))
+            self._resize_and_cap()
+            self._row_count_label.setText(
+                translate("TableViewer", "({count:,} strings)").format(count=total)
+            )
+        self._sql_status.setText(
+            translate(
+                "TableViewer",
+                "Text runs in the raw bytes of the db file, -wal and -journal file. "
+                "ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed "
+                "multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and "
+                "U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. "
+                "Runs shorter than the minimum length are not listed. "
+                "\"type byte only\": no walk from the schema reaches this page copy; its kind "
+                "comes from its own b-tree type byte. With Show Hex on, selecting a row "
+                "marks the string in its file.",
+            )
+        )
+
+    def _activate_strings_model(self, model: _StringsModel) -> None:
+        """Show *model* through the proxy (the way _load_table_from_query()
+        shows a query result), with the search box's text as its filter."""
+        old = self._strings_model
+        self._strings_model = model
+        self._strings_active = True
+        self._proxy_model.setDynamicSortFilter(False)
+        self._proxy_model.setFilterFixedString("")
+        self._table_view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+        self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
+        self._proxy_model.setSourceModel(model)
+        model.set_filter(self._search.text())
+        if old is not None and old is not model:
+            old.deleteLater()
+
+    def _drop_strings_model(self) -> None:
+        """Leave the Strings view's model: back to the standard one, with
+        the search box's text as the proxy's filter again."""
+        if not self._strings_active:
+            return
+        self._strings_active = False
+        self._proxy_model.setSourceModel(self._source_model)
+        self._proxy_model.setDynamicSortFilter(True)
+        self._proxy_model.setFilterFixedString(self._search.text())
+        if self._strings_model is not None:
+            self._strings_model.deleteLater()
+            self._strings_model = None
+
     def _on_table_double_clicked(self, index: object) -> None:
         """Double-click handler: navigate to table from summary, open WAL page in hex viewer, or inspect bytes cell."""
         current = self._current_table()
@@ -3175,6 +3603,11 @@ class TableViewer(QWidget):
                     index=index,
                     from_text=True,
                 )
+            return
+
+        if self._strings_active:
+            # A string's own bytes are marked in the Hex pane on selection;
+            # its row holds no cell bytes of its own to open.
             return
 
         if current in (self._summary_label, self._summary_nav_table):
@@ -3709,10 +4142,16 @@ class TableViewer(QWidget):
         # to jump to the physical bytes from there.
         if self._current_table() == self._file_structure_label:
             return
-        self._proxy_model.setFilterFixedString(text)
-        visible = self._proxy_model.rowCount()
-        source = self._proxy_model.sourceModel()
-        total = source.rowCount() if source is not None else 0
+        if self._strings_active and self._strings_model is not None:
+            # Same matching, done by the model itself (see _StringsModel).
+            self._strings_model.set_filter(text)
+            visible = self._strings_model.rowCount()
+            total = self._strings_model.total_rows()
+        else:
+            self._proxy_model.setFilterFixedString(text)
+            visible = self._proxy_model.rowCount()
+            source = self._proxy_model.sourceModel()
+            total = source.rowCount() if source is not None else 0
         if text:
             self._row_count_label.setText(
                 translate("TableViewer", "({visible:,} of {total:,} rows)").format(
@@ -3899,6 +4338,7 @@ class TableViewer(QWidget):
         rows: list[list[Any]] = table["rows"]
 
         model_started = time.perf_counter()
+        self._drop_strings_model()
         old_query_model = self._query_model
         self._query_model = _QueryResultModel(columns, rows, self)
         self._query_results_active = True
@@ -4082,6 +4522,8 @@ class TableViewer(QWidget):
         header = self._table_view.horizontalHeader()
         col = header.logicalIndexAt(pos)
         if col <= 0:  # column 0 is "Row" — skip
+            return
+        if self._strings_active:  # offsets, lengths and text -- no timestamps
             return
 
         menu = QMenu(self)
@@ -4332,6 +4774,7 @@ class TableViewer(QWidget):
             )
 
     def _activate_standard_model(self) -> None:
+        self._drop_strings_model()
         if not self._query_results_active:
             return
         old_query_model = self._query_model
@@ -4387,7 +4830,7 @@ class TableViewer(QWidget):
             self._summary_label, self._db_structure_label, self._file_structure_label,
             self._db_info_label,
             self._wal_label, self._freelist_label, self._freeblocks_label,
-            self._unallocated_label,
+            self._unallocated_label, self._strings_label,
         )
 
     def _toggle_hex_pane(self) -> None:
@@ -4428,7 +4871,7 @@ class TableViewer(QWidget):
             return
 
         table_name = self._current_table()
-        if table_name in (self._wal_label, self._journal_label):
+        if table_name in (self._wal_label, self._journal_label, self._strings_label):
             self._sync_wal_hex_pane(current)
             return
 
@@ -4515,21 +4958,22 @@ class TableViewer(QWidget):
         )
 
     def _sync_wal_hex_pane(self, current: QModelIndex | None) -> None:
-        """WAL Frames / Rollback Journal tab -> Hex: highlight the selected
-        row's own bytes directly in its file (-wal or the staged -journal
-        copy). Neither a WAL frame nor a journal record has a rowid/table-
-        name identity a CellLocator could resolve (several frames/records on
-        the same page can share one), so this uses the (file_kind,
-        byte_range) _load_wal_frames()/_load_journal_records() already
-        stashed on the row instead -- same _STRUCTURE_*_ROLE roles the File
-        Structure tab uses, since the need (know which bytes a row means, in
-        which file) is identical."""
-        item = None
+        """WAL Frames / Rollback Journal / Strings tab -> Hex: highlight the
+        selected row's own bytes directly in its file (db file, -wal or the
+        staged -journal copy). Neither a WAL frame nor a journal record nor
+        a string has a rowid/table-name identity a CellLocator could resolve
+        (several frames/records on the same page can share one), so this
+        uses the (file_kind, byte_range) _load_wal_frames()/
+        _load_journal_records()/_StringsModel already put on the row's first
+        cell instead -- same _STRUCTURE_*_ROLE roles the File Structure tab
+        uses, since the need (know which bytes a row means, in which file)
+        is identical. Read through the proxy, so it works for whichever
+        model is showing."""
+        file_kind = byte_range = None
         if current is not None and current.isValid():
-            source_index = self._proxy_model.mapToSource(current)
-            item = self._source_model.item(source_index.row(), 0)
-        file_kind = item.data(_STRUCTURE_FILE_KIND_ROLE) if item is not None else None
-        byte_range = item.data(_STRUCTURE_BYTE_RANGE_ROLE) if item is not None else None
+            anchor = current.sibling(current.row(), 0)
+            file_kind = anchor.data(_STRUCTURE_FILE_KIND_ROLE)
+            byte_range = anchor.data(_STRUCTURE_BYTE_RANGE_ROLE)
         if not file_kind or not _valid_structure_range(byte_range):
             self._hex_viewer.clear_byte_range_highlight()
             return
@@ -4683,6 +5127,19 @@ class TableViewer(QWidget):
         table, or a Freeblocks/Unallocated Space row -- covers *offset* in
         whichever file the Hex pane is currently showing. None of these have
         a rowid a CellLocator could resolve, only their own exact bytes."""
+        if self._strings_active and self._strings_model is not None:
+            if self._hex_file_kind is None:
+                return
+            found = self._strings_model.row_for_offset(self._hex_file_kind, offset)
+            if found is None:
+                return
+            proxy_index = self._proxy_model.mapFromSource(self._strings_model.index(found, 0))
+            if proxy_index.isValid():
+                self._syncing_hex_selection = True
+                self._table_view.setCurrentIndex(proxy_index)
+                self._table_view.scrollTo(proxy_index)
+                self._syncing_hex_selection = False
+            return
         for row in range(self._source_model.rowCount()):
             row_item = self._source_model.item(row, 0)
             if row_item is None:
@@ -4823,6 +5280,20 @@ class TableViewer(QWidget):
 
 
 class _NumericSortProxy(QSortFilterProxyModel):
+    def sort(  # type: ignore[override]
+        self, column: int, order: Qt.SortOrder = Qt.SortOrder.AscendingOrder
+    ) -> None:
+        # A source that sorts itself (_StringsModel) keeps its own order;
+        # the proxy just passes it through (-1 with Descending would
+        # reverse the source order on top).
+        source = self.sourceModel()
+        if getattr(source, "sorts_itself", False):
+            super().sort(-1, Qt.SortOrder.AscendingOrder)
+            if column >= 0:
+                source.sort(column, order)
+            return
+        super().sort(column, order)
+
     def lessThan(self, left, right) -> bool:  # type: ignore[override]
         try:
             left_data = self.sourceModel().data(left, Qt.ItemDataRole.UserRole)

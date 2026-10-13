@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from crush.ui.busy_dialog import busy_call
+from crush.ui.elided_label import ElidedLabel
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
 
@@ -153,6 +154,11 @@ class HexViewer(QWidget):
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText(translate("HexViewer", "Search text…"))
         self._search_input.returnPressed.connect(self._do_search)
+        # Room for ~20 characters however narrow the viewer gets; this also
+        # sets how narrow a tab holding a HexViewer can be (e.g. Realm).
+        self._search_input.setMinimumWidth(
+            self._search_input.fontMetrics().horizontalAdvance("0" * 20) + 12
+        )
         search_row.addWidget(self._search_input, stretch=1)
 
         self._find_btn = QPushButton(translate("HexViewer", "Find"))
@@ -181,9 +187,10 @@ class HexViewer(QWidget):
         self._show_all_btn.toggled.connect(self._toggle_result_panel)
         search_row.addWidget(self._show_all_btn)
 
-        self._status = QLabel("")
+        # The shown byte range: full width when there is room, but the first
+        # to give way when space is short -- never the search field.
+        self._status = ElidedLabel("")
         search_row.addWidget(self._status)
-        search_row.addStretch(1)
         toolbar.addLayout(search_row)
 
         nav_row = QHBoxLayout()
@@ -338,13 +345,12 @@ class HexViewer(QWidget):
         self._next_btn.setEnabled(self._page < pages - 1)
         start = base_offset
         end = base_offset + len(page_data)
-        self._status.setText(
-            translate("HexViewer", "{start}–{end}  ({total:,} B total)").format(
-                start=self._format_offset(start),
-                end=self._format_offset(end),
-                total=len(self._data),
-            )
+        status = translate("HexViewer", "{start}–{end}  ({total:,} B total)").format(
+            start=self._format_offset(start),
+            end=self._format_offset(end),
+            total=len(self._data),
         )
+        self._status.setText(status)
 
     def set_data(self, data: bytes) -> None:
         """Replace the displayed bytes and reset to page 0."""
