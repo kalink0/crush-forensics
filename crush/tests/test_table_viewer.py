@@ -1266,9 +1266,9 @@ _SYSTEMTIME = struct.pack("<8H", 2024, 6, 4, 27, 14, 36, 42, 500)
 _SYSTEMTIME_DECODED = "2024-06-27 14:36:42.5 UTC"
 
 
-def test_ts_byte_format_decodes_blob_cells_and_reverts(qapp) -> None:
+def test_ts_byte_format_decodes_blob_cells_and_reverts(qapp, widgets) -> None:  # noqa: ANN001
     data = {"t": {"columns": ["st"], "rows": [[_SYSTEMTIME], [b"\x01\x02"], [_SYSTEMTIME.hex()]]}}
-    tv = TableViewer(data, source_name="b.sqlite")
+    tv = widgets(TableViewer(data, source_name="b.sqlite"))
     tv._table_combo.setCurrentText("t")
     blob_fg = _fg_name(tv, 0, 1)
 
@@ -1286,9 +1286,9 @@ def test_ts_byte_format_decodes_blob_cells_and_reverts(qapp) -> None:
     assert not _cell(tv, 1, 1, Qt.ItemDataRole.ToolTipRole)
 
 
-def test_ts_number_format_leaves_blob_cells_alone(qapp) -> None:
+def test_ts_number_format_leaves_blob_cells_alone(qapp, widgets) -> None:  # noqa: ANN001
     data = {"t": {"columns": ["n"], "rows": [[_SYSTEMTIME], [_TS]]}}
-    tv = TableViewer(data, source_name="b.sqlite")
+    tv = widgets(TableViewer(data, source_name="b.sqlite"))
     tv._table_combo.setCurrentText("t")
     _apply(tv, 1, "unix_ms")
     assert _cell(tv, 0, 1) == f"<BLOB {len(_SYSTEMTIME)} B>"
@@ -1296,8 +1296,8 @@ def test_ts_number_format_leaves_blob_cells_alone(qapp) -> None:
     assert _cell(tv, 1, 1) == _TS_DECODED
 
 
-def test_ts_byte_format_in_sql_result_view(qapp) -> None:
-    tv = _ts_viewer()
+def test_ts_byte_format_in_sql_result_view(qapp, widgets) -> None:  # noqa: ANN001
+    tv = widgets(_ts_viewer())
     tv._load_table_from_query({"columns": ["st"], "rows": [[_SYSTEMTIME], [b"\x01"]]})
     model = tv._proxy_model
 
@@ -1622,10 +1622,10 @@ def test_leaving_strings_view_restores_normal_tables(qapp, widgets, tmp_path: Pa
     assert model.rowCount() == 1  # the search text filters the table again
 
 
-def test_ts_sql_expression_uses_the_column_name_and_runs(qapp) -> None:
+def test_ts_sql_expression_uses_the_column_name_and_runs(qapp, widgets) -> None:  # noqa: ANN001
     import sqlite3
 
-    tv = _ts_viewer()
+    tv = widgets(_ts_viewer())
     _apply(tv, 2, "unix_ms")
     expr = tv._ts_sql_expression(2, "unix_ms")
     assert '"txt"' in expr and " AS " not in expr
@@ -1638,16 +1638,16 @@ def test_ts_sql_expression_uses_the_column_name_and_runs(qapp) -> None:
         conn.close()
 
 
-def test_ts_stored_values_are_the_stored_ones_not_the_decoded(qapp) -> None:
-    tv = _ts_viewer()
+def test_ts_stored_values_are_the_stored_ones_not_the_decoded(qapp, widgets) -> None:  # noqa: ANN001
+    tv = widgets(_ts_viewer())
     _apply(tv, 1, "unix_ms")
     _apply(tv, 2, "unix_ms")
     assert tv._ts_stored_values(1) == [_TS] * 3
     assert tv._ts_stored_values(2) == [str(_TS), f" {_TS} ", str(_TS)]
 
 
-def test_ts_sql_expression_in_sql_result_view_uses_the_query_column(qapp) -> None:
-    tv = _ts_viewer()
+def test_ts_sql_expression_in_sql_result_view_uses_the_query_column(qapp, widgets) -> None:  # noqa: ANN001
+    tv = widgets(_ts_viewer())
     tv._load_table_from_query({"columns": ["created"], "rows": [[_TS], [1.5]]})
     _apply(tv, 1, "unix_ms")
     assert '"created"' in tv._ts_sql_expression(1, "unix_ms")
