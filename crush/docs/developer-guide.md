@@ -321,6 +321,14 @@ then runs `parse()` through `busy_call` (JSON, XML, plist and the hex
 fallback do). A tree built from that data is still made on the UI thread,
 so `TreeViewer` builds rows only when their parent is first expanded.
 
+Python's automatic garbage collector is off in Crush: `crush/ui/gc_guard.py`
+collects from a timer on the UI thread instead. Left automatic, a collection
+triggered by a worker's allocations destroys Qt objects held in unreachable
+cycles (a closed window, a replaced model) on that worker, and the process
+crashes. Don't call `gc.enable()` or `gc.collect()` from a worker thread.
+The test suite does the same (`crush/tests/conftest.py`): installed once a
+test has made the QApplication, and what is due collected after each test.
+
 ---
 
 ## VFS API

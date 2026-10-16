@@ -95,6 +95,10 @@ def main() -> None:
     from crush.ui import i18n
     from crush.ui.main_window import MainWindow
     app = QApplication(sys.argv)
+    # Cyclic garbage collection on this thread only: run on a worker, it
+    # destroys Qt objects off the GUI thread and crashes (crush/ui/gc_guard.py).
+    from crush.ui.gc_guard import install_gui_thread_gc
+    install_gui_thread_gc(app)
     # The native style on Windows and macOS partially ignores QPalette, causing
     # tab backgrounds, close buttons, and tree branch arrows to ignore the app
     # theme.  Fusion is Qt's cross-platform style that honours QPalette fully.

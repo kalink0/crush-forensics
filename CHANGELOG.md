@@ -32,6 +32,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed rare crashes while file types are indexed or other work runs in the background.
 - Fixed the SQLite Table viewer's timestamp decoding dropping sub-second digits, and the Value Inspector rounding them.
 - Fixed the Hex pane's search field shrinking to a few characters next to a table or tree and in narrow tabs.
 - Fixed the filter field of the SQLite Table, Tree and Protobuf viewers sitting above the Hex pane instead of above the rows it filters.

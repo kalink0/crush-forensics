@@ -121,6 +121,42 @@ def _no_real_external_open(monkeypatch: pytest.MonkeyPatch) -> None:
 # pattern to extend elsewhere.
 
 
+# Garbage collection on the main thread only, as the app does
+# (crush/ui/gc_guard.py): left automatic, a collection that a worker thread
+# (a type pre-scan, a busy_call job) happens to trigger destroys the Qt
+# objects earlier tests left in unreachable cycles on that thread -- a
+# segmentation fault mid-run. Installed once a test has made the
+# QApplication; after each test, what is due is collected here, on the main
+# thread, whether or not the test ran an event loop for the timer.
+def _gui_thread_gc() -> Any:
+    import sys
+
+    if "PySide6.QtWidgets" not in sys.modules:
+        return None
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if not isinstance(app, QApplication):
+        return None
+    from crush.ui.gc_guard import install_gui_thread_gc
+
+    return install_gui_thread_gc(app)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_setup(item: pytest.Item) -> Any:
+    yield  # the test's fixtures (pytest-qt's qapp among them) exist from here
+    _gui_thread_gc()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> Any:
+    yield
+    collector = _gui_thread_gc()
+    if collector is not None:
+        collector.collect_if_due()
+
+
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
