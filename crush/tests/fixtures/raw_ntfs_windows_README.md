@@ -33,3 +33,8 @@ Copied unmodified from the same repository and commit,
 `tests/fixtures/bitlocker-xts128.img.gz`, built by qnxprobe's
 `tools/make_bitlocker_fixtures.py`: a small BitLocker volume (AES-128-XTS)
 with no key given, so the reader names it and cannot read it.
+
+# raw_bitlocker_locked.BEK
+
+Copied unmodified from the same repository and commit,
+`tests/fixtures/bitlocker-xts128.BEK`: the startup key file of that volume.

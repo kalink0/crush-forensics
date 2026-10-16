@@ -1607,3 +1607,20 @@ def test_a_bitlocker_volume_opens_with_its_password_or_recovery_password(
         assert len(vfs.read(small)) == small.size == 42
     finally:
         vfs.close()
+
+
+def test_a_bitlocker_volume_opens_with_its_startup_key_file(tmp_path: Path) -> None:
+    from crush.core.raw_image import VolumeSecrets
+
+    path = tmp_path / "locked.img"
+    path.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_bitlocker_locked.img.gz").read_bytes()))
+    key = str(FIXTURES_DIR / "raw_bitlocker_locked.BEK")
+    vfs = RawImageVFS(path, secrets=VolumeSecrets(key_files=(key,)))
+    try:
+        volume = vfs.root().children[0]
+        assert volume.is_dir and not vfs.is_locked_volume(volume)
+        assert str((vfs.node_info(volume) or {})["Encryption"]).endswith(
+            "unlocked with its startup key"
+        )
+    finally:
+        vfs.close()

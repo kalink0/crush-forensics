@@ -45,6 +45,7 @@ from crush.third_party.ewfprobe import ewfprobe as _ewfprobe
 sys.modules.setdefault("ewfprobe", _ewfprobe)
 from crush.third_party import qnxprobe  # noqa: E402
 from crush.third_party.qnxprobe.qnxprobe import (  # noqa: E402
+    ApfsLock,
     ApfsWalker,
     BitLocker,
     ExfatWalker,
@@ -451,21 +452,27 @@ _BITLOCKER_GIVEN_PROTECTORS = ("password", "recovery password", "startup key")
 
 
 def volume_is_locked(vol: dict[str, Any], image: Any) -> bool:
-    """Whether a volumes() entry is encrypted and was not opened, so a secret
+    """Whether a volumes() entry is encrypted and was not opened, and a secret
     may open it: a BitLocker volume (an opened one is listed as the
     filesystem inside it), a LUKS container no passphrase opened, or an APFS
     container with a volume whose blocks are ciphertext and whose key was not
-    derived. Not a LUKS container inside a logical volume read through a map:
-    qnxprobe does not open one there, whatever is given; nor a BitLocker
+    derived.
+
+    Not when the reader already says that nothing given opens it, from the
+    volume's own structures before any secret is tried (a header or keybag
+    that doesn't read, a cipher or layout it doesn't read): a BitLocker
     volume with no password, recovery password or startup key protector (its
-    only protector the device's TPM), as qnxprobe's own report decides when
-    to say what to give."""
+    only protector the device's TPM), as qnxprobe's report decides when to
+    say what to give; a LUKS container whose header names a cipher or layout
+    it doesn't read, or no keyslot it reads; an APFS volume with per-file
+    keys, caught mid-way through a change of keys, or with no password or
+    personal recovery key record. Nor a LUKS container inside a logical
+    volume read through a map, which qnxprobe does not open there."""
     kind = vol.get("kind")
+    base, size = vol.get("base"), vol.get("size")
     if kind == "bitlocker":
         try:
-            volume = BitLocker.open(  # type: ignore[no-untyped-call]
-                image, vol.get("base"), vol.get("size"),
-            )
+            volume = BitLocker.open(image, base, size)  # type: ignore[no-untyped-call]
         except Exception:
             return False
         return bool(
@@ -473,14 +480,22 @@ def volume_is_locked(vol: dict[str, Any], image: Any) -> bool:
             and any(k in _BITLOCKER_GIVEN_PROTECTORS for k, _id in volume.protectors)
         )
     if kind == "luks":
-        base = vol.get("base")
         placed = set((getattr(image, "lvm_virtual", None) or {}).values())
-        return base not in (getattr(image, "luks", None) or {}) and base not in placed
+        if base in (getattr(image, "luks", None) or {}) or base in placed:
+            return False
+        try:
+            # Read from its header alone: a keyslot that failed when secrets
+            # were tried says nothing about the others.
+            container = Luks.open(image, base, size)  # type: ignore[no-untyped-call]
+        except Exception:
+            return False
+        return bool(container is not None and not container.why and container.keyslots)
     walker = vol.get("walker")
     if isinstance(walker, ApfsWalker):
         try:
             return any(
                 walker.encryption(i) == "locked"  # type: ignore[no-untyped-call]
+                and not ApfsLock(walker, i).why  # type: ignore[no-untyped-call]
                 for i in range(len(walker.volumes))
             )
         except Exception:

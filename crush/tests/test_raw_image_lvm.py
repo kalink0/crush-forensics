@@ -30,7 +30,7 @@ from crush.core.load_phase import (
     PHASE_UNLOCK_VOLUMES,
     phase_reporter,
 )
-from crush.core.raw_image import VolumeSecrets
+from crush.core.raw_image import RawImageOpenError, VolumeSecrets
 from crush.core.vfs import RawImageVFS, VFSNode, find_node
 from crush.tests.conftest import FIXTURES_DIR
 
@@ -258,6 +258,21 @@ def test_a_wrong_passphrase_leaves_it_locked_and_says_so(tmp_path: Path) -> None
         assert not any(c.name.startswith("luks_") for c in vfs.root().children)
     finally:
         vfs.close()
+
+
+def test_a_luks_container_no_passphrase_can_open_is_not_offered_for_unlocking(
+    tmp_path: Path,
+) -> None:
+    """A container whose header names a cipher the reader doesn't read opens
+    with no passphrase: it is not offered for unlocking, and an image that
+    holds nothing else is refused with the reader's reason, as a BitLocker
+    volume protected only by the device's TPM is."""
+    raw = bytearray(gzip.decompress((FIXTURES_DIR / "raw_luks1.img.gz").read_bytes()))
+    raw[8:40] = b"serpent".ljust(32, b"\0")  # LUKS1 cipher name
+    img = tmp_path / "serpent.img"
+    img.write_bytes(bytes(raw))
+    with pytest.raises(RawImageOpenError, match="serpent-cbc-essiv:sha256 cipher is not one"):
+        RawImageVFS(img)
 
 
 def test_secrets_given_later_are_tried_with_the_earlier_ones(tmp_path: Path) -> None:

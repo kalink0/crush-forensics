@@ -15,8 +15,8 @@ All notable changes to Crush will be documented in this file.
 - Added to raw disk images -> Support for FAT16 and FAT12 volumes, with deleted-file recovery into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#156](https://github.com/kalink0/crush-forensics/pull/156))
 - Added to raw disk images -> Support for Windows CE transaction-safe FAT (TFAT16 and TFAT32), read as FAT16 and FAT32. ([@abrignoni](https://github.com/abrignoni), [#156](https://github.com/kalink0/crush-forensics/pull/156))
 - Added to raw disk images -> Support for the logical volumes of an LVM2 volume group: one run of extents, split into runs, striped, and RAID1 or mirror. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
-- Added to raw disk images -> Support for naming a LUKS1 or LUKS2 container as encrypted and not read. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
-- Added to raw disk images -> Support for unlocking BitLocker, encrypted APFS and LUKS volumes inside the image with a password, recovery password, startup key file or passphrase.
+- Added to raw disk images -> Support for LUKS1 and LUKS2 containers, opened with their passphrase. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
+- Added to raw disk images -> Support for unlocking BitLocker and encrypted APFS volumes inside the image with a password, recovery password or startup key file.
 - Added to raw disk images -> Support for showing what the reader reports on each volume: its place in the image, encryption, an LVM2 volume's layout and the copy a RAID1 or mirror volume is read from.
 - Added to raw disk images -> Support for listing an LVM2 physical volume's free extents as readable regions of their own.
 - Added to the loading dialog -> Support for showing which step a disk image load is in, including the volume search.
