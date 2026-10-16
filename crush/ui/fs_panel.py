@@ -327,6 +327,21 @@ class FilesystemPanel(QWidget):
         self._logger.debug("FilesystemPanel.close_vfs: start")
         self._vfs_list = [item for item in self._vfs_list if item is not vfs]
         self._vfs = self._vfs_list[-1] if self._vfs_list else None
+        self._rebuild_sources()
+        self._logger.debug("FilesystemPanel.close_vfs: done")
+
+    def replace_vfs(self, old: VFS, new: VFS) -> None:
+        """Show *new* in *old*'s place (the same source read again, e.g. with
+        an encrypted volume opened), keeping the order of the sources."""
+        if old not in self._vfs_list:
+            return
+        self._vfs_list = [new if item is old else item for item in self._vfs_list]
+        if self._vfs is old:
+            self._vfs = new
+        self._rebuild_sources()
+
+    def _rebuild_sources(self) -> None:
+        """The tree anew from the sources in _vfs_list."""
         self._build_timer.stop()
         self._build_queue.clear()
         self._type_timer.stop()
@@ -365,7 +380,6 @@ class FilesystemPanel(QWidget):
 
         if self._vfs_list:
             self._start_prescan(list(self._vfs_list), self._prescan_gen)
-        self._logger.debug("FilesystemPanel.close_vfs: done")
 
     # ------------------------------------------------------------------
     # Internals
@@ -661,6 +675,12 @@ class FilesystemPanel(QWidget):
         format_info_action = menu.addAction(translate("FilesystemPanel", "Show Format Info"))
         menu.addSeparator()
         export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
+        unlock_volume_action = None
+        if vfs.is_locked_volume(node):
+            menu.addSeparator()
+            unlock_volume_action = menu.addAction(
+                translate("FilesystemPanel", "Unlock Volume…")
+            )
         verify_acquisition_action = None
         close_source_action = None
         if node is vfs.root():
@@ -731,6 +751,8 @@ class FilesystemPanel(QWidget):
             self.export_logarchive_requested.emit(node, vfs)
         elif action == verify_acquisition_action:
             self.open_requested.emit(node, vfs, "verify_acquisition")
+        elif action == unlock_volume_action:
+            self.open_requested.emit(node, vfs, "unlock_volume")
         elif action == close_source_action:
             self.close_source_requested.emit(vfs)
 

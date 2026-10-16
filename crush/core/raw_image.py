@@ -3,9 +3,10 @@
 .E01) acquisition reading, backed by the vendored `crush.third_party.qnxprobe`
 (+ `ewfprobe`) readers.
 
-qnxprobe reads MBR/GPT partition tables (512- and 4096-byte sectors) and then
-NTFS, FAT32, FAT16, FAT12, exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS,
-EFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS and YAFFS1/YAFFS2 directly from a raw image,
+qnxprobe reads MBR/GPT partition tables (512- and 4096-byte sectors), the
+logical volumes of an LVM2 volume group, and then NTFS, FAT32, FAT16, FAT12,
+exFAT, ext2/3/4, F2FS, HFS+, APFS, QNX6, QNX4, ETFS, EFS, QNX IFS, SquashFS,
+JFFS2, UBI/UBIFS and YAFFS1/YAFFS2 directly from a raw image,
 a bare partition or a flash dump — no mounting, no admin rights. ewfprobe reads
 a container -- an EWF (.E01) or other forensic acquisition, an Apple disk image,
 a virtual machine disk -- joining its files and decrypting it when given what
@@ -18,9 +19,10 @@ holds everything specific to the two vendored readers.
 
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -31,12 +33,27 @@ from typing import TYPE_CHECKING, Any
 # sys.path fallback cannot find a sibling file — mirrors how iLEAPP/ALEAPP
 # wire the same two vendored libraries together.
 from crush.core.issues import ParseIssue
+from crush.core.load_phase import (
+    PHASE_OPEN_IMAGE,
+    PHASE_SEARCH_VOLUMES,
+    PHASE_UNLOCK_VOLUMES,
+    report_phase,
+)
 from crush.core.stored_times import fat_stored_times
 from crush.third_party.ewfprobe import ewfprobe as _ewfprobe
 
 sys.modules.setdefault("ewfprobe", _ewfprobe)
 from crush.third_party import qnxprobe  # noqa: E402
-from crush.third_party.qnxprobe.qnxprobe import ExfatWalker  # noqa: E402
+from crush.third_party.qnxprobe.qnxprobe import (  # noqa: E402
+    ApfsWalker,
+    BitLocker,
+    ExfatWalker,
+    Luks,
+    identify_fs,
+    unlock_apfs,
+    unlock_bitlocker,
+    unlock_luks,
+)
 
 if TYPE_CHECKING:
     from crush.core.vfs import VFSNode
@@ -110,6 +127,30 @@ class RawImageFileUnreadableError(OSError):
     """The filesystem reader could not return this file's content."""
 
 
+@dataclass(frozen=True)
+class VolumeSecrets:
+    """What the analyst gave to open the encrypted volumes inside a disk image
+    (BitLocker, APFS, LUKS): every one is tried on every locked volume, as
+    qnxprobe does. Held in memory for as long as the source is open; never
+    written anywhere."""
+
+    # Tried as a BitLocker password and recovery password, an APFS password
+    # and personal recovery key, and a LUKS passphrase.
+    passwords: tuple[str, ...] = ()
+    # Paths of BitLocker startup key files (.BEK).
+    key_files: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.passwords or self.key_files)
+
+    def merged(self, other: VolumeSecrets) -> VolumeSecrets:
+        """These secrets and *other*'s, each once, in the order given."""
+        return VolumeSecrets(
+            passwords=tuple(dict.fromkeys(self.passwords + other.passwords)),
+            key_files=tuple(dict.fromkeys(self.key_files + other.key_files)),
+        )
+
+
 @dataclass
 class RawImageHandle:
     """An opened raw image or forensic acquisition, with its volume list."""
@@ -118,6 +159,13 @@ class RawImageHandle:
     image: Any  # a plain file object, qnxprobe.SegmentedImage, or ewfprobe.EwfImage
     size: int
     volumes: list[dict[str, Any]]
+    # The image as stored, before the volumes the secrets opened were
+    # decrypted in place: what a region that is encrypted on the disk (a LUKS
+    # container) reads from, so its bytes stay the ones the disk holds.
+    stored: Any = None
+    # The reader's full report on each LVM2 physical volume, by its base:
+    # volumes() keeps only its first two lines.
+    lvm_reports: dict[int, list[str]] = field(default_factory=dict)
     # ewfprobe's name for the container ("EWF-E01", "EWF-S01", "EWF2-Ex01",
     # "AFF", "AFD", "AFM", and since ewfprobe 0.12 "AFF4", "UDIF",
     # "SPARSEIMAGE", "UDRW" (an encrypted read-write Apple disk image), "RAW"
@@ -183,16 +231,24 @@ class _Entry:
     # link targets).
     stored: bytes | None = None
     deleted: Any | None = None  # a *DeletedFile record, when this is a recovered entry
+    # A region read from the image as stored (RawImageHandle.stored), not
+    # through the decryption of the volumes opened inside it.
+    as_stored: bool = False
 
 
-def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> RawImageHandle:
+def open_raw_image(
+    path: Path, *, password: str = "", private_key: str = "",
+    secrets: VolumeSecrets | None = None,
+) -> RawImageHandle:
     """Open `path` as a raw disk image, a forensic acquisition (EWF .E01,
     SMART .s01, EWF2 .Ex01, AFF/AFD, AFF4), an Apple disk image (.dmg,
     .sparseimage, or a .sparsebundle folder) or a virtual disk (VHD, VHDX,
     VMDK, QCOW), and list its
     volumes. *password* opens an encrypted container (an encrypted Apple disk
     image, an AD-encrypted set, an encrypted AFF); *private_key* is the path
-    of the key file that opens one sealed to a certificate.
+    of the key file that opens one sealed to a certificate. *secrets* are
+    tried on the encrypted volumes inside the disk (BitLocker, APFS, LUKS);
+    a volume none of them opens stays listed, with the reader's reason.
 
     Raises RawImageOpenError when the path isn't actually a readable image:
     a split set with a numbering gap, a bad acquisition header, logical
@@ -230,6 +286,7 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
             f"{path.name} is part of the Apple sparse bundle {bundle.name} (a folder "
             "whose band files together hold the disk); open the bundle itself"
         )
+    report_phase(PHASE_OPEN_IMAGE)
     try:
         image = qnxprobe.open_image(  # type: ignore[no-untyped-call]
             str(path), password=password or None, private_key=private_key or None,
@@ -264,14 +321,35 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
             f"{path.name}: not a readable raw image or acquisition ({exc})"
         ) from exc
 
+    stored = image
     try:
         size = qnxprobe.image_size(image)  # type: ignore[no-untyped-call]
+        if secrets:
+            # In qnxprobe's own order (its main()): each wraps the image so
+            # that what it opened reads decrypted in place, and a LUKS
+            # container has to be open before the LVM2 volumes inside it are
+            # looked for. Only with secrets: each one looks for its volumes
+            # in every region again.
+            report_phase(PHASE_UNLOCK_VOLUMES)
+            passwords, key_files = list(secrets.passwords), list(secrets.key_files)
+            image, _found = unlock_bitlocker(  # type: ignore[no-untyped-call]
+                image, size, passwords, key_files,
+            )
+            image, _found = unlock_apfs(image, size, passwords)  # type: ignore[no-untyped-call]
+            image, _found = unlock_luks(image, size, passwords)  # type: ignore[no-untyped-call]
+        report_phase(PHASE_SEARCH_VOLUMES)
         # An LVM2 logical volume split into runs, or striped, is read through
         # a map and placed past the image's end; its base reads only through
         # the handle lvm_image() returns (the image itself when there is none),
         # so that handle is the one kept.
         image = qnxprobe.lvm_image(image, size)  # type: ignore[no-untyped-call]
         vols = qnxprobe.volumes(image, size)  # type: ignore[no-untyped-call]
+        lvm_reports = {
+            vol["base"]: list(
+                identify_fs(image, vol["base"], vol["size"])[1]  # type: ignore[no-untyped-call]
+            )
+            for vol in vols if vol.get("kind") == "lvm2 pv"
+        }
     except Exception as exc:
         image.close()
         raise RawImageOpenError(f"{path.name}: could not read volumes ({exc})") from exc
@@ -284,8 +362,13 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
     # bytes is strictly more useful than an empty RawImageVFS tree. Not for an
     # acquisition: its file holds the container (compressed chunks, headers),
     # not the acquired disk, so it stays open and the disk shows as the
-    # unrecognised region qnxprobe reports -- readable, and verifiable.
-    if not kind and not any(vol.get("walker") is not None for vol in vols):
+    # unrecognised region qnxprobe reports -- readable, and verifiable. Nor
+    # when a volume is locked: it opens with a secret given once it is listed.
+    if (
+        not kind
+        and not any(vol.get("walker") is not None for vol in vols)
+        and not any(volume_is_locked(vol, image) for vol in vols)
+    ):
         image.close()
         # A volume the reader names but cannot read says why in its note (a
         # locked BitLocker volume: what would open it). Passing that on beats
@@ -301,7 +384,7 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
             f"{path.name}: no partition table or recognized filesystem found"
         )
 
-    vols = vols + _compute_unallocated_gaps(vols, size)
+    vols = vols + _compute_unallocated_gaps(vols, size) + _lvm_free_extent_regions(vols)
     acquisition = getattr(image, "format", None) if kind else None
     # Which files the disk is read from (every segment, a virtual disk's
     # parents) and what opened an encrypted container, in the reader's words:
@@ -310,7 +393,7 @@ def open_raw_image(path: Path, *, password: str = "", private_key: str = "") -> 
     container = qnxprobe.describe_acquisition(image) if kind else ""  # type: ignore[no-untyped-call]
     return RawImageHandle(
         path=path, image=image, size=size, volumes=vols, acquisition=acquisition,
-        container=container,
+        container=container, stored=stored, lvm_reports=lvm_reports,
     )
 
 
@@ -363,6 +446,194 @@ def sparse_bundle_kind(folder: Path) -> str | None:
     return kind if kind in ("SPARSEBUNDLE", "DMG_ENCRYPTED") else None
 
 
+# The BitLocker protectors a secret the analyst gives opens (qnxprobe main()).
+_BITLOCKER_GIVEN_PROTECTORS = ("password", "recovery password", "startup key")
+
+
+def volume_is_locked(vol: dict[str, Any], image: Any) -> bool:
+    """Whether a volumes() entry is encrypted and was not opened, so a secret
+    may open it: a BitLocker volume (an opened one is listed as the
+    filesystem inside it), a LUKS container no passphrase opened, or an APFS
+    container with a volume whose blocks are ciphertext and whose key was not
+    derived. Not a LUKS container inside a logical volume read through a map:
+    qnxprobe does not open one there, whatever is given; nor a BitLocker
+    volume with no password, recovery password or startup key protector (its
+    only protector the device's TPM), as qnxprobe's own report decides when
+    to say what to give."""
+    kind = vol.get("kind")
+    if kind == "bitlocker":
+        try:
+            volume = BitLocker.open(  # type: ignore[no-untyped-call]
+                image, vol.get("base"), vol.get("size"),
+            )
+        except Exception:
+            return False
+        return bool(
+            volume is not None and not volume.why
+            and any(k in _BITLOCKER_GIVEN_PROTECTORS for k, _id in volume.protectors)
+        )
+    if kind == "luks":
+        base = vol.get("base")
+        placed = set((getattr(image, "lvm_virtual", None) or {}).values())
+        return base not in (getattr(image, "luks", None) or {}) and base not in placed
+    walker = vol.get("walker")
+    if isinstance(walker, ApfsWalker):
+        try:
+            return any(
+                walker.encryption(i) == "locked"  # type: ignore[no-untyped-call]
+                for i in range(len(walker.volumes))
+            )
+        except Exception:
+            return False
+    return False
+
+
+def _lvm_free_extent_regions(vols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A volumes()-shaped entry for every run of an LVM2 physical volume's
+    extents that no logical volume holds, as qnxprobe reports them
+    ("free_extents"): readable on their own, as the gaps between partition
+    table entries are, rather than only as part of the physical volume."""
+    regions: list[dict[str, Any]] = []
+    for vol in vols:
+        for base, size in vol.get("free_extents") or ():
+            regions.append({
+                "name": f"lvm_free_{base}", "base": base, "size": size,
+                "kind": "lvm2 free extents",
+                "note": f"extents of the LVM2 physical volume {vol.get('name') or vol.get('label')} "
+                        "that no logical volume is allocated",
+                "walker": None,
+            })
+    return regions
+
+
+@dataclass
+class VolumeFacts:
+    """What the reader reports about one top-level volume beyond its name and
+    size, for the Properties panel, and what of it the volume's own status
+    has to say because it bears on how far its content can be trusted."""
+
+    properties: dict[str, Any]
+    statuses: list[ParseIssue]
+    locked: bool = False
+
+
+def _lvm_layout(lvm_map: Any) -> Any:
+    """Every run (or set of stripes) of a logical volume read through a map,
+    with its place in the volume and its offset(s) in the image."""
+    from crush.core.vfs import join_notes
+
+    parts: list[Any] = []
+    for seg in lvm_map.describe():
+        start, length = seg["volume_offset"], seg["length"]
+        span = {"start": f"{start:,}", "end": f"{start + length - 1:,}"}
+        if "stripe_size" in seg:
+            parts.append(ParseIssue("entry.raw_lvm_stripes", {
+                **span, "stripe": f"{seg['stripe_size']:,}",
+                "offsets": ", ".join(f"{o:,}" for o in seg["image_offsets"]),
+            }))
+        else:
+            parts.append(ParseIssue("entry.raw_lvm_run", {
+                **span, "offset": f"{seg['image_offsets'][0]:,}",
+            }))
+    return join_notes(parts)
+
+
+def _lvm_report_line(label: str, reports: dict[int, list[str]]) -> str:
+    """The physical volumes' report line on the logical volume *label*
+    ("LVM vg/lv"): "logical volume lv, …: read as LVM vg/lv …"."""
+    wanted = re.compile(rf"read as {re.escape(label)}(?: |$)")
+    for lines in reports.values():
+        for line in lines:
+            if line.startswith("logical volume ") and wanted.search(line):
+                return line
+    return ""
+
+
+# How the reader's report line names the copy a RAID1 or mirror volume held
+# in one run is read from (qnxprobe _lvm_group, _lvm_shape_words).
+_LVM_COPY_LINE = re.compile(r"\((?P<kind>\S+), read from its copy (?P<copy>\S+)\)$")
+
+
+def _luks_key_derivation(image: Any, base: int, size: int | None) -> Any:
+    """How each keyslot of the LUKS container at *base* derives its key from a
+    passphrase, as its header records it: what opening it costs (an Argon2
+    keyslot needs its memory cost in RAM)."""
+    from crush.core.vfs import join_notes
+
+    container = next(
+        (lk for lk in getattr(image, "luks_found", None) or () if lk.base == base), None,
+    ) or Luks.open(image, base, size)  # type: ignore[no-untyped-call]
+    if container is None:
+        return ""
+    parts: list[Any] = []
+    for slot in container.keyslots:
+        kdf = slot.get("kdf") or {}
+        if kdf.get("type") in ("argon2i", "argon2id"):
+            parts.append(ParseIssue("entry.raw_luks_argon2", {
+                "slot": str(slot.get("id")), "type": str(kdf["type"]),
+                "memory": f"{int(kdf.get('memory', 0)) // 1024:,}",
+                "time": str(kdf.get("time")), "cpus": str(kdf.get("cpus")),
+            }))
+        elif kdf.get("type") == "pbkdf2":
+            parts.append(ParseIssue("entry.raw_luks_pbkdf2", {
+                "slot": str(slot.get("id")), "hash": str(kdf.get("hash")),
+                "iterations": f"{int(kdf.get('iterations', 0)):,}",
+            }))
+    return join_notes(parts)
+
+
+def volume_facts(vol: dict[str, Any], handle: RawImageHandle) -> VolumeFacts:
+    """The reader's facts on a volumes() entry (or one Crush added: a gap, a
+    run of free extents), each under its Properties label."""
+    props: dict[str, Any] = {}
+    statuses: list[ParseIssue] = []
+    if vol.get("label"):
+        props["Region"] = vol["label"]
+    props["Filesystem"] = vol.get("kind") or "unknown"
+    base = vol.get("base")
+    lvm_map = vol.get("lvm_map")
+    if isinstance(base, int) and base < handle.size:
+        props["Image offset"] = f"{base:,}"
+    if lvm_map is not None:
+        props["Layout"] = _lvm_layout(lvm_map)
+    label = str(vol.get("label") or "")
+    report_line = _lvm_report_line(label, handle.lvm_reports) if label.startswith("LVM ") else ""
+    copy_kind = getattr(lvm_map, "copy_kind", None)
+    copy_name = getattr(lvm_map, "copy_name", None)
+    if copy_name is None and report_line:
+        # A copy held in one run has no map: the report line is where the
+        # reader says which copy it read.
+        match = _LVM_COPY_LINE.search(report_line)
+        if match:
+            copy_kind, copy_name = match["kind"], match["copy"]
+    if copy_name:
+        copy_read = ParseIssue("entry.raw_lvm_copy_read", {
+            "kind": str(copy_kind), "copy": str(copy_name),
+        })
+        props["Copy read"] = copy_read
+        statuses.append(copy_read)
+    if vol.get("encryption"):
+        props["Encryption"] = vol["encryption"]
+    if vol.get("kind") == "luks" and isinstance(base, int):
+        derivation = _luks_key_derivation(handle.image, base, vol.get("size"))
+        if derivation:
+            props["Key derivation"] = derivation
+    if vol.get("kind") == "lvm2 pv" and base in handle.lvm_reports:
+        # The whole report: the detail is its first two lines.
+        props["LVM report"] = "; ".join(handle.lvm_reports[base])
+    else:
+        if vol.get("detail"):
+            props["Reader detail"] = vol["detail"]
+        if report_line:
+            props["LVM report"] = report_line
+    missing = vol.get("missing_past_end") or 0
+    if missing:
+        past_end = ParseIssue("entry.raw_volume_past_end", {"bytes": f"{missing:,}"})
+        props["Past image end"] = past_end
+        statuses.append(past_end)
+    return VolumeFacts(props, statuses, volume_is_locked(vol, handle.image))
+
+
 def _compute_unallocated_gaps(vols: list[dict[str, Any]], total_size: int) -> list[dict[str, Any]]:
     """Synthesize an "unallocated" volumes()-shaped entry for every byte
     range not covered by one of qnxprobe's own regions.
@@ -403,7 +674,10 @@ def _compute_unallocated_gaps(vols: list[dict[str, Any]], total_size: int) -> li
     return gaps
 
 
-def build_volume_node(vol: dict[str, Any], read_map: dict[str, _Entry]) -> "VFSNode":
+def build_volume_node(
+    vol: dict[str, Any], read_map: dict[str, _Entry], facts: VolumeFacts | None = None,
+    image_size: int | None = None,
+) -> "VFSNode":
     """One top-level VFSNode for a qnxprobe volumes() entry.
 
     A volume with no walker (recognised filesystem qnxprobe can't walk, an
@@ -413,26 +687,42 @@ def build_volume_node(vol: dict[str, Any], read_map: dict[str, _Entry]) -> "VFSN
     region (e.g. via Hex View), since a forensic tool must never make part
     of the source look less accessible than it actually is.
     """
-    from crush.core.vfs import VFSNode
+    from crush.core.vfs import VFSNode, join_notes
 
     name = vol.get("name") or f"lba{vol.get('lba', 0)}"
     size = vol.get("size") or 0
     path = f"/{name}"
     walker = vol.get("walker")
+    # What bears on trusting the content (one copy of several read, part
+    # of the volume past the image's end) is on the node itself.
+    facts_status = list(facts.statuses) if facts else []
 
     if walker is None:
+        base = vol.get("base")
         read_map[path] = _Entry(
-            walker=None, node=None, size=size, base=vol.get("base"),
+            walker=None, node=None, size=size, base=base,
             kind=vol.get("kind", "unknown"), note=vol.get("note", ""),
+            # A LUKS container's bytes are the ones on the disk, also once
+            # it is open (the opened data is a region of its own).
+            as_stored=(
+                vol.get("kind") == "luks" and isinstance(base, int)
+                and image_size is not None and base < image_size
+            ),
         )
-        return VFSNode(name=name, path=path, is_dir=False, size=size)
+        leaf = VFSNode(name=name, path=path, is_dir=False, size=size)
+        if facts_status:
+            leaf.status = join_notes(facts_status)
+        return leaf
 
     node = VFSNode(name=name, path=path, is_dir=True)
     # A walker that was built but can't read its volume here says why (a
     # zstd SquashFS on a Python without zstd lists nothing); without this
     # the volume would look like an empty filesystem.
+    notes: list[Any] = list(facts_status)
     if vol.get("note"):
-        node.status = ParseIssue("entry.raw_volume_note", detail=str(vol["note"]))
+        notes.insert(0, ParseIssue("entry.raw_volume_note", detail=str(vol["note"])))
+    if notes:
+        node.status = join_notes(notes)
     _walk_into(walker, walker.root, node, read_map, path, set())
     # The root folder can carry named streams too; they sit beside its
     # entries as ":name", the way the root's own name is empty.

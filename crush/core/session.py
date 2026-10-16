@@ -64,6 +64,15 @@ class Session:
         self.sources = [item for item in self.sources if item is not vfs]
         return vfs
 
+    def replace_source(self, old: VFS, new: VFS) -> None:
+        """Put *new* in *old*'s place and close *old* (the same source read
+        again, e.g. with an encrypted volume opened)."""
+        self.sources = [new if item is old else item for item in self.sources]
+        try:
+            old.close()
+        except Exception:
+            pass
+
     def remove_source(self, vfs: VFS) -> None:
         if vfs in self.sources:
             self.sources = [item for item in self.sources if item is not vfs]

@@ -2339,6 +2339,40 @@ MESSAGES: dict[str, str] = {
         "no reader for this content — showing raw bytes",
         "entry.raw_no_reader",
     ),
+    "entry.raw_lvm_run": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "volume bytes {start}–{end} at image offset {offset}",
+        "entry.raw_lvm_run",
+    ),
+    "entry.raw_lvm_stripes": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "volume bytes {start}–{end} striped in {stripe}-byte stripes across image "
+        "offsets {offsets}",
+        "entry.raw_lvm_stripes",
+    ),
+    "entry.raw_lvm_copy_read": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{kind} volume: read from its copy {copy} only; whether its other copies hold "
+        "the same data is not checked",
+        "entry.raw_lvm_copy_read",
+    ),
+    "entry.raw_volume_past_end": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{bytes} bytes of this volume lie past the end of the image: the image holds "
+        "only part of it",
+        "entry.raw_volume_past_end",
+    ),
+    "entry.raw_luks_argon2": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "keyslot {slot}: {type}, {memory} MiB of memory, {time} iteration(s), "
+        "{cpus} thread(s)",
+        "entry.raw_luks_argon2",
+    ),
+    "entry.raw_luks_pbkdf2": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "keyslot {slot}: PBKDF2-{hash}, {iterations} iterations",
+        "entry.raw_luks_pbkdf2",
+    ),
     "entry.format_not_singled_out": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Not determined — the signature bytes don't single out one of: "

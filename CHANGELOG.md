@@ -14,8 +14,12 @@ All notable changes to Crush will be documented in this file.
 - Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 - Added to raw disk images -> Support for FAT16 and FAT12 volumes, with deleted-file recovery into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#156](https://github.com/kalink0/crush-forensics/pull/156))
 - Added to raw disk images -> Support for Windows CE transaction-safe FAT (TFAT16 and TFAT32), read as FAT16 and FAT32. ([@abrignoni](https://github.com/abrignoni), [#156](https://github.com/kalink0/crush-forensics/pull/156))
-- Added to raw disk images -> Support for the logical volumes of an LVM2 volume group: one run of extents, split into runs, striped, and RAID1 or mirror.
-- Added to raw disk images -> Support for naming a LUKS1 or LUKS2 container as encrypted and not read.
+- Added to raw disk images -> Support for the logical volumes of an LVM2 volume group: one run of extents, split into runs, striped, and RAID1 or mirror. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
+- Added to raw disk images -> Support for naming a LUKS1 or LUKS2 container as encrypted and not read. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
+- Added to raw disk images -> Support for unlocking BitLocker, encrypted APFS and LUKS volumes inside the image with a password, recovery password, startup key file or passphrase.
+- Added to raw disk images -> Support for showing what the reader reports on each volume: its place in the image, encryption, an LVM2 volume's layout and the copy a RAID1 or mirror volume is read from.
+- Added to raw disk images -> Support for listing an LVM2 physical volume's free extents as readable regions of their own.
+- Added to the loading dialog -> Support for showing which step a disk image load is in, including the volume search.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for Unix millisecond, Unix microsecond and Windows FILETIME timestamp candidates.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
 - Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
@@ -65,7 +69,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.67 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153), [#156](https://github.com/kalink0/crush-forensics/pull/156))
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.67 (from v1.57). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153), [#156](https://github.com/kalink0/crush-forensics/pull/156), [#160](https://github.com/kalink0/crush-forensics/pull/160))
 - Bundled [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) updated to v0.4 (from v0.1).
 - The SEGB viewer's columns now follow the order of the fields' bytes in the record.
 

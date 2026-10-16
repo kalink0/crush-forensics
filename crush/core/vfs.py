@@ -52,6 +52,7 @@ _logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from crush.core import ios_keybag
+    from crush.core.raw_image import VolumeSecrets
 
 # android_backup_crypto and ios_keybag both import `cryptography`, whose
 # compiled extension can fail to even load on some frozen macOS builds (a
@@ -284,6 +285,11 @@ class VFS(ABC):
         (whose own recorded hashes Verify Acquisition Hash checks), or None
         when it is none."""
         return None
+
+    def is_locked_volume(self, node: VFSNode) -> bool:
+        """Whether *node* is an encrypted volume inside a disk image that a
+        password, recovery password or key file may open (Unlock Volume…)."""
+        return False
 
     def verify_acquisition(
         self, progress: Callable[[int, int], None] | None = None
@@ -2201,17 +2207,38 @@ class RawImageVFS(VFS):
     explicit status, never render as a silent empty/zero result.
     """
 
-    def __init__(self, path: str | Path, *, password: str = "", private_key: str = "") -> None:
-        from crush.core.raw_image import build_volume_node, open_raw_image
+    def __init__(
+        self, path: str | Path, *, password: str = "", private_key: str = "",
+        secrets: VolumeSecrets | None = None,
+    ) -> None:
+        from crush.core.load_phase import PHASE_READ_FILESYSTEMS, report_phase
+        from crush.core.raw_image import (
+            VolumeSecrets,
+            build_volume_node,
+            open_raw_image,
+            volume_facts,
+        )
 
         self._path = Path(path)
-        self._handle = open_raw_image(self._path, password=password, private_key=private_key)
+        # Kept for opening the image again with more volume secrets
+        # (with_volume_secrets); in memory only, never written anywhere.
+        self._password = password
+        self._private_key = private_key
+        self._secrets = secrets or VolumeSecrets()
+        self._handle = open_raw_image(
+            self._path, password=password, private_key=private_key, secrets=self._secrets,
+        )
         self._lock = threading.Lock()
         self._read_map: dict[str, Any] = {}
+        self._volume_facts: dict[str, Any] = {}
 
+        report_phase(PHASE_READ_FILESYSTEMS)
         root = VFSNode(name=self._path.name, path="/", is_dir=True)
         for vol in self._handle.volumes:
-            root.children.append(build_volume_node(vol, self._read_map))
+            facts = volume_facts(vol, self._handle)
+            node = build_volume_node(vol, self._read_map, facts, self._handle.size)
+            self._volume_facts[node.path] = facts
+            root.children.append(node)
         root.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
         notes: list[ParseIssue] = []
         if self._handle.container:
@@ -2246,6 +2273,13 @@ class RawImageVFS(VFS):
             raise RawImageFileUnreadableError(f"No such entry: {node.path}")
         return entry
 
+    def _region_image(self, entry: Any) -> Any:
+        """What a raw region reads from: the image as stored for one that is
+        encrypted on the disk, else the image with the opened volumes."""
+        if entry.as_stored and self._handle.stored is not None:
+            return self._handle.stored
+        return self._handle.image
+
     def read(self, node: VFSNode) -> bytes:
         from crush.core.raw_image import read_deleted_file, read_raw_region, read_walker_file
 
@@ -2259,7 +2293,7 @@ class RawImageVFS(VFS):
                 # A volume qnxprobe recognises but can't walk (or doesn't
                 # recognise at all) -- still fully readable as the raw bytes
                 # of that region, never hidden.
-                return read_raw_region(self._handle.image, entry.base, entry.size)
+                return read_raw_region(self._region_image(entry), entry.base, entry.size)
             return read_walker_file(entry.walker, entry.node, entry.size)
 
     def open(self, node: VFSNode) -> IO[bytes]:
@@ -2277,7 +2311,7 @@ class RawImageVFS(VFS):
             if entry.deleted is not None:
                 return stream_deleted_file(entry.walker, entry.deleted, entry.size)
             if entry.walker is None:
-                return stream_raw_region(self._handle.image, entry.base, entry.size)
+                return stream_raw_region(self._region_image(entry), entry.base, entry.size)
             return stream_walker_file(entry.walker, entry.node, entry.size)
 
         return buffered(IterStream(make_iter, entry.size, lock=self._lock))
@@ -2292,7 +2326,7 @@ class RawImageVFS(VFS):
             if entry.deleted is not None:
                 return peek_deleted_file(entry.walker, entry.deleted, entry.size, n)
             if entry.walker is None:
-                return peek_raw_region(self._handle.image, entry.base, entry.size, n)
+                return peek_raw_region(self._region_image(entry), entry.base, entry.size, n)
             return peek_walker_file(entry.walker, entry.node, entry.size, n)
 
     def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
@@ -2310,7 +2344,7 @@ class RawImageVFS(VFS):
             return None
         try:
             if entry.walker is None:
-                return peek_raw_region(self._handle.image, entry.base, entry.size, n)
+                return peek_raw_region(self._region_image(entry), entry.base, entry.size, n)
             return peek_walker_file(entry.walker, entry.node, entry.size, n)
         finally:
             self._lock.release()
@@ -2355,6 +2389,32 @@ class RawImageVFS(VFS):
         if entry.walker is not None:
             return None
         return {"kind": entry.kind, "note": entry.note}
+
+    def node_info(self, node: VFSNode) -> dict[str, Any] | None:
+        """What the reader reports about a top-level volume (its partition
+        table entry, offset in the image, an LVM2 logical volume's layout and
+        the copy it was read from, encryption, the reader's own detail), by
+        Properties label; None for anything below a volume."""
+        facts = self._volume_facts.get(node.path)
+        return dict(facts.properties) if facts is not None else None
+
+    def is_locked_volume(self, node: VFSNode) -> bool:
+        facts = self._volume_facts.get(node.path)
+        return bool(facts is not None and facts.locked)
+
+    @property
+    def volume_secrets(self) -> VolumeSecrets:
+        """The secrets this source's encrypted volumes were tried with."""
+        return self._secrets
+
+    def with_volume_secrets(self, secrets: VolumeSecrets) -> RawImageVFS:
+        """The same image opened again, its encrypted volumes tried with the
+        secrets given so far and *secrets*. The unlock functions wrap the
+        whole image, so the source is read anew; this one stays open."""
+        return RawImageVFS(
+            self._path, password=self._password, private_key=self._private_key,
+            secrets=self._secrets.merged(secrets),
+        )
 
     def acquisition(self) -> str | None:
         """ewfprobe's name for the container this source is ("EWF-E01",
@@ -2711,6 +2771,11 @@ def find_sibling(node: VFSNode, vfs: VFS, name_suffix: str) -> "VFSNode | None":
     parent_path = node_path.rsplit("/", 1)[0] or "/"
     target_path = (parent_path.rstrip("/") + "/" + target_name).replace("//", "/")
     return _find_node_by_path(vfs.root(), target_path)
+
+
+def find_node(vfs: VFS, path: str) -> "VFSNode | None":
+    """The node of *vfs* at *path* (a node.path), None when it has none."""
+    return _find_node_by_path(vfs.root(), path.replace("\\", "/"))
 
 
 def _find_node_by_path(node: VFSNode, path: str) -> "VFSNode | None":

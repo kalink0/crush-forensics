@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-246 checks in total.
+252 checks in total.
 
 ### Sources
 
@@ -35,7 +35,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [Cellebrite UFDR](#cellebrite-ufdr) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [Cellebrite UFD](#cellebrite-ufd) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [Cellebrite UFDX](#cellebrite-ufdx) | 2 | 1 | 1 | not tested | not tested | 1 |
-| [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | not tested | not tested | 1 |
+| [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | 6 | not tested | 1 |
 | [EWF acquisition (.E01)](#ewf-acquisition-e01) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [SMART acquisition (.s01)](#smart-acquisition-s01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
@@ -206,8 +206,14 @@ No forensic checks.
 - **Source Immutability** — RawImageVFS read/peek must not change mtime or ctime of the image file ([test_forensic.py](../../crush/tests/test_forensic.py), `test_raw_image_vfs_does_not_change_timestamps`)
 - **No Side Effects** — RawImageVFS must not create any sibling files next to the image ([test_forensic.py](../../crush/tests/test_forensic.py), `test_raw_image_vfs_creates_no_sibling_files`)
 - **Read-only Media** — RawImageVFS must read all files when the image file is chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_raw_image_vfs_works_on_readonly_media`)
+- **Known-output Verification** — Every file on the logical volumes of an LVM2 volume group (one run, split into runs, striped, RAID1) reads back with the bytes hashed from the mounted volumes ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_every_file_lvm_wrote_reads_back_under_its_logical_volume`)
+- **Known-output Verification** — The space no partition covers is listed up to the image's end and reads as the image holds it; an LVM2 volume read through a map adds no gap of its own ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_a_volume_read_through_a_map_leaves_no_gap_past_the_image`)
+- **Known-output Verification** — An LVM2 RAID1 volume says which copy it is read from and that the copies are not compared; a split or striped volume lists every run with its offset in the image ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_what_the_reader_reports_on_each_volume_is_shown`)
+- **Known-output Verification** — The extents of an LVM2 physical volume no logical volume holds are listed and read as the image holds them ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_lvm_free_extents_are_a_readable_region_of_their_own`)
+- **Known-output Verification** — A LUKS container without its passphrase is listed as locked, with the reader's reason, and reads as the bytes on the disk ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_a_luks_container_stays_listed_until_its_passphrase_is_given`)
+- **Known-output Verification** — A LUKS1 container opened with its passphrase lists files with the bytes its volume held, and the container still reads as the encrypted bytes on the disk ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_a_luks_container_opens_with_its_passphrase`)
 - **Reproducibility** — Reading the same file from a raw image twice must return byte-identical data ([test_forensic.py](../../crush/tests/test_forensic.py), `test_raw_image_vfs_read_is_reproducible`)
-- *Not tested:* Known-output Verification, Completeness
+- *Not tested:* Completeness
 
 #### EWF acquisition (.E01)
 

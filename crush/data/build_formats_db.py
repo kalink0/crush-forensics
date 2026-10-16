@@ -5023,7 +5023,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://en.wikipedia.org/wiki/Dd_(Unix)",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5070,7 +5070,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://forensics.wiki/master_boot_record/",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5128,7 +5128,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://forensics.wiki/gpt/",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5178,7 +5178,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://doi.org/10.1007/978-3-030-98467-0_1",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5237,7 +5237,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://forensics.wiki/hfs+/",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5286,7 +5286,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://forensics.wiki/new_technology_file_system_(ntfs)/",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5343,7 +5343,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://forensics.wiki/fat/",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5406,7 +5406,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://forensics.wiki/fat/",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5450,7 +5450,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/libyal/libfsfat/blob/main/documentation/File%20Allocation%20Table%20(FAT)%20format.asciidoc",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5504,7 +5504,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://doi.org/10.1007/978-3-030-98467-0_2",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5552,7 +5552,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://doi.org/10.1007/978-3-030-98467-0_3",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5627,7 +5627,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/NetherlandsForensicInstitute/qnxmount",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5661,7 +5661,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/torvalds/linux/blob/master/include/uapi/linux/qnx4_fs.h",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5723,7 +5723,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://qnx.com/developers/docs/8.0/com.qnx.doc.neutrino.utilities/topic/d/dumpifs.html",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5762,7 +5762,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/NetherlandsForensicInstitute/qnxmount",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -5806,7 +5806,7 @@ FORMATS: list[dict[str, Any]] = [
                 "https://github.com/NetherlandsForensicInstitute/qnxmount",
             ),
             (
-                "abrignoni/qnxprobe — MBR/GPT and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
                 "https://github.com/abrignoni/qnxprobe",
             ),
         ],
@@ -7912,7 +7912,7 @@ FORMATS: list[dict[str, Any]] = [
             "Linux Logical Volume Manager (LVM2)",
         ),
         "platforms": ["Linux"],
-        "parser_class": None,
+        "parser_class": "RawImageVFS",
         "magic": [
             {
                 "offset": 512,
@@ -7939,9 +7939,13 @@ FORMATS: list[dict[str, Any]] = [
                 "LVM format specification (libyal/libvslvm)",
                 "https://github.com/libyal/libvslvm/blob/main/documentation/Logical%20Volume%20Manager%20(LVM)%20format.asciidoc",
             ),
+            (
+                "abrignoni/qnxprobe — MBR/GPT, LVM2 and filesystem reader for raw images (QNX6/QNX4, ETFS, EFS, ext2/3/4, F2FS, FAT32/16/12, exFAT, NTFS, HFS+, APFS, QNX IFS, SquashFS, JFFS2, UBI/UBIFS, YAFFS)",
+                "https://github.com/abrignoni/qnxprobe",
+            ),
         ],
         "status": "reviewed",
-        "last_reviewed": "2026-10-05",
+        "last_reviewed": "2026-10-16",
     },
     {
         "name": "utmp / wtmp / btmp Login Records",

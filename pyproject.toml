@@ -41,6 +41,9 @@ dependencies = [
     # ewfprobe decrypts Apple disk images, AD-encrypted sets and encrypted
     # AFF, and reads private keys, with it (as Cryptodome).
     "pycryptodomex>=3.20",
+    # qnxprobe derives a LUKS2 keyslot's key with it when the keyslot uses
+    # Argon2 (cryptsetup's default); without it such a container stays locked.
+    "argon2-cffi>=23.1",
     "crush-analyze @ git+https://github.com/kalink0/crush-analyze.git@645cb2a414c172ad0710b7eb571dde27543f5278",
     "pyzipper>=0.3.6",
     "sqlcipher3>=0.6.2",

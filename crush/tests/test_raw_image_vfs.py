@@ -1559,16 +1559,51 @@ class TestWindowsWrittenNtfs:
 
 
 def test_locked_bitlocker_volume_says_what_would_open_it(tmp_path: Path) -> None:
-    """A BitLocker volume with no key is named by the reader and not read.
-    The fallback note passes the reader's reason on, instead of saying that
-    nothing was recognised."""
+    """A BitLocker volume with no key is named by the reader and not read. The
+    image stays open with the volume listed as locked, so it can be unlocked,
+    and the volume says what would open it; it reads as the bytes on the disk."""
     path = tmp_path / "locked.img"
     path.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_bitlocker_locked.img.gz").read_bytes()))
     vfs = open_vfs(path, as_disk_image=True)
     try:
-        assert isinstance(vfs, FileVFS)
-        note = str(vfs.fallback_note)
+        assert isinstance(vfs, RawImageVFS)
+        volume = vfs.root().children[0]
+        assert vfs.is_locked_volume(volume)
+        note = str((vfs.volume_info(volume) or {})["note"])
         assert "BitLocker" in note and "recovery password" in note
-        assert "no partition table or recognized filesystem" not in note
+        assert (vfs.node_info(volume) or {})["Encryption"] == "BitLocker, locked"
+        assert vfs.read(volume) == path.read_bytes()
+    finally:
+        vfs.close()
+
+
+# The fixture's own secrets (qnxprobe's BitLocker self-test).
+_BITLOCKER_PASSWORD = "qnxprobe-bde-test"
+_BITLOCKER_RECOVERY = "111111-222222-333333-444444-555555-666666-000011-000022"
+
+
+@pytest.mark.parametrize(("secret", "opened_by"), [
+    (_BITLOCKER_PASSWORD, "password"),
+    (_BITLOCKER_RECOVERY, "recovery password"),
+])
+def test_a_bitlocker_volume_opens_with_its_password_or_recovery_password(
+    tmp_path: Path, secret: str, opened_by: str
+) -> None:
+    """Given among wrong ones, its password or recovery password opens the
+    volume, which is then read as the filesystem inside it and says what
+    opened it."""
+    from crush.core.raw_image import VolumeSecrets
+
+    path = tmp_path / "locked.img"
+    path.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_bitlocker_locked.img.gz").read_bytes()))
+    vfs = RawImageVFS(path, secrets=VolumeSecrets(passwords=("not it", secret)))
+    try:
+        volume = vfs.root().children[0]
+        assert volume.is_dir and not vfs.is_locked_volume(volume)
+        info = vfs.node_info(volume) or {}
+        assert info["Filesystem"] == "squashfs"
+        assert str(info["Encryption"]).endswith(f"unlocked with its {opened_by}")
+        small = next(c for c in volume.children if c.name == "small.txt")
+        assert len(vfs.read(small)) == small.size == 42
     finally:
         vfs.close()

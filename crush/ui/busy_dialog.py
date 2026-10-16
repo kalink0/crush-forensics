@@ -22,6 +22,7 @@ from typing import Any, Callable
 from PySide6.QtCore import QEventLoop, QObject, QThread, Signal
 from PySide6.QtWidgets import QWidget
 
+from crush.core.load_phase import phase_reporter
 from crush.ui.i18n import exception_text
 from crush.ui.loading_dialog import LoadingDialog
 from crush.ui.log_scope import window_log_scope
@@ -37,6 +38,7 @@ _inflight: dict[int, set[tuple[Any, ...]]] = {}
 class _BusyWorker(QObject):
     finished = Signal(object)
     failed = Signal(object)  # the exception
+    phase = Signal(str)  # a crush.core.load_phase key the work reported
 
     def __init__(self, work_fn: Callable[[], object], window_id: str | None = None) -> None:
         super().__init__()
@@ -44,7 +46,7 @@ class _BusyWorker(QObject):
         self._window_id = window_id
 
     def run(self) -> None:
-        with window_log_scope(self._window_id):
+        with window_log_scope(self._window_id), phase_reporter(self.phase.emit):
             self._run()
 
     def _run(self) -> None:
@@ -141,6 +143,7 @@ def run_with_busy_dialog(
     thread.started.connect(worker.run)
     worker.finished.connect(controller.on_finished)
     worker.failed.connect(controller.on_failed)
+    worker.phase.connect(dialog.set_phase)
     thread.finished.connect(worker.deleteLater)
 
     thread.start()
@@ -190,6 +193,7 @@ def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
     thread.started.connect(worker.run)
     worker.finished.connect(controller.on_finished)
     worker.failed.connect(controller.on_failed)
+    worker.phase.connect(dialog.set_phase)
 
     thread.start()
     dialog.show()

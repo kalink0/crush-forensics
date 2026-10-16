@@ -178,6 +178,7 @@ jobs:
             --collect-all pillow_heif \
             --collect-all pillow_jxl \
             --collect-all av \
+            --collect-all argon2 \
             --exclude-module pkg_resources \
             --exclude-module PySide6.QtWebEngineCore \
             --exclude-module PySide6.QtWebEngineWidgets \
@@ -220,6 +221,7 @@ jobs:
             --collect-all pillow_heif \
             --collect-all pillow_jxl \
             --collect-all av \
+            --collect-all argon2 \
             --exclude-module pkg_resources \
             --exclude-module PySide6.QtWebEngineCore \
             --exclude-module PySide6.QtWebEngineWidgets \
@@ -280,6 +282,7 @@ jobs:
             --collect-all pillow_heif `
             --collect-all pillow_jxl `
             --collect-all av `
+            --collect-all argon2 `
             --exclude-module pkg_resources `
             --exclude-module PySide6.QtWebEngineCore `
             --exclude-module PySide6.QtWebEngineWidgets `

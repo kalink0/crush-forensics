@@ -31,5 +31,25 @@ class LoadingDialog(QDialog):
     def set_text(self, text: str) -> None:
         self._label.setText(text)
 
+    def set_phase(self, phase: str) -> None:
+        """Show the phase a load reported (a crush.core.load_phase key);
+        a key with no text of its own leaves the text as it is."""
+        text = load_phase_text(phase)
+        if text:
+            self._label.setText(text)
+
+
+def load_phase_text(phase: str) -> str:
+    """The wait dialog's text for a crush.core.load_phase key, "" for none."""
+    from crush.core import load_phase
+
+    texts = {
+        load_phase.PHASE_OPEN_IMAGE: translate("LoadingDialog", "Opening disk image…"),
+        load_phase.PHASE_UNLOCK_VOLUMES: translate("LoadingDialog", "Unlocking volumes…"),
+        load_phase.PHASE_SEARCH_VOLUMES: translate("LoadingDialog", "Searching volumes…"),
+        load_phase.PHASE_READ_FILESYSTEMS: translate("LoadingDialog", "Reading filesystems…"),
+    }
+    return texts.get(phase, "")
+
 
 _ASCII_FRAMES: list[str] = []

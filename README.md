@@ -37,7 +37,7 @@ Running from source: see [Development setup](#development-setup).
 | Cellebrite UFDR (10.x) | File system and derived files (e.g. decrypted app databases) — browsed under their device paths, recorded hashes verifiable |
 | Folders & files | Any folder or single file |
 
-Not a full disk-forensics suite: no carving, no journal analysis, no snapshots, no RAID/LVM. Exact formats, filesystems and limitations: [Format Support & Parser Limitations](crush/docs/format-support.md).
+Not a full disk-forensics suite: no carving, no journal analysis, no snapshots, no RAID arrays (LVM2 logical volumes are read). Exact formats, filesystems and limitations: [Format Support & Parser Limitations](crush/docs/format-support.md).
 
 ## Viewers
 

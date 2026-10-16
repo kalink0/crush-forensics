@@ -91,6 +91,8 @@ class _LoadSourceWorker(QObject):
     # (sha256, size, path) of the source file, in integrity mode; before
     # finished, so a window the source is handed to logs it too.
     hashed = Signal(str, int, str)
+    # A crush.core.load_phase key: the step the load is in, for the wait dialog.
+    phase = Signal(str)
 
     def __init__(
         self,
@@ -116,7 +118,9 @@ class _LoadSourceWorker(QObject):
         self._private_key = private_key
 
     def run(self) -> None:
-        with window_log_scope(self._window_id):
+        from crush.core.load_phase import phase_reporter
+
+        with window_log_scope(self._window_id), phase_reporter(self.phase.emit):
             self._run()
 
     def _run(self) -> None:
@@ -1162,6 +1166,7 @@ class MainWindow(QMainWindow):
         self._load_worker.failed.connect(self._on_load_failed)
         self._load_worker.password_required.connect(self._on_password_required)
         self._load_worker.hashed.connect(self._on_source_hashed)
+        self._load_worker.phase.connect(self._progress.set_phase)
         self._load_worker.finished.connect(self._load_thread.quit)
         self._load_worker.failed.connect(self._load_thread.quit)
         self._load_worker.password_required.connect(self._load_thread.quit)
@@ -1963,6 +1968,9 @@ class MainWindow(QMainWindow):
         if mode == "verify_acquisition":
             self._verify_acquisition(node, vfs)
             return
+        if mode == "unlock_volume":
+            self._unlock_volume(node, vfs)
+            return
         if mode == "multi_log":
             self._hash_node_if_integrity(node, vfs)
             self._open_multi_log_window(node, vfs)
@@ -2135,6 +2143,120 @@ class MainWindow(QMainWindow):
             self._open_encrypted_pdf(node, vfs)
             return
         self._open_node(node, vfs)
+
+    # The viewers a tab of a source read again is reopened as by its mode;
+    # any other viewer is reopened the way a double-click opens the file.
+    _REOPEN_MODES = {"hex": "hex", "text": "text", "protobuf": "protobuf", "mmkv": "mmkv"}
+
+    def _unlock_volume(self, node: VFSNode, vfs: VFS) -> None:
+        """Ask for a secret for a locked volume inside a disk image and read
+        the image again with it, together with every secret given before for
+        this source (one secret can open several volumes). The unlock wraps
+        the whole image, so the source is replaced; its open tabs are opened
+        again from the new source."""
+        from crush.core.raw_image import VolumeSecrets
+        from crush.core.vfs import RawImageVFS
+        from crush.ui.unlock_volume_dialog import UnlockVolumeDialog
+
+        if not isinstance(vfs, RawImageVFS) or not vfs.is_locked_volume(node):
+            return
+        info = vfs.volume_info(node) or {}
+        facts = vfs.node_info(node) or {}
+        reason = info.get("note") or node.status
+        dialog = UnlockVolumeDialog(
+            self, volume=node.name, kind=str(facts.get("Filesystem", "")),
+            reason=render_value(reason, localized=True) if reason else "",
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        given = VolumeSecrets(
+            passwords=(dialog.password(),) if dialog.password() else (),
+            key_files=(dialog.key_file(),) if dialog.key_file() else (),
+        )
+        locked_before = self._locked_volume_names(vfs)
+        try:
+            new_vfs = busy_call(
+                self, translate("MainWindow", "Unlocking volumes…"),
+                lambda: vfs.with_volume_secrets(given),
+            )
+        except RuntimeError as exc:
+            self._logger.error("Unlock failed for %s: %s", vfs.root().name, exc)
+            QMessageBox.warning(self, translate("MainWindow", "Unlock Volume"), str(exc))
+            return
+        self._logger.info(
+            "Volume secrets tried on %s (%d given so far; never stored)",
+            vfs.root().name, len(new_vfs.volume_secrets.passwords)
+            + len(new_vfs.volume_secrets.key_files),
+        )
+        not_restored = self._replace_source(vfs, new_vfs)
+        opened = sorted(locked_before - self._locked_volume_names(new_vfs))
+        if opened:
+            self._status.showMessage(
+                translate("MainWindow", "Unlocked: {volumes}").format(volumes=", ".join(opened))
+            )
+            self._logger.info("Unlocked volumes in %s: %s", vfs.root().name, ", ".join(opened))
+        else:
+            still = next((c for c in new_vfs.root().children if c.path == node.path), None)
+            still_info = new_vfs.volume_info(still) if still is not None else None
+            why = (still_info or {}).get("note") or (still.status if still is not None else "")
+            QMessageBox.information(
+                self, translate("MainWindow", "Unlock Volume"),
+                translate("MainWindow", "No volume was opened.")
+                + ("\n\n" + render_value(why, localized=True) if why else ""),
+            )
+        if not_restored:
+            QMessageBox.information(
+                self, translate("MainWindow", "Unlock Volume"),
+                translate(
+                    "MainWindow",
+                    "These tabs were closed: their file is not in the image as read again.\n\n"
+                    "{paths}",
+                ).format(paths="\n".join(not_restored)),
+            )
+
+    @staticmethod
+    def _locked_volume_names(vfs: VFS) -> set[str]:
+        return {c.name for c in vfs.root().children if vfs.is_locked_volume(c)}
+
+    def _replace_source(self, old: VFS, new: VFS) -> list[str]:
+        """Show *new* in *old*'s place and open *old*'s tabs again from *new*,
+        by path and viewer. Returns the paths of the tabs that could not be,
+        their file not being in *new*."""
+        from crush.core.vfs import find_node
+
+        tabs: list[tuple[str, str]] = []
+        current = self._viewer_tabs.currentWidget()
+        current_path = ""
+        for i in range(self._viewer_tabs.count()):
+            w = self._viewer_tabs.widget(i)
+            if w is not None and w.property("crush_vfs") is old:
+                tabs.append((str(w.property("crush_path")), str(w.property("crush_viewer"))))
+                if w is current:
+                    current_path = tabs[-1][0]
+        self._close_tabs_for_vfs(old)
+        self._props_panel.clear()
+        self._fs_panel.replace_vfs(old, new)
+        self.session.replace_source(old, new)
+        self._update_window_title()
+
+        missing: list[str] = []
+        for path, viewer in tabs:
+            target = find_node(new, path)
+            if target is None:
+                missing.append(path)
+                continue
+            mode = self._REOPEN_MODES.get(viewer)
+            if mode is None:
+                self._open_node(target, new)
+            else:
+                self._open_node_mode(target, new, mode)
+        if current_path:
+            for i in range(self._viewer_tabs.count()):
+                w = self._viewer_tabs.widget(i)
+                if w is not None and w.property("crush_path") == current_path:
+                    self._viewer_tabs.setCurrentIndex(i)
+                    break
+        return missing
 
     def _verify_acquisition(self, node: VFSNode, vfs: VFS) -> None:
         """Recompute an acquisition's hashes and compare them to the ones it
@@ -3449,6 +3571,15 @@ class MainWindow(QMainWindow):
             metadata["Size"] = _format_size(node.size)
         if node.status:
             metadata["Entry status"] = node.status
+        # What the disk image reader reports on a volume (its place in the
+        # image, an LVM2 volume's layout, encryption), without opening it.
+        from crush.core.vfs import RawImageVFS
+
+        if isinstance(vfs, RawImageVFS):
+            vol_info = vfs.volume_info(node)
+            if vol_info is not None and vol_info.get("note"):
+                metadata["Status"] = vol_info["note"]
+            metadata.update(vfs.node_info(node) or {})
         self._props_panel.update_properties(node, metadata, vfs)
 
     def _wrap_with_encryption_banner(self, view: QWidget, hint: str) -> QWidget:
@@ -3869,6 +4000,7 @@ class MainWindow(QMainWindow):
                     fmt_meta["Status"] = vol_info["note"] or ParseIssue("entry.raw_no_reader")
                     if "original_folder" in vol_info:
                         fmt_meta["Original folder"] = vol_info["original_folder"]
+                fmt_meta.update(vfs.node_info(node) or {})
 
             # Cellebrite's own recorded MD5/SHA-256/category for this node,
             # plus an explicit status if its bytes couldn't be located in
