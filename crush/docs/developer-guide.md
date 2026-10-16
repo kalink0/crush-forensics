@@ -326,6 +326,9 @@ collects from a timer on the UI thread instead. Left automatic, a collection
 triggered by a worker's allocations destroys Qt objects held in unreachable
 cycles (a closed window, a replaced model) on that worker, and the process
 crashes. Don't call `gc.enable()` or `gc.collect()` from a worker thread.
+Garbage outside cycles is still freed by reference counting at once; cycles
+wait until a generation is due and the GUI thread is back in its event loop
+-- one more reason to keep long work off it.
 The test suite does the same (`crush/tests/conftest.py`): installed once a
 test has made the QApplication, and what is due collected after each test.
 
