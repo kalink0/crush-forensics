@@ -70,7 +70,7 @@ Limitations
 - Deprecated group encoding (wire types 3/4) is skipped over rather than aborting the rest of the decode.
 
 Limitations
-- Length-delimited fields are tried as nested messages down to a depth of 100 (the default recursion limit of the official protobuf libraries); deeper ones are shown as string/bytes, and a `Nesting` row says how many fields that affected. There is no entry-count cap.
+- Length-delimited fields are tried as nested messages down to a depth of 100 (the default recursion limit of the official protobuf libraries); length-delimited fields at depth 100 are not tried and are shown as string/bytes, and a `Nesting` row says how many fields that affected. There is no entry-count cap.
 - Schema-based decoding requires a `.proto` file or descriptor set.
 
 ### Android Binary XML (ABX)

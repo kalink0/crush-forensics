@@ -4,46 +4,46 @@ All notable changes to Crush will be documented in this file.
 
 ## v0.23.0 - 2026-10-17
 
-**Focus: forensic integrity — raw image reads that fail instead of coming back short, recovered files marked when read on an assumption, exports that go on and list what failed; strings with offset and region in SQLite and Realm, every candidate reading of a SEGB payload, LevelDB records located in their file; the BLOB Inspector opens, exports and copies its result; qnxprobe 1.72 with XFS, Btrfs, ReFS, LVM2 and LUKS; bundled peach updated to v0.10.0.**
+**Focus: LevelDB read the way LevelDB reads it (decimal file numbers, the MANIFEST that CURRENT names, each file on its own, damaged `.log` parts skipped and named) and its records located in their file; strings with offset and region in SQLite and Realm; every candidate reading of a SEGB payload; SQLite columns decoded as the Value Inspector's timestamp formats; the BLOB Inspector opens, exports and copies its result; exports that continue and list what failed; qnxprobe v1.72 with XFS, Btrfs, ReFS, LVM2 and LUKS, its reads checked against the recorded size; bundled peach updated to v0.10.0.**
 
 ### New Features
 
 - Added to the BLOB Inspector -> Support for every image format Crush recognises in files, shown in the Image Viewer with the image's metadata.
-- Added to the BLOB Inspector -> Support for opening the decoded bytes as a new tab, with their source and decode pipeline in the Properties panel.
+- Added to the BLOB Inspector -> Support for opening the decoded bytes in a new tab, with their source and decode pipeline in the Properties panel.
 - Added to the BLOB Inspector -> Support for exporting the decoded bytes or a rendered image, with a sidecar JSON of source, steps and SHA-256 hashes.
 - Added to the BLOB Inspector -> Support for copying the decoded bytes as hex, Base64 or a Python literal.
 - Added to raw disk images -> Support for QNX EFS partitions inside a raw flash image, in either byte order. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 - Added to raw disk images -> Support for deleted-file recovery on QNX EFS, into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#151](https://github.com/kalink0/crush-forensics/pull/151))
 - Added to raw disk images -> Support for FAT16 and FAT12 volumes, with deleted-file recovery into `$Recovered`. ([@abrignoni](https://github.com/abrignoni), [#156](https://github.com/kalink0/crush-forensics/pull/156))
 - Added to raw disk images -> Support for Windows CE transaction-safe FAT (TFAT16 and TFAT32), read as FAT16 and FAT32. ([@abrignoni](https://github.com/abrignoni), [#156](https://github.com/kalink0/crush-forensics/pull/156))
-- Added to raw disk images -> Support for the logical volumes of an LVM2 volume group: one run of extents, split into runs, striped, and RAID1 or mirror. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
+- Added to raw disk images -> Support for the logical volumes of an LVM2 volume group: linear (one or several segments), striped, and RAID1 or mirror. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
 - Added to raw disk images -> Support for LUKS1 and LUKS2 containers, opened with their passphrase. ([@abrignoni](https://github.com/abrignoni), [#160](https://github.com/kalink0/crush-forensics/pull/160))
 - Added to raw disk images -> Support for XFS, Btrfs and ReFS 3.x volumes, with ReFS alternate data streams. ([@abrignoni](https://github.com/abrignoni), [#163](https://github.com/kalink0/crush-forensics/pull/163))
 - Added to raw disk images -> Support for LVM2 RAID4, RAID5, RAID6 and RAID10 logical volumes held in one image, with each volume's layout. ([@abrignoni](https://github.com/abrignoni), [#163](https://github.com/kalink0/crush-forensics/pull/163))
-- Added to raw disk images -> Support for showing how many structures an XFS, Btrfs or ReFS volume skipped as damaged while it was listed, and the first of them. ([@abrignoni](https://github.com/abrignoni), [#163](https://github.com/kalink0/crush-forensics/pull/163))
+- Added to raw disk images -> Support for showing how many damaged structures were skipped while listing an XFS, Btrfs or ReFS volume, and the first of them. ([@abrignoni](https://github.com/abrignoni), [#163](https://github.com/kalink0/crush-forensics/pull/163))
 - Added to raw disk images -> Support for unlocking BitLocker and encrypted APFS volumes inside the image with a password, recovery password or startup key file.
 - Added to raw disk images -> Support for showing what the reader reports on each volume: its place in the image, encryption, an LVM2 volume's layout and the copy a RAID1 or mirror volume is read from.
 - Added to raw disk images -> Support for listing an LVM2 physical volume's free extents as readable regions of their own.
 - Added to the loading dialog -> Support for showing which step a disk image load is in, including the volume search.
 - Added to the loading dialog -> Support for a running count of the entries listed for every source type, and the volume a disk image is reading.
-- Added to the Filesystem panel -> Support for showing how many files the background type indexing has done of all it indexes.
-- Added to the Realm viewer -> Support for each string's offset and the region it sits in (array of the active or the previous snapshot, freed block, file header) in the Strings tab, with the Hex pane.
+- Added to the Filesystem panel -> Support for showing the progress of the background type indexing (files done of total).
+- Added to the Filesystem panel -> Support for Name and Path columns that widen to fit their content within the panel.
+- Added to the Realm viewer -> Support for each string's offset and the region it sits in (array of the active or the previous snapshot, freed block, file header) in the Strings tab, linked to the Hex pane.
 - Added to the SEGB viewer -> Support for showing the selected record's payload with every candidate reading of each field.
+- Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, explained in the header tooltip.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for Unix millisecond, Unix microsecond and Windows FILETIME timestamp candidates.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
-- Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
 - Added to the MMKV viewer -> Support for record counts on the state filter buttons.
 - Added to the LevelDB viewer -> Support for showing the selected record's key, value and tag in its file, and a compressed block's record in the decompressed block.
-- Added to the SQLite Table viewer -> Support for a Strings view of the database, -wal and -journal file, with each string's page and region.
+- Added to the SQLite Table viewer -> Support for a Strings view of the database, -wal and -journal files, with each string's page and region.
 - Added to the SQLite Table viewer -> Support for decoding a column as Cocoa nanoseconds. ([@byteofthepython](https://github.com/byteofthepython), [#158](https://github.com/kalink0/crush-forensics/issues/158))
 - Added to the SQLite Table viewer -> Support for decoding a column as the other Value Inspector timestamp formats except GPS, including BLOB formats (SYSTEMTIME, BCD, UUID v1).
 - Added to the SQLite Table viewer -> Support for copying a decoded timestamp column as a plain-SQLite expression for use in queries.
-- Added to the Filesystem panel -> Support for Name and Path columns that widen to fit their content within the panel.
 
 ### Bug Fixes
 
 - Fixed a stored time of 1970-01-01 00:00:00 UTC showing as missing; a gzip header's MTIME of 0, which the format defines as no time stamp, now says so.
-- Fixed ISO 9660, Btrfs, QNX6, LUKS2, Volume Shadow Copy and other files known by a signature past their first 2,048 bytes not being identified in the Properties panel and Format Info, and past 512 bytes in the hex view.
+- Fixed files whose signature lies beyond their first 2,048 bytes (ISO 9660, Btrfs, QNX6, LUKS2, Volume Shadow Copy and others) not being identified in the Properties panel and Format Info, and, for a file opened as hex, beyond its first 512 bytes.
 - Fixed renamed audio and video files (MP4, MOV, M4A, 3GP, WAV, AVI, FLAC, Matroska/WebM, WMA/WMV, MP3 with an ID3v2 tag) not opening in the Media viewer.
 - Fixed a PNG's tEXt chunks (e.g. Creation Time, Author, Comment) missing from the Properties panel, which said they were read.
 - Fixed a file or recovered deleted file on a raw disk image reading shorter or longer than its recorded size without an error when the reader gave no reason; reading it now fails and says how many bytes came back.
@@ -54,14 +54,13 @@ All notable changes to Crush will be documented in this file.
 - Fixed the SQLite Table viewer's timestamp decoding dropping sub-second digits, and the Value Inspector rounding them.
 - Fixed the Hex pane's search field shrinking to a few characters next to a table or tree and in narrow tabs.
 - Fixed the filter field of the SQLite Table, Tree and Protobuf viewers sitting above the Hex pane instead of above the rows it filters.
-- Fixed the Tools menu showing Paste & Decode without its "&" (a blank on macOS, an underscore on Linux).
-- Fixed the BLOB Inspector's zlib and lzfse steps dropping bytes after the end of the stream without saying so; gzip failed on them.
-- Fixed the BLOB Inspector's Base64 and hex decoding skipping characters that don't belong instead of failing.
+- Fixed the BLOB Inspector's zlib and lzfse steps dropping bytes after the end of the stream without saying so, where the gzip step failed on them.
+- Fixed the BLOB Inspector's Base64 and hex decoding skipping invalid characters instead of failing.
 - Fixed the BLOB Inspector showing failed steps, interpretations and unreadable pasted input without the reason.
 - Fixed the BLOB Inspector showing cut-off JSON and JSON with escaped quotes as confirmed JSON; escaped JSON is now its own marked reading.
 - Fixed pasted text in the BLOB Inspector losing its leading and trailing whitespace.
 - Fixed the BLOB Inspector's pipeline opening too narrow to reach a step's last entry, and many steps being squeezed instead of scrolling.
-- Fixed the BLOB Inspector not saying when Protobuf fields below the nesting limit were shown as string/bytes.
+- Fixed the BLOB Inspector not saying when Protobuf fields at the nesting limit (depth 100) were shown as string/bytes instead of being tried as nested messages.
 - Fixed Open as new tab doing nothing in tables inside the Realm viewer.
 - Fixed an empty file on an exFAT raw disk image reading as one cluster of the volume's own bytes; it now reads as no bytes. ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149))
 - Fixed a FAT32 or exFAT file on a raw disk image reading short, without an error, when its cluster chain ends before its recorded size; reading it now says how many clusters the chain holds and how many the size needs. ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149))
@@ -71,7 +70,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed LevelDB file numbers being read as hexadecimal: from file 10 on, the Overview named files that don't exist and the Files tab showed no level, size or key range, or another file's. File names with more than six digits are now read too.
 - Fixed LevelDB taking the highest-numbered MANIFEST as the current one instead of the one CURRENT names.
 - Fixed LevelDB's Overview listing a file on the level a later MANIFEST edit had deleted it from, and leaving out an empty MANIFEST.
-- Fixed zero padding after the last record of a LevelDB `.log` file stopping its read with an empty reason.
+- Fixed zero padding after the last record of a LevelDB `.log` file stopping its read with an error that gave no reason; it now ends the block, as LevelDB reads it.
 - Fixed LevelDB's Files tab showing a key range as text or as hex without saying which, and an empty key as its sequence/type bytes.
 - Fixed a LevelDB block compressed with anything but Snappy failing with a Snappy error; the unsupported compression type is now named.
 - Fixed a RocksDB database, which uses LevelDB's file names, being read as LevelDB and partly misread; it is now recognised by its contents and reported as not supported.
@@ -80,7 +79,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed a LevelDB key range shorter than an internal key's tag showing in the Files tab without a note.
 - Fixed LevelDB `.log` records and MANIFEST edits whose stored checksum doesn't match showing as ordinary ones; they are now marked.
 - Fixed the Offset of LevelDB `.log` records in a batch spanning more than one log block pointing a few bytes before the record.
-- Fixed running a marked statement in the SQL editor of the SQLite and Realm viewers being rejected as not a SELECT.
+- Fixed running a selected statement in the SQL editor of the SQLite and Realm viewers being rejected as not a SELECT.
 - Fixed an NSKeyedArchiver archive failing to resolve as a whole when an NSDictionary in it has an object as key; that dictionary now stays as stored.
 - Fixed an unresolved NSKeyedArchiver archive being shown under Decoded without saying so outside the Properties panel.
 - Fixed the Properties panel not showing a tab's file again when the already active tab is clicked, and changing the order of its rows after a tab switch.
