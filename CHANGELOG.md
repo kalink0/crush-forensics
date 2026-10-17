@@ -2,7 +2,9 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.23.0 - 2026-10-17
+
+**Focus: forensic integrity — raw image reads that fail instead of coming back short, recovered files marked when read on an assumption, exports that go on and list what failed; strings with offset and region in SQLite and Realm, every candidate reading of a SEGB payload, LevelDB records located in their file; the BLOB Inspector opens, exports and copies its result; qnxprobe 1.72 with XFS, Btrfs, ReFS, LVM2 and LUKS; bundled peach updated to v0.10.0.**
 
 ### New Features
 
@@ -87,7 +89,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Tools → Paste & Decode… is now called Tools → BLOB Inspector…, the inspector it opens.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.72 (from v1.57) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.13.0 (from v0.12.0). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153), [#156](https://github.com/kalink0/crush-forensics/pull/156), [#160](https://github.com/kalink0/crush-forensics/pull/160), [#163](https://github.com/kalink0/crush-forensics/pull/163))
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.72 (from v1.57) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.13.0 (from v0.12.0). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153), [#156](https://github.com/kalink0/crush-forensics/pull/156), [#160](https://github.com/kalink0/crush-forensics/pull/160), [#163](https://github.com/kalink0/crush-forensics/pull/163), [#167](https://github.com/kalink0/crush-forensics/pull/167))
 - Bundled [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) updated to v0.4 (from v0.1).
 - Bundled [peach](https://github.com/kalink0/peach-forensics) updated to v0.10.0 (from v0.9.2), with SEGB v1 Biome files and bounded memory use on large AUL loads. See its [release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.10.0).
 - The SEGB viewer's columns now follow the order of the fields' bytes in the record.
