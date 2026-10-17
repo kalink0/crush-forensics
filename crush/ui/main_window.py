@@ -400,6 +400,18 @@ class _ExportWorker(QObject):
             else:
                 target_root.parent.mkdir(parents=True, exist_ok=True)
                 self._export_file(self._node, target_root)
+                if self._failed:
+                    # The one file asked for wasn't exported: that is the
+                    # export failing, not a list to leave in the folder the
+                    # analyst chose.
+                    path, reason = self._failed[0]
+                    self.failed.emit(
+                        f"{path} could not be read and was not exported: {reason}",
+                        translate(
+                            "MainWindow", "{path} could not be read and was not exported: {reason}"
+                        ).format(path=path, reason=reason),
+                    )
+                    return
             self._write_hashes_file(target_root)
             self._write_renames_file(target_root)
             _write_export_failed_file(self._hash_base, self._failed)
@@ -460,11 +472,17 @@ class _ExportWorker(QObject):
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
     def _write_hashes_file(self, target_root: Path) -> None:
-        if not self._integrity or not self._hash_lines:
+        if not self._integrity or not (self._hash_lines or self._failed):
             return
         base = self._hash_base if self._hash_base is not None else target_root.parent
         hash_path = base / "crush-export-hashes.txt"
-        hash_path.write_text("\n".join(self._hash_lines) + "\n", encoding="utf-8")
+        # The same note as the filtered export's header, so the hash list
+        # alone shows that files are missing from it.
+        note = (
+            [f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE})"]
+            if self._failed else []
+        )
+        hash_path.write_text("\n".join(note + self._hash_lines) + "\n", encoding="utf-8")
 
 
 class _ExportLogarchiveWorker(QObject):
@@ -588,7 +606,7 @@ class _ExportMultiWorker(QObject):
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
     def _write_hashes_file(self, export_root: Path, stamp: str) -> None:
-        if not self._integrity or not self._hash_lines:
+        if not self._integrity or not (self._hash_lines or self._failed):
             return
         header = [
             "# crush filtered export",

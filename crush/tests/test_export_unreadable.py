@@ -77,13 +77,36 @@ def test_tree_export_leaves_out_an_unreadable_file_and_lists_it(
     assert f"{bad.path}\tonly 4 of 9 bytes can be read" in failed
     hashes = target / "crush-export-hashes.txt"
     if integrity:
-        assert "good.txt" in hashes.read_text(encoding="utf-8")
-        assert "bad.bin" not in hashes.read_text(encoding="utf-8")
+        lines = hashes.read_text(encoding="utf-8").splitlines()
+        assert lines[0] == "# not exported: 1 (see crush-export-failed.txt)"
+        assert any(line.endswith("  good.txt") for line in lines)
+        assert not any("bad.bin" in line for line in lines)
     else:
         assert not hashes.exists()
 
 
-def test_single_file_export_of_an_unreadable_file_leaves_nothing(qapp: Any, tmp_path: Path) -> None:
+def test_a_folder_export_where_no_file_reads_still_writes_the_note(
+    qapp: Any, tmp_path: Path
+) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "bad.bin").write_bytes(b"part-and-rest")
+    vfs = _OneUnreadable(src)
+    dest = tmp_path / "dest"
+    dest.mkdir()
+
+    seen = _run(_ExportWorker(vfs, vfs.root(), str(dest), True))
+
+    target = dest / vfs.root().name
+    assert seen == [("finished", str(target), 1)]
+    assert (target / "crush-export-hashes.txt").read_text(encoding="utf-8") == (
+        "# not exported: 1 (see crush-export-failed.txt)\n")
+
+
+def test_single_file_export_of_an_unreadable_file_fails(qapp: Any, tmp_path: Path) -> None:
+    """The one file asked for not being exported is the export failing: the
+    reason is shown, and nothing -- no copy, no list -- is put into the
+    folder the analyst chose."""
     vfs = _source(tmp_path)
     bad = next(c for c in vfs.root().children if c.name == "bad.bin")
     dest = tmp_path / "dest"
@@ -91,9 +114,9 @@ def test_single_file_export_of_an_unreadable_file_leaves_nothing(qapp: Any, tmp_
 
     seen = _run(_ExportWorker(vfs, bad, str(dest), True))
 
-    assert seen == [("finished", str(dest / "bad.bin"), 1)]
-    assert not (dest / "bad.bin").exists()
-    assert "only 4 of 9 bytes" in (dest / "crush-export-failed.txt").read_text(encoding="utf-8")
+    assert len(seen) == 1 and seen[0][0] == "failed"
+    assert f"{bad.path} could not be read and was not exported: only 4 of 9 bytes" in seen[0][1]
+    assert list(dest.iterdir()) == []
 
 
 def test_filtered_export_leaves_out_an_unreadable_file_and_lists_it(
