@@ -2106,6 +2106,13 @@ MESSAGES: dict[str, str] = {
         "bad-sector marker, not as data from the device",
         "vfs.acquisition_missing_pages",
     ),
+    "vfs.acquisition_padded_chunks": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} {unit}(s) of this acquisition read so far hold less data than the bytes "
+        "they cover; the reader reads {zeros} zero bytes in their place, so what is "
+        "listed or read from them can hold those zeros",
+        "vfs.acquisition_padded_chunks",
+    ),
     "vfs.atime_platform": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Crush does not prevent access-time updates on this platform; mount the "
@@ -2429,6 +2436,12 @@ MESSAGES: dict[str, str] = {
         "{count} damaged structure(s) recorded and skipped while the volume was listed, "
         "first: {first}",
         "entry.raw_volume_damage",
+    ),
+    "entry.raw_volume_damage_listed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} file(s) recorded as damage while the volume was listed, and listed as "
+        "stored, first: {first}",
+        "entry.raw_volume_damage_listed",
     ),
     "entry.raw_volume_past_end": QT_TRANSLATE_NOOP(
         "ParseIssue",

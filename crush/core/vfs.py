@@ -2275,6 +2275,14 @@ class RawImageVFS(VFS):
             notes.append(ParseIssue(
                 "vfs.acquisition_missing_pages", {"count": f"{self._handle.missing_pages:,}"}
             ))
+        padded = self._handle.padded_chunks
+        if padded:
+            # The listing read these with zeros where their data ran out, so a
+            # name or a file read from them can be wrong.
+            notes.append(ParseIssue("vfs.acquisition_padded_chunks", {
+                "count": f"{len(padded):,}", "unit": padded[0]["unit"],
+                "zeros": f"{sum(p['zeros'] for p in padded):,}",
+            }))
         if notes:
             note = join_notes(notes)
             root.status = note

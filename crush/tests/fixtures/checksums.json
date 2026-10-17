@@ -134,5 +134,9 @@
   "raw_lvm_raid.img.gz": "8b748e7311a4a4cdc04e655d2e678905374289594cbaef6b48bdf3ee1597f50d",
   "raw_raid_trees.sha256": "129a16340b8d847ed6aab351fd06ec3972b7114a6590a8a3c7c610c9c9e2ea17",
   "raw_md_member.img.gz": "7e8d4a1e45a6a9df7a4bebccd02a6c609bfec5456e8023d5d4ebf867a18ba630",
-  "raw_ddf_member.img.gz": "6cad3c2320bffe44d3da510bb0fa3ed29f5a847b91252cab46bae566aaf1b024"
+  "raw_ddf_member.img.gz": "6cad3c2320bffe44d3da510bb0fa3ed29f5a847b91252cab46bae566aaf1b024",
+  "raw_decmpfs_apfs.img.gz": "58452067350c6f1aecba1e10824857f05ac2abe69a8ad04449ac23c057923f59",
+  "raw_decmpfs_apfs.sha256": "e93885aee82e1a5daea71776d5af60bfa1869e36c67f53a5c908306b30ebccb0",
+  "raw_decmpfs_hfsplus.img.gz": "bc13bac4bb019a687e16db2121bd0488d9e574303e1185e5b9e8b0a67144be19",
+  "raw_decmpfs_hfsplus.sha256": "c04f8a3f61010948876921b81a1ce409263ad77c445a5a9e7f269235de059984"
 }

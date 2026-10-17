@@ -2453,6 +2453,7 @@ class MainWindow(QMainWindow):
             match = result.get("match")  # type: ignore[attr-defined]
             checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
             missing_pages = result.get("missing_page_count") or 0  # type: ignore[attr-defined]
+            padded = result.get("padded_chunks") or []  # type: ignore[attr-defined]
             # Found while reading, whether or not a hash was stored: chunks whose
             # own checksum fails, pages the acquisition declares but doesn't hold.
             findings = []
@@ -2460,6 +2461,12 @@ class MainWindow(QMainWindow):
                 findings.append(translate(
                     "MainWindow", "{count} chunk(s) fail their own checksum."
                 ).format(count=f"{len(checksum_errors):,}"))
+            if padded:
+                findings.append(translate(
+                    "MainWindow",
+                    "{count} chunk(s) hold less data than the bytes they cover; zeros are "
+                    "read in their place.",
+                ).format(count=f"{len(padded):,}"))
             if missing_pages:
                 findings.append(translate(
                     "MainWindow",

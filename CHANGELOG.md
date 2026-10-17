@@ -9,6 +9,8 @@ All notable changes to Crush will be documented in this file.
 - Added to the user interface -> Support for German. ([@BrunoFischerGermany](https://github.com/BrunoFischerGermany), [#170](https://github.com/kalink0/crush-forensics/pull/170))
 - Added to View → Language -> Support for restarting Crush right away to apply the chosen language.
 - Added to the Format Reference site -> Support for German, with any text not yet translated shown in English and marked.
+- Added to raw disk images -> Support for macOS compressed files on APFS and HFS+ (zlib, LZVN, LZFSE and stored), read as macOS reads them. A file compressed with LZBITMAP is listed and refused with the reason.
+- Added to raw disk images -> Support for naming acquisition chunks whose stored data ran out, which are read with zeros, on the source and in Verify Acquisition Hash.
 
 ### Bug Fixes
 
@@ -17,6 +19,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - View → Language lists each language by its own name only, e.g. "Deutsch".
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.74 (from v1.72) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.14.0 (from v0.13.0).
 
 ## v0.23.0 - 2026-10-17
 

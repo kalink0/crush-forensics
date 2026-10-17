@@ -213,6 +213,18 @@ class RawImageHandle:
     container: str = ""
 
     @property
+    def padded_chunks(self) -> list[dict[str, Any]]:
+        """The chunks (E01, SMART, Ex01), grains (VMDK) or clusters (QCOW) read
+        so far whose stored data ran out before the bytes they cover, which
+        ewfprobe (0.14.0) reads with zeros in place of the rest. Only the units
+        read are known; verify_acquisition() reads them all."""
+        for image in (self.stored, self.image):
+            units = getattr(image, "padded_chunks", None)
+            if units:
+                return list(units)
+        return []
+
+    @property
     def missing_pages(self) -> int:
         """Pages of an AFF/AFD the acquisition declares but doesn't hold:
         ewfprobe reads each as the image's bad-sector marker, as AFFLIB does."""
@@ -808,12 +820,14 @@ def build_volume_node(
     _add_stream_nodes(walker, walker.root, "", path, node.children, read_map)
     # A reader that skips a structure failing its check (XFS, Btrfs, ReFS)
     # records it in the walker while listing, after volumes() wrote the note;
-    # without this the listing would look complete.
+    # without this the listing would look complete. APFS and HFS+ (qnxprobe
+    # 1.74) record a file that carries a compression attribute without the
+    # compressed flag; that file is listed, read as stored, not skipped.
     count, damage = qnxprobe.damage_lines(walker, 1)  # type: ignore[no-untyped-call]
     if count and damage[0] not in str(vol.get("note") or ""):
-        notes.append(ParseIssue("entry.raw_volume_damage", {
-            "count": f"{count:,}", "first": damage[0],
-        }))
+        key = ("entry.raw_volume_damage_listed" if vol.get("kind") in ("apfs", "hfs+", "hfsx")
+               else "entry.raw_volume_damage")
+        notes.append(ParseIssue(key, {"count": f"{count:,}", "first": damage[0]}))
     if notes:
         node.status = join_notes(notes)
     node.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
