@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-256 checks in total.
+257 checks in total.
 
 ### Sources
 
@@ -35,7 +35,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [Cellebrite UFDR](#cellebrite-ufdr) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [Cellebrite UFD](#cellebrite-ufd) | 2 | 1 | 1 | not tested | not tested | 1 |
 | [Cellebrite UFDX](#cellebrite-ufdx) | 2 | 1 | 1 | not tested | not tested | 1 |
-| [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | 7 | not tested | 1 |
+| [Raw disk image](#raw-disk-image) | 2 | 1 | 1 | 7 | 1 | 1 |
 | [EWF acquisition (.E01)](#ewf-acquisition-e01) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [SMART acquisition (.s01)](#smart-acquisition-s01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
@@ -216,8 +216,8 @@ No forensic checks.
 - **Known-output Verification** — A LUKS container without its passphrase is listed as locked, with the reader's reason, and reads as the bytes on the disk ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_a_luks_container_stays_listed_until_its_passphrase_is_given`)
 - **Known-output Verification** — A LUKS1 container opened with its passphrase lists files with the bytes its volume held, and the container still reads as the encrypted bytes on the disk ([test_raw_image_lvm.py](../../crush/tests/test_raw_image_lvm.py), `test_a_luks_container_opens_with_its_passphrase`)
 - **Known-output Verification** — Every file on the LVM2 RAID4, RAID5, RAID6 and RAID10 logical volumes of one image reads back with the bytes hashed through the device lvm2 assembled ([test_raw_image_raid.py](../../crush/tests/test_raw_image_raid.py), `test_every_file_on_lvm_raid_volumes_in_one_image_reads_back`)
+- **Completeness** — A file or recovered deleted file whose reader returns fewer or more bytes than its recorded size must fail to read, never pass as the whole file ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_live_and_deleted_reads_refuse_another_length`)
 - **Reproducibility** — Reading the same file from a raw image twice must return byte-identical data ([test_forensic.py](../../crush/tests/test_forensic.py), `test_raw_image_vfs_read_is_reproducible`)
-- *Not tested:* Completeness
 
 #### EWF acquisition (.E01)
 

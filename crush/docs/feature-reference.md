@@ -141,7 +141,8 @@ For **NTFS, FAT32, FAT16, FAT12, exFAT, YAFFS2, JFFS2, UBIFS and QNX EFS** volum
 
 - Every entry is listed, including ones judged **not recoverable** (data clusters already reused, attributes overflowed the record, or it's a deleted directory — recursing into a deleted directory's own contents isn't attempted). The Properties panel states the reason; attempting to open one of these shows a clear error rather than wrong or partial bytes.
 - Recovered files are placed **flat** under `$Recovered`, not reassembled into the folder structure they were originally deleted from.
-- **FAT32, FAT16 and FAT12** cannot recover a deleted file's first character — the delete operation overwrites exactly that byte on disk. Such a name is shown with a leading `_` in place of the lost character (the same convention long used by DOS/Windows undelete tools), e.g. a deleted `one.jpg` reappears as `_ne.jpg`. The file's **content** is unaffected by this and is recovered exactly. exFAT does not have this limitation.
+- **FAT32, FAT16 and FAT12** cannot recover a deleted file's first character — the delete operation overwrites exactly that byte on disk. Such a name is shown with a leading `_` in place of the lost character (the same convention long used by DOS/Windows undelete tools), e.g. a deleted `one.jpg` reappears as `_ne.jpg`. The lost character doesn't affect the file's **content**. exFAT does not have this limitation.
+- **FAT32, FAT16 and FAT12** also zero a deleted file's cluster chain, so where its clusters after the first lay is no longer recorded. Its content is read as one run from its first cluster, the way a file is usually written onto a volume with room, but the volume can't confirm it: a file that was fragmented reads with other data in it. The Properties panel says **recovered on an assumption** for such a file. A deleted exFAT file keeps its layout (a contiguous file is recorded as such, a fragmented one keeps its chain) and says **recovered (content intact)**.
 
 **YAFFS2, JFFS2 and UBIFS** never overwrite in place: a change is written to a new page or node and the old one stays until garbage collection erases its block. A deleted file's last name, size, modification time and content can therefore outlive the deletion, and each one still on the flash is listed in `$Recovered`:
 
@@ -1104,6 +1105,8 @@ The same format database is published online at <https://kalink0.github.io/crush
 ## Exporting Files
 
 Right-click any file or folder in the Filesystem panel and choose **Export…**. For folders, the entire subtree is exported preserving the directory structure. If the destination folder already has a same-named file or folder, you're asked to confirm before it's overwritten.
+
+A file whose bytes can't be read from the evidence (for example, one a disk image's reader returns shorter than its recorded size) is not exported, and nothing is left under its name; the export goes on with the other files. When it's done, the message says how many files were not exported, and `crush-export-failed.txt`, next to the exported data, lists each one's path in the evidence and the reason.
 
 ---
 

@@ -35,6 +35,9 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed a file or recovered deleted file on a raw disk image reading shorter or longer than its recorded size without an error when the reader gave no reason; reading it now fails and says how many bytes came back.
+- Fixed a recovered FAT32, FAT16 or FAT12 file showing as recovered with its content intact when it is read on the assumption that it was stored in one run; it now says so.
+- Fixed an export stopping at the first file that couldn't be read and leaving that file's partial copy under its name; the export now goes on, and `crush-export-failed.txt` lists each file not exported with the reason.
 - Fixed one member of a Linux md RAID array opened on its own being read as the filesystem found inside it; it is now named as a RAID member and not walked. ([@abrignoni](https://github.com/abrignoni), [#163](https://github.com/kalink0/crush-forensics/pull/163))
 - Fixed rare crashes while file types are indexed or other work runs in the background.
 - Fixed the SQLite Table viewer's timestamp decoding dropping sub-second digits, and the Value Inspector rounding them.

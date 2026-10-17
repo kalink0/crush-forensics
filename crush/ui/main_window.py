@@ -304,8 +304,69 @@ class _ClickableStatusLabel(QLabel):
         super().mousePressEvent(event)  # type: ignore[arg-type]
 
 
+class _SourceReadError(Exception):
+    """A file's own bytes could not be read from the evidence. The export
+    goes on with the next file and lists this one with the reason."""
+
+
+_EXPORT_FAILED_FILE = "crush-export-failed.txt"
+
+
+def _copy_export_file(
+    vfs: VFS, node: VFSNode, target: Path, integrity: bool
+) -> tuple[str | None, int]:
+    """Copy one file's bytes to *target*: (sha256 hex or None, bytes copied).
+
+    Whatever fails, nothing is left at *target*: a read error is raised only
+    after the last bytes that could be read (the raw image's length check,
+    for one), so the partial copy would otherwise stay under the file's own
+    name and pass for the file. A read error raises _SourceReadError; an
+    error writing the copy is raised as it is.
+    """
+    import hashlib
+
+    hasher = hashlib.sha256() if integrity else None
+    total = 0
+    try:
+        try:
+            src = vfs.open(node)
+        except Exception as exc:
+            raise _SourceReadError(str(exc)) from exc
+        with src, open(target, "wb") as dst:
+            while True:
+                try:
+                    chunk = src.read(1024 * 1024)
+                except Exception as exc:
+                    raise _SourceReadError(str(exc)) from exc
+                if not chunk:
+                    break
+                dst.write(chunk)
+                if hasher is not None:
+                    hasher.update(chunk)
+                total += len(chunk)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return (hasher.hexdigest() if hasher is not None else None), total
+
+
+def _write_export_failed_file(base: Path, failed: list[tuple[str, str]]) -> None:
+    """The files an export could not read, beside its hash list: one line
+    each, evidence path and reason."""
+    if not failed:
+        return
+    header = (
+        "# Files below could not be read from the evidence and were not exported.\n"
+        "# evidence path\treason\n"
+    )
+    (base / _EXPORT_FAILED_FILE).write_text(
+        header + "\n".join(f"{path}\t{reason}" for path, reason in failed) + "\n",
+        encoding="utf-8",
+    )
+
+
 class _ExportWorker(QObject):
-    finished = Signal(str)
+    finished = Signal(str, int)  # (export path, files not exported)
     failed = Signal(str, str)  # (English for the log, shown in the UI language)
 
     def __init__(
@@ -319,6 +380,7 @@ class _ExportWorker(QObject):
         self._hash_lines: list[str] = []
         self._hash_base: Path | None = None
         self._rename_lines: list[str] = []
+        self._failed: list[tuple[str, str]] = []
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
 
@@ -340,10 +402,11 @@ class _ExportWorker(QObject):
                 self._export_file(self._node, target_root)
             self._write_hashes_file(target_root)
             self._write_renames_file(target_root)
+            _write_export_failed_file(self._hash_base, self._failed)
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
-        self.finished.emit(str(target_root))
+        self.finished.emit(str(target_root), len(self._failed))
 
     def _record_rename(self, original_path: str, sanitized_target: Path) -> None:
         self._rename_lines.append(f"{original_path}\t->\t{sanitized_target}")
@@ -379,24 +442,14 @@ class _ExportWorker(QObject):
                 self._export_file(child, child_target)
 
     def _export_file(self, node: VFSNode, target: Path) -> None:
-        if not self._integrity:
-            with self._vfs.open(node) as src, open(target, "wb") as dst:
-                shutil.copyfileobj(src, dst)
+        try:
+            digest, total = _copy_export_file(self._vfs, node, target, self._integrity)
+        except _SourceReadError as exc:
+            self._failed.append((node.path, str(exc)))
+            self._logger.warning("Export: not exported, could not be read: %s: %s", node.path, exc)
             return
-
-        import hashlib
-
-        hasher = hashlib.sha256()
-        total = 0
-        with self._vfs.open(node) as src, open(target, "wb") as dst:
-            while True:
-                chunk = src.read(1024 * 1024)
-                if not chunk:
-                    break
-                dst.write(chunk)
-                hasher.update(chunk)
-                total += len(chunk)
-        digest = hasher.hexdigest()
+        if digest is None:
+            return
         rel_path = target.name
         if self._hash_base is not None:
             try:
@@ -447,7 +500,7 @@ class _ExportLogarchiveWorker(QObject):
 
 
 class _ExportMultiWorker(QObject):
-    finished = Signal(str)
+    finished = Signal(str, int)  # (export path, files not exported)
     failed = Signal(str, str)  # (English for the log, shown in the UI language)
 
     def __init__(
@@ -465,6 +518,7 @@ class _ExportMultiWorker(QObject):
         self._filter_text = filter_text
         self._hash_lines: list[str] = []
         self._rename_lines: list[str] = []
+        self._failed: list[tuple[str, str]] = []
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
 
@@ -491,13 +545,14 @@ class _ExportMultiWorker(QObject):
                 if changed_any:
                     self._record_rename(virtual_path, target)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                self._export_file(node, vfs, target, "/".join(safe_parts))
+                self._export_file(node, vfs, target, "/".join(safe_parts), virtual_path)
             self._write_hashes_file(export_root, stamp)
             self._write_renames_file(export_root)
+            _write_export_failed_file(export_root, self._failed)
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
-        self.finished.emit(str(export_root))
+        self.finished.emit(str(export_root), len(self._failed))
 
     def _record_rename(self, original_path: str, sanitized_target: Path) -> None:
         self._rename_lines.append(f"{original_path}\t->\t{sanitized_target}")
@@ -518,23 +573,17 @@ class _ExportMultiWorker(QObject):
             header + "\n".join(self._rename_lines) + "\n", encoding="utf-8"
         )
 
-    def _export_file(self, node: VFSNode, vfs: VFS, target: Path, rel_path: str) -> None:
-        if not self._integrity:
-            with vfs.open(node) as src, open(target, "wb") as dst:
-                shutil.copyfileobj(src, dst)
+    def _export_file(
+        self, node: VFSNode, vfs: VFS, target: Path, rel_path: str, virtual_path: str
+    ) -> None:
+        try:
+            digest, total = _copy_export_file(vfs, node, target, self._integrity)
+        except _SourceReadError as exc:
+            self._failed.append((virtual_path, str(exc)))
+            self._logger.warning("Export: not exported, could not be read: %s: %s", virtual_path, exc)
             return
-        import hashlib
-        hasher = hashlib.sha256()
-        total = 0
-        with vfs.open(node) as src, open(target, "wb") as dst:
-            while True:
-                chunk = src.read(1024 * 1024)
-                if not chunk:
-                    break
-                dst.write(chunk)
-                hasher.update(chunk)
-                total += len(chunk)
-        digest = hasher.hexdigest()
+        if digest is None:
+            return
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
@@ -546,6 +595,8 @@ class _ExportMultiWorker(QObject):
             f"# filter: {self._filter_text}",
             f"# exported: {stamp}",
             f"# files: {len(self._hash_lines)}",
+            *([f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE})"]
+              if self._failed else []),
             "",
         ]
         (export_root / "crush-export-hashes.txt").write_text(
@@ -1696,18 +1747,48 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
 
-    def _on_export_finished(self, dest: str) -> None:
+    def _on_export_finished(self, dest: str, not_exported: int = 0) -> None:
         if hasattr(self, "_export_progress"):
             self._export_progress.close()
-        self._status.showMessage(translate("MainWindow", "Exported to: {dest}").format(dest=dest))
         self._logger.info("Exported to: %s", dest)
-        choice = QMessageBox.question(
-            self,
-            translate("MainWindow", "Export complete"),
-            translate("MainWindow", "Export finished:\n{dest}\n\nOpen location?").format(dest=dest),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
+        if not_exported:
+            self._logger.warning("Export: %d file(s) could not be read and were not exported", not_exported)
+            missing = (
+                translate(
+                    "MainWindow",
+                    "1 file could not be read and was not exported; it is listed with the "
+                    "reason in {name}.",
+                )
+                if not_exported == 1
+                else translate(
+                    "MainWindow",
+                    "{n} files could not be read and were not exported; they are listed with "
+                    "the reason in {name}.",
+                )
+            ).format(n=not_exported, name=_EXPORT_FAILED_FILE)
+            self._status.showMessage(
+                translate("MainWindow", "Exported to: {dest} — {n} not exported").format(
+                    dest=dest, n=not_exported
+                )
+            )
+            choice = QMessageBox.warning(
+                self,
+                translate("MainWindow", "Export finished with files not exported"),
+                translate("MainWindow", "Export finished:\n{dest}\n\n{missing}\n\nOpen location?").format(
+                    dest=dest, missing=missing
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+        else:
+            self._status.showMessage(translate("MainWindow", "Exported to: {dest}").format(dest=dest))
+            choice = QMessageBox.question(
+                self,
+                translate("MainWindow", "Export complete"),
+                translate("MainWindow", "Export finished:\n{dest}\n\nOpen location?").format(dest=dest),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
         if choice == QMessageBox.StandardButton.Yes:
             target = Path(dest)
             open_path = target.parent if target.is_file() else target

@@ -2366,9 +2366,15 @@ class RawImageVFS(VFS):
             return None
         if entry.deleted is not None:
             deleted = entry.deleted
+            # A FAT32/FAT16/FAT12 delete zeroes the chain: qnxprobe then reads
+            # the size from the first cluster on and says so in
+            # assumed_contiguous.
             status: str | ParseIssue = (
-                ParseIssue("entry.recovered_intact") if deleted.recoverable
-                else ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
+                ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
+                if not deleted.recoverable
+                else ParseIssue("entry.recovered_assumed_contiguous")
+                if getattr(deleted, "assumed_contiguous", False)
+                else ParseIssue("entry.recovered_intact")
             )
             # A flash record's note says what the recovery had to decide
             # that the flash itself doesn't record (YAFFS2's size-0 header).

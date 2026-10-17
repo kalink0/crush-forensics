@@ -379,6 +379,67 @@ class TestExfatAllocation:
             vfs.close()
 
 
+class _LengthWalker:
+    """A walker whose reads return `returned` bytes for any file, whatever
+    size is asked for -- the reader disagreeing with the size it recorded,
+    without a reason it names."""
+
+    def __init__(self, returned: int) -> None:
+        self.returned = returned
+
+    def read_file(self, node: Any, size: int) -> Any:
+        yield b"\x41" * self.returned
+
+    def read_deleted(self, entry: Any, size: int) -> Any:
+        yield b"\x41" * self.returned
+
+
+class _Deleted:
+    name = "gone.bin"
+    recoverable = True
+    reason = ""
+
+
+class TestReadLength:
+    """Every read path refuses a copy whose length differs from the recorded
+    size, also where the reader gives no reason (before, only a FAT/exFAT
+    chain the reader could explain was refused; any other short read, and
+    every deleted-file read, passed as the whole file)."""
+
+    @pytest.mark.forensic(
+        category="Completeness",
+        subject="Raw disk image",
+        desc="A file or recovered deleted file whose reader returns fewer or more bytes "
+        "than its recorded size must fail to read, never pass as the whole file",
+    )
+    @pytest.mark.parametrize("returned", [3, 7])
+    def test_live_and_deleted_reads_refuse_another_length(self, returned: int) -> None:
+        from crush.core.raw_image import (
+            read_deleted_file,
+            read_walker_file,
+            stream_deleted_file,
+            stream_walker_file,
+        )
+
+        walker = _LengthWalker(returned)
+        word = "only 3 of 5 bytes" if returned < 5 else "more than the 5 bytes"
+        with pytest.raises(RawImageFileUnreadableError, match=word):
+            read_walker_file(walker, object(), 5)
+        with pytest.raises(RawImageFileUnreadableError, match=word):
+            b"".join(stream_walker_file(walker, object(), 5))
+        with pytest.raises(RawImageFileUnreadableError, match=f"{word}.*deleted file 'gone.bin'"):
+            read_deleted_file(walker, _Deleted(), 5)
+        with pytest.raises(RawImageFileUnreadableError, match=f"{word}.*deleted file 'gone.bin'"):
+            b"".join(stream_deleted_file(walker, _Deleted(), 5))
+
+    def test_the_recorded_length_reads(self) -> None:
+        from crush.core.raw_image import read_deleted_file, read_walker_file
+
+        walker = _LengthWalker(5)
+        assert read_walker_file(walker, object(), 5) == b"AAAAA"
+        assert read_deleted_file(walker, _Deleted(), 5) == b"AAAAA"
+
+
 class TestEwf:
     def test_open_vfs_returns_raw_image_vfs(self, raw_ntfs_e01: Path) -> None:
         vfs = open_vfs(raw_ntfs_e01, as_disk_image=True)
@@ -705,6 +766,9 @@ class TestDeletedFileRecovery:
                 node = next((c for c in recovered.children if c.name == name), None)
                 assert node is not None, f"missing: {name}"
                 assert hashlib.sha256(vfs.read(node)).hexdigest() == digest
+                # exFAT records a contiguous file as such (NoFatChain), so
+                # nothing about its layout is assumed.
+                assert str((vfs.volume_info(node) or {})["note"]) == "recovered (content intact)"
         finally:
             vfs.close()
 
@@ -733,7 +797,10 @@ class TestDeletedFileRecovery:
             by_hash = {}
             for c in recovered.children:
                 info = vfs.volume_info(c)
-                if info and str(info["note"]) == "recovered (content intact)":
+                if info and str(info["note"]).startswith("recovered"):
+                    # FAT32 zeroes the chain on delete: every read here
+                    # rests on the file having been laid out in one run.
+                    assert str(info["note"]).startswith("recovered on an assumption"), c.name
                     by_hash[hashlib.sha256(vfs.read(c)).hexdigest()] = c.name
 
             for name, digest in expected.items():

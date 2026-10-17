@@ -1011,23 +1011,38 @@ def _add_stream_nodes(
         read_map[stream_path] = _Entry(walker=None, node=None, size=0, stored=b"")
 
 
-def _check_cluster_chain(walker: Any, node: Any, size: int, got: int) -> None:
-    """Raise when a FAT or exFAT file read short because its cluster chain
-    ends before its recorded size.
+def _check_read_length(
+    walker: Any, node: Any, size: int, got: int, owner: str = "the file"
+) -> None:
+    """Raise when the reader returned another number of bytes than the
+    recorded size, with nothing lost past the end of the image (that case is
+    told apart by EOF_SHORTFALL before this runs).
 
-    The directory entry records the size and the allocation table records the
-    clusters, and a volume can hold the two in disagreement. The reader then
-    returns only what the chain reaches, with nothing lost past the end of the
-    image, so the short copy would otherwise pass for the whole file.
+    The copy is refused rather than shown: a short or long copy would
+    otherwise pass for the whole file in a hash or an export. Where the
+    reason is known it is named -- a FAT or exFAT cluster chain that ends
+    before the size the directory entry records (`node` is None for a
+    deleted file, whose chain is not looked up).
     """
-    if got >= size:
+    if got == size:
         return
-    cut = qnxprobe.chain_shortfall(walker, node)  # type: ignore[no-untyped-call]
+    if got > size:
+        raise RawImageFileUnreadableError(
+            f"the reader returned {got:,} bytes, more than the {size:,} bytes {owner} records"
+        )
+    cut = (
+        qnxprobe.chain_shortfall(walker, node)  # type: ignore[no-untyped-call]
+        if node is not None else None
+    )
     if cut:
         raise RawImageFileUnreadableError(
             f"only {got:,} of {size:,} bytes can be read: the volume's cluster chain "
             f"for this file ends after {cut[0]:,} of the {cut[1]:,} clusters its size needs"
         )
+    raise RawImageFileUnreadableError(
+        f"only {got:,} of {size:,} bytes can be read: the reader returned fewer bytes "
+        f"than {owner} records and gave no reason"
+    )
 
 
 def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
@@ -1056,7 +1071,7 @@ def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
             f"only {present:,} of {size:,} bytes are in the image "
             f"(the image ends before the file does)"
         )
-    _check_cluster_chain(walker, node, size, got)
+    _check_read_length(walker, node, size, got)
     return b"".join(chunks)
 
 
@@ -1092,6 +1107,7 @@ def read_deleted_file(walker: Any, entry: Any, size: int) -> bytes:
             f"only {present:,} of {size:,} bytes of deleted file {entry.name!r} "
             f"are in the image (the image ends before the file does)"
         )
+    _check_read_length(walker, None, size, got, f"deleted file {entry.name!r}")
     return b"".join(chunks)
 
 
@@ -1118,7 +1134,7 @@ def stream_walker_file(walker: Any, node: Any, size: int) -> Iterator[bytes]:
             f"only {present:,} of {size:,} bytes are in the image "
             f"(the image ends before the file does)"
         )
-    _check_cluster_chain(walker, node, size, got)
+    _check_read_length(walker, node, size, got)
 
 
 def stream_deleted_file(walker: Any, entry: Any, size: int) -> Iterator[bytes]:
@@ -1144,6 +1160,7 @@ def stream_deleted_file(walker: Any, entry: Any, size: int) -> Iterator[bytes]:
             f"only {present:,} of {size:,} bytes of deleted file {entry.name!r} "
             f"are in the image (the image ends before the file does)"
         )
+    _check_read_length(walker, None, size, got, f"deleted file {entry.name!r}")
 
 
 def stream_raw_region(

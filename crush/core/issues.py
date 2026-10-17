@@ -2314,6 +2314,13 @@ MESSAGES: dict[str, str] = {
         "recovered (content intact)",
         "entry.recovered_intact",
     ),
+    "entry.recovered_assumed_contiguous": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "recovered on an assumption: the cluster chain is gone, so the content is read "
+        "as one run from the first cluster, which the volume cannot confirm; a file "
+        "that was fragmented reads with other data in it",
+        "entry.recovered_assumed_contiguous",
+    ),
     "entry.not_recoverable": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "not recoverable: {detail}",
