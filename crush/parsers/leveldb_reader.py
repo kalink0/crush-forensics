@@ -20,7 +20,12 @@ from LevelDB's own, a subclass here overrides the one method concerned:
   the edit with its offset, as VersionEdit::DecodeFrom does, instead of
   being read past, and says whether its record's checksum matches; and the
   MANIFEST isn't read in full on opening, so such an edit doesn't make the
-  whole file unopenable.
+  whole file unopenable;
+- records (_LogFile.__iter__, _LdbFile.__iter__): each record also says
+  where its parts are (record_location), and a .log record's offset is its
+  position in the file -- the vendored reader adds its position in the
+  joined batch to the start of the batch's first fragment, which is off
+  once a batch spans fragments.
 
 These are copies of the vendored methods with those changes. When
 ccl_leveldb is updated, compare them with the new version.
@@ -39,10 +44,12 @@ from crush.third_party.ccl_leveldb import ccl_simplesnappy
 from crush.third_party.ccl_leveldb.ccl_leveldb import (
     Block,
     BlockHandle,
+    KeyState,
     LdbFile,
     LogEntryType,
     LogFile,
     ManifestFile,
+    Record,
     VersionEdit,
     VersionEditTag,
     read_le_varint,
@@ -51,6 +58,10 @@ from crush.third_party.ccl_leveldb.ccl_leveldb import (
 
 _BLOCK_SIZE = 32768  # log_format.h kBlockSize
 _HEADER_SIZE = 7  # crc (4), length (2), type (1)
+_BATCH_HEADER_SIZE = 12  # write_batch.cc kHeader: sequence (8), count (4)
+_TAG_SIZE = 8  # an internal key's sequence/type tag (dbformat.h)
+
+Ranges = list[tuple[int, int]]
 
 _CompactionPointer = namedtuple("_CompactionPointer", ["level", "pointer"])
 _DeletedFile = namedtuple("_DeletedFile", ["level", "file_no"])
@@ -101,10 +112,11 @@ def _with_last(blocks: Iterable[bytes]) -> Iterator[tuple[bytes, bool]]:
 
 def _read_batches(
     raw_blocks: Iterable[bytes], path: Path, damaged: list[str] | None = None
-) -> Iterator[tuple[int, bytes, bool]]:
-    """(offset, record, stored checksums match) for every record of a
-    log-format file (a .log or a MANIFEST), joined from its fragments
-    (db/log_format.h, db/log_reader.cc).
+) -> Iterator[tuple[int, bytes, bool, Ranges]]:
+    """(offset, record, stored checksums match, fragments) for every record
+    of a log-format file (a .log or a MANIFEST), joined from its fragments
+    (db/log_format.h, db/log_reader.cc). *fragments* are the (start, end)
+    file ranges of the record's data, in order; joined, they are the record.
 
     With *damaged* (a list), a damaged part is described there and skipped,
     and reading goes on, as LevelDB reads a .log. Without it, the first
@@ -123,6 +135,7 @@ def _read_batches(
     start_offset = start_header = 0
     record = b""
     record_ok = True
+    fragments: Ranges = []
     for idx, (chunk, last_block) in enumerate(_with_last(raw_blocks)):
         with io.BytesIO(chunk) as buff:
             while len(chunk) - buff.tell() >= _HEADER_SIZE:
@@ -151,25 +164,28 @@ def _read_batches(
                         problem(f"Record starting at offset {start_header} has no end "
                                 f"before the record at offset {header_offset}")
                     in_record = False
-                    yield here, data, ok
+                    yield here, data, ok, [(here, here + length)]
                 elif record_type == LogEntryType.First:
                     if in_record and record:
                         problem(f"Record starting at offset {start_header} has no end "
                                 f"before the record at offset {header_offset}")
                     start_offset, start_header = here, header_offset
                     record, record_ok, in_record = data, ok, True
+                    fragments = [(here, here + length)]
                 elif record_type == LogEntryType.Middle:
                     if not in_record:
                         problem(f"Record part at offset {header_offset} has no start")
                     else:
                         record += data
                         record_ok = record_ok and ok
+                        fragments.append((here, here + length))
                 elif record_type == LogEntryType.Last:
                     if not in_record:
                         problem(f"Record part at offset {header_offset} has no start")
                     else:
                         in_record = False
-                        yield start_offset, record + data, record_ok and ok
+                        fragments.append((here, here + length))
+                        yield start_offset, record + data, record_ok and ok, fragments
                 else:
                     problem(f"Unknown record type {record_type} (length {length}) at offset "
                             f"{header_offset}")
@@ -231,30 +247,186 @@ def _decode_version_edit(buffer: bytes) -> VersionEdit:
     ))
 
 
+def _in_fragments(fragments: Ranges, start: int, end: int) -> Ranges:
+    """The file ranges holding bytes *start* to *end* of a record joined
+    from *fragments* -- more than one where they cross a fragment."""
+    found: Ranges = []
+    pos = 0
+    for frag_start, frag_end in fragments:
+        length = frag_end - frag_start
+        lo, hi = max(start, pos), min(end, pos + length)
+        if lo < hi:
+            found.append((frag_start + lo - pos, frag_start + hi - pos))
+        pos += length
+    return found
+
+
+def _runs(positions: list[int], base: int = 0) -> Ranges:
+    """Byte *positions* (in order) as (start, end) ranges of consecutive
+    bytes, each shifted by *base*."""
+    found: Ranges = []
+    for pos in positions:
+        if found and found[-1][1] == pos + base:
+            found[-1] = (found[-1][0], pos + base + 1)
+        else:
+            found.append((pos + base, pos + base + 1))
+    return found
+
+
 class _LogFile(LogFile):
     """A .log file, its records read as LevelDB reads them: a damaged part
     is skipped and described in *damaged*, and reading goes on.
 
-    *checksum_ok* is whether the stored checksums of the batch the record
-    just yielded comes from match: the vendored __iter__ yields every record
-    of one batch before it asks _get_batches for the next."""
+    After each record it yields, *checksum_ok* is whether the stored
+    checksums of the record's batch match, and *location* is where the
+    record's parts are in the file (see record_location)."""
 
     def __init__(self, path: Path) -> None:
         super().__init__(path)
         self.damaged: list[str] = []
         self.checksum_ok = True
+        self.location: dict[str, Any] | None = None
 
-    def _get_batches(self) -> Iterator[tuple[int, bytes]]:
+    def __iter__(self) -> Iterator[Record]:
+        # The vendored __iter__ (write_batch.cc: a 12-byte header, then per
+        # entry its type, key and -- unless a deletion -- value), keeping
+        # the position of each part.
         self.damaged.clear()
-        for offset, record, checksum_ok in _read_batches(
+        for _offset, batch, checksum_ok, fragments in _read_batches(
             self._get_raw_blocks(), self.path, self.damaged
         ):
             self.checksum_ok = checksum_ok
-            yield offset, record
+            with io.BytesIO(batch) as buff:
+                seq, count = struct.unpack("<QI", buff.read(_BATCH_HEADER_SIZE))
+                header = _in_fragments(fragments, 0, _BATCH_HEADER_SIZE)
+                for i in range(count):
+                    start = buff.tell()
+                    state = KeyState(buff.read(1)[0])
+                    key_length = read_le_varint(buff, is_google_32bit=True)
+                    key_start = buff.tell()
+                    key = buff.read(key_length)
+                    key_end = buff.tell()
+                    if state != KeyState.Deleted:
+                        value_length = read_le_varint(buff, is_google_32bit=True)
+                        value_start = buff.tell()
+                        value = buff.read(value_length)
+                    else:
+                        value_start = buff.tell()
+                        value = b""
+                    end = buff.tell()
+                    in_file = {
+                        "entry": _in_fragments(fragments, start, end),
+                        "batch_header": header,
+                        "type": _in_fragments(fragments, start, start + 1),
+                        "key": _in_fragments(fragments, key_start, key_end),
+                        "value": _in_fragments(fragments, value_start, end),
+                    }
+                    self.location = record_location(in_file)
+                    yield Record.log_record(
+                        key, value, seq + i, state, self.path, in_file["type"][0][0]
+                    )
+
+
+def record_location(
+    in_file: dict[str, Ranges] | None, block: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Where a record's parts are. *in_file*: (start, end) file ranges per
+    part -- entry, the parts within it, and for a .log record its batch's
+    header. *block*, for a record of a compressed table block, instead of
+    *in_file*: the block's offset, length, compression and the number of
+    records read from it, and the parts as ranges in the decompressed block
+    -- the record's bytes exist only there."""
+    return {"in_file": in_file, "compressed_block": block}
+
+
+def _block_entries(
+    block: Block,
+) -> Iterator[tuple[bytes, bytes, dict[str, Ranges]]]:
+    """(key, value, parts) for each entry of a table block, as the vendored
+    Block.__iter__ reads them (doc/table_format.md, table/block_builder.cc),
+    with the parts' ranges in the (decompressed) block: entry, user key,
+    tag, value. A key's first *shared* bytes are stored in earlier entries
+    (prefix compression back to the restart point); its user-key and tag
+    ranges include those pieces."""
+    raw = block._raw
+    restarts = block._restart_array_offset
+    with io.BytesIO(raw) as buff:
+        buff.seek(block.get_first_entry_offset())
+        key = b""
+        key_positions: list[int] = []
+        while buff.tell() < restarts:
+            start = buff.tell()
+            shared_length = read_le_varint(buff, is_google_32bit=True)
+            non_shared_length = read_le_varint(buff, is_google_32bit=True)
+            value_length = read_le_varint(buff, is_google_32bit=True)
+            if shared_length is None or non_shared_length is None or value_length is None:
+                raise ValueError(f"Entry at offset {start} of the block at offset {block.offset} "
+                                 f"is cut off")
+            if shared_length > len(key):
+                raise ValueError("Shared key length is larger than the previous key")
+            suffix_start = buff.tell()
+            key = key[:shared_length] + buff.read(non_shared_length)
+            key_positions = key_positions[:shared_length] + list(
+                range(suffix_start, suffix_start + len(key) - shared_length)
+            )
+            value_start = buff.tell()
+            value = buff.read(value_length)
+            end = buff.tell()
+            # Record.user_key: a key shorter than the tag is all user key
+            has_tag = len(key) >= _TAG_SIZE
+            user_positions = key_positions[:-_TAG_SIZE] if has_tag else key_positions
+            yield key, value, {
+                "entry": [(start, end)],
+                "key": _runs(user_positions),
+                "tag": _runs(key_positions[-_TAG_SIZE:]) if has_tag else [],
+                "value": [(value_start, end)],
+            }
+
+
+def _shifted(parts: dict[str, Ranges], base: int) -> dict[str, Ranges]:
+    return {name: [(s + base, e + base) for s, e in ranges] for name, ranges in parts.items()}
 
 
 class _LdbFile(LdbFile):
-    """A .ldb/.sst table that names a compression type it can't decode."""
+    """A .ldb/.sst table that names a compression type it can't decode.
+
+    After each record it yields, *location* is where the record's parts are
+    (see record_location): in the file for an uncompressed block, in the
+    decompressed block for a compressed one."""
+
+    location: dict[str, Any] | None = None
+
+    def __iter__(self) -> Iterator[Record]:
+        # The vendored __iter__, keeping the position of each part.
+        for _block_key, handle in self._index:
+            block = self._read_block(handle)
+            # Read the whole block first, for its record count; an entry
+            # that can't be read still lets the ones before it through,
+            # as the vendored reader does, then stops.
+            entries: list[tuple[bytes, bytes, dict[str, Ranges]]] = []
+            failure: Exception | None = None
+            try:
+                for entry in _block_entries(block):
+                    entries.append(entry)
+            except Exception as exc:  # noqa: BLE001 -- raised again below
+                failure = exc
+            for key, value, parts in entries:
+                if block.was_compressed:
+                    self.location = record_location(None, {
+                        "offset": handle.offset,
+                        "length": handle.length,
+                        "trailer": LdbFile.BLOCK_TRAILER_SIZE,
+                        "compression": "Snappy",
+                        "records": len(entries),
+                        **parts,
+                    })
+                    offset = block.offset
+                else:
+                    self.location = record_location(_shifted(parts, block.offset))
+                    offset = block.offset + parts["entry"][0][0]
+                yield Record.ldb_record(key, value, self.path, offset, block.was_compressed)
+            if failure is not None:
+                raise failure
 
     def _read_block(self, handle: BlockHandle) -> Block:
         # block (handle.length bytes), then a 5-byte trailer: compression
@@ -290,12 +462,16 @@ class _ManifestFile(ManifestFile):
 
     def _get_batches(self) -> Iterator[tuple[int, bytes]]:
         # A damaged part stops the MANIFEST, as it makes LevelDB fail.
-        for offset, record, _checksum_ok in _read_batches(self._get_raw_blocks(), self.path):
+        for offset, record, _checksum_ok, _fragments in _read_batches(
+            self._get_raw_blocks(), self.path
+        ):
             yield offset, record
 
     def __iter__(self) -> Iterator[VersionEdit]:
         self.checksum_mismatches = []
-        for batch_offset, batch, checksum_ok in _read_batches(self._get_raw_blocks(), self.path):
+        for batch_offset, batch, checksum_ok, _fragments in _read_batches(
+            self._get_raw_blocks(), self.path
+        ):
             if not checksum_ok:
                 # the record's (first) header, where its checksum is stored
                 self.checksum_mismatches.append(batch_offset - _HEADER_SIZE)
@@ -307,6 +483,37 @@ class _ManifestFile(ManifestFile):
                 raise UnknownVersionEditTag(
                     exc.tag, batch_offset + exc.offset, self.path, checksum_ok
                 ) from None
+
+
+class DataFileBytes:
+    """The bytes of a database's data files as read, by file name, for the
+    viewer to show a record in its file; and a compressed table block's
+    decompressed bytes, where such a record's ranges point."""
+
+    def __init__(self, files: dict[str, bytes]) -> None:
+        self._files = files
+        # the last block decompressed: the records of one block are
+        # usually looked at one after another
+        self._last: tuple[tuple[str, int], bytes] | None = None
+
+    def file(self, name: str) -> bytes | None:
+        return self._files.get(name)
+
+    def decompressed_block(self, name: str, offset: int, length: int) -> bytes:
+        """The block at *offset* (*length* bytes) of table file *name*,
+        Snappy-decompressed as the reader decompressed it. Raises
+        ValueError when it can't be."""
+        if self._last is not None and self._last[0] == (name, offset):
+            return self._last[1]
+        raw = self._files.get(name)
+        if raw is None:
+            raise ValueError(f"The bytes of {name} weren't read")
+        if offset < 0 or offset + length > len(raw):
+            raise ValueError(f"The block at offset {offset} ({length} bytes) is past the end of {name}")
+        with io.BytesIO(raw[offset:offset + length]) as buff:
+            block = bytes(ccl_simplesnappy.decompress(buff))
+        self._last = ((name, offset), block)
+        return block
 
 
 def open_data_file(path: Path) -> Any:

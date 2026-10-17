@@ -110,6 +110,46 @@ def _text_sort_key(text: str | None, raw: bytes) -> str:
     return f"0{len(raw):020d}"
 
 
+# The parts of a record the parser locates, in the order they're
+# highlighted (later ones paint over earlier ones) and named.
+_PARTS = (
+    ("entry", QT_TRANSLATE_NOOP("LevelDbRecordsWidget", "entry")),
+    ("batch_header", QT_TRANSLATE_NOOP("LevelDbRecordsWidget", "batch header (sequence, count)")),
+    ("type", QT_TRANSLATE_NOOP("LevelDbRecordsWidget", "type")),
+    ("key", QT_TRANSLATE_NOOP("LevelDbRecordsWidget", "user key")),
+    ("tag", QT_TRANSLATE_NOOP("LevelDbRecordsWidget", "tag (sequence, type)")),
+    ("value", QT_TRANSLATE_NOOP("LevelDbRecordsWidget", "value")),
+)
+
+
+def _part_groups(parts: dict[str, Any]) -> list[list[tuple[int, int]]]:
+    """The highlight groups for a record's located parts: one per part,
+    its pieces together (a key stored partly in earlier entries, a value
+    crossing log fragments)."""
+    return [
+        [(int(s), int(e)) for s, e in parts[name]]
+        for name, _label in _PARTS
+        if parts.get(name)
+    ]
+
+
+def _parts_text(parts: dict[str, Any]) -> str:
+    """Each located part with its ranges, in highlight order."""
+    lines = []
+    for name, label in _PARTS:
+        ranges = parts.get(name) or []
+        if name == "value" and not any(e > s for s, e in ranges):
+            if name in parts:
+                lines.append(translate("LevelDbRecordsWidget", "value: none (0 bytes)"))
+            continue
+        if not ranges:
+            continue
+        spans = ", ".join(f"0x{s:x}–0x{e:x}" for s, e in ranges)
+        size = sum(e - s for s, e in ranges)
+        lines.append(f"{translate('LevelDbRecordsWidget', label)}: {spans} ({size:,} B)")  # i18n: keep -- layout
+    return "\n".join(lines)
+
+
 def _make_item(display: str, sort_val: Any = None) -> QStandardItem:
     item = QStandardItem(display)
     item.setEditable(False)
@@ -160,10 +200,15 @@ class LevelDbRecordsWidget(QWidget):
         records: list[dict[str, Any]],
         initial_filter: str | None = None,
         parent: QWidget | None = None,
+        file_bytes: Any = None,
     ) -> None:
         super().__init__(parent)
         self._records = records
         self._initial_filter = initial_filter
+        # The parser's data files' bytes (data["__file_bytes"]): file(name),
+        # decompressed_block(name, offset, length).
+        self._file_bytes = file_bytes
+        self._shown_file: str | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -236,9 +281,16 @@ class LevelDbRecordsWidget(QWidget):
         splitter.addWidget(self._table)
 
         hex_tabs = QTabWidget()
+        self._hex_tabs = hex_tabs
+        self._file_label, self._hex_file, file_tab = self._labelled_hex()
+        self._block_label, self._hex_block, block_tab = self._labelled_hex()
+        self._file_label.setText(translate("LevelDbRecordsWidget", "Select a record."))
+        self._block_label.setText(translate("LevelDbRecordsWidget", "Select a record."))
         self._hex_key = HexViewer(b"")
         self._hex_val = HexViewer(b"")
         self._hex_ikey = HexViewer(b"")
+        hex_tabs.addTab(file_tab, translate("LevelDbRecordsWidget", "In file"))
+        hex_tabs.addTab(block_tab, translate("LevelDbRecordsWidget", "Decompressed block"))
         hex_tabs.addTab(self._hex_key, translate("LevelDbRecordsWidget", "Key"))
         hex_tabs.addTab(self._hex_val, translate("LevelDbRecordsWidget", "Value"))
         hex_tabs.addTab(self._hex_ikey, translate("LevelDbRecordsWidget", "Internal Key"))
@@ -332,6 +384,119 @@ class LevelDbRecordsWidget(QWidget):
             self._hex_key.set_data(uk)
             self._hex_val.set_data(val)
             self._hex_ikey.set_data(ik)
+            self._show_location(self._records[row] if row < len(self._records) else {})
+
+    @staticmethod
+    def _labelled_hex() -> tuple[QLabel, HexViewer, QWidget]:
+        """A hex pane with a label above it saying what it shows."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 0)
+        layout.setSpacing(4)
+        label = QLabel()
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        hex_viewer = HexViewer(b"")
+        layout.addWidget(label)
+        layout.addWidget(hex_viewer, 1)
+        return label, hex_viewer, widget
+
+    def _show_file(self, name: str) -> bool:
+        """Load data file *name* into the In file pane (once per file);
+        False when its bytes aren't available."""
+        if self._shown_file == name:
+            return True
+        raw = self._file_bytes.file(name) if self._file_bytes is not None else None
+        if raw is None:
+            self._shown_file = None
+            self._hex_file.set_data(b"")
+            return False
+        self._hex_file.set_data(raw)
+        self._shown_file = name
+        return True
+
+    def _show_location(self, rec: dict[str, Any]) -> None:
+        """The record in its file (In file) and, for a record of a
+        compressed table block, in the decompressed block."""
+        fname = rec.get("file", "")
+        location = rec.get("location") or {}
+        in_file = location.get("in_file")
+        block = location.get("compressed_block")
+
+        if (in_file or block) and not self._show_file(fname):
+            self._file_label.setText(translate(
+                "LevelDbRecordsWidget", "The bytes of {file} weren't kept, so the record can't be shown in it."
+            ).format(file=fname))
+        elif in_file:
+            self._hex_file.highlight_byte_range_groups(_part_groups(in_file))
+            self._file_label.setText(
+                translate("LevelDbRecordsWidget", "{file}, highlighted:").format(file=fname)
+                + "\n" + _parts_text(in_file)
+            )
+        elif block:
+            start = int(block["offset"])
+            end = start + int(block["length"]) + int(block.get("trailer", 0))
+            self._hex_file.highlight_byte_range_groups([[(start, end)]])
+            self._file_label.setText(translate(
+                "LevelDbRecordsWidget",
+                "{file}, highlighted: the {compression}-compressed block at 0x{start:x}–0x{end:x} "
+                "({length:,} B and a {trailer} B trailer: compression type, checksum). "
+                "{records:,} records were read from this block; this record's own bytes exist "
+                "only after decompression and can't be pointed at in the file. "
+                "See “Decompressed block”.",
+            ).format(
+                file=fname, compression=block.get("compression", ""), start=start, end=end,
+                length=int(block["length"]), trailer=int(block.get("trailer", 0)),
+                records=int(block.get("records", 0)),
+            ))
+        else:
+            self._shown_file = None
+            self._hex_file.set_data(b"")
+            self._file_label.setText(translate(
+                "LevelDbRecordsWidget", "No location in the file was recorded for this record."
+            ))
+
+        if not block:
+            self._hex_block.set_data(b"")
+            self._block_label.setText(
+                translate(
+                    "LevelDbRecordsWidget",
+                    "This record isn't from a compressed block; its bytes are shown in “In file”.",
+                ) if in_file else translate(
+                    "LevelDbRecordsWidget", "No location in the file was recorded for this record."
+                )
+            )
+            return
+        try:
+            raw_block = self._file_bytes.decompressed_block(
+                fname, int(block["offset"]), int(block["length"])
+            ) if self._file_bytes is not None else None
+        except ValueError as exc:
+            raw_block = None
+            reason = str(exc)
+        else:
+            reason = translate("LevelDbRecordsWidget", "The bytes of {file} weren't kept.").format(
+                file=fname
+            )
+        if raw_block is None:
+            self._hex_block.set_data(b"")
+            self._block_label.setText(translate(
+                "LevelDbRecordsWidget", "The block can't be decompressed: {reason}"
+            ).format(reason=reason))
+            return
+        self._hex_block.set_data(raw_block)
+        self._hex_block.highlight_byte_range_groups(_part_groups(block))
+        self._block_label.setText(
+            translate(
+                "LevelDbRecordsWidget",
+                "Derived: the block at 0x{offset:x} of {file}, {compression}-decompressed "
+                "({size:,} B). Offsets are in the decompressed block, not in the file. Highlighted:",
+            ).format(
+                offset=int(block["offset"]), file=fname, compression=block.get("compression", ""),
+                size=len(raw_block),
+            )
+            + "\n" + _parts_text(block)
+        )
 
     def _export_csv(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -465,7 +630,10 @@ class LevelDbViewer(QWidget):
         if records:
             total = len(records)
             tabs.addTab(
-                LevelDbRecordsWidget(records, initial_filter=None, parent=tabs),
+                LevelDbRecordsWidget(
+                    records, initial_filter=None, parent=tabs,
+                    file_bytes=self._data.get("__file_bytes"),
+                ),
                 translate("LevelDbViewer", "Records ({total:,})").format(total=total),
             )
 

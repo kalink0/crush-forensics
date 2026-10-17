@@ -16,7 +16,12 @@ from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode, join_notes
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.third_party.ccl_leveldb import KeyState
-from crush.parsers.leveldb_reader import UnknownVersionEditTag, open_data_file, open_manifest
+from crush.parsers.leveldb_reader import (
+    DataFileBytes,
+    UnknownVersionEditTag,
+    open_data_file,
+    open_manifest,
+)
 from crush.third_party.ccl_leveldb.ccl_leveldb import FileType, LogFile, ManifestFile
 
 # RocksDB, LevelDB's fork, uses the same file names (CURRENT, MANIFEST-,
@@ -287,6 +292,8 @@ class LeveldbParser(AbstractParser):
         records: list[dict[str, Any]] = []
         not_whole = 0  # data files not read to their end
         records_bad_checksum = 0
+        # Each data file's bytes, for showing a record in its file.
+        file_bytes: dict[str, bytes] = {}
 
         for path in data_files:
             try:
@@ -297,6 +304,10 @@ class LeveldbParser(AbstractParser):
                 not_whole += 1
                 continue
             fname = path.name
+            try:
+                file_bytes[fname] = path.read_bytes()
+            except OSError as exc:  # the reader opened it; the viewer says it's missing
+                _logger.debug("Could not keep the bytes of %s: %s", fname, exc)
             # A row for every file that opens, even one holding no records.
             fs = file_stats[fname] = {
                 "name": fname,
@@ -342,6 +353,8 @@ class LeveldbParser(AbstractParser):
                         "value_text": _try_utf8(val),
                         "compressed": record.was_compressed,
                         "checksum_ok": checksum_ok,
+                        # where the record's parts are (leveldb_reader.record_location)
+                        "location": reader.location,
                     })
                     from_file += 1
             except Exception as exc:  # noqa: BLE001
@@ -413,6 +426,7 @@ class LeveldbParser(AbstractParser):
             "files": sorted(file_stats.values(), key=lambda f: f["name"]),
             "records": records,
             "log_files": log_files,
+            "__file_bytes": DataFileBytes(file_bytes),
         }
 
         text_parts: list[str] = []

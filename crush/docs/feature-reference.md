@@ -622,7 +622,7 @@ Opens LevelDB database directories (used by Chrome, Android apps, and iOS apps) 
 | File | Source file |
 | Seq | LevelDB sequence number |
 | Type | `Live`, `Deleted`, or `Unknown` |
-| Offset | Byte offset of the record within the source file (hex) |
+| Offset | Byte offset of the record within the source file (hex): for a `.log` record its type byte, for a record of an uncompressed table block its entry; for a record of a compressed table block the block's offset, shared by all its records |
 | User Key (text) / (hex) | Key decoded as UTF-8 and as hex |
 | Value (text) / (hex) | Value decoded as UTF-8 and as hex. A key or value that isn't text shows `<binary N B>` in its text column; sorting a text column puts these together, ordered by size |
 | Internal Key (hex) | Full internal key (user key + 8-byte sequence/type suffix) for `.ldb`/`.sst` records |
@@ -636,7 +636,13 @@ Toolbar controls:
 | **Search** | Case-insensitive filter across all columns; combines with the state filter |
 | **Export CSV…** | Save currently visible rows to a UTF-8 CSV file; includes full-length hex columns and the Internal Key |
 
-Selecting a row feeds the raw bytes into a tabbed *Key* / *Value* hex pane below the table. A third *Internal Key* tab shows the full internal key for `.ldb`/`.sst` records.
+Selecting a row fills the tabbed hex pane below the table:
+
+| Tab | Content |
+|---|---|
+| **In file** | The record's whole source file, with the record's parts highlighted where they are stored. A label above names each highlighted part with its offsets and size. For a `.log` record: the entry, its batch's header (sequence number and count, shared by the batch's records), type, user key and value — a part that crosses a log block boundary is highlighted in each of its pieces, in one color. For a record of an uncompressed table block: the entry, user key, tag (8-byte sequence/type) and value; a key's first bytes that are prefix-compressed against the keys before it are stored in earlier entries and highlighted there. For a record of a **compressed** (Snappy) block, the record's own bytes exist only after decompression and can't be pointed at in the file: the whole compressed block and its trailer are highlighted, and the label says so and how many records were read from the block |
+| **Decompressed block** | For a record of a compressed table block only: the block after Snappy decompression, labelled as derived, with the record's parts highlighted; offsets there are in the decompressed block, not in the file. For other records it says why there is nothing to show |
+| **Key** / **Value** / **Internal Key** | The decoded bytes on their own; *Internal Key* is the full internal key for `.ldb`/`.sst` records |
 
 Right-click any record row to open the [BLOB Inspector](#blob-inspector) for the key, value, or internal key of that record.
 

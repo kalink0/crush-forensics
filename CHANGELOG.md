@@ -31,6 +31,7 @@ All notable changes to Crush will be documented in this file.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
 - Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
 - Added to the MMKV viewer -> Support for record counts on the state filter buttons.
+- Added to the LevelDB viewer -> Support for showing the selected record's key, value and tag in its file, and a compressed block's record in the decompressed block.
 - Added to the SQLite Table viewer -> Support for a Strings view of the database, -wal and -journal file, with each string's page and region.
 - Added to the SQLite Table viewer -> Support for decoding a column as Cocoa nanoseconds. ([@byteofthepython](https://github.com/byteofthepython), [#158](https://github.com/kalink0/crush-forensics/issues/158))
 - Added to the SQLite Table viewer -> Support for decoding a column as the other Value Inspector timestamp formats except GPS, including BLOB formats (SYSTEMTIME, BCD, UUID v1).
@@ -76,6 +77,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed a damaged part of a LevelDB `.log` ending the read of the whole file; it is now skipped and named, and the records after it are read, as LevelDB reads on.
 - Fixed a LevelDB key range shorter than an internal key's tag showing in the Files tab without a note.
 - Fixed LevelDB `.log` records and MANIFEST edits whose stored checksum doesn't match showing as ordinary ones; they are now marked.
+- Fixed the Offset of LevelDB `.log` records in a batch spanning more than one log block pointing a few bytes before the record.
 - Fixed running a marked statement in the SQL editor of the SQLite and Realm viewers being rejected as not a SELECT.
 - Fixed an NSKeyedArchiver archive failing to resolve as a whole when an NSDictionary in it has an object as key; that dictionary now stays as stored.
 - Fixed an unresolved NSKeyedArchiver archive being shown under Decoded without saying so outside the Properties panel.
