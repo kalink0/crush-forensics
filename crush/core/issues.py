@@ -543,7 +543,8 @@ MESSAGES: dict[str, str] = {
     ),
     "exif.png_not_checked": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "PNG eXIf chunk not checked yet (tEXt chunks are read)",
+        "PNG eXIf chunk not checked yet; tEXt chunks are shown under PNG text, "
+        "zTXt and iTXt chunks are not read",
         "exif.png_not_checked",
     ),
     "exif.not_defined": QT_TRANSLATE_NOOP(
@@ -1506,10 +1507,21 @@ MESSAGES: dict[str, str] = {
     ),
     "segb.payload_heuristic": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Schema-less rendering (heuristic): valid UTF-8 is shown as text and "
-        "64/32-bit fields as double/float; the exact bytes are in the cell "
-        "(Inspect BLOB / Open as Protobuf)",
+        "Payload column: schema-less rendering (heuristic), valid UTF-8 shown as text and "
+        "64/32-bit fields as double/float. The selected record's payload is shown below "
+        "the table with every candidate reading of each field",
         "segb.payload_heuristic",
+    ),
+    "segb.detail_no_payload": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "This record's payload offsets could not be read: no payload bytes to decode",
+        "segb.detail_no_payload",
+    ),
+    "segb.detail_payload_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Only {present} of the {stated} bytes the record states for its payload are in the "
+        "file; the bytes there are decoded",
+        "segb.detail_payload_short",
     ),
     "segb.payload_partial": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -1705,6 +1717,23 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "The {file} could not be read; its strings are not listed: {detail}",
         "strings.file_unreadable",
+    ),
+    "realm_strings.header_not_detected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No Realm file header: the strings are listed, but no region is attributed",
+        "realm_strings.header_not_detected",
+    ),
+    "realm_strings.footer_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The file is in streaming form, but its footer doesn't resolve a top reference: "
+        "no array is attributed",
+        "realm_strings.footer_invalid",
+    ),
+    "realm_strings.refs_not_followed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} reference(s) lead to no array and were not followed; what they would "
+        "reach is listed as not reached",
+        "realm_strings.refs_not_followed",
     ),
     "strings.file_empty": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -2145,6 +2174,16 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "exFAT directory entry",
         "time.exfat_entry",
+    ),
+    "time.gzip_header": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "gzip header MTIME",
+        "time.gzip_header",
+    ),
+    "time.gzip_mtime_zero": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "stored as 0, which the gzip format (RFC 1952) defines as no time stamp",
+        "time.gzip_mtime_zero",
     ),
     "time.offset_not_applied": QT_TRANSLATE_NOOP(
         "ParseIssue",

@@ -62,12 +62,12 @@ from __future__ import annotations
 
 import decimal
 import math
-import re
 import struct
 import uuid as _uuid_mod
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from crush.core.byte_strings import scan_strings
 from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
@@ -339,6 +339,9 @@ def _extract_free_list(
 
     Returns a list of dicts with keys:
       offset, size, version, array_header (or None), strings (list[str]), bytes
+
+    strings are the block's text runs by byte_strings.scan_strings, the rule
+    every Strings view uses, in block order.
     """
     root_hdr = _parse_array_header(data, root_offset)
     if root_hdr is None or not root_hdr["has_refs"]:
@@ -361,16 +364,7 @@ def _extract_free_list(
             continue
         block = data[pos : pos + sz]
         arr_hdr = _parse_array_header(data, pos)
-        strings: list[str] = []
-        if arr_hdr is None:
-            # Raw heap — extract null-separated printable strings (≥4 chars)
-            for chunk in block.split(b"\x00"):
-                try:
-                    s = chunk.decode("utf-8")
-                    if len(s) >= 4 and s.isprintable():
-                        strings.append(s)
-                except Exception:
-                    pass
+        strings = [hit.value for hit in scan_strings(block)]
         entries.append({
             "index": i,
             "offset": pos,
@@ -3739,31 +3733,6 @@ def _extract_pre_cluster_tables_data(
     return tables, (failures or None)
 
 
-# ---------------------------------------------------------------------------
-# String scanner
-# ---------------------------------------------------------------------------
-
-# Matches runs of printable ASCII and UTF-8 2-/3-byte sequences (Latin, Greek, …).
-# This surfaces human-readable content stored in Data Arrays without requiring
-# full B+ tree traversal or column-type knowledge.
-_STRING_RUN = re.compile(
-    rb"(?:[\x20-\x7E]|[\xC2-\xDF][\x80-\xBF]|[\xE0-\xEF][\x80-\xBF]{2}){8,}"
-)
-
-
-def _scan_strings(data: bytes, min_len: int = 20) -> list[str]:
-    """Return unique printable strings (ASCII + UTF-8) found in *data*."""
-    results: list[str] = []
-    seen: set[str] = set()
-    for m in _STRING_RUN.finditer(data):
-        try:
-            s = m.group().decode("utf-8", errors="replace").strip()
-        except Exception:
-            continue
-        if len(s) >= min_len and s not in seen:
-            seen.add(s)
-            results.append(s)
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -4015,8 +3984,6 @@ class RealmParser(AbstractParser):
                 schema = _extract_schema(full_data, active_offset, file_size)
                 inactive_schema = _extract_schema(full_data, inactive_offset, file_size)
 
-        strings = _scan_strings(full_data)
-
         # Row/table data below _MIN_CLUSTER_FORMAT_VERSION uses the
         # pre-Cluster Table/Spec layout (_extract_pre_cluster_tables_data)
         # instead of the Cluster-based path. unsupported_row_format now
@@ -4118,7 +4085,10 @@ class RealmParser(AbstractParser):
             "inactive_schema": inactive_schema,
             "inactive_tables": inactive_tables,
             "inactive_ref_index": inactive_ref_idx if header_info else None,
-            "strings": strings,
+            # The Strings tab scans __realm_file_bytes when opened (see
+            # crush/core/realm_strings.py); this says whether those bytes
+            # are the decrypted file.
+            "decrypted": password is not None,
             "freed_blocks": freed_blocks,
             "unsupported_row_format": unsupported_row_format,
             "streaming_form": streaming_form,
@@ -4192,7 +4162,6 @@ class RealmParser(AbstractParser):
                 for v in vals:
                     if isinstance(v, str) and v.strip() and not v.startswith("<blob"):
                         text_parts.append(v)
-        text_parts.extend(strings[:500])
 
         return ParseResult(
             viewer_type="realm",

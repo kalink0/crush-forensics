@@ -374,7 +374,7 @@ often a RAM-backed tmpfs. For anything large, call
 | `node.size` | `int` | file size in bytes |
 | `node.is_dir` | `bool` | True for directories |
 | `node.children` | `list[VFSNode]` | direct children (directories only) |
-| `node.modified` | `float` | mtime as Unix timestamp |
+| `node.modified` | `float \| None` | mtime as Unix timestamp (UTC); `None` when the source gives none — `0.0` is 1970-01-01 00:00:00 UTC (`accessed`, `changed`, `birth` alike) |
 
 ---
 

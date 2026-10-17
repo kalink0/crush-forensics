@@ -50,13 +50,12 @@ def filetime_to_unix(ft: int) -> float:
     return ft / 10_000_000 - _WIN_EPOCH_OFFSET
 
 
-def first_instant(times: list[StoredTime], kind: str = MODIFIED) -> float:
-    """The first instant of *kind* in *times*, in stored order, or 0.0 (the
-    VFSNode value for "none")."""
+def first_instant(times: list[StoredTime], kind: str = MODIFIED) -> float | None:
+    """The first instant of *kind* in *times*, in stored order, or None."""
     for t in times:
         if t.kind == kind and t.utc is not None:
             return t.utc
-    return 0.0
+    return None
 
 
 # -- ZIP: DOS date/time (APPNOTE 4.4.6) ------------------------------------

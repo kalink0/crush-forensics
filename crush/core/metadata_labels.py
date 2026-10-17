@@ -101,6 +101,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Objects"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Original folder"),
     QT_TRANSLATE_NOOP("MetadataLabel", "PDF Version"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "PNG text"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Page records"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Page size"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Pages"),

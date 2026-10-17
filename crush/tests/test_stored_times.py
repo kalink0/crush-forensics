@@ -134,7 +134,7 @@ class TestDosDateTime:
         finally:
             monkeypatch.undo()
             time.tzset()
-        assert node.modified == 0.0  # no instant: a DOS time has no zone
+        assert node.modified is None  # no instant: a DOS time has no zone
         assert [t.reading for t in node.stored_times] == ["2024-05-01 12:00:00"]
 
 
@@ -283,7 +283,7 @@ class TestFolderTimes:
         vfs = open_vfs(self._tar(tmp_path / "x.tar"))
         assert isinstance(vfs, TarVFS)
         root = vfs.root()
-        assert _child(root, "implied").modified == 0.0
+        assert _child(root, "implied").modified is None
         assert _child(root, "late").modified == 3000.0
         assert _child(_child(root, "implied"), "a.txt").modified == 1000.0
 
@@ -296,8 +296,8 @@ class TestFolderTimes:
         vfs = open_vfs(path)
         assert isinstance(vfs, SevenZipVFS)
         root = vfs.root()
-        assert _child(root, "implied").modified == 0.0
-        assert _child(_child(root, "implied"), "a.txt").modified != 0.0
+        assert _child(root, "implied").modified is None
+        assert _child(_child(root, "implied"), "a.txt").modified is not None
 
     def test_sevenzip_entry_without_time_stays_without(self, tmp_path: Path) -> None:
         """py7zr's list() hands an entry with no stored time the previous
@@ -312,8 +312,8 @@ class TestFolderTimes:
                 if f.filename == "second.txt":
                     f._file_info.pop("lastwritetime", None)
         root = open_vfs(path).root()
-        assert _child(root, "first.txt").modified != 0.0
-        assert _child(root, "second.txt").modified == 0.0
+        assert _child(root, "first.txt").modified is not None
+        assert _child(root, "second.txt").modified is None
 
 
 class TestFatReadings:
@@ -324,7 +324,7 @@ class TestFatReadings:
     )
     def test_fat32(self, tmp_path: Path) -> None:
         node = self._live(tmp_path, "raw_fat32_deleted.img.gz", "a.bin")
-        assert node.modified == 0.0
+        assert node.modified is None
         assert [(t.kind, t.reading, t.note) for t in node.stored_times] == [
             (MODIFIED, "2026-09-11 01:01:24", None),
             (ACCESSED, "2026-09-11", None),  # FAT stores the access date only
@@ -340,7 +340,7 @@ class TestFatReadings:
     )
     def test_exfat_offset_shown_not_applied(self, tmp_path: Path) -> None:
         node = self._live(tmp_path, "raw_exfat_deleted.img.gz", "a.bin")
-        assert node.modified == 0.0
+        assert node.modified is None
         assert [(t.kind, t.reading) for t in node.stored_times] == [
             (MODIFIED, "2026-09-11 09:01:29.36"),
             (ACCESSED, "2026-09-11 09:01:28"),
@@ -426,6 +426,57 @@ class TestDisplay:
         rows = self._rows(panel)
         assert rows["Modified:"][0].endswith(" UTC")
         assert not any("(UTC)" in label for label in rows)
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="TAR archive",
+        desc="A stored time of 0 is shown as 1970-01-01 00:00:00 UTC, not as a missing time",
+    )
+    def test_a_stored_zero_is_a_time(self, qapp, tmp_path: Path) -> None:
+        """A TAR member's mtime is always stored (POSIX ustar); 0 there is
+        1970-01-01, and showing it as "—" would hide a stored value."""
+        from crush.ui.props_panel import PropertiesPanel
+        from crush.ui.search_panel import SearchPanel
+
+        path = tmp_path / "zero.tar"
+        with tarfile.open(path, "w") as tf:
+            info = tarfile.TarInfo("epoch.txt")
+            info.size, info.mtime = 1, 0
+            tf.addfile(info, io.BytesIO(b"x"))
+        vfs = open_vfs(path)
+        node = _child(vfs.root(), "epoch.txt")
+        assert node.modified == 0.0
+        panel = PropertiesPanel()
+        panel.update_properties(node, {}, vfs)
+        assert self._rows(panel)["Modified:"] == ["1970-01-01 00:00:00 UTC"]
+        search = SearchPanel()
+        search._vfs = vfs
+        search._populate([node])
+        assert search._model.item(0, 4).text() == "1970-01-01 00:00:00 UTC"
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="gzip file",
+        desc="A gzip header MTIME of 0 is shown as no time stamp, with the reason the format gives",
+    )
+    def test_gzip_mtime_zero_is_no_time_stamp(self, qapp, tmp_path: Path) -> None:
+        """RFC 1952: MTIME 0 means no time stamp is available."""
+        from crush.ui.props_panel import PropertiesPanel
+
+        zero, stamped = tmp_path / "zero.txt.gz", tmp_path / "stamped.txt.gz"
+        zero.write_bytes(gzip.compress(b"x", mtime=0))
+        stamped.write_bytes(gzip.compress(b"x", mtime=_MT))
+        assert _child(open_vfs(stamped).root(), "stamped.txt").modified == float(_MT)
+        vfs = open_vfs(zero)
+        node = _child(vfs.root(), "zero.txt")
+        assert node.modified is None
+        panel = PropertiesPanel()
+        panel.update_properties(node, {}, vfs)
+        assert self._rows(panel)["Modified:"] == [
+            "—",
+            "gzip header MTIME",
+            "stored as 0, which the gzip format (RFC 1952) defines as no time stamp",
+        ]
 
     def test_search_column_marks_reading(self, qapp, tmp_path: Path) -> None:
         from crush.ui.search_panel import SearchPanel

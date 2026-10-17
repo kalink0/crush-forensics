@@ -87,6 +87,12 @@ def exif_metadata(raw: bytes) -> dict[str, Any]:
     out.update(fields)
     if problems:
         out["EXIF problems"] = problems
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        # Not EXIF: free keyword/text pairs, every one shown as stored, in
+        # stored order (a keyword may repeat).
+        text = _extract_png_text(raw)
+        if text:
+            out["PNG text"] = "\n".join(f"{k}: {v}" for k, v in text)
     return out
 
 
@@ -101,7 +107,8 @@ def _read_exif(raw: bytes, problems: list[ParseIssue]) -> tuple[dict[str, Any], 
     if raw[:2] in (b"II", b"MM"):
         return _parse_tiff(raw, problems), present
     if raw[:8] == b"\x89PNG\r\n\x1a\n":
-        return _extract_png_text(raw), ParseIssue("exif.png_not_checked")
+        # tEXt chunks are no EXIF; exif_metadata() shows them on their own.
+        return {}, ParseIssue("exif.png_not_checked")
     if _is_isobmff_image(raw):
         return _extract_heif_exif(raw, problems)
     if raw[:6] in (b"GIF87a", b"GIF89a") or raw[:2] == b"BM" or raw[:2] == b"\xFF\x0A":
@@ -349,8 +356,10 @@ def _dms_to_decimal(dms: Any, ref: str) -> float | None:
     return -deg if ref in ("S", "W") else deg
 
 
-def _extract_png_text(raw: bytes) -> dict[str, Any]:
-    result: dict[str, Any] = {}
+def _extract_png_text(raw: bytes) -> list[tuple[str, str]]:
+    """Every tEXt chunk's (keyword, text), in stored order. PNG 1.2 section
+    4.2.3.1: Latin-1, keyword and text separated by one NUL."""
+    result: list[tuple[str, str]] = []
     pos = 8
     while pos + 8 <= len(raw):
         clen = struct.unpack_from(">I", raw, pos)[0]
@@ -361,7 +370,7 @@ def _extract_png_text(raw: bytes) -> dict[str, Any]:
             if sep >= 0:
                 k = cdata[:sep].decode("latin-1", errors="replace")
                 v = cdata[sep + 1:].decode("latin-1", errors="replace")
-                result[k] = v
+                result.append((k, v))
         elif ctype == b"IEND":
             break
         pos += 8 + clen + 4

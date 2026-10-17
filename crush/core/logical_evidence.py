@@ -249,13 +249,13 @@ def _set_floats(node: "VFSNode", times: list[StoredTime]) -> None:
     for t in times:
         if t.utc is None:
             continue
-        if t.kind == MODIFIED and not node.modified:
+        if t.kind == MODIFIED and node.modified is None:
             node.modified = t.utc
-        elif t.kind == ACCESSED and not node.accessed:
+        elif t.kind == ACCESSED and node.accessed is None:
             node.accessed = t.utc
-        elif t.kind == CHANGED and not node.changed:
+        elif t.kind == CHANGED and node.changed is None:
             node.changed = t.utc
-        elif t.kind == BIRTH and not node.birth:
+        elif t.kind == BIRTH and node.birth is None:
             node.birth = t.utc
 
 

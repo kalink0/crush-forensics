@@ -49,9 +49,10 @@ def _fmt_size(n: int) -> str:
     return str(n)
 
 
-def _fmt_ts(ts: float) -> str:
-    # 0 is the VFS's "no timestamp" value; negative (pre-1970) values are real.
-    if not ts:
+def _fmt_ts(ts: float | None) -> str:
+    # None is the VFS's "no timestamp" value; 0 and negative (pre-1970)
+    # values are real.
+    if ts is None:
         return ""
     dt = unix_to_utc(ts)
     if dt is None:
@@ -373,7 +374,7 @@ class SearchPanel(QWidget):
             size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             size_item.setEditable(False)
 
-            reading = "" if node.modified else _modified_reading(node)
+            reading = "" if node.modified is not None else _modified_reading(node)
             if reading:
                 # No instant to sort by: sorted by its text, as stored.
                 ts_item = QStandardItem(

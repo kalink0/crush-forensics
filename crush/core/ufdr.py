@@ -130,7 +130,7 @@ def is_ufdr_zip(path: str | Path) -> bool:
     return all(name in names for name in _REQUIRED_MEMBERS)
 
 
-def _parse_ts(text: str | None) -> float:
+def _parse_ts(text: str | None) -> float | None:
     """Parse a Postgres "timestamp without time zone" COPY-text value
     (`YYYY-MM-DD HH:MM:SS[.ffffff]`) into Unix epoch seconds.
 
@@ -148,14 +148,14 @@ def _parse_ts(text: str | None) -> float:
     crush/core/ts_decode.py's decode_ts()).
     """
     if not text:
-        return 0.0
+        return None
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
         try:
             dt = datetime.strptime(text, fmt)
         except ValueError:
             continue
         return (dt - _EPOCH).total_seconds()
-    return 0.0
+    return None
 
 
 @dataclass

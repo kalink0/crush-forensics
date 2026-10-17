@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-257 checks in total.
+263 checks in total.
 
 ### Sources
 
@@ -28,8 +28,8 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [Single file](#single-file) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [ZIP archive](#zip-archive) | 4 | not tested | 1 | 2 | 1 | 2 |
 | [7z archive](#7z-archive) | 1 | not tested | not tested | not tested | not tested | not tested |
-| [TAR archive](#tar-archive) | 2 | not tested | 1 | 1 | not tested | not tested |
-| [gzip file](#gzip-file) | 2 | 1 | 1 | 1 | not tested | 1 |
+| [TAR archive](#tar-archive) | 2 | not tested | 1 | 2 | not tested | not tested |
+| [gzip file](#gzip-file) | 2 | 1 | 1 | 2 | not tested | 1 |
 | [Android backup (.ab)](#android-backup-ab) | 3 | not tested | not tested | not tested | not tested | not tested |
 | [iTunes backup](#itunes-backup) | 4 | not tested | not tested | not tested | not tested | not tested |
 | [Cellebrite UFDR](#cellebrite-ufdr) | 2 | 1 | 1 | not tested | not tested | 1 |
@@ -83,7 +83,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [SQLite database](#sqlite-database) | 1 | 2 | 1 | 1 | not tested | 1 |
 | [SQLite WAL](#sqlite-wal) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
-| [Realm database](#realm-database) | 2 | 1 | 1 | 7 | not tested | 1 |
+| [Realm database](#realm-database) | 2 | 1 | 1 | 7 | 1 | 1 |
 | [LevelDB](#leveldb) | 2 | 1 | 1 | 4 | 4 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Property list (plist)](#property-list-plist) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -94,12 +94,12 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [Protobuf](#protobuf) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Protobuf with .proto schema](#protobuf-with-proto-schema) | 1 | 1 | 1 | 1 | not tested | 1 |
 | [PDF](#pdf) | 2 | 1 | 1 | 1 | not tested | 1 |
-| [Image](#image) | 2 | 1 | 1 | 1 | not tested | 1 |
+| [Image](#image) | 2 | 1 | 1 | 1 | 1 | 1 |
 | [Apple ATX](#apple-atx) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Apple KTX](#apple-ktx) | 2 | 1 | 1 | 1 | not tested | 1 |
-| [Audio/video](#audiovideo) | 2 | 2 | 1 | 2 | not tested | 2 |
+| [Audio/video](#audiovideo) | 2 | 2 | 1 | 3 | not tested | 2 |
 | [Log file](#log-file) | not tested | not tested | not tested | not tested | not tested | not tested |
-| [Hex view (any file)](#hex-view-any-file) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [Hex view (any file)](#hex-view-any-file) | not tested | not tested | not tested | 1 | not tested | not tested |
 
 ### Tools
 
@@ -149,6 +149,7 @@ No forensic checks.
 - **Source Immutability** — TarVFS must not change mtime or ctime of the archive file ([test_forensic.py](../../crush/tests/test_forensic.py), `test_tar_vfs_does_not_change_timestamps`)
 - **Read-only Media** — TarVFS must read all entries when the archive file is chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_tar_vfs_works_on_readonly_media`)
 - **Known-output Verification** — minimal.tar.gz must contain exactly: evidence/minimal.sqlite and evidence/minimal_binary.plist ([test_forensic.py](../../crush/tests/test_forensic.py), `test_tar_fixture_contains_expected_entries`)
+- **Known-output Verification** — A stored time of 0 is shown as 1970-01-01 00:00:00 UTC, not as a missing time ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_a_stored_zero_is_a_time`)
 - *Not tested:* No Side Effects, Completeness, Reproducibility
 
 #### gzip file
@@ -158,6 +159,7 @@ No forensic checks.
 - **No Side Effects** — GzipVFS must not create any sibling files next to the .gz file ([test_forensic.py](../../crush/tests/test_forensic.py), `test_gzip_vfs_creates_no_sibling_files`)
 - **Read-only Media** — GzipVFS must decompress and read the member when the .gz file is chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_gzip_vfs_works_on_readonly_media`)
 - **Known-output Verification** — minimal.sqlite.gz must decompress to exactly minimal.sqlite's bytes, member name 'minimal.sqlite' ([test_forensic.py](../../crush/tests/test_forensic.py), `test_gzip_fixture_known_output`)
+- **Known-output Verification** — A gzip header MTIME of 0 is shown as no time stamp, with the reason the format gives ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_gzip_mtime_zero_is_no_time_stamp`)
 - **Reproducibility** — Reading the same gzip member twice must return byte-identical data ([test_forensic.py](../../crush/tests/test_forensic.py), `test_gzip_vfs_read_is_reproducible`)
 - *Not tested:* Completeness
 
@@ -460,8 +462,8 @@ No forensic checks.
 - **Known-output Verification** — mcdonalds_v9_data.realm (real file format 9 sample, DFRWS 2021 Challenge dataset) must fully decode: 5 classes, no unsupported columns, correct row values ([test_forensic.py](../../crush/tests/test_forensic.py), `test_realm_mcdonalds_v9_fixture_known_output`)
 - **Known-output Verification** — all_types_v24.realm (real file format 24, actual realm-js SDK output) must decode every modern column type correctly, including Decimal128, Link, LinkList, and nested Mixed collections ([test_forensic.py](../../crush/tests/test_forensic.py), `test_realm_all_types_v24_fixture_known_output`)
 - **Known-output Verification** — format9_alltypes.realm (real file format 9, realm-core v5.23.9's own public API output, donated by the issue #55 reporter) must decode every old ColumnType correctly against the accompanying expected.json, including Mixed and a populated Table/subtable -- the two pieces this parser's own test suite could previously only cover synthetically ([test_forensic.py](../../crush/tests/test_forensic.py), `test_realm_format9_alltypes_fixture_known_output`)
+- **Completeness** — Strings in arrays only the inactive snapshot reaches, lying in freed blocks, are listed and attributed to the previous snapshot ([test_realm_strings.py](../../crush/tests/test_realm_strings.py), `test_previous_snapshot_strings_are_attributed`)
 - **Reproducibility** — Parsing the same Realm file twice must produce structurally identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_realm_parse_is_reproducible`)
-- *Not tested:* Completeness
 
 #### LevelDB
 
@@ -575,8 +577,8 @@ No forensic checks.
 - **No Side Effects** — ImageParser.parse on a JPEG with EXIF must not create any sibling files next to the source ([test_forensic.py](../../crush/tests/test_forensic.py), `test_image_exif_parse_creates_no_sibling_files`)
 - **Read-only Media** — ImageParser.parse on a JPEG with EXIF must work when the source file is chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_image_exif_parser_works_on_readonly_media`)
 - **Known-output Verification** — Synthetic JPEG with Make/Model/DateTime EXIF tags must report exactly those known values ([test_forensic.py](../../crush/tests/test_forensic.py), `test_image_exif_fixture_known_output`)
+- **Completeness** — Every PNG tEXt chunk is shown, keyword and text as stored, in stored order (none dropped as an unknown EXIF tag) ([test_media_issues.py](../../crush/tests/test_media_issues.py), `test_png_text_chunks_are_all_shown`)
 - **Reproducibility** — Parsing the same JPEG with EXIF twice must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_image_exif_parse_is_reproducible`)
-- *Not tested:* Completeness
 
 #### Apple ATX
 
@@ -607,6 +609,7 @@ No forensic checks.
 - **Read-only Media** — MediaParser must succeed when evidence directory is 0o555 and file is 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_media_parser_works_on_readonly_media`)
 - **Known-output Verification** — MP3 stub must always parse to viewer_type='media' with 'File size' in metadata ([test_forensic.py](../../crush/tests/test_forensic.py), `test_media_parser_mp3_known_output`)
 - **Known-output Verification** — OGG stub (invalid codec data) must parse without crash and return raw bytes intact ([test_forensic.py](../../crush/tests/test_forensic.py), `test_media_parser_ogg_stub_known_output`)
+- **Known-output Verification** — Audio and video files renamed without their extension are recognised by their content: ISO base media (MP4/MOV/M4A/3GP), WAV, AVI, FLAC, Matroska/WebM, ASF, MP3 with ID3v2 ([test_media_parser.py](../../crush/tests/test_media_parser.py), `test_can_parse_media_by_content`)
 - **Reproducibility** — Parsing the same media file twice must produce byte-identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_media_parse_is_reproducible`)
 - **Reproducibility** — Parsing the same OGG file twice (PyAV metadata path) must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_media_parse_ogg_is_reproducible`)
 - *Not tested:* Completeness
@@ -617,7 +620,8 @@ No forensic checks.
 
 #### Hex view (any file)
 
-No forensic checks.
+- **Known-output Verification** — A file known by a signature past its first 2,048 bytes (ISO 9660 at byte 32,769) is identified in the Properties panel and the hex view's metadata ([test_format_db.py](../../crush/tests/test_format_db.py), `test_a_signature_deep_in_the_file_is_identified`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 ### Tools
 

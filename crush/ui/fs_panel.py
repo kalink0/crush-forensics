@@ -117,6 +117,7 @@ class FilesystemPanel(QWidget):
     background_status = Signal(str)
     _search_results_ready = Signal(object)  # internal: list of result dicts
     _prescan_activity = Signal(str, bool)   # internal: (activity_name, is_start)
+    _prescan_count = Signal(int, int)       # internal: (files indexed, files to index)
 
     def __init__(
         self, session: Session, parent: QWidget | None = None, window_id: str | None = None
@@ -157,6 +158,8 @@ class FilesystemPanel(QWidget):
         self._prescan_gen: int = 0
         self._search_results_ready.connect(self._on_search_results_ready)
         self._prescan_activity.connect(self._on_prescan_activity)
+        self._prescan_counts: tuple[int, int] | None = None
+        self._prescan_count.connect(self._on_prescan_count)
         self._type_cache: dict[tuple[int, str], str] = {}
         self._prescan_workers: int = min(8, os.cpu_count() or 4)
         self._filter_timer = QTimer(self)
@@ -1135,7 +1138,15 @@ class FilesystemPanel(QWidget):
         if is_start:
             self._activity_start(name)
         else:
+            self._prescan_counts = None
             self._activity_end(name)
+
+    def _on_prescan_count(self, done: int, total: int) -> None:
+        """Files whose type is indexed so far, of all to index: shown
+        beside "Indexing types" in the status bar."""
+        self._prescan_counts = (done, total)
+        if "Indexing types" in self._activities:
+            self._emit_background_status()
 
     def _prescan_worker(self, vfs_list: list[VFS], gen: int) -> None:
         """Walk all VFS nodes in background to warm the type cache.
@@ -1190,9 +1201,25 @@ class FilesystemPanel(QWidget):
 
         total = len(all_nodes)
         self._logger.info("Type pre-scan: %d files to index", total)
+        self._prescan_count.emit(0, total)
 
         chunk_size = max(1, (total + n_workers - 1) // n_workers)
         chunks = [all_nodes[i : i + chunk_size] for i in range(0, total, chunk_size)]
+        # Files indexed by all workers together, passed on at most every
+        # 0.25 s (and once at the end) for the status bar.
+        count_lock = threading.Lock()
+        counted = [0, 0.0]  # files done, time of the last emit
+
+        def _count_one() -> None:
+            with count_lock:
+                counted[0] += 1
+                now = time.monotonic()
+                if counted[0] < total and now - counted[1] < 0.25:
+                    return
+                counted[1] = now
+                done = int(counted[0])
+            if self._prescan_gen == gen:
+                self._prescan_count.emit(done, total)
 
         def _process_chunk(chunk: list[tuple[VFSNode, VFS]]) -> int:
             processed = 0
@@ -1202,6 +1229,7 @@ class FilesystemPanel(QWidget):
                 with background_io():
                     self._detect_type_label(node, vfs)
                 processed += 1
+                _count_one()
             return processed
 
         try:
@@ -1257,7 +1285,16 @@ class FilesystemPanel(QWidget):
         if not self._activities:
             self.background_status.emit("")
             return
-        items = ", ".join(sorted(_activity_label(name) for name in self._activities))
+        labels = []
+        for name in sorted(self._activities, key=_activity_label):
+            label = _activity_label(name)
+            if name == "Indexing types" and self._prescan_counts is not None:
+                done, total = self._prescan_counts
+                label = translate("FilesystemPanel", "{label} {done:,} / {total:,}").format(
+                    label=label, done=done, total=total
+                )
+            labels.append(label)
+        items = ", ".join(labels)
         self.background_status.emit(
             translate("FilesystemPanel", "Background: {items}").format(items=items)
         )

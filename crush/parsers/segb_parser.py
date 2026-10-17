@@ -104,6 +104,44 @@ _DERIVED_V2: dict[str, ParseIssue] = {
 }
 
 
+class SegbPayloadDetail:
+    """A record's payload for TableViewer's row detail ("__row_detail"):
+    decoded the way the Protobuf viewer decodes a file, every field with all
+    its candidate readings -- unlike the Payload column, which shows one
+    reading per field and is marked as a heuristic. Plain data, no Qt."""
+
+    kind = "protobuf"
+
+    def __init__(self, locator: SegbCellLocator) -> None:
+        self._locator = locator
+
+    def detail(self, rowid: Any) -> dict[str, Any] | None:
+        """{"raw", "decoded", "offset", "notes"} for record *rowid*, or None
+        when it isn't a record. notes say what the analyst must know: no
+        payload located, fewer bytes in the file than the record states,
+        a decode that stopped."""
+        from crush.parsers.protobuf_parser import decode_message
+
+        rng = self._locator.payload_range(rowid)
+        if rng is None:
+            if not isinstance(rowid, int) or not 0 <= rowid < len(self._locator.rows):
+                return None
+            return {"raw": b"", "decoded": {"entries": []}, "offset": None,
+                    "notes": [ParseIssue("segb.detail_no_payload")]}
+        start, end = rng
+        raw = self._locator.file_bytes[start:end]
+        notes: list[ParseIssue] = []
+        stated = self._locator.payload_size(rowid)
+        if stated is not None and stated != len(raw):
+            notes.append(ParseIssue("segb.detail_payload_short", {
+                "present": f"{len(raw):,}", "stated": f"{stated:,}",
+            }))
+        decoded, warning = decode_message(raw)
+        if warning is not None:
+            notes.append(warning)
+        return {"raw": raw, "decoded": decoded, "offset": start, "notes": notes}
+
+
 class SegbParser(AbstractParser):
     SUPPORTED_EXTENSIONS = [".segb", ".segb1", ".segb2", ".biome"]
     DISPLAY_NAME = "SEGB (v1/v2)"
@@ -164,9 +202,11 @@ class SegbParser(AbstractParser):
                 data["__db_path"] = str(tmp)
             if sql_issue is not None:
                 meta["SQL"] = sql_issue
-            data["__cell_locator"] = SegbCellLocator(
-                file_bytes=raw, version=version, rows=rows, columns=columns
-            )
+            locator = SegbCellLocator(file_bytes=raw, version=version, rows=rows, columns=columns)
+            data["__cell_locator"] = locator
+            # Every candidate reading of the selected record's payload, under
+            # the table (TableViewer row detail).
+            data["__row_detail"] = SegbPayloadDetail(locator)
             return ParseResult(
                 viewer_type="table",
                 data=data,

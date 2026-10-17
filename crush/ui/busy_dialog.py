@@ -39,6 +39,7 @@ class _BusyWorker(QObject):
     finished = Signal(object)
     failed = Signal(object)  # the exception
     phase = Signal(str)  # a crush.core.load_phase key the work reported
+    progress = Signal(int, int, int)  # (entries listed, step, steps) -- see load_phase
 
     def __init__(self, work_fn: Callable[[], object], window_id: str | None = None) -> None:
         super().__init__()
@@ -46,7 +47,7 @@ class _BusyWorker(QObject):
         self._window_id = window_id
 
     def run(self) -> None:
-        with window_log_scope(self._window_id), phase_reporter(self.phase.emit):
+        with window_log_scope(self._window_id), phase_reporter(self.phase.emit, self.progress.emit):
             self._run()
 
     def _run(self) -> None:
@@ -144,6 +145,7 @@ def run_with_busy_dialog(
     worker.finished.connect(controller.on_finished)
     worker.failed.connect(controller.on_failed)
     worker.phase.connect(dialog.set_phase)
+    worker.progress.connect(dialog.set_progress)
     thread.finished.connect(worker.deleteLater)
 
     thread.start()
@@ -194,6 +196,7 @@ def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
     worker.finished.connect(controller.on_finished)
     worker.failed.connect(controller.on_failed)
     worker.phase.connect(dialog.set_phase)
+    worker.progress.connect(dialog.set_progress)
 
     thread.start()
     dialog.show()

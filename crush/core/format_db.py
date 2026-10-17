@@ -110,6 +110,7 @@ class FormatDatabase:
         self._load_lock = threading.Lock()
         self._formats: dict[int, FormatMatch] | None = None
         self._tries: list[tuple[int, _TrieNode]] = []
+        self._reach = 0
         if not _DB_PATH.exists():
             return
         try:
@@ -135,6 +136,14 @@ class FormatDatabase:
         """
         top = self.top_matches(peek_bytes, parser_class=parser_class)
         return top[0] if len(top) == 1 else None
+
+    def signature_reach(self) -> int:
+        """How many bytes from the start of a file every signature lies
+        within: the end of the one farthest in (ISO 9660's at byte 32,769,
+        Btrfs's at 65,600, ...). Bytes peeked short of this can't match the
+        signatures past their end."""
+        self._load()
+        return self._reach
 
     def top_matches(
         self, peek_bytes: bytes, *, parser_class: str | None = None
@@ -245,6 +254,7 @@ class FormatDatabase:
                     for byte in pattern:
                         node = node.children.setdefault(byte, _TrieNode())
                     node.ends.append(row["format_id"])
+                    self._reach = max(self._reach, row["offset"] + len(pattern))
             self._tries = sorted(tries.items())
             self._formats = formats
             return formats

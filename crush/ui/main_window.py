@@ -93,6 +93,7 @@ class _LoadSourceWorker(QObject):
     hashed = Signal(str, int, str)
     # A crush.core.load_phase key: the step the load is in, for the wait dialog.
     phase = Signal(str)
+    progress = Signal(int, int, int)  # (entries listed, step, steps) -- see load_phase
 
     def __init__(
         self,
@@ -120,7 +121,7 @@ class _LoadSourceWorker(QObject):
     def run(self) -> None:
         from crush.core.load_phase import phase_reporter
 
-        with window_log_scope(self._window_id), phase_reporter(self.phase.emit):
+        with window_log_scope(self._window_id), phase_reporter(self.phase.emit, self.progress.emit):
             self._run()
 
     def _run(self) -> None:
@@ -168,6 +169,10 @@ class _LoadSourceWorker(QObject):
         if not path.is_file():
             return
         import hashlib
+
+        from crush.core.load_phase import PHASE_HASH_SOURCE, report_phase
+
+        report_phase(PHASE_HASH_SOURCE)
 
         hasher = hashlib.sha256()
         total = 0
@@ -622,9 +627,15 @@ class _ExportMultiWorker(QObject):
         )
 
 
-# Bytes read from the start of a file to match it against formats.db
-# signatures (Properties panel and Format Info alike).
-_FORMAT_PEEK_BYTES = 2048
+def _format_peek(vfs: VFS, node: VFSNode) -> bytes:
+    """The bytes the Properties panel and Format Info match against
+    formats.db: as far in as its farthest signature, so a format known by a
+    signature deep in the file (ISO 9660, Btrfs, QNX6 ...) is recognised for
+    the file the analyst selected. The background type indexing reads less
+    (fs_panel), as it reads every file."""
+    from crush.core.format_db import FormatDatabase
+
+    return vfs.peek(node, max(2048, FormatDatabase.get().signature_reach()))
 
 # Characters NTFS/Windows reject outright, plus C0 control characters.
 # Sanitized unconditionally (not only when os.name == "nt") so an export
@@ -1236,6 +1247,7 @@ class MainWindow(QMainWindow):
         self._load_worker.password_required.connect(self._on_password_required)
         self._load_worker.hashed.connect(self._on_source_hashed)
         self._load_worker.phase.connect(self._progress.set_phase)
+        self._load_worker.progress.connect(self._progress.set_progress)
         self._load_worker.finished.connect(self._load_thread.quit)
         self._load_worker.failed.connect(self._load_thread.quit)
         self._load_worker.password_required.connect(self._load_thread.quit)
@@ -4122,7 +4134,7 @@ class MainWindow(QMainWindow):
             # they don't single one out, that is said -- never another
             # format's knowledge in its place.
             db = FormatDatabase.get()
-            peek = vfs.peek(node, _FORMAT_PEEK_BYTES)
+            peek = _format_peek(vfs, node)
             matches = db.for_parser(type(parser).__name__, peek) if parser else []
             if not matches:
                 matches = db.top_matches(peek)
@@ -4159,7 +4171,7 @@ class MainWindow(QMainWindow):
         try:
             from crush.core.format_db import FormatDatabase
             from crush.ui.format_info_dialog import FormatInfoDialog
-            peek = vfs.peek(node, _FORMAT_PEEK_BYTES)
+            peek = _format_peek(vfs, node)
             matches = FormatDatabase.get().top_matches(peek)
             fmt = matches[0] if len(matches) == 1 else None
             if not matches:

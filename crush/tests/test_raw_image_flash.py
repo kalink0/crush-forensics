@@ -137,7 +137,7 @@ def test_flash_deleted_file_is_recovered(tmp_path: Path, image: str, name: str, 
         assert info is not None
         assert info["kind"] == "deleted file"
         assert info["original_folder"] == folder
-        assert node.modified > 0  # the flash records keep the file's mtime
+        assert node.modified is not None and node.modified > 0  # the flash records keep the file's mtime
         data = vfs.read(node)
         assert len(data) == node.size > 0
         assert vfs.peek(node, 16) == data[:16]

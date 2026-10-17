@@ -117,8 +117,8 @@ class PropertiesPanel(QScrollArea):
             self._add_timestamp(translate("PropertiesPanel", "Changed"), node.changed)
             self._add_timestamp(translate("PropertiesPanel", "Birth"), node.birth)
 
-            has_modified = bool(node.modified)
-            has_others = bool(node.accessed or node.changed or node.birth)
+            has_modified = node.modified is not None
+            has_others = any(t is not None for t in (node.accessed, node.changed, node.birth))
             if has_modified and not has_others:
                 self._add_note(translate(
                     "PropertiesPanel",
@@ -310,7 +310,7 @@ class PropertiesPanel(QScrollArea):
         for kind in KINDS:
             rows = [t for t in times if t.kind == kind]
             if not rows:
-                self._add_timestamp(names[kind], 0.0)
+                self._add_timestamp(names[kind], None)
                 continue
             box = QWidget()
             column = QVBoxLayout(box)
@@ -355,8 +355,10 @@ class PropertiesPanel(QScrollArea):
             lbl.setStyleSheet(style)
         return lbl
 
-    def _add_timestamp(self, label: str, ts_value: float) -> None:
-        if ts_value:
+    def _add_timestamp(self, label: str, ts_value: float | None) -> None:
+        """One instant, or "—" when the source gives none (None; 0.0 is
+        1970-01-01 00:00:00 UTC like any other value)."""
+        if ts_value is not None:
             ts = unix_to_utc(ts_value)
             if ts is None:
                 text = translate("PropertiesPanel", "{value} (out of range)").format(
@@ -368,6 +370,6 @@ class PropertiesPanel(QScrollArea):
             text = "—"
         lbl = QLabel(text)
         lbl.setTextInteractionFlags(_SELECTABLE)
-        if not ts_value:
+        if ts_value is None:
             lbl.setStyleSheet("color: gray;")
         self._layout.addRow(translate("PropertiesPanel", "{label}:").format(label=label), lbl)

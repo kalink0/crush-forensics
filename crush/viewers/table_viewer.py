@@ -474,11 +474,17 @@ class _StringsTexts:
     """Cell texts of the Strings view for one SqliteStringsResult, rows
     numbered across its files. Holds no Qt objects, so the scan's worker
     thread can build the filter text of every row (build_haystack()) along
-    with the scan -- translate() is thread-safe."""
+    with the scan -- translate() is thread-safe.
 
-    COLUMNS = 7
+    Cells are addressed by logical column (0 File ... 6 Value); *cols* are
+    the ones shown, in order -- the Page column only where the regions
+    have pages (SQLite, not Realm)."""
 
-    def __init__(self, result: Any) -> None:
+    def __init__(
+        self, result: Any, file_labels: dict[str, str] | None = None, pages: bool = True,
+    ) -> None:
+        self.file_labels = file_labels or _STRINGS_FILE_LABELS
+        self.cols: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6) if pages else (0, 1, 2, 3, 5, 6)
         self.files = list(result.files)
         self.starts: list[int] = []
         total = 0
@@ -519,7 +525,7 @@ class _StringsTexts:
         """(English, display) text of one cell."""
         hit = fs.hits[hi]
         if col == 0:
-            return _Gen(_STRINGS_FILE_LABELS[fs.file_kind]).pair()
+            return _Gen(self.file_labels[fs.file_kind]).pair()
         if col == 1:
             text = str(hit.offset)
         elif col == 2:
@@ -540,7 +546,7 @@ class _StringsTexts:
         for fi, fs in enumerate(self.files):
             for hi in range(len(fs.hits)):
                 haystack.append("\x00".join(
-                    self.cell(fs, fi, hi, col)[1] for col in range(self.COLUMNS)
+                    self.cell(fs, fi, hi, col)[1] for col in self.cols
                 ).casefold())
         self.haystack = haystack
 
@@ -586,7 +592,7 @@ class _StringsModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self._rows)
 
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._HEADERS)
+        return 0 if parent.isValid() else len(self._t.cols)
 
     def headerData(
         self,
@@ -594,9 +600,9 @@ class _StringsModel(QAbstractTableModel):
         orientation: Qt.Orientation,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
-        if orientation != Qt.Orientation.Horizontal:
+        if orientation != Qt.Orientation.Horizontal or not 0 <= section < len(self._t.cols):
             return None
-        english, display = _Gen(self._HEADERS[section]).pair()
+        english, display = _Gen(self._HEADERS[self._t.cols[section]]).pair()
         if role == Qt.ItemDataRole.DisplayRole:
             return display
         if role == _EXPORT_TEXT_ROLE:
@@ -607,7 +613,7 @@ class _StringsModel(QAbstractTableModel):
         if not index.isValid():
             return None
         fs, fi, hi = self._locate(index.row())
-        col = index.column()
+        col = self._t.cols[index.column()]
         if role == Qt.ItemDataRole.DisplayRole:
             return self._cell(fs, fi, hi, col)[1]
         if role == _EXPORT_TEXT_ROLE:
@@ -628,8 +634,9 @@ class _StringsModel(QAbstractTableModel):
         return None
 
     def sort(self, column: int, order: Qt.SortOrder = Qt.SortOrder.AscendingOrder) -> None:
-        if column < 0 or column >= len(self._HEADERS):
+        if column < 0 or column >= len(self._t.cols):
             return
+        column = self._t.cols[column]
         self.layoutAboutToBeChanged.emit()
 
         def key(g: int) -> Any:
@@ -1201,6 +1208,19 @@ class TableViewer(QWidget):
         self._strings_cache: tuple[int, Any, _StringsTexts] | None = None
         self._strings_model: _StringsModel | None = None
         self._strings_active = False
+        # A caller's own Strings source ("__strings_source", e.g. RealmViewer
+        # for a .realm file's bytes) in place of the SQLite db/-wal/-journal
+        # scan: scan(min_chars) -> result like scan_sqlite_strings(),
+        # file_labels {file_kind: English label}, read_file(file_kind),
+        # default_file_kind, show_pages, status_text().
+        self._strings_source: Any = (
+            data.get("__strings_source") if isinstance(data, dict) else None
+        )
+        self._strings_scan_pending = False
+        # A caller's per-row detail ("__row_detail"): detail(rowid) -> {"raw",
+        # "decoded", "offset", "notes"} or None, shown under the table for
+        # the selected row (kind "protobuf": ProtobufTreeWidget).
+        self._row_detail: Any = data.get("__row_detail") if isinstance(data, dict) else None
         self._journal_result_cache: JournalParseResult | None = None
         self._journal_result_loaded = False
         self._wal_frames_cache: list[dict] | None = None
@@ -1266,6 +1286,14 @@ class TableViewer(QWidget):
                     if table_names:
                         self._load_table(table_names[0])
                     self._refresh_sql_completions()
+            elif self._strings_source is not None:
+                # Scanned when first shown (showEvent), not while the
+                # viewer holding this tab is built -- adding the combo's
+                # first entry would load it.
+                self._table_combo.blockSignals(True)
+                self._add_generated_view(self._strings_label)
+                self._table_combo.blockSignals(False)
+                self._strings_scan_pending = True
             else:
                 if table_names:
                     self._load_table(table_names[0])
@@ -1536,16 +1564,39 @@ class TableViewer(QWidget):
         table_container_layout.addWidget(self._source_status)
         table_container_layout.addWidget(self._table_view, stretch=1)
 
+        # The selected row's own detail from the caller ("__row_detail", e.g.
+        # a SEGB record's payload with every candidate reading), under the
+        # table; only there when the data brings one.
+        self._row_detail_panel = QWidget()
+        row_detail_layout = QVBoxLayout(self._row_detail_panel)
+        row_detail_layout.setContentsMargins(0, 0, 0, 0)
+        row_detail_layout.setSpacing(2)
+        self._row_detail_label = QLabel(
+            translate("TableViewer", "Select a row to show its payload with every candidate reading.")
+        )
+        self._row_detail_label.setWordWrap(True)
+        self._row_detail_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._row_detail_label.setStyleSheet("padding: 2px 8px; color: palette(mid);")
+        row_detail_layout.addWidget(self._row_detail_label)
+        self._row_detail_host = QVBoxLayout()
+        self._row_detail_host.setContentsMargins(0, 0, 0, 0)
+        row_detail_layout.addLayout(self._row_detail_host, stretch=1)
+        self._row_detail_widget: QWidget | None = None
+        self._row_detail_rowid: Any = None
+        self._row_detail_panel.setVisible(self._row_detail is not None)
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._sql_bar)
         splitter.addWidget(table_container)
+        splitter.addWidget(self._row_detail_panel)
         splitter.addWidget(self._structure_tree)
         splitter.addWidget(self._cell_detail_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 1)
-        splitter.setStretchFactor(3, 0)
-        splitter.setSizes([140, 500, 500, 80])
+        splitter.setStretchFactor(3, 1)
+        splitter.setStretchFactor(4, 0)
+        splitter.setSizes([140, 500, 400, 500, 80])
 
         # Embedded, bidirectional Hex pane -- same "Show Hex" toggle
         # convention as TreeViewer/ProtobufTreeWidget, hidden until toggled
@@ -3551,7 +3602,8 @@ class TableViewer(QWidget):
         (see crush.core.sqlite_strings). One row per run: equal values are
         not merged, nothing is trimmed, nothing is capped."""
         self._reset_source_model()
-        if self._db_path is None:
+        source = self._strings_source
+        if self._db_path is None and source is None:
             _set_headers(self._source_model, _gens(self._strings_label))
             item = _gen_item(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Database file unavailable")))
             item.setEditable(False)
@@ -3563,15 +3615,18 @@ class TableViewer(QWidget):
         if self._strings_cache is not None and self._strings_cache[0] == min_chars:
             _min, result, texts = self._strings_cache
         else:
-            db_path = self._db_path
-            wal_path = Path(str(db_path) + "-wal")
-            wal = wal_path if wal_path.exists() else None
-            journal = self._journal_path
-
             def _work() -> tuple[Any, _StringsTexts]:
-                scanned = scan_sqlite_strings(db_path, wal, journal, min_chars)
+                if source is not None:
+                    scanned = source.scan(min_chars)
+                    cell_texts = _StringsTexts(scanned, source.file_labels, source.show_pages)
+                else:
+                    db_path = self._db_path
+                    assert db_path is not None
+                    wal_path = Path(str(db_path) + "-wal")
+                    wal = wal_path if wal_path.exists() else None
+                    scanned = scan_sqlite_strings(db_path, wal, self._journal_path, min_chars)
+                    cell_texts = _StringsTexts(scanned)
                 # The filter text too, so the first keystroke doesn't build it.
-                cell_texts = _StringsTexts(scanned)
                 cell_texts.build_haystack()
                 return scanned, cell_texts
 
@@ -3617,6 +3672,9 @@ class TableViewer(QWidget):
             self._row_count_label.setText(
                 translate("TableViewer", "({count:,} strings)").format(count=total)
             )
+        if source is not None:
+            self._sql_status.setText(source.status_text())
+            return
         self._sql_status.setText(
             translate(
                 "TableViewer",
@@ -4991,6 +5049,54 @@ class TableViewer(QWidget):
 
         if not self._syncing_hex_selection:
             self._sync_hex_pane(current)
+        self._update_row_detail(current)
+
+    def _update_row_detail(self, current: QModelIndex) -> None:
+        """Show the caller's detail for the selected row under the table
+        (see "__row_detail"); built again only when the row changes."""
+        if self._row_detail is None:
+            return
+        rowid = None
+        if (
+            current.isValid() and not self._query_results_active
+            and not self._is_pseudo_table(self._current_table())
+        ):
+            source_index = self._proxy_model.mapToSource(current)
+            row_item = self._source_model.item(source_index.row(), 0)
+            rowid = row_item.data(_ROWID_ROLE) if row_item is not None else None
+        if rowid is not None and rowid == self._row_detail_rowid:
+            return
+        self._row_detail_rowid = rowid
+        hex_visible = False
+        if self._row_detail_widget is not None:
+            mapped = getattr(self._row_detail_widget, "_mapped_view", None)
+            hex_visible = bool(mapped is not None and mapped.is_hex_visible())
+            self._row_detail_widget.deleteLater()
+            self._row_detail_widget = None
+        detail = self._row_detail.detail(rowid) if rowid is not None else None
+        if detail is None:
+            self._row_detail_label.setText(translate(
+                "TableViewer", "Select a row to show its payload with every candidate reading."
+            ))
+            return
+        from crush.viewers.protobuf_viewer import ProtobufTreeWidget
+
+        raw = detail["raw"]
+        offset = detail.get("offset")
+        head = (
+            translate(
+                "TableViewer",
+                "Payload of row {row}: {size:,} B at file offset {offset:,}, every candidate "
+                "reading of each field (offsets below are in the payload)",
+            ).format(row=current.row() + 1, size=len(raw), offset=offset)
+            if offset is not None
+            else translate("TableViewer", "Payload of row {row}").format(row=current.row() + 1)
+        )
+        notes = [render_value(n, localized=True) for n in detail.get("notes") or []]
+        self._row_detail_label.setText("\n".join([head, *notes]))
+        widget = ProtobufTreeWidget(detail["decoded"], raw=raw, hex_visible=hex_visible, parent=self)
+        self._row_detail_host.addWidget(widget)
+        self._row_detail_widget = widget
 
     def _is_pseudo_table(self, table_name: str) -> bool:
         return table_name in (
@@ -5016,7 +5122,14 @@ class TableViewer(QWidget):
                 self._sync_hex_pane(self._table_view.currentIndex())
 
     def _ensure_hex_pane_loaded(self) -> None:
-        if self._hex_pane_loaded or self._cell_locator is None:
+        if self._hex_pane_loaded:
+            return
+        if self._cell_locator is None and self._strings_source is not None:
+            file_kind = self._strings_source.default_file_kind
+            if self._show_source_file(file_kind):
+                self._hex_pane_loaded = True
+            return
+        if self._cell_locator is None:
             return
         file_kind = self._cell_locator.default_file_kind()
         data = self._cell_locator.read_file(file_kind)
@@ -5173,6 +5286,12 @@ class TableViewer(QWidget):
         row's precise row/column ranges when available, else its one
         whole-page range; Freeblocks/Unallocated Space's one range)."""
         if file_kind != self._hex_file_kind:
+            if self._strings_source is not None and file_kind in self._strings_source.file_labels:
+                if not self._show_source_file(file_kind):
+                    self._hex_viewer.clear_byte_range_highlight()
+                    return
+                self._hex_viewer.highlight_byte_range_groups(groups)
+                return
             target_path, suffix = self._resolve_hex_file_kind(file_kind)
             if target_path is None:
                 self._hex_viewer.clear_byte_range_highlight()
@@ -5190,6 +5309,23 @@ class TableViewer(QWidget):
                 )
             )
         self._hex_viewer.highlight_byte_range_groups(groups)
+
+    def _show_source_file(self, file_kind: str) -> bool:
+        """Put the Strings source's *file_kind* bytes into the Hex pane;
+        False when the source has none."""
+        source = self._strings_source
+        data = source.read_file(file_kind)
+        if data is None:
+            return False
+        self._hex_viewer.set_data(data)
+        self._hex_file_kind = file_kind
+        self._hex_file_label.setText(
+            translate("TableViewer", "{source_name}  ·  {suffix}").format(
+                source_name=self._source_name,
+                suffix=_Gen(source.file_labels[file_kind]).pair()[1],
+            )
+        )
+        return True
 
     def _structure_item_from_index(self, index: QModelIndex) -> QStandardItem | None:
         if not index.isValid():
@@ -5249,7 +5385,11 @@ class TableViewer(QWidget):
         docstring for the cases it can't -- e.g. a click landing on a
         SQLite overflow-only page -- where this is simply a no-op, never a
         wrong selection)."""
-        if self._hex_file_kind is None or self._cell_locator is None:
+        if self._hex_file_kind is None:
+            return
+        if self._cell_locator is None:
+            if self._strings_active:
+                self._select_row_for_byte_offset(offset)
             return
         table_name = self._current_table()
         if table_name == self._file_structure_label:
@@ -5425,6 +5565,12 @@ class TableViewer(QWidget):
                 self._copy_rows(rows)
             return
         super().keyPressEvent(event)  # type: ignore[arg-type]
+
+    def showEvent(self, event: object) -> None:  # type: ignore[override]
+        super().showEvent(event)  # type: ignore[arg-type]
+        if self._strings_scan_pending:
+            self._strings_scan_pending = False
+            self._load_table(self._strings_label)
 
     def closeEvent(self, event: object) -> None:  # type: ignore[override]
         self._table_interaction_timer.stop()

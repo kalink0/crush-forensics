@@ -31,8 +31,10 @@ from typing import IO, TYPE_CHECKING, Any, Iterator, cast
 
 from crush.core import tempdir
 from crush.core.issues import ParseIssue, ParseIssueError
+from crush.core.load_phase import count_entry
 from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 from crush.core.stored_times import (
+    MODIFIED,
     StoredTime,
     filetime_to_unix,
     first_instant,
@@ -216,10 +218,12 @@ class VFSNode:
     path: str          # Full virtual path e.g. "/var/mobile/Library/SMS/sms.db"
     is_dir: bool
     size: int = 0
-    modified: float = 0.0
-    accessed: float = 0.0
-    changed: float = 0.0
-    birth: float = 0.0
+    # Instants (Unix seconds, UTC); None when the source gives none. 0.0 is
+    # a time like any other: 1970-01-01 00:00:00 UTC.
+    modified: float | None = None
+    accessed: float | None = None
+    changed: float | None = None
+    birth: float | None = None
     children: list[VFSNode] = field(default_factory=list)
     # What the analyst must know about this entry that its name and bytes
     # don't show: a symbolic link, one of several entries stored under the
@@ -228,9 +232,14 @@ class VFSNode:
     # Every timestamp as the source stores it, with where it comes from,
     # for sources that store more than one instant per kind or a reading
     # with no time zone (ZIP, FAT/exFAT). Empty: the floats above say it
-    # all. modified then holds the first stored instant, or 0.0 when the
+    # all. modified then holds the first stored instant, or None when the
     # source stores only a reading.
     stored_times: list[StoredTime] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # A wait dialog's running count of entries listed (a no-op unless
+        # a load on this thread reports progress).
+        count_entry()
 
     @property
     def extension(self) -> str:
@@ -460,7 +469,7 @@ class DirectoryVFS(VFS):
             modified=st.st_mtime,
             accessed=st.st_atime,
             changed=st.st_ctime,
-            birth=getattr(st, "st_birthtime", 0.0),
+            birth=getattr(st, "st_birthtime", None),
         )
         if stat.S_ISLNK(st.st_mode):
             try:
@@ -842,7 +851,10 @@ class TarVFS(VFS):
         # Folders only implied by a member's path: no record, so no time.
         implied: set[str] = set()
 
-        for member in self._tf.getmembers():
+        # Iterated, not getmembers(): the same members in the same order, but
+        # each as its header is read, so a wait dialog's count moves while a
+        # large (compressed) archive is listed.
+        for member in self._tf:
             parts = _member_parts(member.name)
             if not parts:
                 continue
@@ -1088,17 +1100,26 @@ class GzipVFS(VFS):
                 is_dir=False,
                 size=self._size,
                 modified=mtime,
+                # RFC 1952 2.3.1: "MTIME = 0 means no time stamp is
+                # available" -- said, so the empty field isn't read as unread.
+                stored_times=[] if mtime is not None or not self._has_header else [
+                    StoredTime(MODIFIED, ParseIssue("time.gzip_header"),
+                               note=ParseIssue("time.gzip_mtime_zero")),
+                ],
             )
         )
 
-    def _read_header_metadata(self) -> tuple[str, float]:
+    def _read_header_metadata(self) -> tuple[str, float | None]:
         """Parse the gzip header (RFC 1952) for the original filename and
-        mtime, without decompressing."""
+        mtime, without decompressing. mtime is None when the header stores
+        0, which the RFC defines as no time stamp."""
         name = None
-        mtime = 0.0
+        mtime: float | None = None
+        self._has_header = False
         with open(self._gz_path, "rb") as f:
             head = f.read(4096)
         if len(head) >= 10 and head[0:2] == b"\x1f\x8b":
+            self._has_header = True
             flg = head[3]
             mtime_val = int.from_bytes(head[4:8], "little")
             if mtime_val:
@@ -1865,12 +1886,13 @@ class SevenZipVFS(VFS):
             parts = _member_parts(info.filename.rstrip("/"))
             if not parts:
                 continue
+            ts: float | None
             if writes is not None:
                 ft = writes[order]
-                ts = filetime_to_unix(int(ft)) if ft is not None else 0.0
+                ts = filetime_to_unix(int(ft)) if ft is not None else None
             else:
                 # list()'s creationtime is the last-write time (UTC).
-                ts = info.creationtime.timestamp() if info.creationtime else 0.0
+                ts = info.creationtime.timestamp() if info.creationtime else None
             for depth in range(1, len(parts)):
                 virtual_path = "/" + "/".join(parts[:depth])
                 if virtual_path not in nodes:
@@ -2211,7 +2233,7 @@ class RawImageVFS(VFS):
         self, path: str | Path, *, password: str = "", private_key: str = "",
         secrets: VolumeSecrets | None = None,
     ) -> None:
-        from crush.core.load_phase import PHASE_READ_FILESYSTEMS, report_phase
+        from crush.core.load_phase import PHASE_READ_FILESYSTEMS, report_phase, report_step
         from crush.core.raw_image import (
             VolumeSecrets,
             build_volume_node,
@@ -2234,7 +2256,9 @@ class RawImageVFS(VFS):
 
         report_phase(PHASE_READ_FILESYSTEMS)
         root = VFSNode(name=self._path.name, path="/", is_dir=True)
-        for vol in self._handle.volumes:
+        volumes = self._handle.volumes
+        for number, vol in enumerate(volumes, 1):
+            report_step(number, len(volumes))
             facts = volume_facts(vol, self._handle)
             node = build_volume_node(vol, self._read_map, facts, self._handle.size)
             self._volume_facts[node.path] = facts
@@ -3425,7 +3449,7 @@ class FileVFS(VFS):
             modified=stat.st_mtime,
             accessed=stat.st_atime,
             changed=stat.st_ctime,
-            birth=getattr(stat, "st_birthtime", 0.0),
+            birth=getattr(stat, "st_birthtime", None),
         )
 
     def root(self) -> VFSNode:

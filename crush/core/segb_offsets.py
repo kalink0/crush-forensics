@@ -129,6 +129,22 @@ class SegbCellLocator:
             self._row_ranges[idx] = row_ranges
             self._col_ranges[idx] = columns
 
+    def payload_range(self, row_key: Any) -> tuple[int, int] | None:
+        """(start, end) of record *row_key*'s payload bytes in the file,
+        clipped to the bytes read; None when its offsets couldn't be read."""
+        if not isinstance(row_key, int) or "Payload" not in self.columns:
+            return None
+        return self._col_ranges.get(row_key, {}).get(self.columns.index("Payload"))
+
+    def payload_size(self, row_key: Any) -> int | None:
+        """The payload size record *row_key* states (v1 header / v2 derived)."""
+        if not isinstance(row_key, int) or not 0 <= row_key < len(self.rows):
+            return None
+        try:
+            return int(self.rows[row_key][self.columns.index("Payload Size")])
+        except (TypeError, ValueError, IndexError):
+            return None
+
     def default_file_kind(self) -> str:
         return _MAIN
 

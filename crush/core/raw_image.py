@@ -34,7 +34,9 @@ from typing import TYPE_CHECKING, Any
 # wire the same two vendored libraries together.
 from crush.core.issues import ParseIssue
 from crush.core.load_phase import (
+    PHASE_DELETED_FILES,
     PHASE_OPEN_IMAGE,
+    PHASE_READ_FILESYSTEMS,
     PHASE_SEARCH_VOLUMES,
     PHASE_UNLOCK_VOLUMES,
     report_phase,
@@ -819,6 +821,7 @@ def _add_deleted_files_node(
     """
     from crush.core.vfs import VFSNode, join_notes
 
+    report_phase(PHASE_DELETED_FILES)
     try:
         entries = list((enumerate_deleted or walker.deleted_files)())
     except Exception as exc:
@@ -828,6 +831,8 @@ def _add_deleted_files_node(
             volume_node.status, ParseIssue("entry.raw_deleted_enum_failed", detail=str(exc)),
         ])
         return
+    finally:
+        report_phase(PHASE_READ_FILESYSTEMS)
     if not entries:
         return
 
@@ -845,7 +850,8 @@ def _add_deleted_files_node(
         mtime = getattr(entry, "mtime", None)
         recovered.children.append(VFSNode(
             name=unique_name, path=child_path, is_dir=False, size=entry.size or 0,
-            modified=float(mtime) if isinstance(mtime, (int, float)) else 0.0,
+            # 0 is qnxprobe's "no time", as for the live entries.
+            modified=float(mtime) if isinstance(mtime, (int, float)) and mtime else None,
         ))
         read_map[child_path] = _Entry(walker=walker, node=None, size=entry.size or 0, deleted=entry)
 
@@ -908,16 +914,21 @@ def _walk_into(
             ))
             read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")
             continue
-        mode, size, mtime = ent
+        mode, size, raw_mtime = ent
+        # qnxprobe gives 0 where it has no instant: NTFS without the time in
+        # $STANDARD_INFORMATION ("0 where the attribute is absent"), and
+        # every FAT/exFAT entry, which stores a reading (in `times`), not an
+        # instant.
+        mtime = float(raw_mtime) if raw_mtime else None
         if (mode & 0o170000) == qnxprobe.S_IFDIR:  # not just the bit: block devices and sockets share it
-            child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime or 0.0,
+            child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime,
                                  stored_times=times)
             children.append(child_node)
             _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1)
             _add_stream_nodes(walker, child, name, base_path, children, read_map)
         elif (mode & 0o170000) == 0o100000:  # regular files only
             child_node = VFSNode(
-                name=name, path=child_path, is_dir=False, size=size or 0, modified=mtime or 0.0,
+                name=name, path=child_path, is_dir=False, size=size or 0, modified=mtime,
                 stored_times=times,
             )
             children.append(child_node)
@@ -931,7 +942,7 @@ def _walk_into(
                 else ParseIssue("entry.special_raw", {"mode": f"{mode & 0o170000:o}"})
             )
             child_node = VFSNode(
-                name=name, path=child_path, is_dir=False, size=0, modified=mtime or 0.0,
+                name=name, path=child_path, is_dir=False, size=0, modified=mtime,
                 status=status, stored_times=times,
             )
             children.append(child_node)

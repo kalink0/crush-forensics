@@ -56,6 +56,15 @@ class ProtobufParser(AbstractParser):
 # ---------------------------------------------------------------------------
 
 
+def decode_message(raw: bytes) -> tuple[dict[str, Any], ParseIssue | None]:
+    """(decoded, warning) for *raw* as the Protobuf viewer decodes a file:
+    every field with all its candidate readings (proto_interp), nested
+    messages tried, for ProtobufTreeWidget. Used for protobuf bytes inside
+    another format (a SEGB record's payload)."""
+    decoded, warning, _text = _decode_message(raw)
+    return decoded, warning
+
+
 def _decode_message(
     raw: bytes,
     *,

@@ -25,6 +25,12 @@ class LoadingDialog(QDialog):
         self._label = QLabel(text)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._label)
+        # How far the load got: a running count, never a percentage (the
+        # total isn't known while a source is listed).
+        self._progress = QLabel("")
+        self._progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress.setStyleSheet("color: gray;")
+        layout.addWidget(self._progress)
 
         self.setFixedSize(320, 120)
 
@@ -38,6 +44,17 @@ class LoadingDialog(QDialog):
         if text:
             self._label.setText(text)
 
+    def set_progress(self, entries: int, step: int, steps: int) -> None:
+        """Show how far the load got (crush.core.load_phase progress)."""
+        parts = []
+        if steps:
+            parts.append(translate("LoadingDialog", "volume {step} of {steps}").format(
+                step=step, steps=steps
+            ))
+        if entries:
+            parts.append(translate("LoadingDialog", "{count:,} entries listed").format(count=entries))
+        self._progress.setText(" — ".join(parts))
+
 
 def load_phase_text(phase: str) -> str:
     """The wait dialog's text for a crush.core.load_phase key, "" for none."""
@@ -48,6 +65,8 @@ def load_phase_text(phase: str) -> str:
         load_phase.PHASE_UNLOCK_VOLUMES: translate("LoadingDialog", "Unlocking volumes…"),
         load_phase.PHASE_SEARCH_VOLUMES: translate("LoadingDialog", "Searching volumes…"),
         load_phase.PHASE_READ_FILESYSTEMS: translate("LoadingDialog", "Reading filesystems…"),
+        load_phase.PHASE_DELETED_FILES: translate("LoadingDialog", "Listing deleted files…"),
+        load_phase.PHASE_HASH_SOURCE: translate("LoadingDialog", "Hashing the source…"),
     }
     return texts.get(phase, "")
 

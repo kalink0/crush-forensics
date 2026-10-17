@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from crush.core import tempdir
 from crush.core.realm_offsets import RealmCellLocator
+from crush.core.realm_strings import FILE_REALM, scan_realm_strings
 from crush.core.realm_structure import build_realm_structure
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.hex_viewer import HexViewer
@@ -36,6 +37,57 @@ from crush.viewers.table_viewer import BlobInspector, TableViewer, _cap_columns
 from crush.viewers.tree_viewer import TreeViewer
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import Gen, gen_text, gens, set_headers
+
+
+class _RealmStringsSource:
+    """The Strings tab's source for TableViewer ("__strings_source"): the
+    .realm file's bytes as the parser read them (decrypted, for an encrypted
+    file), scanned and attributed by crush.core.realm_strings."""
+
+    file_labels = {FILE_REALM: QT_TRANSLATE_NOOP("GeneratedView", "Realm file")}
+    default_file_kind = FILE_REALM
+    show_pages = False
+    # realm_strings' region words, shown translated in the Region column.
+    _REGION_WORDS = (
+        QT_TRANSLATE_NOOP("GeneratedView", "Realm file header"),
+        QT_TRANSLATE_NOOP("GeneratedView", "streaming form footer"),
+        QT_TRANSLATE_NOOP("GeneratedView", "array (active snapshot)"),
+        QT_TRANSLATE_NOOP("GeneratedView", "array (inactive snapshot only)"),
+        QT_TRANSLATE_NOOP("GeneratedView", "freed block"),
+        QT_TRANSLATE_NOOP("GeneratedView", "not reached from either top reference"),
+        QT_TRANSLATE_NOOP("GeneratedView", "in a freed block"),
+        QT_TRANSLATE_NOOP("GeneratedView", "in the inactive snapshot's free list only"),
+    )
+
+    def __init__(self, data: bytes, decrypted: bool) -> None:
+        self._data = data
+        self._decrypted = decrypted
+
+    def scan(self, min_chars: int) -> Any:
+        return scan_realm_strings(self._data, min_chars)
+
+    def read_file(self, file_kind: str) -> bytes | None:
+        return self._data if file_kind == FILE_REALM else None
+
+    def status_text(self) -> str:
+        text = translate(
+            "RealmViewer",
+            "Text runs in the raw bytes of the Realm file. "
+            "ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed "
+            "multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and "
+            "U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. "
+            "Runs shorter than the minimum length are not listed. Region: the arrays "
+            "reached from the active and the inactive top reference (Realm Core's own "
+            "reference rule), the free lists' blocks, and what neither reaches. With "
+            "Show Hex on, selecting a row marks the string in the file.",
+        )
+        if self._decrypted:
+            text += " " + translate(
+                "RealmViewer",
+                "This Realm is encrypted: offsets are in the decrypted file, not in the "
+                "file as stored.",
+            )
+        return text
 
 
 class FreeDataViewer(QWidget):
@@ -88,17 +140,18 @@ class FreeDataViewer(QWidget):
                     f"  w={arr_hdr['width']}"
                     f"  has_refs={arr_hdr['has_refs']}"
                 )
-                notes = ""
             else:
                 type_str = gen_text(QT_TRANSLATE_NOOP("GeneratedView", "raw data"))
-                preview = " | ".join(strings[:4])
-                if len(strings) > 4:
-                    preview += gen_text(
-                        QT_TRANSLATE_NOOP("GeneratedView", "  (+{count} more)")
-                    ).format(count=len(strings) - 4)
-                notes = preview or gen_text(
-                    QT_TRANSLATE_NOOP("GeneratedView", "(no printable strings)")
-                )
+            # A preview: the first four strings; every one, with its offset
+            # and region, is in the Strings tab, and the block in the hex below.
+            preview = " | ".join(strings[:4])
+            if len(strings) > 4:
+                preview += gen_text(
+                    QT_TRANSLATE_NOOP("GeneratedView", "  (+{count} more)")
+                ).format(count=len(strings) - 4)
+            notes = preview or gen_text(
+                QT_TRANSLATE_NOOP("GeneratedView", "(no printable strings)")
+            )
 
             color = self._SOURCE_COLORS.get(source)
             row_items = [
@@ -694,18 +747,14 @@ class RealmViewer(QWidget):
             )
 
         # --- Strings ---
-        strings: list[str] = self._data.get("strings", [])
-        if strings:
-            strings_data: dict[str, Any] = {
-                f"Strings ({len(strings)})": {
-                    "__label": Gen(
-                        QT_TRANSLATE_NOOP("GeneratedView", "Strings ({count})"), count=len(strings)
-                    ),
-                    "columns": [Gen(QT_TRANSLATE_NOOP("GeneratedView", "String"))],
-                    "rows": [[s] for s in strings],
-                }
-            }
-            tabs.addTab(TableViewer(strings_data, tabs), translate("RealmViewer", "Strings"))
+        # Always there: scanned when shown, and empty results say so (the
+        # same Strings view as SQLite's, see TableViewer._load_strings).
+        if isinstance(file_bytes, (bytes, bytearray)):
+            source = _RealmStringsSource(bytes(file_bytes), bool(self._data.get("decrypted")))
+            tabs.addTab(
+                TableViewer({"__strings_source": source}, tabs),
+                translate("RealmViewer", "Strings"),
+            )
 
         # --- Hex Preview ---
         preview = self._data.get("preview", b"")

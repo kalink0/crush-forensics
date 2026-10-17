@@ -23,6 +23,10 @@ All notable changes to Crush will be documented in this file.
 - Added to raw disk images -> Support for showing what the reader reports on each volume: its place in the image, encryption, an LVM2 volume's layout and the copy a RAID1 or mirror volume is read from.
 - Added to raw disk images -> Support for listing an LVM2 physical volume's free extents as readable regions of their own.
 - Added to the loading dialog -> Support for showing which step a disk image load is in, including the volume search.
+- Added to the loading dialog -> Support for a running count of the entries listed for every source type, and the volume a disk image is reading.
+- Added to the Filesystem panel -> Support for showing how many files the background type indexing has done of all it indexes.
+- Added to the Realm viewer -> Support for each string's offset and the region it sits in (array of the active or the previous snapshot, freed block, file header) in the Strings tab, with the Hex pane.
+- Added to the SEGB viewer -> Support for showing the selected record's payload with every candidate reading of each field.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for Unix millisecond, Unix microsecond and Windows FILETIME timestamp candidates.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for a string candidate on a field shown as a nested message.
 - Added to the SEGB viewer -> Support for marking the columns Crush computes as derived, with what they are in the header tooltip.
@@ -35,6 +39,10 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
+- Fixed a stored time of 1970-01-01 00:00:00 UTC showing as missing; a gzip header's MTIME of 0, which the format defines as no time stamp, now says so.
+- Fixed ISO 9660, Btrfs, QNX6, LUKS2, Volume Shadow Copy and other files known by a signature past their first 2,048 bytes not being identified in the Properties panel and Format Info, and past 512 bytes in the hex view.
+- Fixed renamed audio and video files (MP4, MOV, M4A, 3GP, WAV, AVI, FLAC, Matroska/WebM, WMA/WMV, MP3 with an ID3v2 tag) not opening in the Media viewer.
+- Fixed a PNG's tEXt chunks (e.g. Creation Time, Author, Comment) missing from the Properties panel, which said they were read.
 - Fixed a file or recovered deleted file on a raw disk image reading shorter or longer than its recorded size without an error when the reader gave no reason; reading it now fails and says how many bytes came back.
 - Fixed a recovered FAT32, FAT16 or FAT12 file showing as recovered with its content intact when it is read on the assumption that it was stored in one run; it now says so.
 - Fixed an export stopping at the first file that couldn't be read and leaving that file's partial copy under its name; the export now goes on, and `crush-export-failed.txt` lists each file not exported with the reason.
@@ -80,6 +88,7 @@ All notable changes to Crush will be documented in this file.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.71 (from v1.57) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.13.0 (from v0.12.0). ([@abrignoni](https://github.com/abrignoni), [#149](https://github.com/kalink0/crush-forensics/pull/149), [#151](https://github.com/kalink0/crush-forensics/pull/151), [#153](https://github.com/kalink0/crush-forensics/pull/153), [#156](https://github.com/kalink0/crush-forensics/pull/156), [#160](https://github.com/kalink0/crush-forensics/pull/160), [#163](https://github.com/kalink0/crush-forensics/pull/163))
 - Bundled [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) updated to v0.4 (from v0.1).
 - The SEGB viewer's columns now follow the order of the fields' bytes in the record.
+- The Realm viewer's Strings tab now lists every text run by the SQLite Strings view's rule (adjustable minimum length, nothing merged or trimmed) instead of unique runs of 20 characters or more, and its Freed Data previews the strings of every freed block, also one holding an array.
 
 
 ## v0.22.0 - 2026-10-08

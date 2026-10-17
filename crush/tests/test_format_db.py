@@ -416,3 +416,42 @@ def test_format_match_fields() -> None:
     for label, url in fmt.links:
         assert isinstance(label, str)
         assert isinstance(url, str)
+
+
+# ---------------------------------------------------------------------------
+# Signatures deep in a file
+# ---------------------------------------------------------------------------
+
+def test_signature_reach_covers_every_signature() -> None:
+    db = FormatDatabase.get()
+    reach = db.signature_reach()
+    for fmt in db.all_formats():
+        for offset, pattern, _desc in fmt.magic:
+            if offset is not None:
+                assert offset + len(pattern) <= reach, fmt.name
+    assert reach >= 65_600 + len(b"_BHRfS_M")  # Btrfs, the farthest today
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="Hex view (any file)",
+    desc="A file known by a signature past its first 2,048 bytes (ISO 9660 at byte 32,769) "
+    "is identified in the Properties panel and the hex view's metadata",
+)
+def test_a_signature_deep_in_the_file_is_identified(qapp, tmp_path) -> None:
+    from crush.core.vfs import open_vfs
+    from crush.parsers.hex_fallback import HexFallbackParser
+    from crush.ui.main_window import _format_peek
+
+    iso = bytearray(40_000)
+    iso[32_769:32_774] = b"CD001"
+    path = tmp_path / "disc.bin"
+    path.write_bytes(bytes(iso))
+    vfs = open_vfs(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "disc.bin")
+
+    assert FormatDatabase.get().identify(bytes(iso[:2048]), "") is None
+    (match,) = FormatDatabase.get().top_matches(_format_peek(vfs, node))
+    assert match.name == "ISO 9660 Optical Disc Image"
+    meta = HexFallbackParser().parse(node, vfs).metadata
+    assert meta["Format (identified)"] == "ISO 9660 Optical Disc Image"

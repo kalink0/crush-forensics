@@ -49,8 +49,11 @@ class TestSearchPanelTimestamp:
     def test_utc_labelled(self) -> None:
         assert search_fmt_ts(1_705_314_225) == "2024-01-15 10:23:45 UTC"
 
-    def test_zero_means_missing(self) -> None:
-        assert search_fmt_ts(0) == ""
+    def test_none_means_missing(self) -> None:
+        assert search_fmt_ts(None) == ""
+
+    def test_zero_is_the_epoch(self) -> None:
+        assert search_fmt_ts(0) == "1970-01-01 00:00:00 UTC"
 
     def test_negative_is_shown(self) -> None:
         assert search_fmt_ts(-1) == "1969-12-31 23:59:59 UTC"
@@ -70,7 +73,7 @@ class TestSearchPanelTimestamp:
 
 
 class TestPropertiesPanelTimestamp:
-    def _text(self, value: float) -> str:
+    def _text(self, value: float | None) -> str:
         panel = PropertiesPanel()
         panel._add_timestamp("Modified", value)
         labels = [
@@ -83,8 +86,11 @@ class TestPropertiesPanelTimestamp:
     def test_utc_labelled(self, qapp) -> None:
         assert self._text(1_705_314_225) == "2024-01-15 10:23:45 UTC"
 
-    def test_zero_means_missing(self, qapp) -> None:
-        assert self._text(0) == "—"
+    def test_none_means_missing(self, qapp) -> None:
+        assert self._text(None) == "—"
+
+    def test_zero_is_the_epoch(self, qapp) -> None:
+        assert self._text(0) == "1970-01-01 00:00:00 UTC"
 
     def test_negative_is_shown(self, qapp) -> None:
         assert self._text(-1) == "1969-12-31 23:59:59 UTC"

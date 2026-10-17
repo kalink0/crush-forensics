@@ -80,6 +80,30 @@ def test_exif_status_row_is_always_present() -> None:
     assert exif_metadata(_image_bytes("PNG"))["EXIF"] == ParseIssue("exif.png_not_checked")
 
 
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="Image",
+    desc="Every PNG tEXt chunk is shown, keyword and text as stored, in stored order "
+    "(none dropped as an unknown EXIF tag)",
+)
+def test_png_text_chunks_are_all_shown() -> None:
+    """Before, the tEXt keywords went through the EXIF field list, which
+    knows none of them: "Creation Time", "Author", "Comment" were dropped
+    while the EXIF row said tEXt was read."""
+    from PIL import PngImagePlugin
+
+    info = PngImagePlugin.PngInfo()
+    info.add_text("Creation Time", "2024:05:01 12:00:00")
+    info.add_text("Author", "Alice")
+    info.add_text("Comment", "first")
+    info.add_text("Comment", "second")  # a keyword may repeat
+    meta = exif_metadata(_image_bytes("PNG", pnginfo=info))
+    assert meta["PNG text"] == (
+        "Creation Time: 2024:05:01 12:00:00\nAuthor: Alice\nComment: first\nComment: second"
+    )
+    assert "PNG text" not in exif_metadata(_image_bytes("PNG"))
+
+
 def test_exif_present_without_listed_fields_says_so() -> None:
     exif = PIL_Image.Exif()
     exif[0x0100] = 4  # ImageWidth -- not one of the fields shown

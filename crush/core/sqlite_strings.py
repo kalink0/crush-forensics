@@ -535,20 +535,21 @@ def _journal_regions(data: Any, size: int, reserved: int) -> tuple[list[Region],
     return regions, problems
 
 
-def _attach(fs: FileStrings) -> None:
+def attach_regions(fs: FileStrings, gap_kind: str = KIND_NO_STRUCTURE) -> None:
     """Fill fs.hit_regions. Regions don't overlap; bytes no region covers
-    (e.g. between two journal segments) become KIND_NO_STRUCTURE regions,
-    so every byte of a hit is attributed to something."""
+    (e.g. between two journal segments) become *gap_kind* regions, so every
+    byte of a hit is attributed to something. Shared by every Strings view
+    that attributes regions (also realm_strings)."""
     regions = sorted(fs.regions, key=lambda r: r.start)
     filled: list[Region] = []
     pos = 0
     for region in regions:
         if region.start > pos:
-            filled.append(Region(pos, region.start, KIND_NO_STRUCTURE))
+            filled.append(Region(pos, region.start, gap_kind))
         filled.append(region)
         pos = max(pos, region.end)
     if pos < fs.size:
-        filled.append(Region(pos, fs.size, KIND_NO_STRUCTURE))
+        filled.append(Region(pos, fs.size, gap_kind))
     fs.regions = filled
     starts = [r.start for r in fs.regions]
     out: list[tuple[int, ...]] = []
@@ -633,7 +634,7 @@ def scan_sqlite_strings(
                 problems.extend(walk_problems + region_problems)
             elif base_size:
                 fs.regions = [Region(0, base_size, KIND_NO_STRUCTURE)]
-            _attach(fs)
+            attach_regions(fs)
             result.files.append(fs)
 
         # --- -wal ----------------------------------------------------------
@@ -664,7 +665,7 @@ def scan_sqlite_strings(
                 fs.regions, wal_problems = _wal_regions(wal_data, wal_size, reserved,
                                                         effective, current_offsets)
                 problems.extend(wal_problems)
-            _attach(fs)
+            attach_regions(fs)
             result.files.append(fs)
 
         # --- -journal ------------------------------------------------------
@@ -674,7 +675,7 @@ def scan_sqlite_strings(
             if journal_size:
                 fs.regions, journal_problems = _journal_regions(journal_data, journal_size, reserved)
                 problems.extend(journal_problems)
-            _attach(fs)
+            attach_regions(fs)
             result.files.append(fs)
     finally:
         for opened in (base_map, wal_map, journal_map):

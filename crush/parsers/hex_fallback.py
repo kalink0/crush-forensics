@@ -42,7 +42,10 @@ class HexFallbackParser(AbstractParser):
         # always there: identified, not identified, or why that failed.
         try:
             from crush.core.format_db import FormatDatabase
-            matches = FormatDatabase.get().top_matches(raw[:512])
+            db = FormatDatabase.get()
+            # The whole file is at hand: match every signature, also the
+            # ones deep in it (ISO 9660 at byte 32,769, Btrfs at 65,600 ...).
+            matches = db.top_matches(raw[:db.signature_reach()])
         except Exception as exc:
             meta["Format (identified)"] = ParseIssue("hexfallback.identify_failed", detail=str(exc))
             matches = []
