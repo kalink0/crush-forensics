@@ -1514,8 +1514,13 @@ MESSAGES: dict[str, str] = {
     ),
     "segb.detail_no_payload": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "This record's payload offsets could not be read: no payload bytes to decode",
+        "This record's payload offsets could not be read ({reason}): no payload bytes to decode",
         "segb.detail_no_payload",
+    ),
+    "segb.detail_payload_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The record states 0 bytes of payload",
+        "segb.detail_payload_empty",
     ),
     "segb.detail_payload_short": QT_TRANSLATE_NOOP(
         "ParseIssue",

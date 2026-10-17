@@ -96,6 +96,9 @@ class SegbCellLocator:
     _col_ranges: dict[int, dict[int, tuple[int, int]]] = field(default_factory=dict, init=False)
     # Rows whose offsets couldn't be read, with why (see why_not_located).
     _row_failures: dict[int, ParseIssue] = field(default_factory=dict, init=False)
+    # Each record's payload (start, end) as its offsets state it, not
+    # clipped to the file (see payload_bounds).
+    _payload_bounds: dict[int, tuple[int, int]] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         file_len = len(self.file_bytes)
@@ -107,10 +110,14 @@ class SegbCellLocator:
                     return int(row[col_index[name]])
 
                 if self.version == "v1":
+                    start = value("Offset")
+                    self._payload_bounds[idx] = (start, start + value("Payload Size"))
                     row_ranges, named = _v1_ranges(
                         value("Offset"), value("Payload Size"), file_len
                     )
                 elif self.version == "v2":
+                    start = value("Offset") + ccl_segb2.ENTRY_HEADER_LENGTH
+                    self._payload_bounds[idx] = (start, start + value("Payload Size"))
                     row_ranges, named = _v2_ranges(
                         value("Offset"),
                         value("Trailer Offset"),
@@ -129,21 +136,12 @@ class SegbCellLocator:
             self._row_ranges[idx] = row_ranges
             self._col_ranges[idx] = columns
 
-    def payload_range(self, row_key: Any) -> tuple[int, int] | None:
-        """(start, end) of record *row_key*'s payload bytes in the file,
-        clipped to the bytes read; None when its offsets couldn't be read."""
-        if not isinstance(row_key, int) or "Payload" not in self.columns:
-            return None
-        return self._col_ranges.get(row_key, {}).get(self.columns.index("Payload"))
-
-    def payload_size(self, row_key: Any) -> int | None:
-        """The payload size record *row_key* states (v1 header / v2 derived)."""
-        if not isinstance(row_key, int) or not 0 <= row_key < len(self.rows):
-            return None
-        try:
-            return int(self.rows[row_key][self.columns.index("Payload Size")])
-        except (TypeError, ValueError, IndexError):
-            return None
+    def payload_bounds(self, row_key: Any) -> tuple[int, int] | None:
+        """(start, end) of record *row_key*'s payload as its offsets and
+        stated size give it -- not clipped to the file, so it may be empty
+        or lie past the file's end. None when the offsets couldn't be read
+        (why_not_located says why)."""
+        return self._payload_bounds.get(row_key) if isinstance(row_key, int) else None
 
     def default_file_kind(self) -> str:
         return _MAIN

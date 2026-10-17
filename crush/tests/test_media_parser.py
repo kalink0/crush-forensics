@@ -85,9 +85,19 @@ def test_can_parse_amr_wb_magic_renamed_to_bin(tmp_path: Path) -> None:
 def test_can_parse_media_by_content(tmp_path: Path, label: str, head: bytes) -> None:
     from crush.core.registry import ParserRegistry
 
+    from crush.ui.search_panel import _detect_type
+
     node, vfs = _make_node(tmp_path, "evidence.bin", head + b"\x00" * 64)
     assert MediaParser().can_parse(node.path, vfs.peek(node)), label
     assert isinstance(ParserRegistry.best(node, vfs), MediaParser), label
+    # The search panel's "media" type filter, on the 20 bytes it reads.
+    assert _detect_type(vfs.peek(node, 20), ".bin") == "media", label
+
+
+def test_search_media_extensions_are_the_media_viewers() -> None:
+    from crush.ui.search_panel import _TYPE_EXTENSIONS
+
+    assert {e.lstrip(".") for e in MediaParser.SUPPORTED_EXTENSIONS} == _TYPE_EXTENSIONS["media"]
 
 
 @pytest.mark.parametrize(("label", "head"), [
@@ -100,8 +110,11 @@ def test_can_parse_media_by_content(tmp_path: Path, label: str, head: bytes) -> 
     ("not ID3v2", b"ID3\x04\x00\x00\xff\x00\x00\x00"),
 ])
 def test_not_claimed_by_content(tmp_path: Path, label: str, head: bytes) -> None:
+    from crush.ui.search_panel import _detect_type
+
     node, vfs = _make_node(tmp_path, "evidence.bin", head + b"\x00" * 64)
     assert not MediaParser().can_parse(node.path, vfs.peek(node)), label
+    assert _detect_type(vfs.peek(node, 20), ".bin") != "media", label
 
 
 def test_cannot_parse_unknown_extension_no_magic(tmp_path: Path) -> None:

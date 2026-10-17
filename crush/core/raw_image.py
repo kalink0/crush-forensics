@@ -51,7 +51,12 @@ from crush.third_party.qnxprobe.qnxprobe import (  # noqa: E402
     ApfsWalker,
     BitLocker,
     ExfatWalker,
+    F2fsWalker,
+    Fat32Walker,
+    HfsPlusWalker,
     Luks,
+    NtfsWalker,
+    RefsWalker,
     identify_fs,
     unlock_apfs,
     unlock_bitlocker,
@@ -62,6 +67,26 @@ if TYPE_CHECKING:
     from crush.core.vfs import VFSNode
 
 _MAX_DEPTH = 64  # a directory this deep in a walk is a loop, not a directory
+
+# Walkers whose entry() time is 0 when the filesystem stores none, by
+# qnxprobe's own conversions: NTFS ("0 where the attribute is absent"), ReFS
+# (0 = not set, libfsrefs), F2FS, APFS ("0 when unset") and HFS+ ("0 when
+# unset or out of range"); FAT/exFAT (Fat16/Fat12 subclass Fat32Walker)
+# always give 0, as their entries store a reading, not an instant. Every
+# other walker's 0 is the stored time 1970-01-01 00:00:00 UTC.
+_ZERO_IS_NO_TIME = (
+    NtfsWalker, RefsWalker, F2fsWalker, ApfsWalker, HfsPlusWalker, Fat32Walker, ExfatWalker,
+)
+
+
+def _entry_time(walker: Any, value: Any) -> float | None:
+    """A walker's time as a VFSNode instant: None when it gives none (None,
+    or 0 from a walker whose 0 means unset), else the value -- 0 included."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    if value == 0 and isinstance(walker, _ZERO_IS_NO_TIME):
+        return None
+    return float(value)
 
 # A Linux md RAID member found on its own (qnxprobe volumes() kind "linux md
 # member"): the reader reads the array only when assembled from its members.
@@ -850,8 +875,7 @@ def _add_deleted_files_node(
         mtime = getattr(entry, "mtime", None)
         recovered.children.append(VFSNode(
             name=unique_name, path=child_path, is_dir=False, size=entry.size or 0,
-            # 0 is qnxprobe's "no time", as for the live entries.
-            modified=float(mtime) if isinstance(mtime, (int, float)) and mtime else None,
+            modified=_entry_time(walker, mtime),
         ))
         read_map[child_path] = _Entry(walker=walker, node=None, size=entry.size or 0, deleted=entry)
 
@@ -915,11 +939,7 @@ def _walk_into(
             read_map[child_path] = _Entry(walker=None, node=None, size=0, stored=b"")
             continue
         mode, size, raw_mtime = ent
-        # qnxprobe gives 0 where it has no instant: NTFS without the time in
-        # $STANDARD_INFORMATION ("0 where the attribute is absent"), and
-        # every FAT/exFAT entry, which stores a reading (in `times`), not an
-        # instant.
-        mtime = float(raw_mtime) if raw_mtime else None
+        mtime = _entry_time(walker, raw_mtime)  # 0 is "no time" only where the walker says so
         if (mode & 0o170000) == qnxprobe.S_IFDIR:  # not just the bit: block devices and sockets share it
             child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime,
                                  stored_times=times)

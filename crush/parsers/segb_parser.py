@@ -122,17 +122,24 @@ class SegbPayloadDetail:
         a decode that stopped."""
         from crush.parsers.protobuf_parser import decode_message
 
-        rng = self._locator.payload_range(rowid)
-        if rng is None:
-            if not isinstance(rowid, int) or not 0 <= rowid < len(self._locator.rows):
-                return None
-            return {"raw": b"", "decoded": {"entries": []}, "offset": None,
-                    "notes": [ParseIssue("segb.detail_no_payload")]}
-        start, end = rng
-        raw = self._locator.file_bytes[start:end]
+        if not isinstance(rowid, int) or not 0 <= rowid < len(self._locator.rows):
+            return None
+        bounds = self._locator.payload_bounds(rowid)
+        if bounds is None:
+            reason = self._locator.why_not_located("SEGB", rowid)
+            return {"raw": b"", "decoded": {"entries": []}, "offset": None, "notes": [
+                ParseIssue("segb.detail_no_payload", {
+                    "reason": reason if reason is not None else ParseIssue("locate.not_recorded"),
+                }),
+            ]}
+        start, end = bounds
+        stated = end - start
+        file_len = len(self._locator.file_bytes)
+        raw = self._locator.file_bytes[max(start, 0):max(min(end, file_len), 0)]
         notes: list[ParseIssue] = []
-        stated = self._locator.payload_size(rowid)
-        if stated is not None and stated != len(raw):
+        if stated <= 0:
+            notes.append(ParseIssue("segb.detail_payload_empty"))
+        elif len(raw) < stated:
             notes.append(ParseIssue("segb.detail_payload_short", {
                 "present": f"{len(raw):,}", "stated": f"{stated:,}",
             }))

@@ -77,10 +77,21 @@ def report_step(step: int, steps: int) -> None:
     _emit()
 
 
+@contextmanager
+def not_counted() -> Iterator[None]:
+    """VFSNodes made inside are not counted: copies of entries already
+    listed (a mounted source holding another source's tree)."""
+    _local.paused = getattr(_local, "paused", 0) + 1
+    try:
+        yield
+    finally:
+        _local.paused -= 1
+
+
 def count_entry() -> None:
     """One more entry listed on this thread (VFSNode.__post_init__)."""
     progress = getattr(_local, "progress", None)
-    if progress is None:
+    if progress is None or getattr(_local, "paused", 0) > 0:
         return
     _local.entries += 1
     if time.monotonic() - _local.last >= _MIN_INTERVAL:

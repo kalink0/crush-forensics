@@ -8,46 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from crush.core.issues import ParseIssue
+from crush.core.magic import looks_like_media
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 
 _OGG_MAGIC = b"OggS"
 _AMR_MAGIC = b"#!AMR"
-# ASF header object GUID 75B22630-668E-11CF-A6D9-00AA0062CE6C (WMA, WMV),
-# as stored (little-endian fields).
-_ASF_HEADER_GUID = bytes.fromhex("3026B2758E66CF11A6D900AA0062CE6C")
-
-
-def _looks_like_media(peek: bytes) -> bool:
-    """Audio or video by its first bytes, each from its format's spec. An
-    MPEG audio stream without an ID3v2 tag (and AAC in ADTS) begins with a
-    bare frame sync of 11/12 bits, which plenty of other data matches too,
-    so it is left to the file name."""
-    from crush.parsers.image_parser import _looks_like_image
-
-    if len(peek) < 4:
-        return False
-    if peek[:4] == _OGG_MAGIC or peek[:5] == _AMR_MAGIC:
-        return True
-    # ISO/IEC 14496-12: the file opens with its ftyp box (MP4, MOV, M4A,
-    # 3GP ...). An image brand (HEIC, AVIF ...) is the ImageParser's.
-    if len(peek) >= 12 and peek[4:8] == b"ftyp":
-        return not _looks_like_image(peek)
-    # RIFF: WAVE audio, AVI video (WebP, also RIFF, is an image).
-    if len(peek) >= 12 and peek[:4] == b"RIFF" and peek[8:12] in (b"WAVE", b"AVI "):
-        return True
-    if peek[:4] == b"fLaC":  # FLAC stream marker
-        return True
-    if peek[:4] == b"\x1a\x45\xdf\xa3":  # EBML header (RFC 8794): Matroska, WebM
-        return True
-    if peek[:16] == _ASF_HEADER_GUID:
-        return True
-    # ID3v2 tag (id3v2.4.0-structure 3.1): "ID3", two version bytes below
-    # 0xFF, flags, and a size of four bytes below 0x80 each.
-    return (
-        len(peek) >= 10 and peek[:3] == b"ID3" and peek[3] < 0xFF and peek[4] < 0xFF
-        and all(b < 0x80 for b in peek[6:10])
-    )
 
 
 def _extract_audio_metadata(data: bytes) -> dict[str, Any]:
@@ -119,7 +85,7 @@ class MediaParser(AbstractParser):
             return True
         # Renamed, carved or exported without an extension (a voice note
         # saved as .bin, a video named by its hash).
-        return _looks_like_media(peek_bytes)
+        return looks_like_media(peek_bytes)
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         raw = vfs.read(node)

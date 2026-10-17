@@ -58,6 +58,20 @@ def test_nothing_is_counted_without_a_reporter(tmp_path: Path) -> None:
     assert seen == []
 
 
+def test_copies_of_listed_entries_are_not_counted(every_count: None) -> None:
+    """A mounted source (UFD, ZIP with an iTunes backup) copies the inner
+    source's nodes; the copies are made under not_counted()."""
+    from crush.core.vfs import VFSNode
+
+    seen: list[int] = []
+    with phase_reporter(lambda _p: None, lambda entries, _s, _n: seen.append(entries)):
+        VFSNode(name="a", path="/a", is_dir=False)
+        with load_phase.not_counted():
+            VFSNode(name="a", path="/copy/a", is_dir=False)
+        VFSNode(name="b", path="/b", is_dir=False)
+    assert seen == [1, 2]
+
+
 def test_counts_are_throttled() -> None:
     seen: list[Any] = []
     with phase_reporter(lambda _p: None, lambda *a: seen.append(a)):

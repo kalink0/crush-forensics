@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from crush.core.issues import ParseIssue
+from crush.core.load_phase import not_counted
 from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 from crush.core.vfs import (
     VFS,
@@ -77,11 +78,14 @@ class _MountVFS(VFS):
             if skip is not None and skip(child):
                 continue
             path = self._child_path(dst, child.name)
-            copy = VFSNode(
-                name=child.name, path=path, is_dir=child.is_dir, size=child.size,
-                modified=child.modified, accessed=child.accessed, changed=child.changed,
-                birth=child.birth, status=child.status, stored_times=child.stored_times,
-            )
+            # A copy of an entry the inner source already listed (and
+            # counted): not one more for the loading dialog's count.
+            with not_counted():
+                copy = VFSNode(
+                    name=child.name, path=path, is_dir=child.is_dir, size=child.size,
+                    modified=child.modified, accessed=child.accessed, changed=child.changed,
+                    birth=child.birth, status=child.status, stored_times=child.stored_times,
+                )
             if replace is not None and child.is_dir and replace(child, copy):
                 dst.children.append(copy)
                 self._nodes[path] = copy

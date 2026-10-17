@@ -35,17 +35,47 @@ def test_detail_is_the_payload_bytes_with_every_reading(tmp_path: Path) -> None:
     assert data["__row_detail"].detail(99) is None
 
 
-def test_a_payload_shorter_in_the_file_than_stated_says_so(tmp_path: Path) -> None:
-    data, raw = _parse(tmp_path)
+def _with(data: dict[str, Any], raw: bytes, column: str, value: Any) -> SegbPayloadDetail:
+    """The detail of record 0 with one of its row values replaced."""
     locator: SegbCellLocator = data["__cell_locator"]
     rows = [list(r) for r in locator.rows]
-    size_col = locator.columns.index("Payload Size")
-    rows[0][size_col] = int(rows[0][size_col]) + 1000
-    longer = SegbCellLocator(file_bytes=raw, version=locator.version, rows=rows,
-                             columns=locator.columns)
-    detail = SegbPayloadDetail(longer).detail(0)
-    codes = [n.code for n in detail["notes"]]
-    assert "segb.detail_payload_short" in codes
+    rows[0][locator.columns.index(column)] = value
+    return SegbPayloadDetail(SegbCellLocator(
+        file_bytes=raw, version=locator.version, rows=rows, columns=locator.columns,
+    ))
+
+
+def test_a_payload_shorter_in_the_file_than_stated_says_so(tmp_path: Path) -> None:
+    data, raw = _parse(tmp_path)
+    size = int(data["__cell_locator"].rows[0][data["__cell_locator"].columns.index("Payload Size")])
+    detail = _with(data, raw, "Payload Size", size + 1000).detail(0)
+    # (the longer payload runs into the trailer's bytes, so the decode may
+    # add its own warning beside this one)
+    (note,) = [n for n in detail["notes"] if n.code == "segb.detail_payload_short"]
+    assert note.params["stated"] == f"{size + 1000:,}"
+
+
+def test_a_payload_wholly_past_the_file_end_says_none_is_there(tmp_path: Path) -> None:
+    """Its offsets read fine: that is 0 bytes present, not unreadable offsets."""
+    data, raw = _parse(tmp_path)
+    detail = _with(data, raw, "Offset", len(raw) + 100).detail(0)
+    assert detail["raw"] == b""
+    (note,) = detail["notes"]
+    assert note.code == "segb.detail_payload_short" and note.params["present"] == "0"
+
+
+def test_a_payload_of_0_bytes_says_so(tmp_path: Path) -> None:
+    data, raw = _parse(tmp_path)
+    detail = _with(data, raw, "Payload Size", 0).detail(0)
+    assert [n.code for n in detail["notes"]] == ["segb.detail_payload_empty"]
+
+
+def test_unreadable_offsets_keep_their_reason(tmp_path: Path) -> None:
+    data, raw = _parse(tmp_path)
+    detail = _with(data, raw, "Offset", "not a number").detail(0)
+    (note,) = detail["notes"]
+    assert note.code == "segb.detail_no_payload"
+    assert note.params["reason"].code == "locate.segb_record_offsets"
 
 
 def test_selecting_a_row_shows_its_payload_tree(qapp: Any, widgets: Any, tmp_path: Path) -> None:

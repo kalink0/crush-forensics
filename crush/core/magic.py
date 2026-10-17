@@ -36,6 +36,39 @@ _JXL_CONTAINER_SIG: Final = b"\x00\x00\x00\x0C\x4A\x58\x4C\x20\x0D\x0A\x87\x0A"
 _OGG_MAGIC: Final = b"OggS"
 _OPUS_HEAD: Final = b"OpusHead"   # RFC 7845 §5.1
 _VORBIS_HEAD: Final = b"\x01vorbis"  # Vorbis I spec §5.2.1
+_AMR_MAGIC: Final = b"#!AMR"
+# ASF header object GUID 75B22630-668E-11CF-A6D9-00AA0062CE6C (WMA, WMV),
+# as stored (little-endian fields).
+_ASF_HEADER_GUID: Final = bytes.fromhex("3026B2758E66CF11A6D900AA0062CE6C")
+_ISOBMFF_IMAGE_BRANDS: Final = _ISOBMFF_HEIC_BRANDS | _ISOBMFF_HEIF_BRANDS | _ISOBMFF_AVIF_BRANDS
+
+
+def looks_like_media(peek: bytes) -> bool:
+    """Audio or video by its first bytes (20 are enough), each from its
+    format's spec: an ISO base media file (MP4, MOV, M4A, 3GP ...) by its
+    ftyp box unless the brand is an image's (HEIC, HEIF, AVIF), RIFF WAVE
+    and AVI, FLAC, EBML (Matroska, WebM), ASF (WMA, WMV), Ogg, AMR, and MP3
+    with an ID3v2 tag. MPEG audio without ID3v2 and AAC in ADTS begin with a
+    bare frame sync of 11/12 bits that much other data matches too, so they
+    are left to the file name."""
+    if len(peek) < 4:
+        return False
+    if peek[:4] == _OGG_MAGIC or peek[:5] == _AMR_MAGIC:
+        return True
+    if len(peek) >= 12 and peek[4:8] == b"ftyp":  # ISO/IEC 14496-12
+        return peek[8:12] not in _ISOBMFF_IMAGE_BRANDS
+    if len(peek) >= 12 and peek[:4] == b"RIFF" and peek[8:12] in (b"WAVE", b"AVI "):
+        return True
+    if peek[:4] in (b"fLaC", b"\x1a\x45\xdf\xa3"):  # FLAC stream marker, EBML (RFC 8794)
+        return True
+    if peek[:16] == _ASF_HEADER_GUID:
+        return True
+    # ID3v2 tag (id3v2.4.0-structure 3.1): "ID3", two version bytes below
+    # 0xFF, flags, and a size of four bytes below 0x80 each.
+    return (
+        len(peek) >= 10 and peek[:3] == b"ID3" and peek[3] < 0xFF and peek[4] < 0xFF
+        and all(b < 0x80 for b in peek[6:10])
+    )
 
 
 def detect_fast_label(peek_bytes: bytes, path: str) -> str:
