@@ -20,7 +20,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import PurePosixPath
 
 
 def relaunch_command(
@@ -41,7 +41,8 @@ def relaunch_command(
     if appimage:
         return [appimage]
     if platform == "darwin":
-        for parent in Path(executable).parents:
+        # A macOS path, whatever OS this code is checked on.
+        for parent in PurePosixPath(executable).parents:
             if parent.suffix == ".app":
                 return ["open", "-n", str(parent)]
     return [executable]
