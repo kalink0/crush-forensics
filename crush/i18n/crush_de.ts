@@ -3724,15 +3724,15 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>streaming form footer</source>
-        <translation type="unfinished"></translation>
+        <translation>Streaming-Form-Footer</translation>
     </message>
     <message>
         <source>array (active snapshot)</source>
-        <translation type="unfinished"></translation>
+        <translation>Array (aktiver Snapshot)</translation>
     </message>
     <message>
         <source>array (inactive snapshot only)</source>
-        <translation type="unfinished"></translation>
+        <translation>Array (nur inaktiver Snapshot)</translation>
     </message>
     <message>
         <source>freed block</source>
@@ -3740,7 +3740,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>not reached from either top reference</source>
-        <translation type="unfinished"></translation>
+        <translation>von keiner der beiden Top-Referenzen erreicht</translation>
     </message>
     <message>
         <source>in a freed block</source>
@@ -3748,7 +3748,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>in the inactive snapshot&apos;s free list only</source>
-        <translation type="unfinished"></translation>
+        <translation>nur in der Free-List des inaktiven Snapshots</translation>
     </message>
     <message>
         <source>Size</source>
@@ -6159,19 +6159,19 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <name>MetadataLabel</name>
     <message>
         <source>AD1 item type</source>
-        <translation type="unfinished"></translation>
+        <translation>AD1-Item-Typ</translation>
     </message>
     <message>
         <source>AD1 type record</source>
-        <translation type="unfinished"></translation>
+        <translation>AD1-Typ-Datensatz</translation>
     </message>
     <message>
         <source>ATX warnings</source>
-        <translation type="unfinished"></translation>
+        <translation>ATX-Warnungen</translation>
     </message>
     <message>
         <source>Acquired (L01)</source>
-        <translation type="unfinished"></translation>
+        <translation>Gesichert (L01)</translation>
     </message>
     <message>
         <source>Active</source>
@@ -6179,263 +6179,263 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Active top ref</source>
-        <translation type="unfinished"></translation>
+        <translation>Aktive top ref</translation>
     </message>
     <message>
         <source>Array layers</source>
-        <translation type="unfinished"></translation>
+        <translation>Array-Layer</translation>
     </message>
     <message>
         <source>Attachments</source>
-        <translation type="unfinished"></translation>
+        <translation>Anhänge</translation>
     </message>
     <message>
         <source>Block order</source>
-        <translation type="unfinished"></translation>
+        <translation>Block-Reihenfolge</translation>
     </message>
     <message>
         <source>Byte order</source>
-        <translation type="unfinished"></translation>
+        <translation>Byte-Reihenfolge</translation>
     </message>
     <message>
         <source>C2PA</source>
-        <translation type="unfinished"></translation>
+        <translation>C2PA</translation>
     </message>
     <message>
         <source>Carved</source>
-        <translation type="unfinished"></translation>
+        <translation>Gecarvt</translation>
     </message>
     <message>
         <source>Category</source>
-        <translation type="unfinished">Kategorie</translation>
+        <translation>Kategorie</translation>
     </message>
     <message>
         <source>Category (Tag)</source>
-        <translation type="unfinished"></translation>
+        <translation>Kategorie (Tag)</translation>
     </message>
     <message>
         <source>Cellebrite MD5</source>
-        <translation type="unfinished"></translation>
+        <translation>Cellebrite MD5</translation>
     </message>
     <message>
         <source>Cellebrite SHA-256</source>
-        <translation type="unfinished"></translation>
+        <translation>Cellebrite SHA-256</translation>
     </message>
     <message>
         <source>Channels</source>
-        <translation type="unfinished"></translation>
+        <translation>Kanäle</translation>
     </message>
     <message>
         <source>Chunks</source>
-        <translation type="unfinished"></translation>
+        <translation>Chunks</translation>
     </message>
     <message>
         <source>Cipher parameters</source>
-        <translation type="unfinished"></translation>
+        <translation>Verschlüsselungsparameter</translation>
     </message>
     <message>
         <source>Codec</source>
-        <translation type="unfinished"></translation>
+        <translation>Codec</translation>
     </message>
     <message>
         <source>Companion files</source>
-        <translation type="unfinished"></translation>
+        <translation>Begleitdateien</translation>
     </message>
     <message>
         <source>Companion files not loaded</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht geladene Begleitdateien</translation>
     </message>
     <message>
         <source>Declared payload bytes</source>
-        <translation type="unfinished"></translation>
+        <translation>Deklarierte Nutzdaten-Bytes</translation>
     </message>
     <message>
         <source>Content status</source>
-        <translation type="unfinished"></translation>
+        <translation>Inhaltsstatus</translation>
     </message>
     <message>
         <source>Copy read</source>
-        <translation type="unfinished"></translation>
+        <translation>Gelesene Kopie</translation>
     </message>
     <message>
         <source>Decode pipeline</source>
-        <translation type="unfinished">Dekodier-Pipeline</translation>
+        <translation>Dekodier-Pipeline</translation>
     </message>
     <message>
         <source>Decode status</source>
-        <translation type="unfinished"></translation>
+        <translation>Dekodier-Status</translation>
     </message>
     <message>
         <source>Decrypted size</source>
-        <translation type="unfinished"></translation>
+        <translation>Entschlüsselte Größe</translation>
     </message>
     <message>
         <source>Deleted</source>
-        <translation type="unfinished">Gelöscht</translation>
+        <translation>Gelöscht</translation>
     </message>
     <message>
         <source>Deleted (L01)</source>
-        <translation type="unfinished"></translation>
+        <translation>Gelöscht (L01)</translation>
     </message>
     <message>
         <source>Depth</source>
-        <translation type="unfinished"></translation>
+        <translation>Tiefe</translation>
     </message>
     <message>
         <source>Derived from</source>
-        <translation type="unfinished"></translation>
+        <translation>Abgeleitet von</translation>
     </message>
     <message>
         <source>Detection rule</source>
-        <translation type="unfinished"></translation>
+        <translation>Erkennungsregel</translation>
     </message>
     <message>
         <source>Display format</source>
-        <translation type="unfinished"></translation>
+        <translation>Anzeigeformat</translation>
     </message>
     <message>
         <source>Duration</source>
-        <translation type="unfinished">Dauer</translation>
+        <translation>Dauer</translation>
     </message>
     <message>
         <source>Encoding</source>
-        <translation type="unfinished">Kodierung</translation>
+        <translation>Kodierung</translation>
     </message>
     <message>
         <source>Encrypted</source>
-        <translation type="unfinished"></translation>
+        <translation>Verschlüsselt</translation>
     </message>
     <message>
         <source>Encryption</source>
-        <translation type="unfinished"></translation>
+        <translation>Verschlüsselung</translation>
     </message>
     <message>
         <source>Entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Einträge</translation>
     </message>
     <message>
         <source>Entries with timestamp</source>
-        <translation type="unfinished"></translation>
+        <translation>Einträge mit Zeitstempel</translation>
     </message>
     <message>
         <source>Entry status</source>
-        <translation type="unfinished"></translation>
+        <translation>Eintragstatus</translation>
     </message>
     <message>
         <source>Extension</source>
-        <translation type="unfinished">Dateiendung</translation>
+        <translation>Dateiendung</translation>
     </message>
     <message>
         <source>Extraction files (Cellebrite count)</source>
-        <translation type="unfinished"></translation>
+        <translation>Extraktionsdateien (Anzahl laut Cellebrite)</translation>
     </message>
     <message>
         <source>Extraction files in this UFDR</source>
-        <translation type="unfinished"></translation>
+        <translation>Extraktionsdateien in diesem UFDR</translation>
     </message>
     <message>
         <source>Faces</source>
-        <translation type="unfinished"></translation>
+        <translation>Gesichter</translation>
     </message>
     <message>
         <source>File format</source>
-        <translation type="unfinished"></translation>
+        <translation>Dateiformat</translation>
     </message>
     <message>
         <source>File size</source>
-        <translation type="unfinished"></translation>
+        <translation>Dateigröße</translation>
     </message>
     <message>
         <source>Files</source>
-        <translation type="unfinished">Dateien</translation>
+        <translation>Dateien</translation>
     </message>
     <message>
         <source>Filesystem</source>
-        <translation type="unfinished">Dateisystem</translation>
+        <translation>Dateisystem</translation>
     </message>
     <message>
         <source>Forensic relevance</source>
-        <translation type="unfinished"></translation>
+        <translation>Forensische Relevanz</translation>
     </message>
     <message>
         <source>Format</source>
-        <translation type="unfinished"></translation>
+        <translation>Format</translation>
     </message>
     <message>
         <source>Format (identified)</source>
-        <translation type="unfinished"></translation>
+        <translation>Format (erkannt)</translation>
     </message>
     <message>
         <source>Format candidates</source>
-        <translation type="unfinished"></translation>
+        <translation>Format-Kandidaten</translation>
     </message>
     <message>
         <source>Frames</source>
-        <translation type="unfinished"></translation>
+        <translation>Frames</translation>
     </message>
     <message>
         <source>Header</source>
-        <translation type="unfinished"></translation>
+        <translation>Header</translation>
     </message>
     <message>
         <source>Header mnemonic</source>
-        <translation type="unfinished"></translation>
+        <translation>Header-Mnemonic</translation>
     </message>
     <message>
         <source>Header values</source>
-        <translation type="unfinished"></translation>
+        <translation>Header-Werte</translation>
     </message>
     <message>
         <source>Height</source>
-        <translation type="unfinished"></translation>
+        <translation>Höhe</translation>
     </message>
     <message>
         <source>Hex offsets</source>
-        <translation type="unfinished"></translation>
+        <translation>Hex-Offsets</translation>
     </message>
     <message>
         <source>Image offset</source>
-        <translation type="unfinished"></translation>
+        <translation>Image-Offset</translation>
     </message>
     <message>
         <source>Inspected bytes</source>
-        <translation type="unfinished"></translation>
+        <translation>Geprüfte Bytes</translation>
     </message>
     <message>
         <source>JavaScript</source>
-        <translation type="unfinished"></translation>
+        <translation>JavaScript</translation>
     </message>
     <message>
         <source>Journal mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Journal-Mode</translation>
     </message>
     <message>
         <source>KTX warnings</source>
-        <translation type="unfinished"></translation>
+        <translation>KTX-Warnungen</translation>
     </message>
     <message>
         <source>Key derivation</source>
-        <translation type="unfinished"></translation>
+        <translation>Schlüsselableitung</translation>
     </message>
     <message>
         <source>Key/value entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Key/Value-Einträge</translation>
     </message>
     <message>
         <source>LVM report</source>
-        <translation type="unfinished"></translation>
+        <translation>LVM-Bericht</translation>
     </message>
     <message>
         <source>Layout</source>
-        <translation type="unfinished"></translation>
+        <translation>Layout</translation>
     </message>
     <message>
         <source>Level</source>
-        <translation type="unfinished"></translation>
+        <translation>Level</translation>
     </message>
     <message>
         <source>Lines not matching the format</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht zum Format passende Zeilen</translation>
     </message>
     <message>
         <source>Live</source>
@@ -6443,247 +6443,247 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Log format</source>
-        <translation type="unfinished"></translation>
+        <translation>Log-Format</translation>
     </message>
     <message>
         <source>Meta file</source>
-        <translation type="unfinished"></translation>
+        <translation>Metadatei</translation>
     </message>
     <message>
         <source>Missing from this UFDR</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehlt in diesem UFDR</translation>
     </message>
     <message>
         <source>Missing references</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehlende Referenzen</translation>
     </message>
     <message>
         <source>Meta version</source>
-        <translation type="unfinished"></translation>
+        <translation>Meta-Version</translation>
     </message>
     <message>
         <source>Metadata</source>
-        <translation type="unfinished"></translation>
+        <translation>Metadaten</translation>
     </message>
     <message>
         <source>Mipmaps</source>
-        <translation type="unfinished"></translation>
+        <translation>Mipmaps</translation>
     </message>
     <message>
         <source>Nesting</source>
-        <translation type="unfinished"></translation>
+        <translation>Verschachtelung</translation>
     </message>
     <message>
         <source>Not decoded</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht dekodiert</translation>
     </message>
     <message>
         <source>Note</source>
-        <translation type="unfinished">Anmerkung</translation>
+        <translation>Anmerkung</translation>
     </message>
     <message>
         <source>Objects</source>
-        <translation type="unfinished"></translation>
+        <translation>Objekte</translation>
     </message>
     <message>
         <source>Original folder</source>
-        <translation type="unfinished"></translation>
+        <translation>Originalordner</translation>
     </message>
     <message>
         <source>PDF Version</source>
-        <translation type="unfinished"></translation>
+        <translation>PFD-Version</translation>
     </message>
     <message>
         <source>PNG text</source>
-        <translation type="unfinished"></translation>
+        <translation>PNG-Text</translation>
     </message>
     <message>
         <source>Page records</source>
-        <translation type="unfinished"></translation>
+        <translation>Page-Datensätze</translation>
     </message>
     <message>
         <source>Page size</source>
-        <translation type="unfinished"></translation>
+        <translation>Page-Größe</translation>
     </message>
     <message>
         <source>Pages</source>
-        <translation type="unfinished">Seiten</translation>
+        <translation>Seiten</translation>
     </message>
     <message>
         <source>Parse error</source>
-        <translation type="unfinished">Parsing-Fehler</translation>
+        <translation>Parsing-Fehler</translation>
     </message>
     <message>
         <source>Parse warning</source>
-        <translation type="unfinished"></translation>
+        <translation>Parsing-Warnung</translation>
     </message>
     <message>
         <source>Parser support</source>
-        <translation type="unfinished"></translation>
+        <translation>Parser-Unterstützung</translation>
     </message>
     <message>
         <source>Past image end</source>
-        <translation type="unfinished"></translation>
+        <translation>Über das Image-Ende hinaus</translation>
     </message>
     <message>
         <source>Payload</source>
-        <translation type="unfinished"></translation>
+        <translation>Nutzdaten</translation>
     </message>
     <message>
         <source>Payload bytes</source>
-        <translation type="unfinished"></translation>
+        <translation>Nutzdaten-Bytes</translation>
     </message>
     <message>
         <source>Payload decoding</source>
-        <translation type="unfinished"></translation>
+        <translation>Nutzatendekodierung</translation>
     </message>
     <message>
         <source>Payload rendering</source>
-        <translation type="unfinished"></translation>
+        <translation>Nutzdaten-Darstellung</translation>
     </message>
     <message>
         <source>Pixel format</source>
-        <translation type="unfinished"></translation>
+        <translation>Pixelformat</translation>
     </message>
     <message>
         <source>Platforms</source>
-        <translation type="unfinished">Plattformen</translation>
+        <translation>Plattformen</translation>
     </message>
     <message>
         <source>Possibly Encrypted</source>
-        <translation type="unfinished"></translation>
+        <translation>Möglicherweise verschlüsselt</translation>
     </message>
     <message>
         <source>Read error</source>
-        <translation type="unfinished"></translation>
+        <translation>Lesefehler</translation>
     </message>
     <message>
         <source>Reader detail</source>
-        <translation type="unfinished"></translation>
+        <translation>Reader-Details</translation>
     </message>
     <message>
         <source>Recorded MD5</source>
-        <translation type="unfinished"></translation>
+        <translation>Gespeicherter MD5</translation>
     </message>
     <message>
         <source>Recorded SHA-1</source>
-        <translation type="unfinished"></translation>
+        <translation>Gespeicherter SHA-1</translation>
     </message>
     <message>
         <source>Records</source>
-        <translation type="unfinished">Datensätze</translation>
+        <translation>Datensätze</translation>
     </message>
     <message>
         <source>Recovered entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Wiederhergestellte Einträge</translation>
     </message>
     <message>
         <source>Reference</source>
-        <translation type="unfinished"></translation>
+        <translation>Referenz</translation>
     </message>
     <message>
         <source>Region</source>
-        <translation type="unfinished"></translation>
+        <translation>Region</translation>
     </message>
     <message>
         <source>Removed</source>
-        <translation type="unfinished">Entfernt</translation>
+        <translation>Entfernt</translation>
     </message>
     <message>
         <source>Revision chain</source>
-        <translation type="unfinished"></translation>
+        <translation>Revisionskette</translation>
     </message>
     <message>
         <source>Revisions</source>
-        <translation type="unfinished"></translation>
+        <translation>Revisionen</translation>
     </message>
     <message>
         <source>Rollback journal</source>
-        <translation type="unfinished"></translation>
+        <translation>Rollback-Journal</translation>
     </message>
     <message>
         <source>Root class</source>
-        <translation type="unfinished"></translation>
+        <translation>Root-Klasse</translation>
     </message>
     <message>
         <source>Row data</source>
-        <translation type="unfinished"></translation>
+        <translation>Zeilendaten</translation>
     </message>
     <message>
         <source>Row limit</source>
-        <translation type="unfinished"></translation>
+        <translation>Zeilenlimit</translation>
     </message>
     <message>
         <source>Source field</source>
-        <translation type="unfinished"></translation>
+        <translation>Quellfeld</translation>
     </message>
     <message>
         <source>Source key</source>
-        <translation type="unfinished"></translation>
+        <translation>Quellschlüssel</translation>
     </message>
     <message>
         <source>Source record</source>
-        <translation type="unfinished"></translation>
+        <translation>Quelldatensatz</translation>
     </message>
     <message>
         <source>SQL</source>
-        <translation type="unfinished"></translation>
+        <translation>SQL</translation>
     </message>
     <message>
         <source>Sample rate</source>
-        <translation type="unfinished"></translation>
+        <translation>Abtastrate</translation>
     </message>
     <message>
         <source>Segments</source>
-        <translation type="unfinished"></translation>
+        <translation>Segmente</translation>
     </message>
     <message>
         <source>Sequence</source>
-        <translation type="unfinished"></translation>
+        <translation>Sequenz</translation>
     </message>
     <message>
         <source>Shared objects</source>
-        <translation type="unfinished"></translation>
+        <translation>Mehrfach referenzierte Objekte</translation>
     </message>
     <message>
         <source>Signatures</source>
-        <translation type="unfinished"></translation>
+        <translation>Signaturen</translation>
     </message>
     <message>
         <source>Size</source>
-        <translation type="unfinished">Größe</translation>
+        <translation>Größe</translation>
     </message>
     <message>
         <source>Source column</source>
-        <translation type="unfinished"></translation>
+        <translation>Quellspalte</translation>
     </message>
     <message>
         <source>Source file</source>
-        <translation type="unfinished"></translation>
+        <translation>Quelldatei</translation>
     </message>
     <message>
         <source>Source query</source>
-        <translation type="unfinished"></translation>
+        <translation>Quellabfrage</translation>
     </message>
     <message>
         <source>Source row</source>
-        <translation type="unfinished"></translation>
+        <translation>Quellzeile</translation>
     </message>
     <message>
         <source>Source table</source>
-        <translation type="unfinished"></translation>
+        <translation>Quelltabelle</translation>
     </message>
     <message>
         <source>Status</source>
-        <translation type="unfinished"></translation>
+        <translation>Status</translation>
     </message>
     <message>
         <source>Stream</source>
-        <translation type="unfinished"></translation>
+        <translation>Stream</translation>
     </message>
     <message>
         <source>Streaming form</source>
-        <translation type="unfinished"></translation>
+        <translation>Streaming-Form</translation>
     </message>
     <message>
         <source>Superseded</source>
@@ -6691,43 +6691,43 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Tables</source>
-        <translation type="unfinished">Tabellen</translation>
+        <translation>Tabellen</translation>
     </message>
     <message>
         <source>Tables found</source>
-        <translation type="unfinished"></translation>
+        <translation>Gefundene Tabellen</translation>
     </message>
     <message>
         <source>Text extraction</source>
-        <translation type="unfinished"></translation>
+        <translation>Textextraktion</translation>
     </message>
     <message>
         <source>Texture UUID</source>
-        <translation type="unfinished"></translation>
+        <translation>Textur-UUID</translation>
     </message>
     <message>
         <source>Timestamp notes</source>
-        <translation type="unfinished"></translation>
+        <translation>Hinweise zu Zeitstempeln</translation>
     </message>
     <message>
         <source>Top keys</source>
-        <translation type="unfinished"></translation>
+        <translation>Schlüssel in $top</translation>
     </message>
     <message>
         <source>Total entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Einträge gesamt</translation>
     </message>
     <message>
         <source>Total size</source>
-        <translation type="unfinished"></translation>
+        <translation>Gesamtgröße</translation>
     </message>
     <message>
         <source>Type</source>
-        <translation type="unfinished">Typ</translation>
+        <translation>Typ</translation>
     </message>
     <message>
         <source>UFD lines not read</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht gelesene UFD-Zeilen</translation>
     </message>
     <message>
         <source>Uncommitted</source>
@@ -6735,11 +6735,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Unreachable objects</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht erreichbare Objekte</translation>
     </message>
     <message>
         <source>Version</source>
-        <translation type="unfinished"></translation>
+        <translation>Version</translation>
     </message>
     <message>
         <source>WAL slack</source>
@@ -6747,30 +6747,30 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Warnings</source>
-        <translation type="unfinished">Warnungen</translation>
+        <translation>Warnungen</translation>
     </message>
     <message>
         <source>Width</source>
-        <translation type="unfinished"></translation>
+        <translation>Breite</translation>
     </message>
     <message>
         <source>XMP</source>
-        <translation type="unfinished"></translation>
+        <translation>XMP</translation>
     </message>
 </context>
 <context>
     <name>MultiLogViewer</name>
     <message>
         <source>The log records no time zone: shown as recorded, not converted to the display zone. Sorting and the time filter treat it as UTC.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Log enthält keine Zeitzone: Die Zeiten werden wie aufgezeichnet angezeigt, nicht in die Anzeigezone umgerechnet. Sortierung und Zeitfilter behandeln sie als UTC.</translation>
     </message>
     <message>
         <source>The log records no year: shown as ????. Sorting uses a placeholder year, so its order against other sources is not meaningful.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Log enthält keine Jahresangabe: Das Jahr wird als ???? angezeigt. Für die Sortierung wird ein Platzhalterjahr verwendet, daher ist die Reihenfolge gegenüber anderen Quellen nicht aussagekräftig.</translation>
     </message>
     <message>
         <source>The line has a timestamp that couldn&apos;t be decoded — see the raw line.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Zeile enthält einen Zeitstempel, der nicht dekodiert werden konnte — siehe Rohzeile.</translation>
     </message>
     <message>
         <source>[{count} more line]</source>
@@ -6782,7 +6782,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>This format has no level field. Guessed from keyword(s) in the message: {keywords} (the first one is used).</source>
-        <translation type="unfinished"></translation>
+        <translation>Dieses Format hat kein Level-Feld. Abgeleitet aus Schlüsselwort(en) in der Nachricht: {keywords} (das erste wird verwendet).</translation>
     </message>
     <message>
         <source>Select a row to see the original line…</source>
@@ -6790,7 +6790,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Level:</source>
-        <translation type="unfinished"></translation>
+        <translation>Level:</translation>
     </message>
     <message>
         <source>Search:</source>
@@ -6798,15 +6798,15 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Filter message / process / extra…</source>
-        <translation type="unfinished">Nachricht / Prozess / Extra filtern...</translation>
+        <translation>Nachricht / Prozess / Extra filtern...</translation>
     </message>
     <message>
         <source>Format</source>
-        <translation type="unfinished"></translation>
+        <translation>Format</translation>
     </message>
     <message>
         <source>Re-parse a source as another built-in format, or define a custom one</source>
-        <translation type="unfinished"></translation>
+        <translation>Eine Quelle als anderes integriertes Format erneut parsen oder ein eigenes Format definieren</translation>
     </message>
     <message>
         <source>+ Add Source</source>
@@ -6814,7 +6814,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Time range:</source>
-        <translation type="unfinished"></translation>
+        <translation>Zeitraum:</translation>
     </message>
     <message>
         <source>Reset</source>
@@ -6826,11 +6826,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>UTC</source>
-        <translation type="unfinished"></translation>
+        <translation>UTC</translation>
     </message>
     <message>
         <source>Local</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokal</translation>
     </message>
     <message>
         <source>Active filters:</source>
@@ -6846,7 +6846,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Remove filter: {label}</source>
-        <translation type="unfinished"></translation>
+        <translation>Filter entfernen: {label}</translation>
     </message>
     <message>
         <source>Error: {message}</source>
@@ -6854,11 +6854,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Log source details</source>
-        <translation type="unfinished"></translation>
+        <translation>Details zur Log-Quelle</translation>
     </message>
     <message>
         <source>Re-parse {name} as</source>
-        <translation type="unfinished"></translation>
+        <translation>{name} erneut parsen als</translation>
     </message>
     <message>
         <source>Define custom format…</source>
@@ -6890,15 +6890,15 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Filter: {display_label} = {cell_val!r}</source>
-        <translation type="unfinished"></translation>
+        <translation>Filter: {display_label} = {cell_val!r}</translation>
     </message>
     <message>
         <source>Loading… {total:,} entry</source>
-        <translation type="unfinished"></translation>
+        <translation>Wird geladen… {total:,} Eintrag</translation>
     </message>
     <message>
         <source>Loading… {total:,} entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Wird geladen… {total:,} Einträge</translation>
     </message>
     <message>
         <source>{total:,} entry</source>
@@ -9838,11 +9838,11 @@ YnBsaXN0MDA…       (Base64)
     <name>RealmViewer</name>
     <message>
         <source>Text runs in the raw bytes of the Realm file. ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. Runs shorter than the minimum length are not listed. Region: the arrays reached from the active and the inactive top reference (Realm Core&apos;s own reference rule), the free lists&apos; blocks, and what neither reaches. With Show Hex on, selecting a row marks the string in the file.</source>
-        <translation type="unfinished"></translation>
+        <translation>Textfolgen in den Rohbytes der Realm-Datei. ASCII/UTF-8: druckbare Zeichen sowie Tab, LF und CR und jedes wohlgeformte Multibyte-UTF-8-Zeichen. UTF-16LE/BE: nur U+0020–U+007E und U+00A0–U+00FF sowie Tab, LF und CR -- andere Schriftsysteme in UTF-16 werden nicht gefunden. Folgen, die kürzer als die Mindestlänge sind, werden nicht aufgeführt. Region: die Arrays, die von der aktiven und der inaktiven Top-Referenz erreicht werden (die Referenzregel von Realm Core selbst), die Blöcke der Free-Lists und das, was keine von beiden erreicht. Ist „Hex-Wert anzeigen“ aktiviert, markiert die Auswahl einer Zeile die Zeichenkette in der Datei.</translation>
     </message>
     <message>
         <source>This Realm is encrypted: offsets are in the decrypted file, not in the file as stored.</source>
-        <translation type="unfinished"></translation>
+        <translation>Diese Realm ist verschlüsselt: Die Offsets beziehen sich auf die entschlüsselte Datei, nicht auf die Datei, wie sie gespeichert ist.</translation>
     </message>
     <message>
         <source>Header</source>
@@ -9874,7 +9874,7 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>Row/table data not extracted for this file — see Properties panel → Row data for the specific reason. Class names in the Schema tab are still accurate.</source>
-        <translation type="unfinished"></translation>
+        <translation>Zeilen-/Tabellendaten für diese Datei nicht extrahiert — den genauen Grund zeigt das Panel „Eigenschaften“ → „Zeilendaten“. Die Klassennamen im Tab „Schema“ sind trotzdem korrekt.</translation>
     </message>
     <message>
         <source>Views</source>
@@ -9894,15 +9894,15 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>No Link/LinkList columns with a resolvable target table found.</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine Link/LinkList-Spalten mit auflösbarer Zieltabelle gefunden.</translation>
     </message>
     <message>
         <source>Tables with Link / LinkList columns:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabellen mit Link-/LinkList-Spalten:</translation>
     </message>
     <message>
         <source>Link columns and target columns to include (unchecked = leave raw). A link target expands (▸) to resolve one hop further: a single-target link becomes its own column, a to-many list stays one combined cell.</source>
-        <translation type="unfinished"></translation>
+        <translation>Einzubeziehende Link-Spalten und Zielspalten (nicht markiert = nicht auflösen). Ein Link-Ziel lässt sich aufklappen (▸), um einen Schritt weiter aufzulösen: Ein Link mit einem einzelnen Ziel wird zu einer eigenen Spalte, eine To-many-Liste bleibt eine zusammengefasste Zelle.</translation>
     </message>
     <message>
         <source>Select All</source>
@@ -10123,11 +10123,11 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     </message>
     <message>
         <source>Threshold: only runs of at least this many characters are listed. Shorter runs exist in the file but are not shown.</source>
-        <translation type="unfinished"></translation>
+        <translation>Schwellenwert: Nur Folgen mit mindestens so vielen Zeichen werden aufgeführt. Kürzere Folgen sind in der Datei vorhanden, werden aber nicht angezeigt.</translation>
     </message>
     <message>
         <source>Min. length:</source>
-        <translation type="unfinished"></translation>
+        <translation>Mindestlänge:</translation>
     </message>
     <message>
         <source>Search:</source>
@@ -10159,7 +10159,7 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     </message>
     <message>
         <source>Cap query results at {_QUERY_ROW_LIMIT:,} rows. Turn off to fetch every row.</source>
-        <translation type="unfinished"></translation>
+        <translation>Abfrageergebnisse auf {_QUERY_ROW_LIMIT:,} Zeilen begrenzen. Deaktivieren, um alle Zeilen abzurufen.</translation>
     </message>
     <message>
         <source>Export CSV…</source>
@@ -10167,7 +10167,7 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     </message>
     <message>
         <source>—  No cell selected</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">—  Keine Zelle ausgewählt</translation>
     </message>
     <message>
         <source>Select a row to show its payload with every candidate reading.</source>
@@ -10788,39 +10788,39 @@ Total: {total:.2f} s</source>
     <name>UnlockVolumeDialog</name>
     <message>
         <source>Unlock Volume</source>
-        <translation type="unfinished">Volume entsperren</translation>
+        <translation>Volume entsperren</translation>
     </message>
     <message>
         <source>Enter a password or recovery password, or choose a startup key file (.BEK). It is tried on every locked volume of this image, together with what was given before; it is not stored.</source>
-        <translation type="unfinished"></translation>
+        <translation>Passwort oder Wiederherstellungspasswort eingeben oder eine Systemstartschlüssel-Datei (.BEK) auswählen. Die Eingabe wird an jedem gesperrten Volume dieses Images ausprobiert, zusammen mit den bisherigen Eingaben; sie wird nicht gespeichert.</translation>
     </message>
     <message>
         <source>Enter a password, passphrase or recovery key. It is tried on every locked volume of this image, together with what was given before; it is not stored.</source>
-        <translation type="unfinished"></translation>
+        <translation>Passwort, Passphrase oder Wiederherstellungsschlüssel eingeben. Die Eingabe wird an jedem gesperrten Volume dieses Images ausprobiert, zusammen mit den bisherigen Eingaben; sie wird nicht gespeichert.</translation>
     </message>
     <message>
         <source>Password:</source>
-        <translation type="unfinished">Passwort:</translation>
+        <translation>Passwort:</translation>
     </message>
     <message>
         <source>Startup key file (.BEK)</source>
-        <translation type="unfinished"></translation>
+        <translation>Systemstartschlüssel-Datei (.BEK)</translation>
     </message>
     <message>
         <source>Browse…</source>
-        <translation type="unfinished">Durchsuchen…</translation>
+        <translation>Durchsuchen…</translation>
     </message>
     <message>
         <source>Startup key:</source>
-        <translation type="unfinished"></translation>
+        <translation>Systemstartschlüssel:</translation>
     </message>
     <message>
         <source>All files</source>
-        <translation type="unfinished">Alle Dateien</translation>
+        <translation>Alle Dateien</translation>
     </message>
     <message>
         <source>The startup key file cannot be read: {reason}</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Systemstartschlüssel-Datei kann nicht gelesen werden: {reason}</translation>
     </message>
 </context>
 <context>
