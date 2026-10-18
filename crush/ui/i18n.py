@@ -131,8 +131,9 @@ def available_languages(directory: Path | None = None) -> list[Language]:
 
 
 def display_name(code: str) -> str:
-    """The language's own name plus its English name, e.g. "Deutsch — German",
-    "Português (Brasil) — Portuguese (Brazil)"."""
+    """The language's name in that language, e.g. "English", "Deutsch",
+    "Português (Brasil)". English is always among them, so the way back
+    is readable to everyone."""
     if code == SOURCE_LANGUAGE:
         return "English"
     if code == PSEUDO_LANGUAGE:
@@ -142,11 +143,9 @@ def display_name(code: str) -> str:
         return code
     native = locale.nativeLanguageName()
     native = native[:1].upper() + native[1:]
-    english = QLocale.languageToString(locale.language())
     if "_" in code:
         native += f" ({locale.nativeTerritoryName()})"
-        english += f" ({QLocale.territoryToString(locale.territory())})"
-    return native if native == english else f"{native} — {english}"
+    return native
 
 
 def saved_language(settings: QSettings) -> str:

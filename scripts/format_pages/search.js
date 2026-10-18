@@ -32,6 +32,7 @@
         for (var at = hex.indexOf(needle); at !== -1; at = hex.indexOf(needle, at + 1)) {
           if (at % 2 === 0) {
             hits.push({ format: f, offset: sig[0], hex: hex, description: sig[2],
+                        untranslated: sig[3] === true,
                         start: at / 2, length: needle.length / 2 });
             break;
           }
@@ -141,6 +142,15 @@
         var desc = document.createElement("div");
         desc.className = "help";
         desc.textContent = hit.description;
+        if (hit.untranslated) {
+          // The English original, marked as such.
+          desc.lang = "en";
+          var badge = document.createElement("span");
+          badge.className = "badge untranslated";
+          badge.textContent = ui.untranslated;
+          desc.appendChild(document.createTextNode(" "));
+          desc.appendChild(badge);
+        }
         item.appendChild(desc);
       }
       list.appendChild(item);

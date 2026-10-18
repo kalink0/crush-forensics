@@ -67,7 +67,7 @@ import crush
 from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
 from crush.parsers.hex_fallback import HexFallbackParser
-from crush.ui import extract_dialog, i18n
+from crush.ui import extract_dialog, i18n, relaunch
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
 from crush.core.issues import QT_TRANSLATE_NOOP, CatalogText, ParseIssue, render_value
@@ -241,6 +241,12 @@ class _DockTitleBar(QWidget):
     def mousePressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "button") and event.button() == Qt.MouseButton.LeftButton:
             if self._dock.isFloating():
+                # The window system moves the window: a client can't place
+                # its own windows on Wayland, so a move() there is ignored.
+                handle = self._dock.windowHandle()
+                if handle is not None and handle.startSystemMove():
+                    return
+                # No system move (platform without it): move by the mouse delta.
                 self._drag_pos = event.globalPosition().toPoint()  # type: ignore[union-attr]
                 return
         super().mousePressEvent(event)  # type: ignore[arg-type]
@@ -1070,12 +1076,45 @@ class MainWindow(QMainWindow):
         if code == i18n.saved_language(self._settings):
             return
         i18n.save_language(self._settings, code)
+        self._settings.sync()
         self._logger.info("UI language set to %s (applies after restart)", code)
-        QMessageBox.information(
-            self,
-            translate("MainWindow", "Language"),
-            translate("MainWindow", "The new language applies after Crush is restarted."),
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(translate("MainWindow", "Language"))
+        box.setText(translate("MainWindow", "The new language applies after Crush is restarted."))
+        box.setInformativeText(translate(
+            "MainWindow",
+            "Restarting closes all Crush windows and everything open in them.",
+        ))
+        restart_btn = box.addButton(
+            translate("MainWindow", "Restart now"), QMessageBox.ButtonRole.AcceptRole
         )
+        later_btn = box.addButton(translate("MainWindow", "Later"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(later_btn)
+        box.exec()
+        if box.clickedButton() is restart_btn:
+            self._restart()
+
+    def _restart(self) -> None:
+        """Start a new Crush, then close every window and quit. If the new
+        process can't be started, nothing is closed."""
+        try:
+            relaunch.relaunch()
+        except OSError as exc:
+            self._logger.error("Restart failed: %s", exc)
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Language"),
+                translate(
+                    "MainWindow",
+                    "Crush could not be restarted ({error}). The new language applies "
+                    "the next time Crush is started.",
+                ).format(error=exc),
+            )
+            return
+        self._logger.info("Restarting Crush")
+        QApplication.closeAllWindows()
+        QApplication.quit()
 
     def _new_window(self) -> None:
         self._spawn_window()

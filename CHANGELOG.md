@@ -2,6 +2,22 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- Added to the user interface -> Support for German. ([@BrunoFischerGermany](https://github.com/BrunoFischerGermany), [#170](https://github.com/kalink0/crush-forensics/pull/170))
+- Added to View → Language -> Support for restarting Crush right away to apply the chosen language.
+- Added to the Format Reference site -> Support for German, with any text not yet translated shown in English and marked.
+
+### Bug Fixes
+
+- Fixed floating panels (Filesystem, Properties, Log) that could no longer be moved after their first move on Wayland.
+
+### Changed
+
+- View → Language lists each language by its own name only, e.g. "Deutsch".
+
 ## v0.23.0 - 2026-10-17
 
 **Focus: LevelDB read the way LevelDB reads it (decimal file numbers, the MANIFEST that CURRENT names, each file on its own, damaged `.log` parts skipped and named) and its records located in their file; strings with offset and region in SQLite and Realm; every candidate reading of a SEGB payload; SQLite columns decoded as the Value Inspector's timestamp formats; the BLOB Inspector opens, exports and copies its result; exports that continue and list what failed; qnxprobe v1.72 with XFS, Btrfs, ReFS, LVM2 and LUKS, its reads checked against the recorded size; bundled peach updated to v0.10.0.**

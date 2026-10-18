@@ -17,8 +17,9 @@ WEBSITE_TEXTS  texts only the website has, marked with
 ENGLISH_TEXTS  never translated: the prefilled issue for a correction,
                read by the maintainers on GitHub.
 
-Only English is published so far. A translated site would look each text
-up by (context, text) in crush/i18n/crush_<code>.ts.
+A translated site looks each text up by (context, text) in
+crush/i18n/crush_<code>.ts; a text with no finished translation there is
+shown in English and marked as untranslated.
 """
 from __future__ import annotations
 
@@ -164,6 +165,22 @@ WEBSITE_TEXTS: dict[str, str] = {
         "Content licensed under {license}, like the Crush repository. Linked "
         "sources are subject to their own terms.",
     ),
+    "language": QT_TRANSLATE_NOOP("WebsiteFormatReference", "Language"),
+    "untranslated": QT_TRANSLATE_NOOP(
+        "WebsiteFormatReference", "not translated — English original"
+    ),
+    "page_untranslated": QT_TRANSLATE_NOOP(
+        "WebsiteFormatReference",
+        "Some texts on this page are not translated yet and are shown in the "
+        "English original.",
+    ),
+}
+
+# The name of each site language in that language, for the language switch
+# (the same names as View → Language in Crush).
+LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "de": "Deutsch",
 }
 
 ENGLISH_TEXTS: dict[str, str] = {

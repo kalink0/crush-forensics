@@ -40,6 +40,10 @@ an mich geglaubt hast, dafür, dass du mich motiviert hast, und für die Inspira
         <translation>Mitwirkende</translation>
     </message>
     <message>
+        <source>Translations</source>
+        <translation>Übersetzungen</translation>
+    </message>
+    <message>
         <source>Bundled third-party code</source>
         <translation>Im Paket enthaltener Code von Drittanbietern</translation>
     </message>
@@ -5462,6 +5466,22 @@ Speicherort öffnen?</translation>
         <translation>BLOB Inspector…</translation>
     </message>
     <message>
+        <source>Restarting closes all Crush windows and everything open in them.</source>
+        <translation>Ein Neustart schließt alle Crush-Fenster und alles, was darin geöffnet ist.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Jetzt neu starten</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Später</translation>
+    </message>
+    <message>
+        <source>Crush could not be restarted ({error}). The new language applies the next time Crush is started.</source>
+        <translation>Crush konnte nicht neu gestartet werden ({error}). Die neue Sprache gilt beim nächsten Start von Crush.</translation>
+    </message>
+    <message>
         <source>Open {name}</source>
         <translation>Öffnen {name}</translation>
     </message>
@@ -10178,7 +10198,7 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
         <translation>List/Set-Spalte — {val_count} Element(e). In SQL-Exporten als JSON-Text gespeichert; mit json_each(...) abfragen oder die passende „v_&lt;table&gt;“-View für bereits aufgelöste Link-Namen verwenden.</translation>
     </message>
     <message>
-        <source>Dictionary column — {val_count} entrie(s). Stored as JSON text in SQL exports; query with json_each(..., &apos;value&apos;).</source>
+        <source>Dictionary column — {val_count} entries. Stored as JSON text in SQL exports; query with json_each(..., &apos;value&apos;).</source>
         <translation>Dictionary-Spalte — {val_count} Eintrag/Einträge. In SQL-Exporten als JSON-Text gespeichert; mit json_each(..., &apos;value&apos;) abfragen.</translation>
     </message>
     <message>
@@ -11299,6 +11319,18 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>Content licensed under {license}, like the Crush repository. Linked sources are subject to their own terms.</source>
         <translation>Inhalte, die unter der {license} lizenziert sind, wie beispielsweise das Crush-Repository. Verlinkte Quellen unterliegen ihren eigenen Nutzungsbedingungen.</translation>
+    </message>
+    <message>
+        <source>Language</source>
+        <translation>Sprache</translation>
+    </message>
+    <message>
+        <source>not translated — English original</source>
+        <translation>nicht übersetzt — englisches Original</translation>
+    </message>
+    <message>
+        <source>Some texts on this page are not translated yet and are shown in the English original.</source>
+        <translation>Einige Texte auf dieser Seite sind noch nicht übersetzt und werden im englischen Original angezeigt.</translation>
     </message>
 </context>
 <context>
