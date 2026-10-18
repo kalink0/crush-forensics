@@ -3720,7 +3720,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Realm file header</source>
-        <translation>Realm Datei-Header</translation>
+        <translation>Realm-Datei-Header</translation>
     </message>
     <message>
         <source>streaming form footer</source>
@@ -3824,11 +3824,11 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Freeblock (deleted)</source>
-        <translation>Freier Block (gelöscht)</translation>
+        <translation>Freeblock (gelöscht)</translation>
     </message>
     <message>
         <source>Unallocated slack</source>
-        <translation>Nicht zugewiesener Slack</translation>
+        <translation>Unallocated Slack</translation>
     </message>
     <message>
         <source>{base} [{suffix}: none decodable]</source>
@@ -3928,35 +3928,35 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>overflow</source>
-        <translation>Überlauf</translation>
+        <translation>Overflow</translation>
     </message>
     <message>
         <source>freelist trunk</source>
-        <translation>Freelist Stamm</translation>
+        <translation>Freelist-Trunk</translation>
     </message>
     <message>
         <source>freelist leaf</source>
-        <translation>Freelist Blatt</translation>
+        <translation>Freelist-Leaf</translation>
     </message>
     <message>
         <source>pointer map</source>
-        <translation>Zeigerkarte</translation>
+        <translation>Pointer Map</translation>
     </message>
     <message>
         <source>lock-byte page</source>
-        <translation>Sperrbyte-Seite</translation>
+        <translation>Lock-Byte-Page</translation>
     </message>
     <message>
         <source>unattributed page</source>
-        <translation>Seite ohne Zuordnung</translation>
+        <translation>Page ohne Zuordnung</translation>
     </message>
     <message>
         <source>partial page</source>
-        <translation>Teilseite</translation>
+        <translation>Partielle Page</translation>
     </message>
     <message>
         <source>WAL header</source>
-        <translation>WAL Header</translation>
+        <translation>WAL-Header</translation>
     </message>
     <message>
         <source>WAL frame header</source>
@@ -3968,11 +3968,11 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>journal header</source>
-        <translation>journal Header</translation>
+        <translation>Journal-Header</translation>
     </message>
     <message>
         <source>journal record page number</source>
-        <translation>Seitenzahl des Journal-Eintrags</translation>
+        <translation>Page-Nummer des Journal-Eintrags</translation>
     </message>
     <message>
         <source>journal record checksum</source>
@@ -3988,27 +3988,27 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>database header</source>
-        <translation>Datenbank Header</translation>
+        <translation>Datenbank-Header</translation>
     </message>
     <message>
         <source>page header</source>
-        <translation>Seiten Header</translation>
+        <translation>Page-Header</translation>
     </message>
     <message>
         <source>cell pointer array</source>
-        <translation>Zellzeiger-Array</translation>
+        <translation>Cell Pointer Array</translation>
     </message>
     <message>
         <source>unallocated</source>
-        <translation>nicht zugewiesen</translation>
+        <translation>Unallocated</translation>
     </message>
     <message>
         <source>freeblock</source>
-        <translation>freier Block</translation>
+        <translation>Freeblock</translation>
     </message>
     <message>
         <source>cell content area</source>
-        <translation>Zelleninhaltsbereich</translation>
+        <translation>Cell Content Area</translation>
     </message>
     <message>
         <source>reserved bytes</source>
@@ -4016,7 +4016,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>page body (header values inconsistent)</source>
-        <translation>Seitenkörper (inkonsistente Header-Werte)</translation>
+        <translation>Page-Body (inkonsistente Header-Werte)</translation>
     </message>
     <message>
         <source>WAL frame {frame:,} ({status})</source>
@@ -4044,27 +4044,27 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Page size (B)</source>
-        <translation>Seitengröße (B)</translation>
+        <translation>Page-Größe (B)</translation>
     </message>
     <message>
         <source>Size of each B-tree page; fixed at database creation time</source>
-        <translation>Größe jeder B-Tree-Seite; wird bei der Erstellung der Datenbank festgelegt</translation>
+        <translation>Größe jeder B-Tree-Page; wird bei der Erstellung der Datenbank festgelegt</translation>
     </message>
     <message>
         <source>Page count</source>
-        <translation>Seitenzahl</translation>
+        <translation>Page-Anzahl</translation>
     </message>
     <message>
         <source>Total allocated pages; multiply by page_size to get expected file size</source>
-        <translation>Gesamtzahl der zugewiesenen Seiten; mit page_size multiplizieren, um die erwartete Dateigröße zu erhalten</translation>
+        <translation>Gesamtzahl der Allocated Pages; mit page_size multiplizieren, um die erwartete Dateigröße zu erhalten</translation>
     </message>
     <message>
         <source>Free pages</source>
-        <translation>Freie Seiten</translation>
+        <translation>Freie Pages</translation>
     </message>
     <message>
         <source>Unallocated pages that may contain deleted data — forensically significant. See the &apos;Freelist Recovery&apos; tab to carve any leftover rows</source>
-        <translation>Nicht zugewiesene Seiten, die möglicherweise gelöschte Daten enthalten – forensisch relevant. Auf der Registerkarte &apos;Freelist Recovery&apos; können Sie eventuell verbliebene Zeilen extrahieren</translation>
+        <translation>Unallocated Pages, die möglicherweise gelöschte Daten enthalten – forensisch relevant. Auf der Registerkarte &apos;Freelist Recovery&apos; können Sie eventuell verbliebene Zeilen extrahieren</translation>
     </message>
     <message>
         <source>Journal mode</source>
@@ -4080,7 +4080,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Automatic reclamation of free pages after DELETE</source>
-        <translation>Automatische Rückgewinnung freier Seiten nach DELETE</translation>
+        <translation>Automatische Rückgewinnung freier Pages nach DELETE</translation>
     </message>
     <message>
         <source>Summary (generated)</source>
@@ -4116,7 +4116,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Unallocated Space (generated)</source>
-        <translation>Nicht zugewiesener Speicherplatz (generiert)</translation>
+        <translation>Unallocated Space (generiert)</translation>
     </message>
     <message>
         <source>Strings (generated)</source>
@@ -4184,7 +4184,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Page</source>
-        <translation>Seite</translation>
+        <translation>Page</translation>
     </message>
     <message>
         <source>Transaction</source>
@@ -4208,11 +4208,11 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>(not a leaf page)</source>
-        <translation>(keine Blattseite)</translation>
+        <translation>(keine Leaf-Page)</translation>
     </message>
     <message>
         <source>(empty leaf page)</source>
-        <translation>(leere Blattseite)</translation>
+        <translation>(leere Leaf-Page)</translation>
     </message>
     <message>
         <source>Segment</source>
@@ -4256,11 +4256,11 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Database file or page size unavailable</source>
-        <translation>Datenbankdatei oder Seitengröße nicht verfügbar</translation>
+        <translation>Datenbankdatei oder Page-Größe nicht verfügbar</translation>
     </message>
     <message>
         <source>No freelist pages found</source>
-        <translation>Es wurden keine Freelist-Seiten gefunden</translation>
+        <translation>Es wurden keine Freelist-Pages gefunden</translation>
     </message>
     <message>
         <source>Match</source>
@@ -4296,7 +4296,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>No non-empty unallocated space found</source>
-        <translation>Es wurde kein nicht leerer, nicht zugewiesener Speicherplatz gefunden</translation>
+        <translation>Es wurde kein nicht leerer Unallocated Space gefunden</translation>
     </message>
     <message>
         <source>Database file unavailable</source>
@@ -4316,7 +4316,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>page size unavailable</source>
-        <translation>Seitengröße nicht verfügbar</translation>
+        <translation>Page-Größe nicht verfügbar</translation>
     </message>
     <message>
         <source>structure parse failed: {error}</source>
@@ -4360,7 +4360,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Frames currently read by SQLite (newest per page)</source>
-        <translation>Derzeit von SQLite gelesene Frames (die neuesten pro Seite)</translation>
+        <translation>Derzeit von SQLite gelesene Frames (die neuesten pro Page)</translation>
     </message>
     <message>
         <source>WAL superseded frames</source>
@@ -4368,7 +4368,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Older versions of pages — may contain overwritten or deleted data</source>
-        <translation>Ältere Versionen von Seiten – können überschriebene oder gelöschte Daten enthalten</translation>
+        <translation>Ältere Versionen von Pages – können überschriebene oder gelöschte Daten enthalten</translation>
     </message>
     <message>
         <source>WAL uncommitted frames</source>
@@ -4404,19 +4404,19 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Journal page records</source>
-        <translation>Journal-Seitendatensatz</translation>
+        <translation>Journal-Page-Datensätze</translation>
     </message>
     <message>
         <source>Pre-transaction page images captured in this journal</source>
-        <translation>In diesem Journal festgehaltene Bilder der Seiten vor der Transaktion</translation>
+        <translation>Inhalt der Pages vor der Transaktion, in diesem Journal gesichert</translation>
     </message>
     <message>
         <source>Every segment&apos;s header and page checksum validated — the table grid, SQL bar, and PRAGMAs above already reflect the post-rollback state</source>
-        <translation>Die Kopfzeilen und Seitenprüfsummen aller Segmente wurden überprüft – das Tabellengitter, die SQL-Leiste und die oben stehenden PRAGMA-Anweisungen spiegeln bereits den Zustand nach dem Rollback wider</translation>
+        <translation>Die Header und Page-Prüfsummen aller Segmente wurden überprüft – das Tabellengitter, die SQL-Leiste und die oben stehenden PRAGMA-Anweisungen spiegeln bereits den Zustand nach dem Rollback wider</translation>
     </message>
     <message>
         <source>One or more page checksums did not validate — see the &apos;Rollback Journal&apos; tab for the raw, unmerged record inventory</source>
-        <translation>Eine oder mehrere Seitenprüfsummen konnten nicht validiert werden – eine Übersicht über die rohen, noch nicht zusammengeführten Datensätze finden Sie auf der Registerkarte Rollback-Journal</translation>
+        <translation>Eine oder mehrere Page-Prüfsummen konnten nicht validiert werden – eine Übersicht über die rohen, noch nicht zusammengeführten Datensätze finden Sie auf der Registerkarte Rollback-Journal</translation>
     </message>
     <message>
         <source>Journal merged into current view</source>
@@ -4436,7 +4436,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Page records that failed checksum validation — not merged</source>
-        <translation>Seitendatensätze, bei denen die Prüfsummenvalidierung fehlgeschlagen ist – nicht zusammengeführt</translation>
+        <translation>Page-Datensätze, bei denen die Prüfsummenvalidierung fehlgeschlagen ist – nicht zusammengeführt</translation>
     </message>
     <message>
         <source>Integrity check</source>
@@ -5019,7 +5019,7 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
     </message>
     <message>
         <source>Choose a file, archive, folder, or disk image.</source>
-        <translation>Wählen Sie eine Datei, ein Archiv, einen Ordner oder ein Festplatten-Image aus.</translation>
+        <translation>Wählen Sie eine Datei, ein Archiv, einen Ordner oder ein Disk-Image aus.</translation>
     </message>
     <message>
         <source>Open File…</source>
@@ -5195,7 +5195,7 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
     </message>
     <message>
         <source>Indexing Threads…</source>
-        <translation>Threads werden indiziert...</translation>
+        <translation>Indizierungs-Threads…</translation>
     </message>
     <message>
         <source>Temp Directory…</source>
@@ -5223,7 +5223,7 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
     </message>
     <message>
         <source>About Crush</source>
-        <translation>Über Crsush</translation>
+        <translation>Über Crush</translation>
     </message>
     <message>
         <source>Language</source>
@@ -5605,7 +5605,7 @@ Speicherort öffnen?</translation>
     </message>
     <message>
         <source>{count} page(s) are not in the acquisition&apos;s files; they read as the bad-sector marker.</source>
-        <translation>{count} Seite(n) sind nicht in den Akquisitionsdateien enthalten; sie werden als Markierung für fehlerhafte Sektoren ausgewiesen.</translation>
+        <translation>{count} Page(s) sind nicht in den Akquisitionsdateien enthalten; sie werden als Bad-Sector-Markierung gelesen.</translation>
     </message>
     <message>
         <source>{count} of the container&apos;s own checks do not match.</source>
@@ -5955,7 +5955,7 @@ Lassen Sie das Feld leer, um den vom Betriebssystem vorgeschlagenen Standard zu 
     </message>
     <message>
         <source>Recently opened: </source>
-        <translation>Kürzlich eröffnet: </translation>
+        <translation>Zuletzt geöffnet: </translation>
     </message>
     <message>
         <source>{source_name}  [from {origin}] — {app_title}</source>
@@ -6095,7 +6095,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Indexing Threads</source>
-        <translation>Threads werden indiziert</translation>
+        <translation>Indizierungs-Threads</translation>
     </message>
     <message>
         <source>Number of parallel threads for file type indexing
@@ -6937,1247 +6937,1247 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>{detail}</source>
         <comment>common.library_error</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>Not valid JSON: {detail}. The tree shows only an excerpt around the error position; full content: Open as → Text / Hex</source>
         <comment>json.syntax_error</comment>
-        <translation type="unfinished"></translation>
+        <translation>JSON ungültig: {detail}. Die Anzeige zeigt nur einen Ausschnitt um die Fehlerpositon; vollständiger Inhalt: Öffnen als → Text / Hex</translation>
     </message>
     <message>
         <source>Not valid UTF-8 (first invalid byte at offset {offset:,}: {detail}); invalid bytes are shown as U+FFFD — Open as → Hex for the original bytes</source>
         <comment>json.not_utf8</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein gültiges UTF-8 (erstes ungültiges Byte bei Offset {offset:,}: {detail}); ungültige Bytes werden als U+FFFD angezeigt — Öffnen als → Hex für die Originalbytes</translation>
     </message>
     <message>
         <source>{name} (heuristic)</source>
         <comment>log.format_detected</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} (heuristisch)</translation>
     </message>
     <message>
         <source>{name} (selected by analyst)</source>
         <comment>log.format_selected</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} (vom Analysten ausgewählt)</translation>
     </message>
     <message>
         <source>Custom: {name}</source>
         <comment>log.format_custom</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benutzerdefiniert: {name}</translation>
     </message>
     <message>
         <source>{name} {hits:,}/{total:,}</source>
         <comment>log.format_score</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} {hits:,}/{total:,}</translation>
     </message>
     <message>
         <source>Plain-text logs have no format marker. The first of JSON Lines (≥ 60 % of lines), Android logcat (≥ 50 %), Syslog (≥ 50 %) and Generic (≥ 2 lines) that reaches its threshold is used, otherwise plain text. Another format can be chosen via Format → Re-parse as</source>
         <comment>log.detection_rule</comment>
-        <translation type="unfinished"></translation>
+        <translation>Reine Textlogs haben keine Formatkennung. Verwendet wird das erste Format aus JSON Lines (≥ 60 % der Zeilen), Android logcat (≥ 50 %), Syslog (≥ 50 %) und Generic (≥ 2 Zeilen), das seinen Schwellenwert erreicht, sonst reiner Text. Ein anderes Format kann über Format → Neu parsen als gewählt werden</translation>
     </message>
     <message>
         <source>{count:,} line(s) kept as separate entries with level UNKNOWN</source>
         <comment>log.lines_unmatched</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Zeile(n) als eigene Einträge mit Level UNKNOWN übernommen</translation>
     </message>
     <message>
         <source>{count:,} entries: no time zone in the log — shown as recorded, never converted</source>
         <comment>log.ts_no_zone</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Einträge: keine Zeitzone im Log — wie aufgezeichnet angezeigt, nie umgerechnet</translation>
     </message>
     <message>
         <source>{count:,} entries: this format has no level field — level guessed from a keyword in the message (marked &quot;guessed&quot;)</source>
         <comment>log.level_guessed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Einträge: dieses Format hat kein Level-Feld — Level anhand eines Schlüsselworts in der Nachricht vermutet (markiert mit „vermutet“)</translation>
     </message>
     <message>
         <source>{count:,} entries: no year in the log — shown as ????</source>
         <comment>log.ts_no_year</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Einträge: keine Jahresangabe im Log — als ???? angezeigt</translation>
     </message>
     <message>
         <source>{count:,} entries: timestamp present but not decodable — see the raw line</source>
         <comment>log.ts_unparsed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Einträge: Zeitstempel vorhanden, aber nicht dekodierbar — siehe Rohzeile</translation>
     </message>
     <message>
         <source>Not valid UTF-8 (first invalid byte at offset {offset:,}: {detail}); invalid bytes are shown as U+FFFD — Open as → Hex for the original bytes</source>
         <comment>log.not_utf8</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein gültiges UTF-8 (erstes ungültiges Byte bei Offset {offset:,}: {detail}); ungültige Bytes werden als U+FFFD angezeigt — Öffnen als → Hex für die Originalbytes</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>sqlite.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>Not a valid hex key: {detail}</source>
         <comment>sqlite.invalid_hex_key</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein gültiger Hex-Schlüssel: {detail}</translation>
     </message>
     <message>
         <source>Incorrect key, or the given parameters don&apos;t match this file</source>
         <comment>sqlite.custom_params_rejected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falscher Schlüssel, oder die angegebenen Parameter passen nicht zu dieser Datei</translation>
     </message>
     <message>
         <source>Incorrect password, or an unsupported SQLCipher version/parameters</source>
         <comment>sqlite.password_rejected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falsches Passwort, oder nicht unterstützte SQLCipher-Version/-Parameter</translation>
     </message>
     <message>
         <source>Yes (SQLCipher, password supplied)</source>
         <comment>sqlite.encrypted_password</comment>
-        <translation type="unfinished"></translation>
+        <translation>Yes (SQLCipher, Passwort angegeben)</translation>
     </message>
     <message>
         <source>Yes (SQLCipher, raw key supplied)</source>
         <comment>sqlite.encrypted_raw_key</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ja (SQLCipher, Raw Key angegeben)</translation>
     </message>
     <message>
         <source>Page size, journal mode and encoding could not be read: {detail}</source>
         <comment>sqlite.pragma_read_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page size, Journal mode und Kodierung konnten nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Rollback journal (the file doesn&apos;t record which variant: delete/truncate/persist)</source>
         <comment>sqlite.journal_mode_rollback</comment>
-        <translation type="unfinished"></translation>
+        <translation>Rollback-Journal (die Datei hält nicht fest, welche Variante: delete/truncate/persist)</translation>
     </message>
     <message>
         <source>First {limit:,} rows shown for: {tables}</source>
         <comment>sqlite.row_limit</comment>
-        <translation type="unfinished"></translation>
+        <translation>Erste {limit:,} Zeilen angezeigt für: {tables}</translation>
     </message>
     <message>
         <source>VFS found {name} (path={path}, vfs_size={size} B) but read returned 0 bytes — ZIP entry may be empty in the archive</source>
         <comment>sqlite.companion_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>VFS hat {name} gefunden (path={path}, vfs_size={size} B), aber das Lesen lieferte 0 Bytes — der ZIP-Eintrag ist im Archiv möglicherweise leer</translation>
     </message>
     <message>
         <source>Copied {name} ({size:,} B) from {path}</source>
         <comment>sqlite.companion_copied</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} ({size:,} B) aus {path} kopiert</translation>
     </message>
     <message>
         <source>Loaded filesystem companion {name} ({size:,} B)</source>
         <comment>sqlite.companion_loaded_fs</comment>
-        <translation type="unfinished"></translation>
+        <translation>Begleitdatei {name} aus dem Dateisystem geladen ({size:,} B)</translation>
     </message>
     <message>
         <source>find_sibling returned None for db_node.path={path}</source>
         <comment>sqlite.companion_not_in_vfs</comment>
-        <translation type="unfinished"></translation>
+        <translation>find_sibling lieferte None für db_node.path={path}</translation>
     </message>
     <message>
         <source>VFS found {name} but read raised: {detail}</source>
         <comment>sqlite.companion_read_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>VFS hat {name} gefunden aber beim Lesen trat ein Fehler auf: {detail}</translation>
     </message>
     <message>
         <source>{name} could not be read from disk: {detail}</source>
         <comment>sqlite.companion_fs_read_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} konnte nicht von der Festplatte gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>present, {size:,} B, {status}</source>
         <comment>sqlite.journal_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>vorhanden, {size:,} B, {status}</translation>
     </message>
     <message>
         <source>valid/hot, {segments} segment(s), {records} page record(s) -- merged into current view (see &apos;Show pre-rollback state&apos; toggle and the &apos;Rollback Journal&apos; tab)</source>
         <comment>sqlite.journal_merged</comment>
-        <translation type="unfinished"></translation>
+        <translation>gültig/hot, {segments} Segment(e), {records} Page-Record(s) -- in die aktuelle Ansicht zusammengeführt (siehe Schalter &apos;Zustand vor dem Rollback anzeigen&apos; und Tab &apos;Rollback-Journal&apos;)</translation>
     </message>
     <message>
         <source>valid/hot, {segments} segment(s), {records} page record(s) -- NOT merged, {reason} (see the &apos;Rollback Journal&apos; tab for the raw, unmerged record inventory)</source>
         <comment>sqlite.journal_valid_not_merged</comment>
-        <translation type="unfinished"></translation>
+        <translation>gültig/hot, {segments} Segment(e), {records} Page-Record(s) -- NICHT zusammengeführt, {reason} (die rohe, nicht zusammengeführte Record-Übersicht steht im Tab &apos;Rollback-Journal&apos;)</translation>
     </message>
     <message>
         <source>NOT merged -- {reason} (see the &apos;Rollback Journal&apos; tab for the raw, unmerged record inventory)</source>
         <comment>sqlite.journal_not_merged</comment>
-        <translation type="unfinished"></translation>
+        <translation>NICHT zusammengeführt -- {reason} (die rohe, nicht zusammengeführte Record-Übersicht steht im Tab &apos;Rollback-Journal&apos;)</translation>
     </message>
     <message>
         <source>one or more page checksums did not validate</source>
         <comment>sqlite.journal_checksum_mismatch</comment>
-        <translation type="unfinished"></translation>
+        <translation>mindestens eine Page-Prüfsumme war ungültig</translation>
     </message>
     <message>
         <source>the database&apos;s own header shows WAL mode is active, so this -journal predates the switch to WAL and is stale, not &quot;hot&quot;</source>
         <comment>sqlite.journal_stale_wal_mode</comment>
-        <translation type="unfinished"></translation>
+        <translation>der eigene Header der Datenbank zeigt, dass der WAL-Modus aktiv ist; dieses -journal stammt also aus der Zeit vor dem Wechsel zu WAL und ist veraltet, nicht „hot&quot;</translation>
     </message>
     <message>
         <source>Not a valid rollback journal</source>
         <comment>sqlite_journal.invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein valides Rollback-journal</translation>
     </message>
     <message>
         <source>No valid rollback-journal header found at the start of this file (magic mismatch) -- likely a stale/invalidated PERSIST-mode journal, a truncated/corrupt journal, or not a SQLite rollback journal at all</source>
         <comment>sqlite_journal.no_valid_header</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein gültiger Rollback-Journal-Header am Anfang dieser Datei gefunden (Magic stimmt nicht) -- vermutlich ein veraltetes/ungültig gemachtes Journal im PERSIST-Modus, ein abgeschnittenes/beschädigtes Journal oder gar kein SQLite-Rollback-Journal</translation>
     </message>
     <message>
         <source>Valid / hot — every segment header and page checksum validated</source>
         <comment>sqlite_journal.valid_hot</comment>
-        <translation type="unfinished"></translation>
+        <translation>Gültig / hot — alle Segment-Header und Page-Prüfsummen erfolgreich geprüft</translation>
     </message>
     <message>
         <source>NOT fully valid — {mismatches} checksum mismatch(es); shown raw, unmerged</source>
         <comment>sqlite_journal.not_fully_valid</comment>
-        <translation type="unfinished"></translation>
+        <translation></translation>
     </message>
     <message>
         <source>This is the journal&apos;s own pre-transaction page content, shown standalone (no companion database opened alongside it). Open the companion database normally instead to see this same inventory in its own &apos;Rollback Journal&apos; tab, with a valid journal&apos;s content automatically merged into the database&apos;s default table view (never applied to any file on disk).</source>
         <comment>sqlite_journal.standalone</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dies ist der eigene Page-Inhalt des Journals vor der Transaktion, eigenständig angezeigt (ohne dazu geöffnete Begleitdatenbank). Öffnen Sie stattdessen die Begleitdatenbank normal, um dieselbe Übersicht auf ihrer eigenen Registerkarte „Rollback-Journal“ zu sehen; der Inhalt eines gültigen Journals wird dabei automatisch in die Standard-Tabellenansicht der Datenbank übernommen (nie auf eine Datei auf dem Datenträger angewendet).</translation>
     </message>
     <message>
         <source>Not a valid WAL file (magic mismatch or file too short)</source>
         <comment>sqlite_wal.invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine gültige WAL-Datei (Magic stimmt nicht oder Datei zu kurz)</translation>
     </message>
     <message>
         <source>Shown standalone (no companion database opened alongside it), so rows are raw decoded values, not resolved to real column names. Open the companion database normally instead to see this content with column names, table attribution, and (for Active frames) merged transparently into the live table view, plus this same per-frame inventory in its own &apos;WAL Frames&apos; tab.</source>
         <comment>sqlite_wal.standalone</comment>
-        <translation type="unfinished"></translation>
+        <translation>Eigenständig angezeigt (ohne dazu geöffnete Begleitdatenbank), daher sind die Zeilen roh dekodierte Werte ohne echte Spaltennamen. Öffnen Sie stattdessen die Begleitdatenbank normal, um diesen Inhalt mit Spaltennamen und Tabellenzuordnung zu sehen, bei aktiven Frames transparent in die Live-Tabellenansicht übernommen, sowie dieselbe Übersicht pro Frame auf der eigenen Registerkarte „WAL-Frames“.</translation>
     </message>
     <message>
         <source>Yes (AES-256, key supplied)</source>
         <comment>realm.encrypted_key_supplied</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ja (AES-256, Schlüssel angegeben)</translation>
     </message>
     <message>
         <source>Not detected (corrupt or non-standard)</source>
         <comment>realm.header_not_detected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht erkannt (beschädigt oder nicht standardkonform)</translation>
     </message>
     <message>
         <source>Try Open as → Realm DB (Encrypted)…</source>
         <comment>realm.try_encrypted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Versuche Öffnen als → Realm DB (verschlüsselt)…</translation>
     </message>
     <message>
         <source>Yes — top ref resolved from end-of-file footer (offset {top_ref})</source>
         <comment>realm.streaming_footer_ok</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ja — top ref aus Footer ermittelt (Offset {top_ref})</translation>
     </message>
     <message>
         <source>Yes — but the footer is missing or its magic cookie doesn&apos;t match; top ref could not be resolved (truncated or corrupt file)</source>
         <comment>realm.streaming_footer_bad</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ja - aber der Footer fehlt oder sein magic cookie passt nicht; top ref konnte nicht ermittelt werden (Datei abgeschnitten oder korrupt)</translation>
     </message>
     <message>
         <source>Unresolved (see Streaming form)</source>
         <comment>realm.tables_unresolved</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht aufgelöst (siehe Streaming form)</translation>
     </message>
     <message>
         <source>Decoded via legacy pre-Cluster layout</source>
         <comment>realm.pre_cluster_decoded</comment>
-        <translation type="unfinished"></translation>
+        <translation>Mit dem älteren Layout (vor Cluster) dekodiert</translation>
     </message>
     <message>
         <source>Pre-Cluster layout — {reasons}</source>
         <comment>realm.pre_cluster_partial</comment>
-        <translation type="unfinished"></translation>
+        <translation>Älteres Layout (vor Cluster) — {reasons}</translation>
     </message>
     <message>
         <source>{columns} column(s) across {tables} table(s) not yet decoded (unimplemented old column type)</source>
         <comment>realm.pre_cluster_undecoded_columns</comment>
-        <translation type="unfinished"></translation>
+        <translation>{columns} Spalte(n) in {tables} Tabelle(n) noch nicht dekodiert (nicht implementierter alter Spaltentyp)</translation>
     </message>
     <message>
         <source>{table}: {reason}</source>
         <comment>realm.table_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{table}: {reason}</translation>
     </message>
     <message>
         <source>Group top array is malformed or has no references</source>
         <comment>realm.group_top_malformed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Top-Array der Group ist fehlerhaft oder enthält keine Verweise</translation>
     </message>
     <message>
         <source>Group top array has no table-refs slot (fewer than 2 children)</source>
         <comment>realm.group_no_table_refs_slot</comment>
-        <translation type="unfinished"></translation>
+        <translation>Top-Array der Group hat keinen Table-Refs-Slot (weniger als 2 Kindelemente)</translation>
     </message>
     <message>
         <source>Table-refs reference is invalid or points outside the file</source>
         <comment>realm.table_refs_ref_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Table-Refs-Verweis ist ungültig oder zeigt auf eine Stelle außerhalb der Datei</translation>
     </message>
     <message>
         <source>Table-refs array is malformed or has no references</source>
         <comment>realm.table_refs_malformed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Table-Refs-Array ist fehlerhaft oder enthält keine Verweise</translation>
     </message>
     <message>
         <source>Table-refs array has 0 entries, but {classes} class name(s) in schema</source>
         <comment>realm.table_refs_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>Table-Refs-Array hat 0 Einträge, aber das Schema enthält {classes} Klassenname(n)</translation>
     </message>
     <message>
         <source>table reference is invalid or points outside the file</source>
         <comment>realm.table_ref_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Tabellenverweis ist ungültig oder zeigt auf eine Stelle außerhalb der Datei</translation>
     </message>
     <message>
         <source>Table top array is malformed or missing its ClusterTree slot</source>
         <comment>realm.table_top_no_cluster_tree_slot</comment>
-        <translation type="unfinished"></translation>
+        <translation>Top-Array der Tabelle ist fehlerhaft oder ihm fehlt der ClusterTree-Slot</translation>
     </message>
     <message>
         <source>ClusterTree reference is invalid or points outside the file</source>
         <comment>realm.cluster_tree_ref_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>ClusterTree-Verweis ist ungültig oder zeigt auf eine Stelle außerhalb der Datei</translation>
     </message>
     <message>
         <source>Spec/colkeys array has no columns (empty or malformed)</source>
         <comment>realm.colkeys_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spec/colkeys-Array hat keine Spalten (leer oder fehlerhaft)</translation>
     </message>
     <message>
         <source>ClusterTree root is malformed or has no leaves</source>
         <comment>realm.cluster_tree_root_malformed</comment>
-        <translation type="unfinished"></translation>
+        <translation>ClusterTree-Root ist fehlerhaft oder hat keine Leaves</translation>
     </message>
     <message>
         <source>Table top array is malformed or missing its spec/columns slots</source>
         <comment>realm.table_top_no_spec_slots</comment>
-        <translation type="unfinished"></translation>
+        <translation>Top-Array der Tabelle ist fehlerhaft oder ihm fehlen die Spec-/Spalten-Slots</translation>
     </message>
     <message>
         <source>Table top array has a zero element width</source>
         <comment>realm.table_top_zero_width</comment>
-        <translation type="unfinished"></translation>
+        <translation>Top-Array der Tabelle hat eine Elementbreite von null</translation>
     </message>
     <message>
         <source>Spec reference is invalid or points outside the file</source>
         <comment>realm.spec_ref_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spec-Verweis ist ungültig oder zeigt auf eine Stelle außerhalb der Datei</translation>
     </message>
     <message>
         <source>Spec array has no columns (empty or malformed)</source>
         <comment>realm.spec_no_columns</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spec-Array hat keine Spalten (leer oder fehlerhaft)</translation>
     </message>
     <message>
         <source>Not recognised by content (file extension: {ext})</source>
         <comment>image.format_unrecognised</comment>
-        <translation type="unfinished"></translation>
+        <translation>Anhand des Inhalts nicht erkannt (Dateiendung: {ext})</translation>
     </message>
     <message>
         <source>{count:,} frames/pages/images in the file; only the first is shown</source>
         <comment>image.frames_first_only</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Frames/Seiten/Bilder in der Datei; nur das erste Element wird angezeigt</translation>
     </message>
     <message>
         <source>Detection failed: {detail}</source>
         <comment>image.c2pa_detection_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Erkennung fehlgeschlagen: {detail}</translation>
     </message>
     <message>
         <source>Present</source>
         <comment>exif.present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden</translation>
     </message>
     <message>
         <source>Present, but none of the fields shown here are set</source>
         <comment>exif.present_no_listed_fields</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden, aber keines der hier angezeigten Felder ist gesetzt</translation>
     </message>
     <message>
         <source>Not present</source>
         <comment>exif.not_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht vorhanden</translation>
     </message>
     <message>
         <source>Not checked for this format yet</source>
         <comment>exif.not_checked</comment>
-        <translation type="unfinished"></translation>
+        <translation>Für dieses Format noch nicht geprüft</translation>
     </message>
     <message>
         <source>Not defined for this format</source>
         <comment>exif.not_defined</comment>
-        <translation type="unfinished"></translation>
+        <translation>Für dieses Format nicht definiert</translation>
     </message>
     <message>
         <source>Not checked (pillow-heif is not installed)</source>
         <comment>exif.heif_plugin_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht geprüft (pillow-heif ist nicht installiert)</translation>
     </message>
     <message>
         <source>Present, but could not be parsed: {reason}</source>
         <comment>exif.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden, konnte aber nicht geparst werden: {reason}</translation>
     </message>
     <message>
         <source>TIFF header is not valid</source>
         <comment>exif.bad_tiff_header</comment>
-        <translation type="unfinished"></translation>
+        <translation>TIFF-Header ist ungültig</translation>
     </message>
     <message>
         <source>IFD offset {offset} lies outside the EXIF data</source>
         <comment>exif.ifd_out_of_range</comment>
-        <translation type="unfinished"></translation>
+        <translation>IFD-Offset {offset} liegt außerhalb der EXIF-Daten</translation>
     </message>
     <message>
         <source>IFD at offset {offset} declares {count} entries, only {read} fit in the data</source>
         <comment>exif.ifd_truncated</comment>
-        <translation type="unfinished"></translation>
+        <translation>IFD bei Offset {offset} gibt {count} Einträge an, nur {read} passen in die Daten</translation>
     </message>
     <message>
         <source>{tag}: value offset {offset} lies outside the EXIF data</source>
         <comment>exif.value_out_of_range</comment>
-        <translation type="unfinished"></translation>
+        <translation>{tag}: Value Offset {offset} liegt außerhalb der EXIF-Daten</translation>
     </message>
     <message>
         <source>{tag}: TIFF type {dtype} is not decoded</source>
         <comment>exif.unknown_type</comment>
-        <translation type="unfinished"></translation>
+        <translation>{tag}: TIFF-Typ {dtype} wird nicht dekodiert</translation>
     </message>
     <message>
         <source>Invalid (rational {value}, denominator 0)</source>
         <comment>exif.invalid_rational</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ungültig (Rational {value}, Nenner 0)</translation>
     </message>
     <message>
         <source>Invalid (a rational has denominator 0): latitude {lat}, longitude {lon}</source>
         <comment>exif.gps_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ungültig (ein Rational hat den Nenner 0): Breitengrad {lat}, Längengrad {lon}</translation>
     </message>
     <message>
         <source>Latitude {lat} recorded, longitude missing</source>
         <comment>exif.gps_latitude_only</comment>
-        <translation type="unfinished"></translation>
+        <translation>Breitengrad {lat} erfasst, Längengrad fehlt</translation>
     </message>
     <message>
         <source>Longitude {lon} recorded, latitude missing</source>
         <comment>exif.gps_longitude_only</comment>
-        <translation type="unfinished"></translation>
+        <translation>Längengrad {lon} erfasst, Breitengrad fehlt</translation>
     </message>
     <message>
         <source>Present</source>
         <comment>xmp.present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden</translation>
     </message>
     <message>
         <source>Present ({count} packets; fields shown are from the first)</source>
         <comment>xmp.present_multiple</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden ({count} Packets; die angezeigten Felder stammen aus dem ersten)</translation>
     </message>
     <message>
         <source>Present, but none of the fields shown here are set</source>
         <comment>xmp.present_no_listed_fields</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden, aber keines der hier angezeigten Felder ist gesetzt</translation>
     </message>
     <message>
         <source>Not present</source>
         <comment>xmp.not_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht vorhanden</translation>
     </message>
     <message>
         <source>Packet start found at offset {offset:,}, but no closing tag</source>
         <comment>xmp.unclosed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Packet-Anfang bei Offset {offset:,} gefunden, aber kein schließendes Tag</translation>
     </message>
     <message>
         <source>Present, but not parseable as XML: {detail}</source>
         <comment>xmp.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden, aber nicht als XML parsebar: {detail}</translation>
     </message>
     <message>
         <source>Not present</source>
         <comment>c2pa.not_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht vorhanden</translation>
     </message>
     <message>
         <source>Not defined by the C2PA spec for this format</source>
         <comment>c2pa.not_defined</comment>
-        <translation type="unfinished"></translation>
+        <translation>Von der C2PA-Spezifikation für dieses Format nicht definiert</translation>
     </message>
     <message>
         <source>Not checked (detection only implemented for common image containers so far)</source>
         <comment>c2pa.not_checked</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht geprüft (Erkennung bisher nur für gängige Bild-Container umgesetzt)</translation>
     </message>
     <message>
         <source>Manifest found, but could not be parsed</source>
         <comment>c2pa.unparseable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Manifest gefunden, konnte aber nicht geparst werden</translation>
     </message>
     <message>
         <source>Manifest found, but could not be parsed: {detail}</source>
         <comment>c2pa.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Manifest gefunden, konnte aber nicht geparst werden: {detail}</translation>
     </message>
     <message>
         <source>Manifest Store found, but contains no manifest</source>
         <comment>c2pa.store_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>Manifest Store gefunden, enthält aber kein Manifest</translation>
     </message>
     <message>
         <source>Manifest found</source>
         <comment>c2pa.manifest_found</comment>
-        <translation type="unfinished"></translation>
+        <translation>Manifest gefunden</translation>
     </message>
     <message>
         <source>{count} manifest(s) found</source>
         <comment>c2pa.manifests_found</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} Manifest(e) gefunden</translation>
     </message>
     <message>
         <source>(untitled)</source>
         <comment>c2pa.ingredient_untitled</comment>
-        <translation type="unfinished"></translation>
+        <translation>(ohne Titel)</translation>
     </message>
     <message>
         <source>Present (structure parsed, not cryptographically verified)</source>
         <comment>c2pa.signature_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden (Struktur geparst, nicht kryptografisch verifiziert)</translation>
     </message>
     <message>
         <source>Present, but not parseable as X.509: {detail}</source>
         <comment>c2pa.cert_unparseable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden, aber nicht als X.509 parsebar: {detail}</translation>
     </message>
     <message>
         <source>Not an AAPL ATX container</source>
         <comment>atx.not_atx</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein AAPL-ATX-Container</translation>
     </message>
     <message>
         <source>unexpected end of ATX data</source>
         <comment>atx.unexpected_eof</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartetes Ende von ATX-Daten</translation>
     </message>
     <message>
         <source>Chunk {tag} at offset {offset} extends beyond EOF</source>
         <comment>atx.chunk_beyond_eof</comment>
-        <translation type="unfinished"></translation>
+        <translation>Chunk {tag} bei Offset {offset} reicht über das Dateiende (EOF) hinaus</translation>
     </message>
     <message>
         <source>{count} trailing byte(s) after last complete chunk</source>
         <comment>atx.trailing_bytes</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} überzählige(s) Byte(s) nach dem letzten vollständigen Chunk</translation>
     </message>
     <message>
         <source>No HEAD chunk found</source>
         <comment>atx.no_head</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein HEAD-Chunk gefunden</translation>
     </message>
     <message>
         <source>HEAD chunk too small for documented ATX header: {size} bytes</source>
         <comment>atx.head_too_small</comment>
-        <translation type="unfinished"></translation>
+        <translation>HEAD-Chunk zu klein für den dokumentierten ATX-Header: {size} Bytes</translation>
     </message>
     <message>
         <source>No astc, ASTC, or LZFS texture payload chunk found</source>
         <comment>atx.no_payload</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein Textur-Nutzdaten-Chunk (astc, ASTC oder LZFS) gefunden</translation>
     </message>
     <message>
         <source>{tag} chunk is too small to include an inner size</source>
         <comment>atx.payload_no_inner_size</comment>
-        <translation type="unfinished"></translation>
+        <translation>{tag}-Chunk ist zu klein, um eine innere Größenangabe zu enthalten</translation>
     </message>
     <message>
         <source>Inferred ASTC 4x4 ({a}, {b})</source>
         <comment>atx.pixel_format_inferred_label</comment>
-        <translation type="unfinished"></translation>
+        <translation>ASTC 4x4 abgeleitet ({a}, {b})</translation>
     </message>
     <message>
         <source>Unknown ({a}, {b})</source>
         <comment>atx.pixel_format_unknown</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unbekannt ({a}, {b})</translation>
     </message>
     <message>
         <source>invalid ATX dimensions: {width}x{height}</source>
         <comment>atx.invalid_dimensions</comment>
-        <translation type="unfinished"></translation>
+        <translation>ungültige ATX-Abmessungen: {width}x{height}</translation>
     </message>
     <message>
         <source>ATX image dimensions are too large: {width}x{height}</source>
         <comment>atx.too_large</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abmessungen des ATX-Bildes sind zu groß: {width}x{height}</translation>
     </message>
     <message>
         <source>Unexpected ATX depth {depth}; attempting 2D decode</source>
         <comment>atx.unexpected_depth</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete ATX-Tiefe {depth}; Dekodierung als 2D-Bild wird versucht</translation>
     </message>
     <message>
         <source>Unexpected ATX array layer count {count}; attempting first image decode</source>
         <comment>atx.unexpected_layers</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete ATX-Array-Layer-Anzahl {count}; Dekodierung des ersten Bildes wird versucht</translation>
     </message>
     <message>
         <source>Unexpected ATX mipmap count {count}; attempting first image decode</source>
         <comment>atx.unexpected_mipmaps</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete ATX-Mipmap-Anzahl {count}; Dekodierung des ersten Bildes wird versucht</translation>
     </message>
     <message>
         <source>unsupported ATX pixel format {format}</source>
         <comment>atx.unsupported_pixel_format</comment>
-        <translation type="unfinished"></translation>
+        <translation>nicht unterstütztes ATX pixel format {format}</translation>
     </message>
     <message>
         <source>ATX pixel format {format} inferred as ASTC 4x4</source>
         <comment>atx.pixel_format_inferred</comment>
-        <translation type="unfinished"></translation>
+        <translation>ATX-Pixelformat {format} als ASTC 4x4 abgeleitet</translation>
     </message>
     <message>
         <source>LZFS payload decompressed to {size} bytes; expected at least {expected}</source>
         <comment>atx.lzfs_too_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>LZFS-Nutzdaten auf {size} Bytes dekomprimiert; erwartet wurden mindestens {expected}</translation>
     </message>
     <message>
         <source>ASTC payload is {size} bytes; expected at least {expected}</source>
         <comment>atx.astc_too_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>ASTC-Nutzdaten umfassen {size} Bytes; erwartet wurden mindestens {expected}</translation>
     </message>
     <message>
         <source>ATX image decode failed: {reason}</source>
         <comment>atx.decode_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dekodierung des ATX-Bildes fehlgeschlagen: {reason}</translation>
     </message>
     <message>
         <source>Decoded ATX to PNG</source>
         <comment>atx.decoded</comment>
-        <translation type="unfinished"></translation>
+        <translation>ATX zu PNG dekodiert</translation>
     </message>
     <message>
         <source>ATX metadata parsed; image decode unavailable</source>
         <comment>atx.decode_unavailable</comment>
-        <translation type="unfinished"></translation>
+        <translation>ATX-Metadaten geparst; Dekodierung des Bildes nicht verfügbar</translation>
     </message>
     <message>
         <source>Heuristic — the file does not record it. Used: Morton X/Y {chosen} (seam score {chosen_score:.2f}); other candidate: Morton X/Y {other} (seam score {other_score:.2f}). Lower score = smaller brightness jumps at the 128-pixel macro-tile boundaries</source>
         <comment>atx.block_order_heuristic</comment>
-        <translation type="unfinished"></translation>
+        <translation>Heuristik — die Datei hält dies nicht fest. Verwendet: Morton X/Y {chosen} (Naht-Score {chosen_score:.2f}); anderer Kandidat: Morton X/Y {other} (Seam-Score {other_score:.2f}). Niedrigerer Score = kleinere Helligkeitssprünge an den Grenzen der 128-Pixel-Makrokacheln</translation>
     </message>
     <message>
         <source>as stored</source>
         <comment>atx.morton_as_stored</comment>
-        <translation type="unfinished"></translation>
+        <translation>wie gespeichert</translation>
     </message>
     <message>
         <source>swapped</source>
         <comment>atx.morton_swapped</comment>
-        <translation type="unfinished"></translation>
+        <translation>vertauscht</translation>
     </message>
     <message>
         <source>Unsupported KTX version</source>
         <comment>ktx.unsupported_version</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht unterstützte KTX-Version</translation>
     </message>
     <message>
         <source>Not a KTX 1.1 file</source>
         <comment>ktx.not_ktx</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine KTX-1.1-Datei</translation>
     </message>
     <message>
         <source>File is {size} bytes; a KTX header needs {needed}</source>
         <comment>ktx.header_too_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datei umfasst {size} Bytes; ein KTX-Header benötigt {needed}</translation>
     </message>
     <message>
         <source>Key/value block claims {size} bytes but the file ends first</source>
         <comment>ktx.kv_beyond_eof</comment>
-        <translation type="unfinished"></translation>
+        <translation>Key/Value-Block gibt {size} Bytes an, aber die Datei endet vorher</translation>
     </message>
     <message>
         <source>Key/value entry extends beyond the key/value block</source>
         <comment>ktx.kv_entry_overflow</comment>
-        <translation type="unfinished"></translation>
+        <translation>Key/Value-Eintrag reicht über den Key/Value-Block hinaus</translation>
     </message>
     <message>
         <source>No texture payload after the key/value block</source>
         <comment>ktx.no_payload</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine Textur-Nutzdaten nach dem Key/Value-Block</translation>
     </message>
     <message>
         <source>Key/value block declares Compression_APPLE but no LZFS marker follows imageSize</source>
         <comment>ktx.no_lzfs_marker</comment>
-        <translation type="unfinished"></translation>
+        <translation>Key/Value-Block gibt Compression_APPLE an, aber nach imageSize folgt keine LZFS-Markierung</translation>
     </message>
     <message>
         <source>LZFS marker is present but the block that follows is not LZFSE</source>
         <comment>ktx.not_lzfse</comment>
-        <translation type="unfinished"></translation>
+        <translation>LZFS-Markierung ist vorhanden, aber der folgende Block ist kein LZFSE</translation>
     </message>
     <message>
         <source>LZFSE block declares {declared:,} bytes but only {present:,} are present</source>
         <comment>ktx.lzfse_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>LZFSE-Block gibt {declared:,} Bytes an, aber nur {present:,} sind vorhanden</translation>
     </message>
     <message>
         <source>Unsupported (glInternalFormat 0x{fmt:04X})</source>
         <comment>ktx.pixel_format_unsupported_label</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht unterstützt (glInternalFormat 0x{fmt:04X})</translation>
     </message>
     <message>
         <source>unsupported KTX pixel format {format}</source>
         <comment>ktx.unsupported_pixel_format</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht unterstütztes KTX pixel format {format}</translation>
     </message>
     <message>
         <source>invalid KTX dimensions: {width}x{height}</source>
         <comment>ktx.invalid_dimensions</comment>
-        <translation type="unfinished"></translation>
+        <translation>ungültige KTX-Abmessungen: {width}x{height}</translation>
     </message>
     <message>
         <source>KTX image dimensions are too large: {width}x{height}</source>
         <comment>ktx.too_large</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abmessungen des KTX-Bildes sind zu groß: {width}x{height}</translation>
     </message>
     <message>
         <source>Unexpected KTX depth {depth}; attempting 2D decode</source>
         <comment>ktx.unexpected_depth</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete KTX-Tiefe {depth}; Dekodierung als 2D-Bild wird versucht</translation>
     </message>
     <message>
         <source>Unexpected KTX array layer count {count}; decoding first</source>
         <comment>ktx.unexpected_layers</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete KTX-Array-Layer-Anzahl {count}; der erste Layer wird dekodiert</translation>
     </message>
     <message>
         <source>Unexpected KTX face count {count}; decoding first face</source>
         <comment>ktx.unexpected_faces</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete KTX-Face-Anzahl {count}; das erste Face wird dekodiert</translation>
     </message>
     <message>
         <source>Unexpected KTX mipmap count {count}; decoding first level</source>
         <comment>ktx.unexpected_mipmaps</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwartete KTX-Mipmap-Anzahl {count}; die erste Stufe wird dekodiert</translation>
     </message>
     <message>
         <source>LZFSE decompression failed: {detail}</source>
         <comment>ktx.lzfse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>LZFSE-Dekomprimierung fehlgeschlagen: {detail}</translation>
     </message>
     <message>
         <source>KTX image decode failed: {reason}</source>
         <comment>ktx.decode_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dekodierung des KTX-Bildes fehlgeschlagen: {reason}</translation>
     </message>
     <message>
         <source>Decoded KTX to PNG</source>
         <comment>ktx.decoded</comment>
-        <translation type="unfinished"></translation>
+        <translation>KTX zu PNG dekodiert</translation>
     </message>
     <message>
         <source>KTX metadata parsed; image decode unavailable</source>
         <comment>ktx.decode_unavailable</comment>
-        <translation type="unfinished"></translation>
+        <translation>KTX-Metadaten geparst; Dekodierung des Bildes nicht verfügbar</translation>
     </message>
     <message>
         <source>Install pypdf for text extraction: pip install pypdf</source>
         <comment>pdf.pypdf_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Für die Textextraktion pypdf installieren: pip install pypdf</translation>
     </message>
     <message>
         <source>Try Open as → PDF (Encrypted)…</source>
         <comment>pdf.try_encrypted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Versuche Öffnen als → PDF (verschlüsselt)…</translation>
     </message>
     <message>
         <source>Wrong password for encrypted PDF: {path}</source>
         <comment>pdf.wrong_password</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falsches Passwort für verschlüsselte PDF: {path}</translation>
     </message>
     <message>
         <source>Yes (password supplied)</source>
         <comment>pdf.encrypted_password</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ja (Passwort angegeben)</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>pdf.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>PDF (parse failed)</source>
         <comment>pdf.format_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>PDF (Parsing-Fehler)</translation>
     </message>
     <message>
         <source>Present</source>
         <comment>pdf.js_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden</translation>
     </message>
     <message>
         <source>Not present (checked: document-level /Names/JavaScript and /OpenAction; not checked: annotation and form-field actions)</source>
         <comment>pdf.js_not_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht vorhanden (geprüft: /Names/JavaScript und /OpenAction auf Dokumentebene; nicht geprüft: Aktionen von Annotationen und Formularfeldern)</translation>
     </message>
     <message>
         <source>Could not be checked: {detail}</source>
         <comment>pdf.js_check_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht geprüft werden: {detail}</translation>
     </message>
     <message>
         <source>{signed}/{total} signature field(s) signed</source>
         <comment>pdf.signatures_signed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{signed}/{total} Signaturfeld(er) signiert</translation>
     </message>
     <message>
         <source>None (checked: top-level AcroForm fields; not checked: fields nested in /Kids)</source>
         <comment>pdf.signatures_none</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine (geprüft: AcroForm-Felder der obersten Ebene; nicht geprüft: in /Kids verschachtelte Felder)</translation>
     </message>
     <message>
         <source>Could not be checked: {detail}</source>
         <comment>pdf.signatures_check_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht geprüft werden: {detail}</translation>
     </message>
     <message>
         <source>{count} file(s)</source>
         <comment>pdf.attachments</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} Datei(en)</translation>
     </message>
     <message>
         <source>{count} file(s) read, then reading failed: {detail}</source>
         <comment>pdf.attachments_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} Datei(en) gelesen, danach schlug das Lesen fehl: {detail}</translation>
     </message>
     <message>
         <source>No extractable text in this PDF</source>
         <comment>pdf.no_text</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein extrahierbarer Text in diesem PDF</translation>
     </message>
     <message>
         <source>Text extraction failed on {count} page(s): {failures}</source>
         <comment>pdf.text_pages_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Textextraktion auf {count} Seite(n) fehlgeschlagen: {failures}</translation>
     </message>
     <message>
         <source>page {page}: {detail}</source>
         <comment>pdf.text_page_failure</comment>
-        <translation type="unfinished"></translation>
+        <translation>Seite {page}: {detail}</translation>
     </message>
     <message>
         <source>Present</source>
         <comment>pdf.xmp_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Vorhanden</translation>
     </message>
     <message>
         <source>Not present</source>
         <comment>pdf.xmp_not_present</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht vorhanden</translation>
     </message>
     <message>
         <source>Could not be read: {detail}</source>
         <comment>pdf.xmp_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>This revision could not be opened: {detail}</source>
         <comment>pdf.revision_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Diese Revision konnte nicht geöffnet werden: {detail}</translation>
     </message>
     <message>
         <source>Stopped after {count} revision(s): the trailer of the oldest one found could not be read: {detail}</source>
         <comment>pdf.revchain_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nach {count} Revision(en) abgebrochen: Der Trailer der ältesten gefundenen Revision konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Stopped after {count} revision(s): the trailer&apos;s /Prev value is not a byte offset: {detail}</source>
         <comment>pdf.revchain_bad_prev</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nach {count} Revision(en) abgebrochen: Der /Prev-Wert des Trailers ist kein Byte-Offset: {detail}</translation>
     </message>
     <message>
         <source>Stopped after {count} revision(s): no %%EOF after /Prev offset {offset:,}</source>
         <comment>pdf.revchain_no_eof</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nach {count} Revision(en) abgebrochen: kein %%EOF nach /Prev-Offset {offset:,}</translation>
     </message>
     <message>
         <source>Stopped after {count} revision(s): /Prev offset {offset:,} repeats (cyclic chain)</source>
         <comment>pdf.revchain_cycle</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nach {count} Revision(en) abgebrochen: /Prev-Offset {offset:,} wiederholt sich (zyklische Kette)</translation>
     </message>
     <message>
         <source>Codec/tag metadata is read for OGG/Opus/AMR only so far</source>
         <comment>media.metadata_not_checked</comment>
-        <translation type="unfinished"></translation>
+        <translation>Codec-/Tag-Metadaten werden bisher nur für OGG/Opus/AMR gelesen</translation>
     </message>
     <message>
         <source>Not read (PyAV is not installed)</source>
         <comment>media.pyav_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht gelesen (PyAV ist nicht installiert)</translation>
     </message>
     <message>
         <source>No audio stream found</source>
         <comment>media.no_audio_stream</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein Audiostream gefunden</translation>
     </message>
     <message>
         <source>Could not be read: {detail}</source>
         <comment>media.metadata_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>plist.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>plist (parse failed)</source>
         <comment>plist.format_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>plist (Parsing-Fehler)</translation>
     </message>
     <message>
         <source>binary (NSKeyedArchiver — deserialization failed)</source>
         <comment>plist.format_nska_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>binär (NSKeyedArchiver — Deserialisierung fehlgeschlagen)</translation>
     </message>
     <message>
         <source>NSKeyedArchiver deserialization failed, so the tree shows the archive&apos;s undecoded object table: {detail}</source>
         <comment>plist.nska_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>NSKeyedArchiver-Deserialisierung fehlgeschlagen, daher zeigt der Baum die nicht dekodierte Objekttabelle des Archivs: {detail}</translation>
     </message>
     <message>
         <source>NSKeyedArchiver deserialization failed, so below is the archive&apos;s undecoded object table: {detail}</source>
         <comment>plist.nska_failed_text</comment>
-        <translation type="unfinished"></translation>
+        <translation>NSKeyedArchiver-Deserialisierung fehlgeschlagen, daher steht unten die nicht dekodierte Objekttabelle des Archivs: {detail}</translation>
     </message>
     <message>
         <source>XML (NSKeyedArchiver — not resolved)</source>
         <comment>plist.format_nska_xml</comment>
-        <translation type="unfinished"></translation>
+        <translation>XML (NSKeyedArchiver — nicht aufgelöst)</translation>
     </message>
     <message>
         <source>NSKeyedArchiver archives in XML form are not resolved into an object tree; the tree shows the archive&apos;s undecoded object table</source>
         <comment>plist.nska_xml_unresolved</comment>
-        <translation type="unfinished"></translation>
+        <translation>NSKeyedArchiver-Archive in XML-Form werden nicht zu einem Objektbaum aufgelöst; der Baum zeigt die nicht dekodierte Objekttabelle des Archivs</translation>
     </message>
     <message>
         <source>{count:,} (plus {classes:,} class definitions)</source>
         <comment>plist.nska_shared</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} (zuzüglich {classes:,} Klassendefinitionen)</translation>
     </message>
     <message>
         <source>binary (NSKeyedArchiver — not resolved)</source>
         <comment>plist.format_nska_unresolved</comment>
-        <translation type="unfinished"></translation>
+        <translation>binär (NSKeyedArchiver — nicht aufgelöst)</translation>
     </message>
     <message>
         <source>Not resolved: {count:,} reference(s) point past the end of $objects, so the tree shows the archive&apos;s undecoded object table</source>
         <comment>plist.nska_missing_refs</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht aufgelöst: {count:,} Verweis(e) zeigen über das Ende von $objects hinaus, daher zeigt der Baum die nicht dekodierte Objekttabelle des Archivs</translation>
     </message>
     <message>
         <source>Not resolved: an object reaches itself through its references (a cycle), so the tree shows the archive&apos;s undecoded object table</source>
         <comment>plist.nska_cycle</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht aufgelöst: Ein Objekt erreicht sich über seine Verweise selbst (ein Zyklus), daher zeigt der Baum die nicht dekodierte Objekttabelle des Archivs</translation>
     </message>
     <message>
         <source>none ($top has no root key)</source>
         <comment>plist.nska_root_none</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine ($top hat keinen root-Schlüssel)</translation>
     </message>
     <message>
         <source>none (root is a plain {type} value)</source>
         <comment>plist.nska_root_plain</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine (root ist ein einfacher {type}-Wert)</translation>
     </message>
     <message>
         <source>unknown (root or its class points past the end of $objects)</source>
         <comment>plist.nska_root_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>unbekannt (Root-Objekt oder seine Klasse verweist über das Ende von $objects hinaus)</translation>
     </message>
     <message>
         <source>unknown (the root object&apos;s class definition has no $classname)</source>
         <comment>plist.nska_root_no_classname</comment>
-        <translation type="unfinished"></translation>
+        <translation>unbekannt (die Klassendefinition des Root-Objekts hat keinen $classname) $classname</translation>
     </message>
     <message>
         <source>none ($top is empty)</source>
         <comment>plist.nska_top_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine ($top ist leer)</translation>
     </message>
     <message>
         <source>Not counted: $objects is not a list or $top is not a dictionary</source>
         <comment>plist.nska_no_graph</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht gezählt: $objects ist keine Liste oder $top ist kein Dictionary</translation>
     </message>
     <message>
         <source>Not well-formed XML: {detail}. The tree shows only an excerpt around the error position; full content: Open as → Text / Hex</source>
         <comment>xml.syntax_error</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein wohlgeformtes XML: {detail}. Der Baum zeigt nur einen Ausschnitt um die Fehlerposition; vollständiger Inhalt: Öffnen als → Text / Hex</translation>
     </message>
     <message>
         <source>XML (parse error)</source>
         <comment>xml.format_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>XML (Parser-Fehler)</translation>
     </message>
     <message>
         <source>TRUNCATED: decode error at offset {offset} (0x{offset:x}): {detail} — {remaining} of {total} bytes not decoded</source>
         <comment>abx.truncated</comment>
-        <translation type="unfinished"></translation>
+        <translation>ABGESCHNITTEN: Dekodierungsfehler bei Offset {offset} (0x{offset:x}): {detail} — {remaining} von {total} Bytes nicht dekodiert</translation>
     </message>
     <message>
         <source>Missing ABX magic header</source>
         <comment>abx.no_magic</comment>
-        <translation type="unfinished"></translation>
+        <translation>ABX-Magic-Header fehlt</translation>
     </message>
     <message>
         <source>Empty start tag name</source>
         <comment>abx.empty_start_tag</comment>
-        <translation type="unfinished"></translation>
+        <translation>Leerer Name im Start-Tag</translation>
     </message>
     <message>
         <source>Unsupported {token} token encountered (rare/unverified format)</source>
         <comment>abx.unsupported_token</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht unterstützter Token {token} gefunden (seltenes/ungeprüftes Format)</translation>
     </message>
     <message>
         <source>Dangling attribute token</source>
         <comment>abx.dangling_attribute</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verwaister Attribut-Token</translation>
     </message>
     <message>
         <source>Unknown token: {token}</source>
         <comment>abx.unknown_token</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unbekanntes Token: {token}</translation>
     </message>
     <message>
         <source>Raw XML-illegal control character(s) found in decoded value(s); re-encoded as \xHH to keep the XML well-formed</source>
         <comment>abx.control_chars</comment>
-        <translation type="unfinished"></translation>
+        <translation>In XML unzulässige Steuerzeichen in dekodierten Werten gefunden; als \xHH neu kodiert, damit das XML wohlgeformt bleibt</translation>
     </message>
     <message>
         <source>Multiple root elements ({count}) found; wrapped in synthetic &lt;abx-root&gt; for well-formed XML</source>
         <comment>abx.multiple_roots</comment>
-        <translation type="unfinished"></translation>
+        <translation>Mehrere Root-Elemente ({count}) gefunden; für wohlgeformtes XML in ein synthetisches &lt;abx-root&gt; eingeschlossen</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>abx.xml_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>XML reconstruction failed; see right pane</source>
         <comment>abx.xml_failed_hint</comment>
-        <translation type="unfinished"></translation>
+        <translation>XML-Rekonstruktion fehlgeschlagen; siehe rechten Bereich</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>abx.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>File may be a newer ABX version</source>
         <comment>abx.parse_failed_hint</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Datei hat möglicherweise eine neuere ABX-Version</translation>
     </message>
     <message>
         <source>ABX (parse error)</source>
         <comment>abx.format_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>ABX (Parsing-Fehler)</translation>
     </message>
     <message>
         <source>Truncated varint key</source>
         <comment>protobuf.truncated_key</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittener varint-Key</translation>
     </message>
     <message>
         <source>Truncated varint value</source>
         <comment>protobuf.truncated_varint</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittener varint-Wert</translation>
     </message>
     <message>
         <source>Truncated 64-bit value</source>
         <comment>protobuf.truncated_fixed64</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittener 64-Bit-Wert</translation>
     </message>
     <message>
         <source>Truncated 32-bit value</source>
         <comment>protobuf.truncated_fixed32</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittener 32-Bit-Wert</translation>
     </message>
     <message>
         <source>Truncated length-delimited size</source>
         <comment>protobuf.truncated_length</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittene Größe eines length-delimited-Felds</translation>
     </message>
     <message>
         <source>Truncated length-delimited payload</source>
         <comment>protobuf.truncated_payload</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittene Nutzdaten eines length-delimited-Felds</translation>
     </message>
     <message>
         <source>Truncated group field {field}</source>
         <comment>protobuf.truncated_group</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abgeschnittenes Group-Feld {field}</translation>
     </message>
     <message>
         <source>Unexpected end-group tag for field {field}</source>
         <comment>protobuf.unexpected_end_group</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unerwarteter End-Group-Tag für Feld {field}</translation>
     </message>
     <message>
         <source>Unknown wire type: {wire_type}</source>
         <comment>protobuf.unknown_wire_type</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unbekannter wire type: {wire_type}</translation>
     </message>
     <message>
         <source>Decode error: {detail}</source>
         <comment>protobuf.decode_error</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dekodierungsfehler: {detail}</translation>
     </message>
     <message>
         <source>{count:,} length-delimited field(s) at nesting depth {limit} were not tried as nested messages (depth limit, the protobuf libraries&apos; default); shown as string/bytes</source>
         <comment>protobuf.depth_limit</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} length-delimited-Feld(er) in Verschachtelungstiefe {limit} wurde(n) nicht als verschachtelte Nachricht interpretiert (Tiefenlimit, Standardwert der Protobuf-Bibliotheken); als String/Bytes angezeigt</translation>
     </message>
     <message>
         <source>{count:,} of {total:,} data files could not be read whole; Overview → Read problems says why</source>
         <comment>leveldb.data_files_not_read</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} von {total:,} Datendateien konnten nicht vollständig gelesen werden; den Grund nennt Übersicht → Leseprobleme</translation>
     </message>
     <message>
         <source>Smallest key is {length} bytes, shorter than the 8-byte sequence/type tag an internal key ends with, so it isn&apos;t a valid internal key; shown as stored</source>
         <comment>leveldb.smallest_key_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>Smallest Key umfasst {length} Bytes und ist damit kürzer als der 8-Byte-Sequence/Type-Tag, mit dem ein Internal Key endet; kein gültiger Internal Key, so angezeigt, wie gespeichert</translation>
     </message>
     <message>
         <source>Largest key is {length} bytes, shorter than the 8-byte sequence/type tag an internal key ends with, so it isn&apos;t a valid internal key; shown as stored</source>
         <comment>leveldb.largest_key_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>Largest Key umfasst {length} Bytes und ist damit kürzer als der 8-Byte-Sequence/Type-Tag, mit dem ein Internal Key endet; kein gültiger Internal Key, so angezeigt, wie gespeichert</translation>
     </message>
     <message>
         <source>{count:,} record(s) whose stored checksum doesn&apos;t match; shown, marked in the Records tab (LevelDB doesn&apos;t apply them)</source>
         <comment>leveldb.records_checksum</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Datensatz/Datensätze, deren gespeicherte Prüfsumme nicht übereinstimmt; angezeigt und im Reiter Datensätze markiert (LevelDB wendet sie nicht an)</translation>
     </message>
     <message>
         <source>{count:,} record(s) whose stored checksum doesn&apos;t match; Overview → Read problems says where</source>
         <comment>leveldb.records_checksum_total</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Datensatz/Datensätze, deren gespeicherte Prüfsumme nicht übereinstimmt; wo, nennt Übersicht → Leseprobleme</translation>
     </message>
     <message>
         <source>{count:,} edit(s) whose stored checksum doesn&apos;t match, read and counted here (LevelDB doesn&apos;t apply them); at offsets {offsets}</source>
         <comment>leveldb.manifest_checksum</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Edit(s), deren gespeicherte Prüfsumme nicht stimmt, hier gelesen und mitgezählt (LevelDB wendet sie nicht an); bei Offsets {offsets}</translation>
     </message>
     <message>
         <source>{count:,} damaged part(s) skipped, reading on after each as LevelDB does: {detail}</source>
         <comment>leveldb.parts_skipped</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} beschädigte(r) Teil(e) übersprungen, danach jeweils weitergelesen, wie es LevelDB selbst tut: {detail}</translation>
     </message>
     <message>
         <source>No CURRENT file: no MANIFEST is taken as the current one, and files have no level</source>
         <comment>leveldb.current_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine CURRENT-Datei: Kein MANIFEST wird als das aktuelle angenommen, und die Dateien haben kein Level</translation>
     </message>
     <message>
         <source>CURRENT could not be read ({detail}): no MANIFEST is taken as the current one, and files have no level</source>
         <comment>leveldb.current_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>CURRENT konnte nicht gelesen werden ({detail}): Kein MANIFEST wird als das aktuelle angenommen, und die Dateien haben kein Level</translation>
     </message>
     <message>
         <source>CURRENT does not name a MANIFEST: no MANIFEST is taken as the current one, and files have no level</source>
         <comment>leveldb.current_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>CURRENT nennt kein MANIFEST: Kein MANIFEST wird als das aktuelle angenommen, und die Dateien haben kein Level</translation>
     </message>
     <message>
         <source>{name} is not in the directory: no MANIFEST is taken as the current one, and files have no level</source>
         <comment>leveldb.current_target_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} ist nicht im Verzeichnis vorhanden: Kein MANIFEST wird als das aktuelle angenommen, und die Dateien haben kein Level</translation>
     </message>
     <message>
         <source>{name} could not be read (Read problems says why): no MANIFEST is taken as the current one, and files have no level</source>
         <comment>leveldb.current_target_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>{name} konnte nicht gelesen werden (den Grund nennt Leseprobleme): Kein MANIFEST wird als das aktuelle angenommen, und die Dateien haben kein Level</translation>
     </message>
     <message>
         <source>Does not end with a line break: LevelDB treats this CURRENT as corrupt and would not open the database. The MANIFEST it names is still used here for the files&apos; levels</source>
         <comment>leveldb.current_no_newline</comment>
-        <translation type="unfinished"></translation>
+        <translation>Endet nicht mit einem Zeilenumbruch: LevelDB betrachtet dieses CURRENT als beschädigt und würde die Datenbank nicht öffnen. Das darin genannte MANIFEST wird hier dennoch für die Level der Dateien verwendet</translation>
     </message>
     <message>
         <source>Named by a CURRENT that LevelDB treats as corrupt (no line break at its end)</source>
         <comment>leveldb.named_by_invalid_current</comment>
-        <translation type="unfinished"></translation>
+        <translation>Genannt von einem CURRENT, das LevelDB als beschädigt betrachtet (kein Zeilenumbruch am Ende)</translation>
     </message>
     <message>
         <source>RocksDB (not supported)</source>
         <comment>leveldb.rocksdb_format</comment>
-        <translation type="unfinished"></translation>
+        <translation>RocksDB (nicht unterstützt)</translation>
     </message>
     <message>
         <source>RocksDB database, not read: RocksDB uses LevelDB&apos;s file names, but its table, log and MANIFEST formats differ, and read as LevelDB parts of it would come out wrong</source>
         <comment>leveldb.rocksdb_not_read</comment>
-        <translation type="unfinished"></translation>
+        <translation>RocksDB-Datenbank, nicht gelesen: RocksDB verwendet die Dateinamen von LevelDB, aber seine Table-, Log- und MANIFEST-Formate unterscheiden sich, und als LevelDB gelesen wären Teile davon falsch</translation>
     </message>
     <message>
         <source>OPTIONS file naming a RocksDB version (rocksdb_version=)</source>
         <comment>leveldb.rocksdb_options</comment>
-        <translation type="unfinished"></translation>
+        <translation>OPTIONS-Datei, die eine RocksDB-Version nennt (rocksdb_version=)</translation>
     </message>
     <message>
         <source>Table file ending in RocksDB&apos;s {kind} magic {magic}</source>
         <comment>leveldb.rocksdb_table</comment>
-        <translation type="unfinished"></translation>
+        <translation>Table-Datei, die mit dem {kind}-Magic {magic} von RocksDB endet</translation>
     </message>
     <message>
         <source>Tag {tag}, which RocksDB writes and LevelDB doesn&apos;t define</source>
         <comment>leveldb.rocksdb_manifest_tag</comment>
-        <translation type="unfinished"></translation>
+        <translation>Tag {tag}, den RocksDB schreibt und LevelDB nicht definiert</translation>
     </message>
     <message>
         <source>Empty file (0 bytes)</source>
         <comment>leveldb.manifest_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>Leere Datei (0 Bytes)</translation>
     </message>
     <message>
         <source>Records no comparator, log or sequence numbers, or files</source>
         <comment>leveldb.manifest_nothing_shown</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verzeichnet keinen Comparator, keine Log- oder Sequence-Numbers und keine Dateien</translation>
     </message>
     <message>
         <source>Higher-numbered than the MANIFEST named by CURRENT</source>
         <comment>leveldb.manifest_after_current</comment>
-        <translation type="unfinished"></translation>
+        <translation>Höhere Nummer als das von CURRENT genannte MANIFEST</translation>
     </message>
     <message>
         <source>Reading stopped after {count:,} records: {detail}</source>
         <comment>leveldb.read_stopped</comment>
-        <translation type="unfinished"></translation>
+        <translation>Lesen nach {count:,} Datensätzen abgebrochen: {detail}</translation>
     </message>
     <message>
         <source>Could not be parsed: {detail}</source>
         <comment>leveldb.manifest_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht geparsed werden: {detail}</translation>
     </message>
     <message>
         <source>Read only up to an error: {detail}</source>
         <comment>leveldb.manifest_partial</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nur bis zu einem Fehler gelesen: {detail}</translation>
     </message>
     <message>
         <source>Could not be read: {detail}</source>
         <comment>leveldb.file_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>This MMKV store is AES-encrypted.</source>
         <comment>mmkv.encrypted_error</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dieser MMKV-Speicher ist AES-verschlüsselt.</translation>
     </message>
     <message>
         <source>Use &quot;Open as -&gt; MMKV (Encrypted)...&quot; and supply the key.</source>
         <comment>mmkv.encrypted_hint</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verwende &quot;Öffnen als -&gt; MMKV (verschlüsselt)...&quot; und gib den Schlüssel an.</translation>
     </message>
     <message>
         <source>MMKV Key-Value Store (encrypted)</source>
         <comment>mmkv.format_encrypted</comment>
-        <translation type="unfinished"></translation>
+        <translation>MMKV Key-Value Store (verschlüsselt)</translation>
     </message>
     <message>
         <source>yes</source>
@@ -8187,1347 +8187,1347 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>{detail}</source>
         <comment>mmkv.read_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>MMKV store could not be read</source>
         <comment>mmkv.read_failed_hint</comment>
-        <translation type="unfinished"></translation>
+        <translation>MMKV-Speicher konnte nicht gelesen werden</translation>
     </message>
     <message>
         <source>MMKV Key-Value Store (parse failed)</source>
         <comment>mmkv.format_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>MMKV Key-Value Store (Parsing-Fehler)</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>mmkv.wrong_key</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>not found (.crc companion missing) — encryption status unverified</source>
         <comment>mmkv.meta_not_found</comment>
-        <translation type="unfinished"></translation>
+        <translation>nicht gefunden (.crc-Begleitdatei fehlt) — Verschlüsselungsstatus nicht überprüft</translation>
     </message>
     <message>
         <source>found, but could not be read ({detail}) — encryption status unverified</source>
         <comment>mmkv.meta_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>gefunden, aber nicht lesbar ({detail}) — Verschlüsselungsstatus nicht verifiziert</translation>
     </message>
     <message>
         <source>not found (.crc companion missing)</source>
         <comment>mmkv.meta_not_found_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>nicht gefunden (.crc-Begleitdatei fehlt)</translation>
     </message>
     <message>
         <source>found, but only {size} B — too short for the meta layout ({needed} B) — encryption status unverified</source>
         <comment>mmkv.meta_too_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>gefunden, aber nur {size} B — zu kurz für das Meta-Layout ({needed} B) — Verschlüsselungsstatus nicht verifiziert</translation>
     </message>
     <message>
         <source>found, but only {size} B — too short for the meta layout ({needed} B)</source>
         <comment>mmkv.meta_too_short_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>gefunden, aber nur {size} B — zu kurz für das Meta-Layout ({needed} B)</translation>
     </message>
     <message>
         <source>found, but could not be read ({detail})</source>
         <comment>mmkv.meta_unreadable_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>gefunden, aber nicht lesbar ({detail})</translation>
     </message>
     <message>
         <source>yes (decrypted)</source>
         <comment>mmkv.encrypted_decrypted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ja (entschlüsselt)</translation>
     </message>
     <message>
         <source>unverified — a key was supplied but ignored: no .crc meta file was found, so there is no AES vector to decrypt with and the store was read as plaintext</source>
         <comment>mmkv.key_ignored_no_meta</comment>
-        <translation type="unfinished"></translation>
+        <translation>ungeprüft — ein Schlüssel wurde angegeben, aber ignoriert: es wurde keine .crc-Metadatei gefunden, daher gibt es keinen AES-Vektor zum Entschlüsseln, und der Store wurde als Klartext gelesen</translation>
     </message>
     <message>
         <source>unverified — a key was supplied but ignored: the .crc meta file was {meta}, so there is no AES vector to decrypt with and the store was read as plaintext</source>
         <comment>mmkv.key_ignored_bad_meta</comment>
-        <translation type="unfinished"></translation>
+        <translation>ungeprüft — ein Schlüssel wurde angegeben, aber ignoriert: die .crc-Metadatei war {meta}, daher gibt es keinen AES-Vektor zum Entschlüsseln, und der Store wurde als Klartext gelesen</translation>
     </message>
     <message>
         <source>no — a key was supplied but ignored: the .crc meta file&apos;s AES vector is zero, so the store is not encrypted</source>
         <comment>mmkv.key_ignored_zero_vector</comment>
-        <translation type="unfinished"></translation>
+        <translation>nein — ein Schlüssel wurde angegeben, aber ignoriert: Der AES-Vektor der .crc-Metadatei ist null, daher ist der Speicher nicht verschlüsselt</translation>
     </message>
     <message>
         <source>no — {note}</source>
         <comment>mmkv.encrypted_false_positive</comment>
-        <translation type="unfinished"></translation>
+        <translation>nein — {note}</translation>
     </message>
     <message>
         <source>.crc meta file&apos;s vector field is non-zero, which normally flags AES encryption, but the store read cleanly as plaintext anyway, so that flag is treated as a false positive here</source>
         <comment>mmkv.false_positive_note</comment>
-        <translation type="unfinished"></translation>
+        <translation>Das Vektor-Feld der .crc-Metadatei ist ungleich null, was normalerweise auf AES-Verschlüsselung hinweist, aber der Store ließ sich trotzdem fehlerfrei als Klartext lesen, daher wird dieser Hinweis hier als Fehlalarm behandelt</translation>
     </message>
     <message>
         <source>Entry byte offsets could not be derived; Locate in Hex is unavailable</source>
         <comment>mmkv.offsets_unavailable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Byte-Offsets der Einträge konnten nicht ermittelt werden; „In Hex anzeigen“ ist nicht verfügbar</translation>
     </message>
     <message>
         <source>Entry byte offsets found for {found:,} of {total:,} entries; Locate in Hex is unavailable</source>
         <comment>mmkv.offsets_mismatch</comment>
-        <translation type="unfinished"></translation>
+        <translation>Byte-Offsets für {found:,} von {total:,} Einträgen gefunden; „In Hex anzeigen“ ist nicht verfügbar</translation>
     </message>
     <message>
         <source>Not a recognized SEGB v1/v2 file</source>
         <comment>segb.unrecognized</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine erkannte SEGB-v1/v2-Datei</translation>
     </message>
     <message>
         <source>SEGB (unrecognized)</source>
         <comment>segb.format_unrecognized</comment>
-        <translation type="unfinished"></translation>
+        <translation>SEGB (nicht erkannt)</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>segb.parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>SEGB (parse failed)</source>
         <comment>segb.format_parse_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>SEGB (Parsing-Fehler)</translation>
     </message>
     <message>
         <source>Reading stopped at record {index}: {detail}; later records not read</source>
         <comment>segb.record_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Lesen bei Datensatz {index} abgebrochen: {detail}; spätere Datensätze nicht gelesen</translation>
     </message>
     <message>
         <source>Reading stopped after {count:,} records: {detail}</source>
         <comment>segb.stream_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Lesen nach {count:,} Datensätzen abgebrochen: {detail}</translation>
     </message>
     <message>
         <source>PNG eXIf chunk not checked yet; tEXt chunks are shown under PNG text, zTXt and iTXt chunks are not read</source>
         <comment>exif.png_not_checked</comment>
-        <translation type="unfinished"></translation>
+        <translation>PNG-eXIf-Chunk noch nicht geprüft; tEXt-Chunks werden unter „PNG-Text“ angezeigt, zTXt- und iTXt-Chunks werden nicht gelesen</translation>
     </message>
     <message>
         <source>Payload column: schema-less rendering (heuristic), valid UTF-8 shown as text and 64/32-bit fields as double/float. The selected record&apos;s payload is shown below the table with every candidate reading of each field</source>
         <comment>segb.payload_heuristic</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spalte „Payload“: schemalose Darstellung (Heuristik), gültiges UTF-8 als Text und 64/32-Bit-Felder als double/float angezeigt. Die Nutzdaten des ausgewählten Datensatzes werden unter der Tabelle angezeigt, mit jeder möglichen Lesart jedes Felds</translation>
     </message>
     <message>
         <source>This record&apos;s payload offsets could not be read ({reason}): no payload bytes to decode</source>
         <comment>segb.detail_no_payload</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Nutzdaten-Offsets dieses Datensatzes konnten nicht gelesen werden ({reason}): keine Nutzdaten-Bytes zum Dekodieren</translation>
     </message>
     <message>
         <source>The record states 0 bytes of payload</source>
         <comment>segb.detail_payload_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>Der Datensatz gibt 0 Bytes Nutzdaten an</translation>
     </message>
     <message>
         <source>Only {present} of the {stated} bytes the record states for its payload are in the file; the bytes there are decoded</source>
         <comment>segb.detail_payload_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nur {present} der {stated} Bytes, die der Datensatz für seine Nutzdaten angibt, sind in der Datei; die vorhandenen Bytes werden dekodiert</translation>
     </message>
     <message>
         <source>{count:,} record(s): payload decoded only up to the byte shown in the cell</source>
         <comment>segb.payload_partial</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Datensatz/Datensätze: Nutzdaten nur bis zu dem in der Zelle angezeigten Byte dekodiert</translation>
     </message>
     <message>
         <source>[not decoded from byte {offset:,} on]</source>
         <comment>segb.payload_stopped_marker</comment>
-        <translation type="unfinished"></translation>
+        <translation>[ab Byte {offset:,} nicht dekodiert]</translation>
     </message>
     <message>
         <source>SQL view unavailable: the temporary database could not be created: {detail}</source>
         <comment>segb.sql_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>SQL-Ansicht nicht verfügbar: Die temporäre Datenbank konnte nicht erstellt werden: {detail}</translation>
     </message>
     <message>
         <source>the record&apos;s position in the order the reader returned the records</source>
         <comment>segb.derived_index</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Position des Datensatzes in der Reihenfolge, in der der Reader die Datensätze geliefert hat</translation>
     </message>
     <message>
         <source>file offset of the record&apos;s payload, right after its 32-byte record header</source>
         <comment>segb.derived_offset_v1</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datei-Offset der Nutzdaten des Datensatzes, direkt nach seinem 32-Byte-Datensatz-Header</translation>
     </message>
     <message>
         <source>file offset of the record&apos;s entry, i.e. of its stored CRC</source>
         <comment>segb.derived_offset_v2</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datei-Offset des Eintrags des Datensatzes, d. h. seiner gespeicherten CRC</translation>
     </message>
     <message>
         <source>file offset of the record&apos;s trailer entry</source>
         <comment>segb.derived_trailer_offset</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datei-Offset des Trailer-Eintrags des Datensatzes</translation>
     </message>
     <message>
         <source>CRC32 that Crush computed over the payload</source>
         <comment>segb.derived_crc_calc</comment>
-        <translation type="unfinished"></translation>
+        <translation>Von Crush über die Nutzdaten berechnete CRC32</translation>
     </message>
     <message>
         <source>whether CRC Stored equals CRC Calc</source>
         <comment>segb.derived_crc_passed</comment>
-        <translation type="unfinished"></translation>
+        <translation>ob CRC Stored mit CRC Calc übereinstimmt</translation>
     </message>
     <message>
         <source>SEGB v2 stores no payload length; computed from the trailer&apos;s entry end offsets</source>
         <comment>segb.derived_payload_size_v2</comment>
-        <translation type="unfinished"></translation>
+        <translation>SEGB v2 speichert keine Nutzdatenlänge; berechnet aus den End-Offsets der Einträge im Trailer</translation>
     </message>
     <message>
         <source>{detail}</source>
         <comment>hexfallback.read_error</comment>
-        <translation type="unfinished"></translation>
+        <translation>{detail}</translation>
     </message>
     <message>
         <source>Not identified (no signature in the format database matched)</source>
         <comment>hexfallback.not_identified</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht identifiziert (keine Signatur in der Formatdatenbank hat gepasst)</translation>
     </message>
     <message>
         <source>Identification failed: {detail}</source>
         <comment>hexfallback.identify_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Identifizierung fehlgeschlagen: {detail}</translation>
     </message>
     <message>
         <source>Supported — not detected from content; use Open as → {name}</source>
         <comment>hexfallback.parser_open_as</comment>
-        <translation type="unfinished"></translation>
+        <translation>Unterstützt — nicht anhand des Inhalts erkannt; „Öffnen als → {name}“ verwenden</translation>
     </message>
     <message>
         <source>Supported as a browsable source — right-click → Open in New Window</source>
         <comment>hexfallback.parser_source</comment>
-        <translation type="unfinished"></translation>
+        <translation>Als durchsuchbare Quelle unterstützt — Rechtsklick → „In neuem Fenster öffnen“</translation>
     </message>
     <message>
         <source>Supported for the whole LevelDB folder — select the folder, not a single file</source>
         <comment>hexfallback.parser_folder</comment>
-        <translation type="unfinished"></translation>
+        <translation>Für den gesamten LevelDB-Ordner unterstützt — den Ordner auswählen, nicht eine einzelne Datei</translation>
     </message>
     <message>
         <source>Supported in Multi-Log Studio — right-click → Open in Multi-Log Studio</source>
         <comment>hexfallback.parser_logs</comment>
-        <translation type="unfinished"></translation>
+        <translation>In Multi-Log Studio unterstützt — Rechtsklick → „In Multi-Log Studio öffnen“</translation>
     </message>
     <message>
         <source>A parser exists for this format, but this file&apos;s content did not match it</source>
         <comment>hexfallback.parser_mismatch</comment>
-        <translation type="unfinished"></translation>
+        <translation>Für dieses Format gibt es einen Parser, aber der Inhalt dieser Datei passt nicht dazu</translation>
     </message>
     <message>
         <source>Not yet supported</source>
         <comment>hexfallback.parser_none</comment>
-        <translation type="unfinished">Noch nicht unterstützt</translation>
+        <translation>Noch nicht unterstützt</translation>
     </message>
     <message>
         <source>The database file could not be read: {detail}</source>
         <comment>sqlite_scan.file_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Datenbankdatei konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Reading stopped at page {page:,}: {detail}; later pages were not scanned</source>
         <comment>sqlite_scan.read_stopped</comment>
-        <translation type="unfinished"></translation>
+        <translation>Lesen bei Page {page:,} abgebrochen: {detail}; spätere Pages wurden nicht durchsucht</translation>
     </message>
     <message>
         <source>Page {page:,} holds only {size:,} of {page_size:,} bytes (file ends) and was not scanned</source>
         <comment>sqlite_scan.page_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page {page:,} enthält nur {size:,} von {page_size:,} Bytes (Dateiende) und wurde nicht durchsucht</translation>
     </message>
     <message>
         <source>Page {page}: {count:,} of {total:,} cell(s) could not be decoded and are not shown</source>
         <comment>sqlite_page.cells_skipped</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page {page}: {count:,} von {total:,} Zelle(n) konnten nicht dekodiert werden und werden nicht angezeigt</translation>
     </message>
     <message>
         <source>Page 1 (the database header) could not be read, so the freelist could not be located</source>
         <comment>freelist.header_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page 1 (der Datenbank-Header) konnte nicht gelesen werden, daher konnte die Freelist nicht gefunden werden</translation>
     </message>
     <message>
         <source>The database header records no freelist pages</source>
         <comment>freelist.none</comment>
-        <translation type="unfinished"></translation>
+        <translation>Der Datenbank-Header verzeichnet keine Freelist-Pages</translation>
     </message>
     <message>
         <source>Freelist trunk page {page:,} could not be read; the rest of the chain was not followed</source>
         <comment>freelist.trunk_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Freelist-Trunk-Page {page:,} konnte nicht gelesen werden; der Rest der Kette wurde nicht weiter gelesen</translation>
     </message>
     <message>
         <source>The freelist chain returns to page {page:,} (a cycle); stopped there</source>
         <comment>freelist.cycle</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Freelist-Kette kehrt zu Page {page:,} zurück (ein Zyklus); dort abgebrochen</translation>
     </message>
     <message>
         <source>The freelist chain holds more pages than the {declared:,} the header declares; stopped there</source>
         <comment>freelist.over_count</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Freelist-Kette enthält mehr Pages als die {declared:,}, die der Header angibt; dort abgebrochen</translation>
     </message>
     <message>
         <source>Trunk page {page:,} declares {declared:,} leaf pages, but only {fits:,} fit on a page; {fits:,} were read</source>
         <comment>freelist.leaf_count_clamped</comment>
-        <translation type="unfinished"></translation>
+        <translation>Trunk-Page {page:,} gibt {declared:,} Leaf-Pages an, aber nur {fits:,} passen auf eine Page; {fits:,} wurden gelesen</translation>
     </message>
     <message>
         <source>{pages:,} freelist page(s) walked ({trunks:,} trunk, {leaves:,} leaf): {carved:,} still hold table rows, {empty:,} are table-leaf pages without cells, {not_leaf:,} no longer hold a table-leaf page (zeroed or reused), {unreadable:,} could not be read</source>
         <comment>freelist.summary</comment>
-        <translation type="unfinished"></translation>
+        <translation>{pages:,} Freelist-Page(s) durchlaufen ({trunks:,} Trunk, {leaves:,} Leaf): {carved:,} enthalten noch Tabellenzeilen, {empty:,} sind Table-Leaf-Pages ohne Zellen, {not_leaf:,} enthalten keine Table-Leaf-Page mehr (genullt oder wiederverwendet), {unreadable:,} konnten nicht gelesen werden</translation>
     </message>
     <message>
         <source>Page {page:,}: the freeblock chain points to offset {offset:,}, outside the page; stopped there</source>
         <comment>freeblock.ptr_outside</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page {page:,}: Die Freeblock-Kette zeigt auf Offset {offset:,}, außerhalb der Page; dort abgebrochen</translation>
     </message>
     <message>
         <source>Page {page:,}: freeblock at offset {offset:,} declares {size} B, below the 4-byte minimum; the chain stopped there</source>
         <comment>freeblock.too_small</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page {page:,}: Freeblock bei Offset {offset:,} gibt {size} B an, weniger als das Minimum von 4 Bytes; die Kette wurde dort abgebrochen</translation>
     </message>
     <message>
         <source>Page {page:,}: freeblock at offset {offset:,} declares {size:,} B, but only {available:,} fit on the page; shown up to the page end</source>
         <comment>freeblock.overruns_page</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page {page:,}: Freeblock bei Offset {offset:,} gibt {size:,} B an, aber nur {available:,} passen auf die Page; bis zum Page-Ende angezeigt</translation>
     </message>
     <message>
         <source>Page {page:,}: the cell content area starts at {start:,}, beyond the page; its unallocated gap was not read</source>
         <comment>unallocated.bad_content_start</comment>
-        <translation type="unfinished"></translation>
+        <translation>Page {page:,}: Die Cell Content Area beginnt bei {start:,}, hinter dem Ende der Page; der Unallocated-Bereich davor wurde nicht gelesen</translation>
     </message>
     <message>
         <source>Table attribution unavailable: the schema could not be read: {detail}</source>
         <comment>sqlite_wal.table_map_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Tabellenzuordnung nicht verfügbar: Das Schema konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Table attribution incomplete: the database file could not be read ({detail}); only pages in the -wal file were attributed</source>
         <comment>sqlite_wal.table_map_no_file</comment>
-        <translation type="unfinished"></translation>
+        <translation>Tabellenzuordnung unvollständig: Die Datenbankdatei konnte nicht gelesen werden ({detail}); nur Pages in der -wal-Datei wurden zugeordnet</translation>
     </message>
     <message>
         <source>The {file} could not be read; its strings are not listed: {detail}</source>
         <comment>strings.file_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file} konnte nicht gelesen werden; Zeichenketten daraus werden nicht aufgelistet: {detail}</translation>
     </message>
     <message>
         <source>No Realm file header: the strings are listed, but no region is attributed</source>
         <comment>realm_strings.header_not_detected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein Realm-Datei-Header: Die Zeichenketten werden aufgelistet, aber keinem Bereich zugeordnet</translation>
     </message>
     <message>
         <source>The file is in streaming form, but its footer doesn&apos;t resolve a top reference: no array is attributed</source>
         <comment>realm_strings.footer_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Datei liegt in Streaming-Form vor, aber ihr Footer löst keine Top-Ref auf: Kein Array wird zugeordnet</translation>
     </message>
     <message>
         <source>{count} reference(s) lead to no array and were not followed; what they would reach is listed as not reached</source>
         <comment>realm_strings.refs_not_followed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} Verweis(e) zeigen auf kein Array und wurden nicht aufgelöst; was darüber erreichbar wäre, ist als nicht erreicht aufgeführt</translation>
     </message>
     <message>
         <source>The {file} is empty (0 B)</source>
         <comment>strings.file_empty</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file} ist leer (0 B)</translation>
     </message>
     <message>
         <source>The db file has no valid SQLite header page size; its strings are listed without page attribution</source>
         <comment>strings.no_page_size</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die DB-Datei hat keine gültige Page-Größe im SQLite-Header; ihre Zeichenketten werden ohne Page-Zuordnung aufgelistet</translation>
     </message>
     <message>
         <source>The -wal file has no valid WAL header; its strings are listed without frame attribution</source>
         <comment>strings.wal_no_header</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die -wal-Datei hat keinen gültigen WAL-Header; ihre Zeichenketten werden ohne Frame-Zuordnung aufgelistet</translation>
     </message>
     <message>
         <source>The -journal file has no valid journal header ({reason}); its strings are listed without record attribution</source>
         <comment>strings.journal_no_header</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die -journal-Datei hat keinen gültigen Journal-Header ({reason}); ihre Zeichenketten werden ohne Datensatz-Zuordnung aufgelistet</translation>
     </message>
     <message>
         <source>{file}: a b-tree points to page {page:,}, outside the {pages:,} pages; not followed</source>
         <comment>strings.child_out_of_range</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file}: Ein B-Tree verweist auf Page {page:,}, außerhalb der {pages:,} Pages; Verweis nicht aufgelöst</translation>
     </message>
     <message>
         <source>{file}: an overflow chain from page {page:,} leads to page {target:,}, outside the database or already part of a chain; not followed further, later pages of that chain are not labelled as overflow</source>
         <comment>strings.overflow_chain_stopped</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file}: Eine Overflow-Kette ab Page {page:,} führt zu Page {target:,}, die außerhalb der Datenbank liegt oder bereits Teil einer Kette ist; die Kette wurde hier nicht weiter gelesen, spätere Pages dieser Kette sind nicht als Overflow gekennzeichnet</translation>
     </message>
     <message>
         <source>{file}, page {page:,}: the freeblock chain is inconsistent at offset {offset:,}; later freeblocks on this page are labelled as cell content area</source>
         <comment>strings.freeblock_chain_stopped</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file}, Page {page:,}: Die Freeblock-Kette ist bei Offset {offset:,} inkonsistent; spätere Freeblocks auf dieser Page sind als Cell Content Area gekennzeichnet</translation>
     </message>
     <message>
         <source>page size unavailable</source>
         <comment>sqlite_structure.page_size_unavailable</comment>
-        <translation type="unfinished">Seitengröße nicht verfügbar</translation>
+        <translation>Page-Größe nicht verfügbar</translation>
     </message>
     <message>
         <source>file unavailable</source>
         <comment>sqlite_structure.file_unavailable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datei nicht verfügbar</translation>
     </message>
     <message>
         <source>none/non-empty bytes not found</source>
         <comment>sqlite_structure.no_unallocated</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine/keine nicht leeren Bytes gefunden</translation>
     </message>
     <message>
         <source>could not be read (read error or file ends)</source>
         <comment>sqlite_structure.page_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht gelesen werden (Lesefehler oder Dateiende)</translation>
     </message>
     <message>
         <source>{problems}</source>
         <comment>sqlite_structure.cells_not_shown</comment>
-        <translation type="unfinished"></translation>
+        <translation>{problems}</translation>
     </message>
     <message>
         <source>Not detected (possibly encrypted or non-standard)</source>
         <comment>realm_structure.header_not_detected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht erkannt (möglicherweise verschlüsselt oder nicht standardkonform)</translation>
     </message>
     <message>
         <source>Unresolved -- no valid active top reference</source>
         <comment>realm_structure.top_unresolved</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht aufgelöst -- keine valide aktive top reference</translation>
     </message>
     <message>
         <source>Unreadable at offset 0x{offset:x}</source>
         <comment>realm_structure.top_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht lesbar bei Offset 0x{offset:x}</translation>
     </message>
     <message>
         <source>unresolved</source>
         <comment>realm_structure.ref_unresolved</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht aufgelöst</translation>
     </message>
     <message>
         <source>Table reference is invalid or points outside the file</source>
         <comment>realm_structure.table_ref_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Tabellenverweis ist ungültig oder zeigt auf eine Stelle außerhalb der Datei</translation>
     </message>
     <message>
         <source>Table top array is malformed or unreadable</source>
         <comment>realm_structure.table_top_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Top-Array der Tabelle ist fehlerhaft oder nicht lesbar</translation>
     </message>
     <message>
         <source>(no columns)</source>
         <comment>realm_structure.no_columns</comment>
-        <translation type="unfinished"></translation>
+        <translation>(keine Spalten)</translation>
     </message>
     <message>
         <source>Table top array is missing its ClusterTree slot</source>
         <comment>realm_structure.no_cluster_tree_slot</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dem Top-Array der Tabelle fehlt der ClusterTree-Slot</translation>
     </message>
     <message>
         <source>ClusterTree reference is invalid or points outside the file</source>
         <comment>realm_structure.cluster_tree_ref_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>ClusterTree-Verweis ist ungültig oder zeigt auf eine Stelle außerhalb der Datei</translation>
     </message>
     <message>
         <source>No byte range for this cell: {reason}</source>
         <comment>locate.no_range</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein Byte-Bereich für diese Zelle: {reason}</translation>
     </message>
     <message>
         <source>the decoder recorded none for it</source>
         <comment>locate.not_recorded</comment>
-        <translation type="unfinished"></translation>
+        <translation>der Decoder hat keinen dafür erfasst</translation>
     </message>
     <message>
         <source>the record&apos;s offsets could not be read ({detail})</source>
         <comment>locate.segb_record_offsets</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Offsets des Datensatzes konnten nicht gelesen werden ({detail})</translation>
     </message>
     <message>
         <source>{notes}</source>
         <comment>common.notes</comment>
-        <translation type="unfinished"></translation>
+        <translation>{notes}</translation>
     </message>
     <message>
         <source>ZIP archive is password-protected: {path}</source>
         <comment>password.zip_required</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP-Archiv ist passwortgeschützt: {path}</translation>
     </message>
     <message>
         <source>Incorrect ZIP archive password</source>
         <comment>password.zip_wrong</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falsches Passwort für das ZIP-Archiv</translation>
     </message>
     <message>
         <source>7z archive is password-protected: {path}</source>
         <comment>password.7z_required</comment>
-        <translation type="unfinished"></translation>
+        <translation>7z-Archiv is passwortgeschützt: {path}</translation>
     </message>
     <message>
         <source>Incorrect 7z archive password</source>
         <comment>password.7z_wrong</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falsches Passwort für das 7z-Archiv</translation>
     </message>
     <message>
         <source>Android backup is password-protected: {path}</source>
         <comment>password.ab_required</comment>
-        <translation type="unfinished"></translation>
+        <translation>Android Backup ist passwortgeschützt: {path}</translation>
     </message>
     <message>
         <source>Incorrect Android backup password</source>
         <comment>password.ab_wrong</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falsches Passwort für das Android-Backup</translation>
     </message>
     <message>
         <source>Payload padding invalid after decryption (wrong password?)</source>
         <comment>password.ab_padding</comment>
-        <translation type="unfinished"></translation>
+        <translation>Padding der Nutzdaten nach der Entschlüsselung ungültig (falsches Passwort?)</translation>
     </message>
     <message>
         <source>iTunes backup is password-protected: {path}</source>
         <comment>password.itunes_required</comment>
-        <translation type="unfinished"></translation>
+        <translation>iTunes-Backup ist passwortgeschützt: {path}</translation>
     </message>
     <message>
         <source>Incorrect backup password</source>
         <comment>password.itunes_wrong</comment>
-        <translation type="unfinished"></translation>
+        <translation>Falsches Backup-Passwort</translation>
     </message>
     <message>
         <source>Padding invalid after decryption (wrong password?)</source>
         <comment>password.itunes_padding</comment>
-        <translation type="unfinished"></translation>
+        <translation>Padding nach der Entschlüsselung ungültig (falsches Passwort?)</translation>
     </message>
     <message>
         <source>Backup keybag has no usable class key for class {class_num}</source>
         <comment>password.itunes_no_class_key</comment>
-        <translation type="unfinished"></translation>
+        <translation>Backup-Keybag enthält keinen verwendbaren Class Key für Klasse {class_num}</translation>
     </message>
     <message>
         <source>Disk image is encrypted: {path} — {detail}</source>
         <comment>password.image_required</comment>
-        <translation type="unfinished"></translation>
+        <translation>Disk-Image ist verschlüsselt: {path} — {detail}</translation>
     </message>
     <message>
         <source>The password does not open this disk image — {detail}</source>
         <comment>password.image_wrong</comment>
-        <translation type="unfinished"></translation>
+        <translation>Das Passwort öffnet dieses Disk-Image nicht — {detail}</translation>
     </message>
     <message>
         <source>Disk image is sealed to a certificate and opens with its private key: {path} — {detail}</source>
         <comment>password.image_key_required</comment>
-        <translation type="unfinished"></translation>
+        <translation>Disk-Image ist an ein Zertifikat gebunden verschlüsselt und lässt sich mit dessen privatem Schlüssel öffnen: {path} — {detail}</translation>
     </message>
     <message>
         <source>The private key does not open this disk image — {detail}</source>
         <comment>password.image_wrong_key</comment>
-        <translation type="unfinished"></translation>
+        <translation>Der private Schlüssel öffnet dieses Disk-Image nicht — {detail}</translation>
     </message>
     <message>
         <source>Not a valid hex key: {detail}</source>
         <comment>password.realm_not_hex</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein gültiger Hex-Schlüssel: {detail}</translation>
     </message>
     <message>
         <source>Realm encryption key must be {size} bytes ({hex_chars} hex characters) — got {got} bytes</source>
         <comment>password.realm_key_length</comment>
-        <translation type="unfinished"></translation>
+        <translation>Realm-Verschlüsselungsschlüssel muss {size} Bytes ({hex_chars} Hex-Zeichen) lang sein — erhalten: {got} Bytes</translation>
     </message>
     <message>
         <source>Realm encryption key must be {size} bytes</source>
         <comment>password.realm_key_size</comment>
-        <translation type="unfinished"></translation>
+        <translation>Realm-Verschlüsselungsschlüssel muss {size} Bytes lang sein</translation>
     </message>
     <message>
         <source>HMAC mismatch decrypting Realm file (wrong key, or the file is corrupt)</source>
         <comment>password.realm_hmac</comment>
-        <translation type="unfinished"></translation>
+        <translation>HMAC stimmt beim Entschlüsseln der Realm-Datei nicht überein (falscher Schlüssel oder beschädigte Datei)</translation>
     </message>
     <message>
         <source>Unsupported Android backup encryption: {value}</source>
         <comment>vfs.ab_unsupported_encryption</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht unterstützte Android Backup Verschlüsselung: {value}</translation>
     </message>
     <message>
         <source>Not an Android backup: {path}</source>
         <comment>vfs.ab_not_backup</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein Android-Backup: {path}</translation>
     </message>
     <message>
         <source>Named {suffix}, but no {label} signature found</source>
         <comment>vfs.named_but_not</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benannt als {suffix}, aber keine {label}-Signatur gefunden</translation>
     </message>
     <message>
         <source>Contains a ZIP archive after {leading:,} leading bytes — right-click → Open in New Window to browse it</source>
         <comment>vfs.contains_zip_after</comment>
-        <translation type="unfinished"></translation>
+        <translation>Enthält ein ZIP-Archiv nach {leading:,} vorangestellten Bytes — Rechtsklick → „In neuem Fenster öffnen“, um es zu durchsuchen</translation>
     </message>
     <message>
         <source>ZIP archive opened after {leading:,} leading bytes</source>
         <comment>vfs.zip_opened_after</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP Archive nach {leading:,} vorangestellen Bytes geöffnet</translation>
     </message>
     <message>
         <source>UFDR layout found, but not opened as UFDR ({detail}); shown as plain ZIP</source>
         <comment>vfs.ufdr_as_zip</comment>
-        <translation type="unfinished"></translation>
+        <translation>UFDR-Layout erkannt, aber nicht als UFDR geöffnet ({detail}); als ZIP geöffnet</translation>
     </message>
     <message>
         <source>ZIP signature found, but not opened as ZIP — {detail}</source>
         <comment>vfs.zip_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP-Signatur gefunden, aber nicht als ZIP geöffnet — {detail}</translation>
     </message>
     <message>
         <source>7z signature found, but not opened as 7z — {detail}</source>
         <comment>vfs.7z_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>7z-Signatur gefunden, aber nicht als 7z geöffnet — {detail}</translation>
     </message>
     <message>
         <source>TAR signature found</source>
         <comment>vfs.tar_signature_found</comment>
-        <translation type="unfinished"></translation>
+        <translation>TAR-Signatur gefunden</translation>
     </message>
     <message>
         <source>Compressed TAR found</source>
         <comment>vfs.compressed_tar_found</comment>
-        <translation type="unfinished"></translation>
+        <translation>Komprimiertes TAR gefunden</translation>
     </message>
     <message>
         <source>Named {suffix}</source>
         <comment>vfs.named_as</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benannt als {suffix}</translation>
     </message>
     <message>
         <source>{what}, but not opened as TAR — {detail}</source>
         <comment>vfs.tar_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>{what}, aber nicht als TAR geöffnet — {detail}</translation>
     </message>
     <message>
         <source>Not opened as a disk image — {detail}</source>
         <comment>vfs.not_disk_image</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht als Disk-Image geöffnet — {detail}</translation>
     </message>
     <message>
         <source>Opened as a single file; its {what} suggests a disk image — use Open Disk Image… to read it as one</source>
         <comment>vfs.disk_image_hint</comment>
-        <translation type="unfinished"></translation>
+        <translation>Als einzelne Datei geöffnet; {what} deutet auf ein Disk-Image hin — mit „Disk-Image öffnen…“ als solches lesen</translation>
     </message>
     <message>
         <source>name</source>
         <comment>vfs.disk_image_hint_name</comment>
-        <translation type="unfinished"></translation>
+        <translation>ihr Name</translation>
     </message>
     <message>
         <source>signature of a disk image container (forensic acquisition, Apple disk image or virtual disk)</source>
         <comment>vfs.disk_image_hint_acquisition</comment>
-        <translation type="unfinished"></translation>
+        <translation>ihre Signatur (die eines Disk-Image-Containers: forensische Akquisition, Apple-Disk-Image oder virtuelle Disk)</translation>
     </message>
     <message>
         <source>content ({label} container)</source>
         <comment>vfs.disk_image_hint_container</comment>
-        <translation type="unfinished"></translation>
+        <translation>ihr Inhalt ({label}-Container)</translation>
     </message>
     <message>
         <source>content (FTK Imager AD-encrypted: a disk image or AD1 logical evidence)</source>
         <comment>vfs.disk_image_hint_ad_encrypted</comment>
-        <translation type="unfinished"></translation>
+        <translation>ihr Inhalt (FTK Imager AD-verschlüsselt: ein Disk-Image oder logische AD1-Beweisdaten)</translation>
     </message>
     <message>
         <source>Opened as a single file: it is encrypted with FTK Imager&apos;s AD encryption and holds a disk image or AD1 logical evidence, which shows once it is opened — use Open Disk Image… to open it with its password or key</source>
         <comment>vfs.ad_encrypted_hint</comment>
-        <translation type="unfinished"></translation>
+        <translation>Als einzelne Datei geöffnet: Sie ist mit der AD-Verschlüsselung von FTK Imager verschlüsselt und enthält ein Disk-Image oder logische AD1-Beweisdaten, was sich nach dem Öffnen zeigt — mit „Disk-Image öffnen…“ mit Passwort oder Schlüssel öffnen</translation>
     </message>
     <message>
         <source>folder (a file of the Apple sparse bundle {bundle})</source>
         <comment>vfs.disk_image_hint_bundle</comment>
-        <translation type="unfinished"></translation>
+        <translation>ihr Ordner (eine Datei des Apple Sparse Bundles {bundle})</translation>
     </message>
     <message>
         <source>Opened as a single file: it is EnCase Lx01 logical evidence, which Crush doesn&apos;t read (L01 and FTK Imager AD1 logical evidence open as sources of their own)</source>
         <comment>vfs.logical_evidence</comment>
-        <translation type="unfinished"></translation>
+        <translation>Als einzelne Datei geöffnet: Es handelt sich um logische Beweisdaten im EnCase-Lx01-Format, die Crush nicht liest (logische Beweisdaten in L01 und FTK Imager AD1 werden als eigene Quellen geöffnet)</translation>
     </message>
     <message>
         <source>Logical evidence (L01/AD1) signature found, but not opened as logical evidence — {detail}</source>
         <comment>vfs.logical_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>Signatur logischer Beweisdaten (L01/AD1) gefunden, aber nicht als logische Beweisdaten geöffnet — {detail}</translation>
     </message>
     <message>
         <source>Apple sparse bundle shown as the folder it is stored in (its band files and bookkeeping) — open it as a disk image, or use Open Disk Image… on any of its files, to read the disk it holds</source>
         <comment>vfs.sparse_bundle_folder</comment>
-        <translation type="unfinished"></translation>
+        <translation>Apple Sparse Bundle, dargestellt als der Ordner, in dem es gespeichert ist (seine Band-Dateien und Verwaltungsdateien) – um die darin enthaltene Disk zu lesen, es als Disk-Image öffnen oder „Disk-Image öffnen…“ auf eine seiner Dateien anwenden</translation>
     </message>
     <message>
         <source>{file} is a file of the Apple sparse bundle {bundle}: the whole bundle was opened</source>
         <comment>vfs.sparse_bundle_from_member</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file} ist eine Datei des Apple Sparse Bundles {bundle}: Das gesamte Bundle wurde geöffnet</translation>
     </message>
     <message>
         <source>AFF4 container shown as the ZIP archive it is stored in (its streams, maps and metadata) — use Open Disk Image… to read the disk it holds</source>
         <comment>vfs.aff4_as_zip</comment>
-        <translation type="unfinished"></translation>
+        <translation>AFF4-Container, dargestellt als das ZIP-Archiv, in dem er gespeichert ist (seine Streams, Maps und Metadaten) – um die darin enthaltene Disk zu lesen, „Disk-Image öffnen…“ verwenden</translation>
     </message>
     <message>
         <source>Read as {detail}</source>
         <comment>vfs.image_container</comment>
-        <translation type="unfinished"></translation>
+        <translation>Gelesen als {detail}</translation>
     </message>
     <message>
         <source>{count} pages of this acquisition are not in its files; they read as the image&apos;s bad-sector marker, not as data from the device</source>
         <comment>vfs.acquisition_missing_pages</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} Pages dieser Akquisition sind nicht in ihren Dateien enthalten; sie werden als Bad-Sector-Markierung des Images gelesen, nicht als Daten vom Gerät</translation>
     </message>
     <message>
         <source>Crush does not prevent access-time updates on this platform; mount the evidence read-only to prevent them</source>
         <comment>vfs.atime_platform</comment>
-        <translation type="unfinished"></translation>
+        <translation>Crush verhindert auf dieser Plattform keine Aktualisierung der Zugriffszeitstempel; Beweismittel schreibgeschützt einhängen, um dies zu verhindern</translation>
     </message>
     <message>
         <source>{count:,} file(s) are not owned by the current user, so Crush can&apos;t read them with O_NOATIME: reading them may update their access time (mount the evidence read-only to prevent this)</source>
         <comment>vfs.atime_not_owned</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Datei(en) gehören nicht dem aktuellen Benutzer, daher kann Crush sie nicht mit O_NOATIME lesen: Beim Lesen wird möglicherweise ihr Zugriffszeitstempel aktualisiert (Beweismittel schreibgeschützt einhängen, um dies zu verhindern)</translation>
     </message>
     <message>
         <source>ZIP DOS date/time (central directory)</source>
         <comment>time.zip_dos_central</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP DOS Datum/Zeit (central directory)</translation>
     </message>
     <message>
         <source>ZIP DOS date/time (local header)</source>
         <comment>time.zip_dos_local</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP DOS Datum/Zeit (local header)</translation>
     </message>
     <message>
         <source>ZIP extra field {name} ({id}, central directory)</source>
         <comment>time.zip_extra_central</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP-Extrafeld {name} ({id}, central directory)</translation>
     </message>
     <message>
         <source>ZIP extra field {name} ({id}, local header)</source>
         <comment>time.zip_extra_local</comment>
-        <translation type="unfinished"></translation>
+        <translation>ZIP-Extrafeld {name} ({id}, local header)</translation>
     </message>
     <message>
         <source>the field holds {size} bytes, too few for its layout; no time read from it</source>
         <comment>time.zip_extra_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>das Feld umfasst {size} Bytes, zu wenige für sein Layout; daraus wurde keine Zeit gelesen</translation>
     </message>
     <message>
         <source>The local header&apos;s times were not read: no local file header at offset {offset}</source>
         <comment>time.zip_local_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Zeiten des Local Headers wurden nicht gelesen: kein Local File Header bei Offset {offset}</translation>
     </message>
     <message>
         <source>The local header&apos;s times were not read: {detail}</source>
         <comment>time.zip_local_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Zeiten des Local Headers wurden nicht gelesen: {detail}</translation>
     </message>
     <message>
         <source>not a valid date/time; stored words: date {date}, time {time}</source>
         <comment>time.dos_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>kein gültiges Datum/keine gültige Zeit; gespeicherte Wörter: Datum {date}, Zeit {time}</translation>
     </message>
     <message>
         <source>AD1 &quot;{name}&quot; record</source>
         <comment>time.ad1_record</comment>
-        <translation type="unfinished"></translation>
+        <translation>AD1-Datensatz „{name}“</translation>
     </message>
     <message>
         <source>L01 entry column &quot;{name}&quot;</source>
         <comment>time.l01_column</comment>
-        <translation type="unfinished"></translation>
+        <translation>L01-Eintragsspalte „{name}“</translation>
     </message>
     <message>
         <source>FAT directory entry</source>
         <comment>time.fat_entry</comment>
-        <translation type="unfinished"></translation>
+        <translation>FAT-Verzeichniseintrag</translation>
     </message>
     <message>
         <source>exFAT directory entry</source>
         <comment>time.exfat_entry</comment>
-        <translation type="unfinished"></translation>
+        <translation>exFAT-Verzeichniseintrag</translation>
     </message>
     <message>
         <source>gzip header MTIME</source>
         <comment>time.gzip_header</comment>
-        <translation type="unfinished"></translation>
+        <translation>GZIP-Header MTIME</translation>
     </message>
     <message>
         <source>stored as 0, which the gzip format (RFC 1952) defines as no time stamp</source>
         <comment>time.gzip_mtime_zero</comment>
-        <translation type="unfinished"></translation>
+        <translation>als 0 gespeichert, was das gzip-Format (RFC 1952) als „kein Zeitstempel“ definiert</translation>
     </message>
     <message>
         <source>UTC offset {offset} stored beside it, not applied</source>
         <comment>time.offset_not_applied</comment>
-        <translation type="unfinished"></translation>
+        <translation>UTC-Offset {offset} daneben gespeichert, nicht angewendet</translation>
     </message>
     <message>
         <source>Stored {count} times in this archive under this name; this is occurrence {k} of {count} (archive order)</source>
         <comment>entry.duplicate</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count}-mal unter diesem Namen in diesem Archiv gespeichert; dies ist Vorkommen {k} von {count} (Archivreihenfolge)</translation>
     </message>
     <message>
         <source>Symbolic link → {target} (content shown is the target)</source>
         <comment>entry.symlink_target</comment>
-        <translation type="unfinished"></translation>
+        <translation>Symbolischer Link → {target} (angezeigter Inhalt ist das Ziel)</translation>
     </message>
     <message>
         <source>Symbolic link (content shown is the stored link target)</source>
         <comment>entry.symlink_stored_target</comment>
-        <translation type="unfinished"></translation>
+        <translation>Symbolischer Link (angezeigter Inhalt ist das gespeicherte Link-Ziel)</translation>
     </message>
     <message>
         <source>Symbolic link → {target} (not followed; content shown is the target)</source>
         <comment>entry.symlink_folder</comment>
-        <translation type="unfinished"></translation>
+        <translation>Symbolischer Link → {target} (nicht aufgelöst; angezeigter Inhalt ist das Ziel)</translation>
     </message>
     <message>
         <source>Symbolic link (not followed); its target could not be read: {detail}</source>
         <comment>entry.symlink_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Symbolischer Link (nicht aufgelöst); sein Ziel konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Symbolic link (the backup records no target for it)</source>
         <comment>entry.symlink_no_target</comment>
-        <translation type="unfinished"></translation>
+        <translation>Symbolischer Link (das Backup verzeichnet kein Ziel dafür)</translation>
     </message>
     <message>
         <source>Symbolic link — its target/content is not decoded by the filesystem reader</source>
         <comment>entry.symlink_raw</comment>
-        <translation type="unfinished"></translation>
+        <translation>Symbolischer Link — sein Ziel/Inhalt wird vom Dateisystem-Reader nicht dekodiert</translation>
     </message>
     <message>
         <source>Hard link to {target}</source>
         <comment>entry.hard_link</comment>
-        <translation type="unfinished"></translation>
+        <translation>Hardlink auf {target}</translation>
     </message>
     <message>
         <source>Named stream of {owner} — not part of its size or content</source>
         <comment>entry.stream</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benannter Stream von {owner} — nicht Teil seiner Größe oder seines Inhalts</translation>
     </message>
     <message>
         <source>Named stream of {owner} — read from its first stored cluster: the {skipped} bytes of hole before it (recorded size {recorded} bytes) are not included, so an offset here is {skipped} bytes less than in the stream</source>
         <comment>entry.stream_front_hole</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benannter Stream von {owner} — ab seinem ersten gespeicherten Cluster gelesen: Die {skipped} Bytes Hole davor (erfasste Größe {recorded} Bytes) sind nicht enthalten, daher ist ein Offset hier um {skipped} Bytes kleiner als im Stream</translation>
     </message>
     <message>
         <source>Named stream of {owner} — recorded size {recorded} bytes, all of it hole: nothing is stored</source>
         <comment>entry.stream_nothing_stored</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benannter Stream von {owner} — erfasste Größe {recorded} Bytes, vollständig Hole: nichts gespeichert</translation>
     </message>
     <message>
         <source>Named stream of {owner} — recorded size {recorded} bytes; its content is not read (the filesystem reader lists it but has no reader for it)</source>
         <comment>entry.stream_no_reader</comment>
-        <translation type="unfinished"></translation>
+        <translation>Benannter Stream von {owner} — erfasste Größe {recorded} Bytes; sein Inhalt wird nicht gelesen (der Dateisystem-Reader listet ihn auf, hat aber keinen Reader dafür)</translation>
     </message>
     <message>
         <source>The named streams of this entry could not be listed — {detail}</source>
         <comment>entry.streams_unlisted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die benannten Streams dieses Eintrags konnten nicht aufgelistet werden — {detail}</translation>
     </message>
     <message>
         <source>Special file ({kind}) — no content stored</source>
         <comment>entry.special_stored</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spezialdatei ({kind}) — kein Inhalt gespeichert</translation>
     </message>
     <message>
         <source>Special file ({kind}) — no content is read</source>
         <comment>entry.special_not_read</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spezialdatei ({kind}) — es wird kein Inhalt gelesen</translation>
     </message>
     <message>
         <source>Special file (mode {mode}) — no content</source>
         <comment>entry.special_raw</comment>
-        <translation type="unfinished"></translation>
+        <translation>Spezialdatei (Modus {mode}) — kein Inhalt</translation>
     </message>
     <message>
         <source>Could not be read: {detail}</source>
         <comment>entry.unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Folder could not be listed: {detail}</source>
         <comment>entry.folder_unlisted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ordner konnte nicht aufgelistet werden: {detail}</translation>
     </message>
     <message>
         <source>No content stored in the backup for this entry (fileID {file_id})</source>
         <comment>entry.no_backup_content</comment>
-        <translation type="unfinished"></translation>
+        <translation>Für diesen Eintrag ist im Backup kein Inhalt gespeichert (fileID {file_id})</translation>
     </message>
     <message>
         <source>Encrypted in the backup, but its file key could not be read ({detail}); the content is shown as stored (ciphertext)</source>
         <comment>entry.file_key_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Im Backup verschlüsselt, aber der Dateischlüssel konnte nicht gelesen werden ({detail}); der Inhalt wird so angezeigt, wie er gespeichert ist (Chiffretext)</translation>
     </message>
     <message>
         <source>The data the entry {name} stores itself; the entry also holds the entries beside this one, so it is shown as a folder</source>
         <comment>entry.logical_own_data</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Daten, die der Eintrag {name} selbst speichert; der Eintrag enthält auch die Einträge neben diesem, daher wird er als Ordner angezeigt</translation>
     </message>
     <message>
         <source>The stored name contains &quot;/&quot;, shown here as &quot;∕&quot; (a path separator can&apos;t be part of a name in the tree)</source>
         <comment>entry.name_has_slash</comment>
-        <translation type="unfinished"></translation>
+        <translation>Der gespeicherte Name enthält „/“, hier als „∕“ angezeigt (ein Pfadtrenner kann im Baum nicht Teil eines Namens sein)</translation>
     </message>
     <message>
         <source>Marked as deleted in the AD1 (item type 2, which FTK Imager lists as deleted)</source>
         <comment>entry.ad1_deleted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Im AD1 als gelöscht markiert (Item-Typ 2, den FTK Imager als gelöscht auflistet)</translation>
     </message>
     <message>
         <source>Marked sparse in the L01: its content is read from the data stored at its duplicate data offset</source>
         <comment>entry.l01_sparse_duplicate</comment>
-        <translation type="unfinished"></translation>
+        <translation>Im L01 als sparse markiert: Der Inhalt wird aus den Daten an seinem Duplicate Data Offset gelesen</translation>
     </message>
     <message>
         <source>Marked sparse in the L01: its content is one stored byte, repeated to its size</source>
         <comment>entry.l01_sparse_byte</comment>
-        <translation type="unfinished"></translation>
+        <translation>Im L01 als sparse markiert: Der Inhalt ist ein gespeichertes Byte, wiederholt bis zu seiner Größe</translation>
     </message>
     <message>
         <source>Not listed: nested deeper than {limit} directories (guard against a directory loop in a damaged filesystem)</source>
         <comment>entry.raw_depth</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht aufgelistet: tiefer als {limit} Verzeichnisse verschachtelt (Schutz vor einer Verzeichnisschleife in einem beschädigten Dateisystem)</translation>
     </message>
     <message>
         <source>Not listed again: this directory was already reached by another path (a directory loop in the filesystem structure)</source>
         <comment>entry.raw_loop</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht erneut aufgelistet: Dieses Verzeichnis wurde bereits über einen anderen Pfad erreicht (eine Verzeichnisschleife in der Dateisystemstruktur)</translation>
     </message>
     <message>
         <source>Directory could not be listed: {detail}</source>
         <comment>entry.raw_unlisted</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verzeichnis konnte nicht aufgelistet werden: {detail}</translation>
     </message>
     <message>
         <source>Entry metadata could not be read: {detail}</source>
         <comment>entry.raw_entry_unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Metadaten des Eintrags konnten nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Deleted files could not be enumerated: {detail}</source>
         <comment>entry.raw_deleted_enum_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Gelöschte Dateien konnten nicht aufgelistet werden: {detail}</translation>
     </message>
     <message>
         <source>recovered (content intact)</source>
         <comment>entry.recovered_intact</comment>
-        <translation type="unfinished"></translation>
+        <translation>wiederhergestellt (Inhalt intakt)</translation>
     </message>
     <message>
         <source>recovered on an assumption: the cluster chain is gone, so the content is read as one run from the first cluster, which the volume cannot confirm; a file that was fragmented reads with other data in it</source>
         <comment>entry.recovered_assumed_contiguous</comment>
-        <translation type="unfinished"></translation>
+        <translation>unter einer Annahme wiederhergestellt: Die Cluster-Kette ist nicht mehr vorhanden, daher wird der Inhalt als ein zusammenhängender Bereich ab dem ersten Cluster gelesen, was das Volume nicht bestätigen kann; eine fragmentierte Datei enthält dann fremde Daten</translation>
     </message>
     <message>
         <source>not recoverable: {detail}</source>
         <comment>entry.not_recoverable</comment>
-        <translation type="unfinished"></translation>
+        <translation>nicht wiederherstellbar: {detail}</translation>
     </message>
     <message>
         <source>recovery note: {detail}</source>
         <comment>entry.recovery_note</comment>
-        <translation type="unfinished"></translation>
+        <translation>Hinweis zur Wiederherstellung: {detail}</translation>
     </message>
     <message>
         <source>(folder no longer present)</source>
         <comment>entry.original_folder_gone</comment>
-        <translation type="unfinished"></translation>
+        <translation>(Ordner nicht länger verfügbar)</translation>
     </message>
     <message>
         <source>Filesystem reader note: {detail}</source>
         <comment>entry.raw_volume_note</comment>
-        <translation type="unfinished"></translation>
+        <translation>Hinweis des Dateisystem-Readers: {detail}</translation>
     </message>
     <message>
         <source>no reader for this content — showing raw bytes</source>
         <comment>entry.raw_no_reader</comment>
-        <translation type="unfinished"></translation>
+        <translation>kein Reader für diesen Inhalt — rohe Bytes werden angezeigt</translation>
     </message>
     <message>
         <source>volume bytes {start}–{end} at image offset {offset}</source>
         <comment>entry.raw_lvm_run</comment>
-        <translation type="unfinished"></translation>
+        <translation>Volume-Bytes {start}–{end} am Image-Offset {offset}</translation>
     </message>
     <message>
         <source>volume bytes {start}–{end} striped in {stripe}-byte stripes across image offsets {offsets}</source>
         <comment>entry.raw_lvm_stripes</comment>
-        <translation type="unfinished"></translation>
+        <translation>Volume-Bytes {start}–{end}, in {stripe}-Byte-Stripes auf die Image-Offsets {offsets} verteilt</translation>
     </message>
     <message>
         <source>{kind} volume: read from its copy {copy} only; whether its other copies hold the same data is not checked</source>
         <comment>entry.raw_lvm_copy_read</comment>
-        <translation type="unfinished"></translation>
+        <translation>{kind}-Volume: nur aus seiner Kopie {copy} gelesen; ob die anderen Kopien dieselben Daten enthalten, wird nicht geprüft</translation>
     </message>
     <message>
         <source>{raid} volume in {stripe}-byte stripes over {images} image volume(s), {missing} of them not read</source>
         <comment>entry.raw_lvm_raid</comment>
-        <translation type="unfinished"></translation>
+        <translation>{raid}-Volume mit {stripe}-Byte-Stripes über {images} Image-Volume(s), davon {missing} nicht gelesen</translation>
     </message>
     <message>
         <source>image volume {image}: its bytes {start}–{end} at image offset(s) {offsets}</source>
         <comment>entry.raw_lvm_raid_image_run</comment>
-        <translation type="unfinished"></translation>
+        <translation>Image-Volume {image}: seine Bytes {start}–{end} an Image-Offset(s) {offsets}</translation>
     </message>
     <message>
         <source>image volume {image}: not read (missing, or marked as not to be read); its bytes are read from another copy or rebuilt from parity</source>
         <comment>entry.raw_lvm_raid_image_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Image-Volume {image}: nicht gelesen (fehlt oder ist als nicht zu lesen markiert); seine Bytes werden aus einer anderen Kopie gelesen oder aus der Parität rekonstruiert</translation>
     </message>
     <message>
         <source>{count} damaged structure(s) recorded and skipped while the volume was listed, first: {first}</source>
         <comment>entry.raw_volume_damage</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} beschädigte Struktur(en) beim Auflisten des Volumes erfasst und übersprungen, erste: {first}</translation>
     </message>
     <message>
         <source>{bytes} bytes of this volume lie past the end of the image: the image holds only part of it</source>
         <comment>entry.raw_volume_past_end</comment>
-        <translation type="unfinished"></translation>
+        <translation>{bytes} Bytes dieses Volumes liegen hinter dem Ende des Images: das Image enthält es nur teilweise</translation>
     </message>
     <message>
         <source>keyslot {slot}: {type}, {memory} MiB of memory, {time} iteration(s), {cpus} thread(s)</source>
         <comment>entry.raw_luks_argon2</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keyslot {slot}: {type}, {memory} MiB Speicher, {time} Iteration(en), {cpus} Thread(s)</translation>
     </message>
     <message>
         <source>keyslot {slot}: PBKDF2-{hash}, {iterations} iterations</source>
         <comment>entry.raw_luks_pbkdf2</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keyslot {slot}: PBKDF2-{hash}, {iterations} Iterationen</translation>
     </message>
     <message>
         <source>Not determined — the signature bytes don&apos;t single out one of: {candidates}; no format knowledge shown</source>
         <comment>entry.format_not_singled_out</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht bestimmt — die Signatur-Bytes lassen keine eindeutige Wahl zwischen: {candidates}; kein Formatwissen angezeigt</translation>
     </message>
     <message>
         <source>(not recorded)</source>
         <comment>ufdr.not_recorded</comment>
-        <translation type="unfinished"></translation>
+        <translation>(nicht erfasst)</translation>
     </message>
     <message>
         <source>(not recorded)</source>
         <comment>logical.not_recorded</comment>
-        <translation type="unfinished"></translation>
+        <translation>(nicht erfasst)</translation>
     </message>
     <message>
         <source>not located in container</source>
         <comment>ufdr.not_located</comment>
-        <translation type="unfinished"></translation>
+        <translation>im Container nicht gefunden</translation>
     </message>
     <message>
         <source>Not a readable UFDR container -- if this was exported as multiple parts, rejoin them first; segmented UFDR exports aren&apos;t supported yet.</source>
         <comment>ufdr.not_readable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein lesbarer UFDR-Container -- falls er in mehreren Teilen exportiert wurde, diese zuerst wieder zusammenfügen; segmentierte UFDR-Exporte werden noch nicht unterstützt.</translation>
     </message>
     <message>
         <source>Not a UFDR container -- missing {members}</source>
         <comment>ufdr.missing_members</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein UFDR-Container -- es fehlt: {members}</translation>
     </message>
     <message>
         <source>Not enough space in the temp directory to extract the UFDR&apos;s database ({needed:,} bytes needed, {free:,} available at {location})</source>
         <comment>ufdr.no_space</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht genug Platz im temporären Verzeichnis, um die Datenbank des UFDR zu extrahieren ({needed:,} Bytes benötigt, {free:,} verfügbar unter {location})</translation>
     </message>
     <message>
         <source>UFDR database has no per-device schema -- unrecognised layout</source>
         <comment>ufdr.no_device_schema</comment>
-        <translation type="unfinished"></translation>
+        <translation>UFDR-Datenbank hat kein Schema pro Gerät -- unbekanntes Layout</translation>
     </message>
     <message>
         <source>UFDR database&apos;s {tag} table is missing expected column(s): {columns}</source>
         <comment>ufdr.missing_columns</comment>
-        <translation type="unfinished"></translation>
+        <translation>In der Tabelle {tag} der UFDR-Datenbank fehlen erwartete Spalte(n): {columns}</translation>
     </message>
     <message>
         <source>UFDR database has no {tag} table in schema {schema}</source>
         <comment>ufdr.no_table</comment>
-        <translation type="unfinished"></translation>
+        <translation>UFDR-Datenbank hat keine Tabelle {tag} im Schema {schema}</translation>
     </message>
     <message>
         <source>Content not located in UFDR container: {path}</source>
         <comment>ufdr.content_not_located</comment>
-        <translation type="unfinished"></translation>
+        <translation>Inhalt im UFDR-Container nicht gefunden: {path}</translation>
     </message>
     <message>
         <source>Its path collides with a {other} of the same name; shown under this name instead</source>
         <comment>ufdr.path_collision</comment>
-        <translation type="unfinished"></translation>
+        <translation>Sein Pfad kollidiert mit einem gleichnamigen Element ({other}); stattdessen unter diesem Namen angezeigt</translation>
     </message>
     <message>
         <source>database.json names device {device}, which the database dump doesn&apos;t contain; the tree shows the device(s) the dump holds: {found}</source>
         <comment>ufdr.device_id_mismatch</comment>
-        <translation type="unfinished"></translation>
+        <translation>database.json nennt das Gerät {device}, das im Datenbank-Dump nicht enthalten ist; der Baum zeigt das Gerät bzw. die Geräte, die der Dump enthält: {found}</translation>
     </message>
     <message>
         <source>directory</source>
         <comment>ufdr.other_directory</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verzeichnis</translation>
     </message>
     <message>
         <source>file</source>
         <comment>ufdr.other_file</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datei</translation>
     </message>
     <message>
         <source>{count:,} Nodes row(s) with an unreadable Type were left out of the tree</source>
         <comment>ufdr.rows_skipped</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Zeile(n) der Tabelle Nodes mit nicht lesbarem Type wurde(n) im Baum ausgelassen</translation>
     </message>
     <message>
         <source>Listed {count} times under this path in the UFDR&apos;s file catalog; this is entry {k} of {count} (catalog order)</source>
         <comment>ufdr.duplicate</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count}-mal unter diesem Pfad im Dateikatalog des UFDR aufgeführt; dies ist Eintrag {k} von {count} (Katalogreihenfolge)</translation>
     </message>
     <message>
         <source>{count:,} Nodes row(s) of Type {type}, which isn&apos;t decoded, were left out of the tree</source>
         <comment>ufdr.rows_other_type</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Zeile(n) der Tabelle Nodes mit Type {type}, der nicht dekodiert wird, wurde(n) im Baum ausgelassen</translation>
     </message>
     <message>
         <source>{path} -- an item Cellebrite derived from that file (e.g. decrypted or extracted from it), not a file in the device&apos;s filesystem</source>
         <comment>ufdr.derived_from</comment>
-        <translation type="unfinished"></translation>
+        <translation>{path} -- ein Element, das Cellebrite aus dieser Datei abgeleitet hat (z. B. entschlüsselt oder daraus extrahiert), keine Datei im Dateisystem des Geräts</translation>
     </message>
     <message>
         <source>{path} -- an item Cellebrite derived from that file (e.g. decrypted or extracted from it), not a file in the device&apos;s filesystem; the UFDR doesn&apos;t contain {path} itself</source>
         <comment>ufdr.derived_from_not_exported</comment>
-        <translation type="unfinished"></translation>
+        <translation>{path} -- ein Element, das Cellebrite aus dieser Datei abgeleitet hat (z. B. entschlüsselt oder daraus extrahiert), keine Datei im Dateisystem des Geräts; {path} selbst ist im UFDR nicht enthalten</translation>
     </message>
     <message>
         <source>Holds the items Cellebrite derived from {path} (e.g. decrypted or extracted from it); not a folder in the device&apos;s filesystem</source>
         <comment>ufdr.derived_folder</comment>
-        <translation type="unfinished"></translation>
+        <translation>Enthält die Elemente, die Cellebrite aus {path} abgeleitet hat (z. B. entschlüsselt oder daraus extrahiert); kein Ordner im Dateisystem des Geräts</translation>
     </message>
     <message>
         <source>Holds the items Cellebrite derived from {path} (e.g. decrypted or extracted from it); not a folder in the device&apos;s filesystem. The UFDR doesn&apos;t contain {path} itself</source>
         <comment>ufdr.derived_folder_not_exported</comment>
-        <translation type="unfinished"></translation>
+        <translation>Enthält die Elemente, die Cellebrite aus {path} abgeleitet hat (z. B. entschlüsselt oder daraus extrahiert); kein Ordner im Dateisystem des Geräts. {path} selbst ist im UFDR nicht enthalten</translation>
     </message>
     <message>
         <source>Not contained in this UFDR: Cellebrite exported items derived from this file, not the file. It records only its path and size ({size:,} bytes); no content, hashes or times</source>
         <comment>ufdr.not_exported</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht in diesem UFDR enthalten: Cellebrite hat aus dieser Datei abgeleitete Elemente exportiert, nicht die Datei selbst. Das UFDR hält nur ihren Pfad und ihre Größe ({size:,} Bytes) fest; keinen Inhalt, keine Hashes, keine Zeiten</translation>
     </message>
     <message>
         <source>Not contained in this UFDR: Cellebrite exported items derived from this file, not the file. It records only its path; no size, content, hashes or times</source>
         <comment>ufdr.not_exported_no_size</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht in diesem UFDR enthalten: Cellebrite hat aus dieser Datei abgeleitete Elemente exportiert, nicht die Datei selbst. Das UFDR hält nur ihren Pfad fest; keine Größe, keinen Inhalt, keine Hashes, keine Zeiten</translation>
     </message>
     <message>
         <source>Not contained in this UFDR: {path} -- Cellebrite exported items derived from this file, not the file&apos;s content</source>
         <comment>ufdr.not_exported_content</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht in diesem UFDR enthalten: {path} -- Cellebrite hat aus dieser Datei abgeleitete Elemente exportiert, nicht den Inhalt der Datei</translation>
     </message>
     <message>
         <source>This UFDR holds {in_ufdr:,} of the {extraction:,} files Cellebrite counted in the extraction: only these were exported into it. Each folder&apos;s Properties show both counts</source>
         <comment>ufdr.partial_export</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dieses UFDR enthält {in_ufdr:,} der {extraction:,} Dateien, die Cellebrite in der Extraktion gezählt hat: Nur diese wurden hinein exportiert. Die Eigenschaften jedes Ordners zeigen beide Anzahlen</translation>
     </message>
     <message>
         <source>{missing:,} of the {counted:,} files below this folder in the extraction aren&apos;t in this UFDR: Cellebrite didn&apos;t export them, and records nothing about them but this count. They aren&apos;t listed</source>
         <comment>ufdr.files_not_exported</comment>
-        <translation type="unfinished"></translation>
+        <translation>{missing:,} der {counted:,} Dateien unterhalb dieses Ordners in der Extraktion sind nicht in diesem UFDR enthalten: Cellebrite hat sie nicht exportiert und hält über sie nichts außer dieser Anzahl fest. Sie werden nicht aufgeführt</translation>
     </message>
     <message>
         <source>This UFDR holds only the files Physical Analyzer exported into it, not the whole extraction. Each folder&apos;s Properties show how many files Cellebrite counted there in the extraction and how many of them this UFDR holds</source>
         <comment>ufdr.partial_export_folders</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dieses UFDR enthält nur die Dateien, die Physical Analyzer hinein exportiert hat, nicht die gesamte Extraktion. Die Eigenschaften jedes Ordners zeigen, wie viele Dateien Cellebrite dort in der Extraktion gezählt hat und wie viele davon dieses UFDR enthält</translation>
     </message>
     <message>
         <source>Looks like a Cellebrite UFD/UFDX but couldn&apos;t be read</source>
         <comment>vfs.ufd_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>Sieht aus wie eine Cellebrite-UFD/UFDX, konnte aber nicht gelesen werden</translation>
     </message>
     <message>
         <source>Not enough space in the temp directory to extract the iTunes backup ({needed:,} bytes needed, {free:,} available at {location})</source>
         <comment>vfs.itunes_zip_no_space</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht genug Platz im temporären Verzeichnis, um das iTunes-Backup zu extrahieren ({needed:,} Bytes benötigt, {free:,} verfügbar unter {location})</translation>
     </message>
     <message>
         <source>Not readable as text (no byte-order mark, not UTF-8)</source>
         <comment>ufd.not_text</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht als Text lesbar (keine Byte-Order-Mark, kein UTF-8)</translation>
     </message>
     <message>
         <source>No [section] in the file</source>
         <comment>ufd.no_sections</comment>
-        <translation type="unfinished"></translation>
+        <translation>Keine [section] in der Datei</translation>
     </message>
     <message>
         <source>{count:,} line(s) are neither a [section] nor key=value; shown as written</source>
         <comment>ufd.other_lines</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Zeile(n) sind weder eine [section] noch key=value; unverändert angezeigt</translation>
     </message>
     <message>
         <source>The UFD lists no dumps ([Dumps] is missing or empty)</source>
         <comment>ufd.no_dumps</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFD führt keine Dumps auf ([Dumps] fehlt oder ist leer)</translation>
     </message>
     <message>
         <source>The UFD names {file} for this dump; it isn&apos;t beside the UFD</source>
         <comment>ufd.dump_file_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFD nennt {file} für diesen Dump; die Datei liegt nicht neben der UFD</translation>
     </message>
     <message>
         <source>The UFD names {file} for this dump but has no section saying how to read it</source>
         <comment>ufd.dump_no_section</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFD nennt {file} für diesen Dump, hat aber keinen Abschnitt, der angibt, wie er zu lesen ist</translation>
     </message>
     <message>
         <source>Dump type &quot;{type}&quot; ({file}) isn&apos;t read; only ZIPfolder is supported</source>
         <comment>ufd.dump_type_unsupported</comment>
-        <translation type="unfinished"></translation>
+        <translation>Dump-Typ „{type}“ ({file}) wird nicht gelesen; nur ZIPfolder wird unterstützt</translation>
     </message>
     <message>
         <source>{file} couldn&apos;t be opened as a ZIP</source>
         <comment>ufd.zip_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>{file} konnte nicht als ZIP geöffnet werden</translation>
     </message>
     <message>
         <source>The UFD names folder {path} of {file} for this dump; the ZIP has no such folder</source>
         <comment>ufd.dump_path_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFD nennt den Ordner {path} von {file} für diesen Dump; das ZIP hat keinen solchen Ordner</translation>
     </message>
     <message>
         <source>Folder {path} of {file}, as the UFD names it</source>
         <comment>ufd.dump_folder</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ordner {path} von {file}, wie in der UFD benannt</translation>
     </message>
     <message>
         <source>What {file} holds outside the folders the UFD names for its dumps</source>
         <comment>ufd.other_content</comment>
-        <translation type="unfinished"></translation>
+        <translation>Was {file} außerhalb der Ordner enthält, die die UFD für ihre Dumps angibt</translation>
     </message>
     <message>
         <source>An iTunes backup, opened as one ({password}); the files the ZIP stores for it are shown when the ZIP is opened as a plain ZIP</source>
         <comment>vfs.itunes_backup_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ein iTunes-Backup, als solches geöffnet ({password}); die Dateien, die das ZIP dafür speichert, werden angezeigt, wenn das ZIP als normales ZIP geöffnet wird</translation>
     </message>
     <message>
         <source>with the BackupPassword the UFD records</source>
         <comment>ufd.password_from_ufd</comment>
-        <translation type="unfinished"></translation>
+        <translation>mit Backup-Passwort aus UFD</translation>
     </message>
     <message>
         <source>with the password entered</source>
         <comment>vfs.password_typed</comment>
-        <translation type="unfinished"></translation>
+        <translation>mit eingegebenem Passwort</translation>
     </message>
     <message>
         <source>no password recorded or entered</source>
         <comment>vfs.password_none</comment>
-        <translation type="unfinished"></translation>
+        <translation>kein Passwort hinterlegt oder eingegeben</translation>
     </message>
     <message>
         <source>Holds an iTunes backup that couldn&apos;t be opened as one; its stored files are shown</source>
         <comment>vfs.itunes_backup_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>Enthält ein iTunes-Backup, das nicht als iTunes-Backup geöffnet werden konnte; die darin gespeicherten Dateien werden angezeigt</translation>
     </message>
     <message>
         <source>The BackupPassword the UFD records doesn&apos;t open the iTunes backup in its dump</source>
         <comment>ufd.backup_password_rejected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Das in der UFD hinterlegte BackupPassword öffnet das iTunes-Backup in ihrem Dump nicht</translation>
     </message>
     <message>
         <source>Not well-formed XML</source>
         <comment>ufdx.not_xml</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein wohlgeformtes XML</translation>
     </message>
     <message>
         <source>The XML&apos;s root is &lt;{root}&gt;, not &lt;EvidenceCollection&gt;</source>
         <comment>ufdx.not_evidence_collection</comment>
-        <translation type="unfinished"></translation>
+        <translation>Root des XML ist &lt;{root}&gt;, nicht &lt;EvidenceCollection&gt;</translation>
     </message>
     <message>
         <source>The UFDX lists no extractions</source>
         <comment>ufdx.no_extractions</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFDX führt keine Extraktionen auf</translation>
     </message>
     <message>
         <source>Extraction {path} ({type}), as the UFDX lists it</source>
         <comment>ufdx.extraction</comment>
-        <translation type="unfinished"></translation>
+        <translation>Extraktion {path} ({type}), wie in der UFDX aufgeführt</translation>
     </message>
     <message>
         <source>The UFDX lists extraction {path} ({type}); it isn&apos;t there</source>
         <comment>ufdx.extraction_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFDX führt die Extraktion {path} ({type}) auf; sie ist nicht vorhanden</translation>
     </message>
     <message>
         <source>The UFDX lists extraction {path} ({type}); it couldn&apos;t be read as a UFD</source>
         <comment>ufdx.extraction_not_opened</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die UFDX führt die Extraktion {path} ({type}) auf; sie konnte nicht als UFD gelesen werden</translation>
     </message>
     <message>
         <source>Extraction {path} ({type}): {reason}. One password is entered for the whole UFDX; if its extractions need different ones, open each extraction&apos;s UFD on its own</source>
         <comment>ufdx.extraction_password_rejected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Extraktion {path} ({type}): {reason}. Für die gesamte UFDX wird ein einziges Passwort eingegeben; benötigen ihre Extraktionen unterschiedliche Passwörter, die UFD jeder Extraktion einzeln öffnen</translation>
     </message>
     <message>
         <source>not a number</source>
         <comment>ts_decode.not_a_number</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine Zahl</translation>
     </message>
     <message>
         <source>out of range for this format</source>
         <comment>ts_decode.out_of_range</comment>
-        <translation type="unfinished"></translation>
+        <translation>außerhalb des Wertebereichs dieses Formats</translation>
     </message>
     <message>
         <source>not an integer (this format packs bit fields)</source>
         <comment>ts_decode.not_an_integer</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine Ganzzahl (dieses Format packt Bitfelder)</translation>
     </message>
     <message>
         <source>neither a BLOB nor hex text</source>
         <comment>ts_decode.not_bytes</comment>
-        <translation type="unfinished"></translation>
+        <translation>weder ein BLOB noch Hex-Text</translation>
     </message>
     <message>
         <source>{length} bytes, this format has {expected}</source>
         <comment>ts_decode.wrong_length</comment>
-        <translation type="unfinished"></translation>
+        <translation>{length} Bytes, dieses Format erwartet {expected}</translation>
     </message>
     <message>
         <source>not BCD (a nibble above 9)</source>
         <comment>ts_decode.not_bcd</comment>
-        <translation type="unfinished"></translation>
+        <translation>kein BCD (ein Nibble über 9)</translation>
     </message>
     <message>
         <source>date/time fields outside their valid ranges</source>
         <comment>ts_decode.invalid_fields</comment>
-        <translation type="unfinished"></translation>
+        <translation>Datum/Zeit-Felder außerhalb ihres validen Wertebereichs</translation>
     </message>
     <message>
         <source>not a UUID</source>
         <comment>ts_decode.not_a_uuid</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine UUID</translation>
     </message>
     <message>
         <source>not a version 1 UUID</source>
         <comment>ts_decode.uuid_not_v1</comment>
-        <translation type="unfinished"></translation>
+        <translation>keine UUID der Version 1</translation>
     </message>
     <message>
         <source>the value is a fractional day count, which plain SQLite can&apos;t convert exactly</source>
         <comment>ts_sql.fractional_days</comment>
-        <translation type="unfinished"></translation>
+        <translation>der Wert ist eine gebrochene Anzahl von Tagen, die reines SQLite nicht exakt umrechnen kann</translation>
     </message>
     <message>
         <source>plain SQLite has no way to turn hex bytes into numbers</source>
         <comment>ts_sql.no_hex_to_number</comment>
-        <translation type="unfinished"></translation>
+        <translation>reines SQLite kann Hex-Bytes nicht in Zahlen umwandeln</translation>
     </message>
 </context>
 <context>
@@ -9953,7 +9953,7 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>Page size:</source>
-        <translation>Seitengröße:</translation>
+        <translation>Page-Größe:</translation>
     </message>
     <message>
         <source>Signal and its forks (Session, Molly) set this to 1 -- their key
@@ -10788,7 +10788,7 @@ Total: {total:.2f} s</source>
     <name>UnlockVolumeDialog</name>
     <message>
         <source>Unlock Volume</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Volume entsperren</translation>
     </message>
     <message>
         <source>Enter a password or recovery password, or choose a startup key file (.BEK). It is tried on every locked volume of this image, together with what was given before; it is not stored.</source>

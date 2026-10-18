@@ -14,6 +14,7 @@ Protobuf,do-not-translate,Format name (Protocol Buffers)
 .proto,do-not-translate,Protobuf schema file extension
 wire type,do-not-translate,Protobuf spec term
 varint,do-not-translate,Protobuf spec term
+length-delimited,do-not-translate,Protobuf spec term (wire type LEN)
 plist,do-not-translate,Apple property list
 bplist,do-not-translate,Apple binary property list
 NSKeyedArchiver,do-not-translate,Apple class name
@@ -53,12 +54,25 @@ WAL,do-not-translate,SQLite write-ahead log (spec term)
 -wal,do-not-translate,SQLite companion file suffix
 -journal,do-not-translate,SQLite companion file suffix
 WAL slack,do-not-translate,Term of art (Sanderson) for frames from an earlier WAL generation
+unallocated,do-not-translate,Forensic term of art: space not assigned to any live file or record (also unallocated space)
+allocated,do-not-translate,Forensic term of art: counterpart of unallocated
+slack,do-not-translate,Forensic term of art: unused bytes inside an allocated unit
+hole,do-not-translate,Sparse-file term: a range with no stored data
 BLOB,do-not-translate,SQLite data type
 PRAGMA,do-not-translate,SQLite statement
 rowid,do-not-translate,SQLite spec term
 freelist,do-not-translate,SQLite spec term
 freeblock,do-not-translate,SQLite spec term
 B-tree,do-not-translate,Data structure (SQLite spec term)
+freelist trunk,do-not-translate,SQLite spec term
+freelist leaf,do-not-translate,SQLite spec term
+cell content area,do-not-translate,SQLite spec term
+cell pointer array,do-not-translate,SQLite spec term
+pointer map,do-not-translate,SQLite spec term
+lock-byte page,do-not-translate,SQLite spec term
+overflow,do-not-translate,SQLite overflow page (spec term)
+value offset,do-not-translate,TIFF/EXIF spec term: the IFD entry field holding the value or its offset
+page,do-not-translate,Technical storage unit (SQLite / WAL / journal / AFF) -- a document page or paging in the GUI is translated
 VFS,do-not-translate,Crush's virtual file system layer
 tmpfs,do-not-translate,Linux RAM-backed file system
 hex,do-not-translate,Hexadecimal (as in hex view / hex dump)
@@ -75,7 +89,6 @@ Run Analyzer,do-not-translate,Crush feature name -- stays English so it matches 
 deleted,translate,Deleted records/files -- one wording everywhere
 recovered,translate,Data brought back from deleted/unallocated areas
 carved,translate,Recovered by carving (found by content in free space)
-unallocated space,translate,Space not assigned to any live file or record
 superseded,translate,WAL status: an older page version overwritten by a newer frame
 uncommitted,translate,WAL status: written in a transaction that never committed
 active,translate,WAL status: the version SQLite reads now
