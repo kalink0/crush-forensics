@@ -35,7 +35,6 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QFontMetrics,
-    QGuiApplication,
 )
 from shiboken6 import isValid
 from PySide6.QtWidgets import (
@@ -4339,20 +4338,11 @@ class MainWindow(QMainWindow):
             self._spinner_timer.start()
 
     def _sync_dock_titlebar(self, dock: QDockWidget, floating: bool) -> None:
-        # On Wayland (native or XWayland) the compositor owns window decorations
-        # including resize handles. A custom title bar strips them entirely.
-        _on_wayland = (
-            QGuiApplication.platformName() == "wayland"
-            or os.environ.get("XDG_SESSION_TYPE") == "wayland"
-            or bool(os.environ.get("WAYLAND_DISPLAY"))
-        )
-        if _on_wayland:
-            if floating:
-                dock.setWindowFlag(Qt.WindowType.Window, True)
-                dock.show()
-            else:
-                dock.setWindowFlag(Qt.WindowType.Window, False)
-            return
+        # A floating panel gets our title bar on every platform, Wayland
+        # included: Qt's own drag of a floating dock grabs the mouse and
+        # move()s the window, neither of which Wayland allows, so the panel
+        # stuck after its first move. The title bar hands the move to the
+        # window system (_DockTitleBar.mousePressEvent).
         if floating:
             dock.setTitleBarWidget(_DockTitleBar(dock.windowTitle(), dock))
         else:
