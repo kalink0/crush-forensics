@@ -4627,7 +4627,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Show format and analyzer descriptions in the English they were written in</source>
-        <translation>Format- und Analysatorbeschreibungen in der englischen Originalsprache anzeigen</translation>
+        <translation>Format- und Analyzer-Beschreibungen in der englischen Originalsprache anzeigen</translation>
     </message>
 </context>
 <context>
@@ -5827,7 +5827,7 @@ Speicherort öffnen?</translation>
     </message>
     <message>
         <source>Unable to materialize source for the analyzer.</source>
-        <translation>Die Quelle für den Analysator konnte nicht materialisiert werden.</translation>
+        <translation>Die Quelle für den Analyzer konnte nicht bereitgestellt werden.</translation>
     </message>
     <message>
         <source>Analyzer failed:
@@ -9700,7 +9700,7 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>Show Hex</source>
-        <translation>Hex-Wert anzeigen</translation>
+        <translation>Hex anzeigen</translation>
     </message>
     <message>
         <source>Field</source>
@@ -9720,7 +9720,7 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>Hide Hex</source>
-        <translation>Hex-Wert ausblenden</translation>
+        <translation>Hex ausblenden</translation>
     </message>
     <message>
         <source>Export All as Text…</source>
@@ -9838,7 +9838,7 @@ YnBsaXN0MDA…       (Base64)
     <name>RealmViewer</name>
     <message>
         <source>Text runs in the raw bytes of the Realm file. ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. Runs shorter than the minimum length are not listed. Region: the arrays reached from the active and the inactive top reference (Realm Core&apos;s own reference rule), the free lists&apos; blocks, and what neither reaches. With Show Hex on, selecting a row marks the string in the file.</source>
-        <translation>Textfolgen in den Rohbytes der Realm-Datei. ASCII/UTF-8: druckbare Zeichen sowie Tab, LF und CR und jedes wohlgeformte Multibyte-UTF-8-Zeichen. UTF-16LE/BE: nur U+0020–U+007E und U+00A0–U+00FF sowie Tab, LF und CR -- andere Schriftsysteme in UTF-16 werden nicht gefunden. Folgen, die kürzer als die Mindestlänge sind, werden nicht aufgeführt. Region: die Arrays, die von der aktiven und der inaktiven Top-Referenz erreicht werden (die Referenzregel von Realm Core selbst), die Blöcke der Free-Lists und das, was keine von beiden erreicht. Ist „Hex-Wert anzeigen“ aktiviert, markiert die Auswahl einer Zeile die Zeichenkette in der Datei.</translation>
+        <translation>Textfolgen in den Rohbytes der Realm-Datei. ASCII/UTF-8: druckbare Zeichen sowie Tab, LF und CR und jedes wohlgeformte Multibyte-UTF-8-Zeichen. UTF-16LE/BE: nur U+0020–U+007E und U+00A0–U+00FF sowie Tab, LF und CR -- andere Schriftsysteme in UTF-16 werden nicht gefunden. Folgen, die kürzer als die Mindestlänge sind, werden nicht aufgeführt. Region: die Arrays, die von der aktiven und der inaktiven Top-Referenz erreicht werden (die Referenzregel von Realm Core selbst), die Blöcke der Free-Lists und das, was keine von beiden erreicht. Ist „Hex anzeigen“ aktiviert, markiert die Auswahl einer Zeile die Zeichenkette in der Datei.</translation>
     </message>
     <message>
         <source>This Realm is encrypted: offsets are in the decrypted file, not in the file as stored.</source>
@@ -10139,7 +10139,7 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     </message>
     <message>
         <source>Show Hex</source>
-        <translation>Hex-Wert anzeigen</translation>
+        <translation>Hex anzeigen</translation>
     </message>
     <message>
         <source>SQL:</source>
@@ -10167,239 +10167,239 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     </message>
     <message>
         <source>—  No cell selected</source>
-        <translation type="unfinished">—  Keine Zelle ausgewählt</translation>
+        <translation>—  Keine Zelle ausgewählt</translation>
     </message>
     <message>
         <source>Select a row to show its payload with every candidate reading.</source>
-        <translation type="unfinished"></translation>
+        <translation>Eine Zeile auswählen, um ihre Nutzdaten mit allen Kandidaten-Lesarten anzuzeigen.</translation>
     </message>
     <message>
         <source>List/Set column — {val_count} item(s). Stored as JSON text in SQL exports; query with json_each(...) or use the matching &quot;v_&lt;table&gt;&quot; view for already-resolved link names.</source>
-        <translation type="unfinished"></translation>
+        <translation>List/Set-Spalte — {val_count} Element(e). In SQL-Exporten als JSON-Text gespeichert; mit json_each(...) abfragen oder die passende „v_&lt;table&gt;“-View für bereits aufgelöste Link-Namen verwenden.</translation>
     </message>
     <message>
         <source>Dictionary column — {val_count} entrie(s). Stored as JSON text in SQL exports; query with json_each(..., &apos;value&apos;).</source>
-        <translation type="unfinished"></translation>
+        <translation>Dictionary-Spalte — {val_count} Eintrag/Einträge. In SQL-Exporten als JSON-Text gespeichert; mit json_each(..., &apos;value&apos;) abfragen.</translation>
     </message>
     <message>
         <source>(first {total:,} row — use SQL to load more)</source>
-        <translation type="unfinished"></translation>
+        <translation>(erste {total:,} Zeile — mehr über SQL laden)</translation>
     </message>
     <message>
         <source>(first {total:,} rows — use SQL to load more)</source>
-        <translation type="unfinished"></translation>
+        <translation>(erste {total:,} Zeilen — mehr über SQL laden)</translation>
     </message>
     <message>
         <source>  +{count} from WAL</source>
-        <translation type="unfinished"></translation>
+        <translation>  +{count} aus WAL</translation>
     </message>
     <message>
         <source>  +{count} from prev ref</source>
-        <translation type="unfinished"></translation>
+        <translation>  +{count} aus vorheriger Referenz</translation>
     </message>
     <message>
         <source>  +{count} from pre-rollback state</source>
-        <translation type="unfinished"></translation>
+        <translation>  +{count}aus vorherigem Rollback-Status</translation>
     </message>
     <message>
         <source>{count} table</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Tabelle</translation>
     </message>
     <message>
         <source>{count} tables</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Tabellen</translation>
     </message>
     <message>
         <source>{count} view</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} View</translation>
     </message>
     <message>
         <source>{count} views</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Views</translation>
     </message>
     <message>
         <source>{count} index</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Index</translation>
     </message>
     <message>
         <source>{count} indexes</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Indizes</translation>
     </message>
     <message>
         <source>{count} trigger</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Trigger</translation>
     </message>
     <message>
         <source>{count} triggers</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Triggers</translation>
     </message>
     <message>
         <source>({total} schema object)</source>
-        <translation type="unfinished"></translation>
+        <translation>({total} Schemaobjekt)</translation>
     </message>
     <message>
         <source>({total} schema objects)</source>
-        <translation type="unfinished"></translation>
+        <translation>({total} Schemaobjekte)</translation>
     </message>
     <message>
         <source>{count} total</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} gesamt</translation>
     </message>
     <message>
         <source>Double-click a row to open the raw page in the hex viewer — click a Content cell to see the full decoded value below</source>
-        <translation type="unfinished"></translation>
+        <translation>Doppelklick auf eine Zeile öffnet die Page im Rohformat in der Hex-Ansicht — Klick auf eine Zelle der Spalte „Inhalt“ zeigt unten den vollständigen dekodierten Wert</translation>
     </message>
     <message>
         <source>{count} checksum mismatch</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Prüfsummenfehler</translation>
     </message>
     <message>
         <source>already merged into the current view above</source>
-        <translation type="unfinished"></translation>
+        <translation>bereits in die aktuelle Ansicht oben übernommen</translation>
     </message>
     <message>
         <source>NOT merged into the current view -- {reason}</source>
-        <translation type="unfinished"></translation>
+        <translation>NICHT in die aktuelle Ansicht übernommen -- {reason}</translation>
     </message>
     <message>
         <source>checksum validation failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Prüfsummenvalidierung fehlgeschlagen</translation>
     </message>
     <message>
         <source>Every entry&apos;s own bytes are in this -journal file ({merged_note}). Double-click a row to open its exact bytes in the hex viewer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die eigenen Bytes jedes Eintrags liegen in dieser -journal-Datei ({merged_note}). Doppelklick auf eine Zeile öffnet ihre exakten Bytes in der Hex-Ansicht.</translation>
     </message>
     <message>
         <source>Error scanning freelist pages: {message}</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehler beim Scannen der Freelist-Pages: {message}</translation>
     </message>
     <message>
         <source>Scanning freelist pages…</source>
-        <translation type="unfinished"></translation>
+        <translation>Scanne Freelist-Pages…</translation>
     </message>
     <message>
         <source>(all tables)</source>
-        <translation type="unfinished"></translation>
+        <translation>(Alle Tabellen)</translation>
     </message>
     <message>
         <source>✓ = column count and value types both match (higher confidence). Others match column count only — value types don&apos;t rule them out, but don&apos;t confirm them either.</source>
-        <translation type="unfinished"></translation>
+        <translation>✓ = Spaltenanzahl und Werttypen stimmen beide überein (höhere Zuverlässigkeit). Die übrigen stimmen nur in der Spaltenanzahl überein — die Werttypen schließen sie nicht aus, bestätigen sie aber auch nicht.</translation>
     </message>
     <message>
         <source>({total_rows} rows carved matching &apos;{pivot_table}&apos;)</source>
-        <translation type="unfinished"></translation>
+        <translation>({total_rows} gecarvte Zeilen passend zu &apos;{pivot_table}&apos;)</translation>
     </message>
     <message>
         <source>Showing carved rows candidate for table &apos;{pivot_table}&apos;, columns mapped to its real names — this is still a candidate match, not a confirmed recovery. ✓ rows also match on value types (higher confidence); &apos;count only&apos; rows match column count alone. Double-click a row to open the raw page in the hex viewer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Gecarvte Zeilen als Kandidaten für Tabelle &apos;{pivot_table}&apos;, Spalten auf ihre echten Namen abgebildet — dies ist weiterhin nur eine Kandidaten-Zuordnung, keine bestätigte Wiederherstellung. ✓-Zeilen stimmen auch in den Werttypen überein (höhere Zuverlässigkeit); &apos;nur Anzahl&apos;-Zeilen stimmen nur in der Spaltenanzahl überein. Doppelklick auf eine Zeile öffnet die Page im Rohformat in der Hex-Ansicht.</translation>
     </message>
     <message>
         <source>({entries_count} freelist pages, {n_pages_with_data} with recoverable data, {total_rows} rows carved)</source>
-        <translation type="unfinished"></translation>
+        <translation>({entries_count} Freelist-Pages, {n_pages_with_data} mit wiederherstellbaren Daten, {total_rows} Zeilen gecarvt)</translation>
     </message>
     <message>
         <source>{entries_count} freed page(s) found, but none still carry leftover cell data — not a parsing failure. Either a later allocation already overwrote them, or secure_delete was enabled at write time.</source>
-        <translation type="unfinished"></translation>
+        <translation>{entries_count} freigegebene Page(s) gefunden, aber keine enthält noch verbliebene Zelldaten — kein Parsing-Fehler. Entweder hat eine spätere Belegung sie bereits überschrieben, oder secure_delete war beim Schreiben aktiviert.</translation>
     </message>
     <message>
         <source>Candidate tables are a heuristic match — the source table cannot be determined with certainty from a freed page. ✓-marked candidates match on both column count and value types (higher confidence); unmarked candidates match column count only. Values spilling onto overflow pages are reconstructed when those pages are still on the freelist unmodified; otherwise shown as &apos;&lt;OVERFLOW&gt;&apos;. Double-click a row to open the raw page in the hex viewer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidaten-Tabellen sind eine heuristische Zuordnung — die Ursprungstabelle lässt sich aus einer freigegebenen Page nicht mit Sicherheit bestimmen. Mit ✓ markierte Kandidaten stimmen in Spaltenanzahl und Werttypen überein (höhere Zuverlässigkeit); nicht markierte Kandidaten stimmen nur in der Spaltenanzahl überein. Werte, die in Overflow-Pages übergehen, werden rekonstruiert, wenn diese Pages noch unverändert in der Freelist liegen; andernfalls werden sie als &apos;&lt;OVERFLOW&gt;&apos; angezeigt. Doppelklick auf eine Zeile öffnet die Page im Rohformat in der Hex-Ansicht.</translation>
     </message>
     <message>
         <source>Error scanning freeblocks: {message}</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehler beim Scannen der Freeblocks: {message}</translation>
     </message>
     <message>
         <source>Scanning for freeblocks…</source>
-        <translation type="unfinished"></translation>
+        <translation>Freeblocks werden gescannt…</translation>
     </message>
     <message>
         <source>({freeblocks_count} freeblocks)</source>
-        <translation type="unfinished"></translation>
+        <translation>({freeblocks_count} Freeblocks)</translation>
     </message>
     <message>
         <source>Raw leftover bytes from deleted cells still linked in each page&apos;s freeblock list — not decoded into columns, since the freeblock&apos;s own header overwrites the start of the original cell. Double-click a row to open the raw page in the hex viewer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Verbliebene Rohbytes gelöschter Zellen, die noch in der Freeblock-Liste der jeweiligen Page verkettet sind — nicht in Spalten dekodiert, da der eigene Header des Freeblocks den Anfang der ursprünglichen Zelle überschreibt. Doppelklick auf eine Zeile öffnet die Page im Rohformat in der Hex-Ansicht.</translation>
     </message>
     <message>
         <source>Error scanning unallocated space: {message}</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehler beim Scannen des Unallocated Space: {message}</translation>
     </message>
     <message>
         <source>Scanning unallocated space…</source>
-        <translation type="unfinished"></translation>
+        <translation>Unallocated Space wird gescannt…</translation>
     </message>
     <message>
         <source>({entries_count} pages with non-empty unallocated space)</source>
-        <translation type="unfinished"></translation>
+        <translation>({entries_count} Pages mit nicht leerem Unallocated-Bereich)</translation>
     </message>
     <message>
         <source>Raw bytes only, not verified as recoverable row content — SQLite doesn&apos;t guarantee anything meaningful survives here, unlike Freeblocks. Often noise (stale pointer values) or empty. Double-click a row to open the raw page in the hex viewer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur Rohbytes, nicht als wiederherstellbarer Zeileninhalt verifiziert — anders als bei Freeblocks garantiert SQLite nicht, dass hier etwas Aussagekräftiges erhalten bleibt. Oft Rauschen (veraltete Pointer-Werte) oder leer. Doppelklick auf eine Zeile öffnet die Page im Rohformat in der Hex-Ansicht.</translation>
     </message>
     <message>
         <source>Scanning for strings…</source>
-        <translation type="unfinished"></translation>
+        <translation>Strings werden gescannt…</translation>
     </message>
     <message>
         <source>Error scanning for strings: {message}</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehler beim Scannen der Strings: {message}</translation>
     </message>
     <message>
         <source>({count:,} strings)</source>
-        <translation type="unfinished"></translation>
+        <translation>({count:,} Strings)</translation>
     </message>
     <message>
         <source>Text runs in the raw bytes of the db file, -wal and -journal file. ASCII/UTF-8: printable characters plus tab, LF and CR, and any well-formed multi-byte UTF-8 character. UTF-16LE/BE: only U+0020–U+007E and U+00A0–U+00FF plus tab, LF and CR -- other scripts in UTF-16 are not found. Runs shorter than the minimum length are not listed. &quot;type byte only&quot;: no walk from the schema reaches this page copy; its kind comes from its own b-tree type byte. With Show Hex on, selecting a row marks the string in its file.</source>
-        <translation type="unfinished"></translation>
+        <translation>Textfolgen in den Rohbytes der DB-Datei sowie der -wal- und -journal-Datei. ASCII/UTF-8: druckbare Zeichen sowie Tab, LF und CR und jedes wohlgeformte Multibyte-UTF-8-Zeichen. UTF-16LE/BE: nur U+0020–U+007E und U+00A0–U+00FF sowie Tab, LF und CR -- andere Schriftsysteme in UTF-16 werden nicht gefunden. Folgen, die kürzer als die Mindestlänge sind, werden nicht aufgeführt. „nur Typ-Byte“: Kein Durchlauf vom Schema aus erreicht diese Page-Kopie; ihre Art ergibt sich aus ihrem eigenen B-Tree-Typ-Byte. Ist „Hex anzeigen“ aktiviert, markiert die Auswahl einer Zeile die Zeichenkette in ihrer Datei.</translation>
     </message>
     <message>
         <source>({page_count:,} pages)</source>
-        <translation type="unfinished"></translation>
+        <translation>({page_count:,} Pages)</translation>
     </message>
     <message>
         <source>Select a structure item to highlight its bytes; click the hex pane to select the deepest matching header, page, cell, freeblock, or unallocated entry. Pages load their cell/column detail on first expand. To find specific content, query the table itself (SQL) and use Locate in Hex, or search in the hex pane.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ein Strukturelement auswählen, um seine Bytes hervorzuheben; ein Klick in die Hex-Ansicht wählt den am tiefsten verschachtelten passenden Header-, Page-, Zellen-, Freeblock- oder Unallocated-Eintrag aus. Pages laden ihre Zellen-/Spaltendetails beim ersten Aufklappen. Um bestimmte Inhalte zu finden, die Tabelle selbst abfragen (SQL) und „In Hex anzeigen“ verwenden oder in der Hex-Ansicht suchen.</translation>
     </message>
     <message>
         <source>({_PRAGMA_CATALOG_count} settings)</source>
-        <translation type="unfinished"></translation>
+        <translation>({_PRAGMA_CATALOG_count} Einstellungen)</translation>
     </message>
     <message>
         <source>({visible:,} of {total:,} rows)</source>
-        <translation type="unfinished"></translation>
+        <translation>({visible:,} von {total:,} Zeilen)</translation>
     </message>
     <message>
         <source>Database file missing</source>
-        <translation type="unfinished"></translation>
+        <translation>Datenbankdatei fehlt</translation>
     </message>
     <message>
         <source>Enter a SELECT or PRAGMA query</source>
-        <translation type="unfinished"></translation>
+        <translation>SELECT- oder PRAGMA-Abfrage eingeben</translation>
     </message>
     <message>
         <source>Only SELECT and PRAGMA queries are allowed</source>
-        <translation type="unfinished"></translation>
+        <translation>Es sind nur SELECT und PRAGMA-Abfragen erlaubt</translation>
     </message>
     <message>
         <source>{exc} (failed after {elapsed:.2f} s)</source>
-        <translation type="unfinished"></translation>
+        <translation>{exc} (fehlgeschlagen nach {elapsed:.2f} s)</translation>
     </message>
     <message>
         <source>First {count:,} row returned in {elapsed:.2f} s</source>
-        <translation type="unfinished"></translation>
+        <translation>Erste {count:,} Zeile in {elapsed:.2f} s zurückgegeben</translation>
     </message>
     <message>
         <source>First {count:,} rows returned in {elapsed:.2f} s</source>
-        <translation type="unfinished"></translation>
+        <translation>Erste {count:,} Zeilen in {elapsed:.2f} s zurückgegeben</translation>
     </message>
     <message>
         <source>{count:,} row returned in {elapsed:.2f} s</source>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Zeile in {elapsed:.2f} s zurückgegeben</translation>
     </message>
     <message>
         <source>{count:,} rows returned in {elapsed:.2f} s</source>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Zeilen in {elapsed:.2f} s zurückgegeben</translation>
     </message>
     <message>
         <source>Index wait: {wait:.2f} s
@@ -10409,151 +10409,157 @@ Rows: {prepare:.2f} s
 Model: {model:.2f} s
 Column sizing: {resize:.2f} s
 Total: {total:.2f} s</source>
-        <translation type="unfinished"></translation>
+        <translation>Warten auf Index: {wait:.2f} s
+Ausführen: {execute:.2f} s
+Abrufen: {fetch:.2f} s Echtzeit / {fetch_cpu:.2f} s CPU
+Zeilen: {prepare:.2f} s
+Modell: {model:.2f} s
+Spaltenbreiten: {resize:.2f} s
+Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>Auto limit capped the result at {limit:,} rows. Add filters or turn off Auto limit to fetch more.</source>
-        <translation type="unfinished"></translation>
+        <translation>„Automatisches Limit“ hat das Ergebnis auf {limit:,} Zeilen begrenzt. Filter hinzufügen oder „Automatisches Limit“ deaktivieren, um mehr abzurufen.</translation>
     </message>
     <message>
         <source>(first {total:,} row)</source>
-        <translation type="unfinished"></translation>
+        <translation>(erste {total:,} Zeile)</translation>
     </message>
     <message>
         <source>(first {total:,} rows)</source>
-        <translation type="unfinished"></translation>
+        <translation>(erste {total:,} Zeilen)</translation>
     </message>
     <message>
         <source>Export CSV</source>
-        <translation type="unfinished">Als CSV exportieren</translation>
+        <translation>Als CSV exportieren</translation>
     </message>
     <message>
         <source>Exported: {path}</source>
-        <translation type="unfinished"></translation>
+        <translation>Exportiert: {path}</translation>
     </message>
     <message>
         <source>Copy cell</source>
-        <translation type="unfinished">Zelle kopieren</translation>
+        <translation>Zelle kopieren</translation>
     </message>
     <message>
         <source>Copy row (TSV)</source>
-        <translation type="unfinished">Zeile kopieren (TSV)</translation>
+        <translation>Zeile kopieren (TSV)</translation>
     </message>
     <message>
         <source>Copy selection (TSV)</source>
-        <translation type="unfinished">Auswahl kopieren (TSV)</translation>
+        <translation>Auswahl kopieren (TSV)</translation>
     </message>
     <message>
         <source>Inspect Cell…</source>
-        <translation type="unfinished"></translation>
+        <translation>Zelle prüfen…</translation>
     </message>
     <message>
         <source>Open in Hex</source>
-        <translation type="unfinished"></translation>
+        <translation>In Hex öffnen</translation>
     </message>
     <message>
         <source>Export…</source>
-        <translation type="unfinished">Exportieren...</translation>
+        <translation>Exportieren...</translation>
     </message>
     <message>
         <source>Open as new tab</source>
-        <translation type="unfinished"></translation>
+        <translation>In neuem Tab öffnen</translation>
     </message>
     <message>
         <source>Auto-detect</source>
-        <translation type="unfinished">Automatische Erkennung</translation>
+        <translation>Automatisch erkennen</translation>
     </message>
     <message>
         <source>Hex</source>
-        <translation type="unfinished"></translation>
+        <translation>Hex</translation>
     </message>
     <message>
         <source>Text</source>
-        <translation type="unfinished"></translation>
+        <translation>Text</translation>
     </message>
     <message>
         <source>Protobuf</source>
-        <translation type="unfinished"></translation>
+        <translation>Protobuf</translation>
     </message>
     <message>
         <source>Decode column as timestamp</source>
-        <translation type="unfinished"></translation>
+        <translation>Spalte als Zeitstempel dekodieren</translation>
     </message>
     <message>
         <source>Copy as SQL expression</source>
-        <translation type="unfinished"></translation>
+        <translation>Als SQL-Ausdruck kopieren</translation>
     </message>
     <message>
         <source>Decode the column as a timestamp first.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Spalte zuerst als Zeitstempel dekodieren.</translation>
     </message>
     <message>
         <source>No plain-SQLite expression for {format}: {reason}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kein reiner SQLite-Ausdruck für {format}: {reason}.</translation>
     </message>
     <message>
         <source>Copies the plain-SQLite conversion of this column ({format}) for your own SELECT, here or in any other SQLite tool. It gives date and time without a time zone and has no checks: it is exact for INTEGER values (not negative, for formats with sub-second units). When copying, Crush says how many values of the column it doesn&apos;t convert exactly.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kopiert die reine SQLite-Umrechnung dieser Spalte ({format}) für ein eigenes SELECT, hier oder in einem beliebigen anderen SQLite-Tool. Sie liefert Datum und Uhrzeit ohne Zeitzone und enthält keine Prüfungen: Exakt ist sie für INTEGER-Werte (bei Formaten mit Einheiten unter einer Sekunde nur für nicht negative Werte). Beim Kopieren gibt Crush an, wie viele Werte der Spalte nicht exakt umgerechnet werden.</translation>
     </message>
     <message>
         <source>Clear timestamp format</source>
-        <translation type="unfinished"></translation>
+        <translation>Zeitstempelformat entfernen</translation>
     </message>
     <message>
         <source>SQL expression copied</source>
-        <translation type="unfinished"></translation>
+        <translation>SQL-Ausdruck kopiert</translation>
     </message>
     <message>
         <source>{uncovered:,} of {total:,} values in this column are not converted exactly by the copied expression: REAL values, negative values of a format with sub-second units, text other than plain digits, values out of range or with invalid date fields, and for BCD anything but a 7-byte BLOB. For them it gives a wrong date or NULL.</source>
-        <translation type="unfinished"></translation>
+        <translation>{uncovered:,} von {total:,} Werten in dieser Spalte werden vom kopierten Ausdruck nicht exakt umgerechnet: REAL-Werte, negative Werte bei einem Format mit Einheiten unter einer Sekunde, Text, der nicht nur aus Ziffern besteht, Werte außerhalb des Wertebereichs oder mit ungültigen Datumsfeldern sowie bei BCD alles außer einem 7-Byte-BLOB. Für diese Werte liefert er ein falsches Datum oder NULL.</translation>
     </message>
     <message>
         <source>BLOB Hex ({blob_count:,} B)</source>
-        <translation type="unfinished"></translation>
+        <translation>BLOB Hex ({blob_count:,} B)</translation>
     </message>
     <message>
         <source>Export BLOB</source>
-        <translation type="unfinished"></translation>
+        <translation>Exportiere BLOB</translation>
     </message>
     <message>
         <source>All files</source>
-        <translation type="unfinished">Alle Dateien</translation>
+        <translation>Alle Dateien</translation>
     </message>
     <message>
         <source>BLOB exported: {path}</source>
-        <translation type="unfinished"></translation>
+        <translation>BLOB exportiert: {path}</translation>
     </message>
     <message>
         <source>the cell&apos;s text, UTF-8 encoded (the cell holds no bytes)</source>
-        <translation type="unfinished"></translation>
+        <translation>der Text der Zelle, UTF-8-kodiert (die Zelle enthält keine Bytes)</translation>
     </message>
     <message>
         <source>the cell&apos;s bytes</source>
-        <translation type="unfinished"></translation>
+        <translation>die Bytes der Zelle</translation>
     </message>
     <message>
         <source>Row {row_num}  ·  {col_name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Zeile {row_num}  ·  {col_name}</translation>
     </message>
     <message>
         <source>Payload of row {row}: {size:,} B at file offset {offset:,}, every candidate reading of each field (offsets below are in the payload)</source>
-        <translation type="unfinished"></translation>
+        <translation>Nutzdaten von Zeile {row}: {size:,} B an Datei-Offset {offset:,}, alle Kandidaten-Lesarten jedes Felds (die Offsets unten beziehen sich auf die Nutzdaten)</translation>
     </message>
     <message>
         <source>Payload of row {row}</source>
-        <translation type="unfinished"></translation>
+        <translation>Nutzdaten von Zeile {row}</translation>
     </message>
     <message>
         <source>Hide Hex</source>
-        <translation type="unfinished">Hex-Wert ausblenden</translation>
+        <translation>Hex ausblenden</translation>
     </message>
     <message>
         <source>{file_label}  —  {note}</source>
-        <translation type="unfinished"></translation>
+        <translation>{file_label}  —  {note}</translation>
     </message>
     <message>
         <source>{source_name}  ·  {suffix}</source>
-        <translation type="unfinished"></translation>
+        <translation>{source_name}  ·  {suffix}</translation>
     </message>
 </context>
 <context>
@@ -10733,11 +10739,11 @@ Total: {total:.2f} s</source>
     </message>
     <message>
         <source>Show Hex</source>
-        <translation>Hex-Wert anzeigen</translation>
+        <translation>Hex anzeigen</translation>
     </message>
     <message>
         <source>Hide Hex</source>
-        <translation>Hex-Wert ausblenden</translation>
+        <translation>Hex ausblenden</translation>
     </message>
     <message>
         <source>Key / Index</source>
@@ -11168,7 +11174,7 @@ Total: {total:.2f} s</source>
     </message>
     <message>
         <source>Known extensions are a hint, never proof. Evidence files are routinely renamed, carved or exported without an extension. Crush identifies formats by their content, not by their name.</source>
-        <translation>Bekannte Dateiendungen sind lediglich ein Anhaltspunkt, niemals ein Beweis. Beweisdateien werden routinemäßig umbenannt, extrahiert oder ohne Dateiendung exportiert. Crush identifiziert Formate anhand ihres Inhalts, nicht anhand ihres Namens.</translation>
+        <translation>Bekannte Dateiendungen sind lediglich ein Anhaltspunkt, niemals ein Beweis. Beweisdateien werden routinemäßig umbenannt, gecarvt oder ohne Dateiendung exportiert. Crush identifiziert Formate anhand ihres Inhalts, nicht anhand ihres Namens.</translation>
     </message>
     <message>
         <source>Crush support: “Supported” means Crush has a parser or container backend for the format (named in brackets). “Not yet supported” means it has none.</source>
