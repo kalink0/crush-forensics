@@ -46,3 +46,26 @@ def test_press_on_a_floating_panel_starts_a_system_move(qapp, widgets, monkeypat
     bar.mousePressEvent(press)
     assert calls == [True]
     assert bar._drag_pos is None  # no manual move when the system moves it
+
+
+def test_title_bar_buttons_dock_and_close_the_panel(qapp, widgets) -> None:  # noqa: ANN001
+    dock = _dock(widgets)
+    dock.setFloating(True)
+    dock.show()
+    bar = _DockTitleBar("Panel", dock)
+    assert not bar.dock_button.icon().isNull()
+    assert not bar.close_button.icon().isNull()
+    # QMainWindow has no _dock_to_default: docking back is MainWindow's job.
+    docked: list[QDockWidget] = []
+    dock.parent()._dock_to_default = docked.append  # type: ignore[attr-defined]
+    bar.dock_button.click()
+    assert docked == [dock]
+    bar.close_button.click()
+    assert dock.isHidden()
+
+
+def test_close_button_only_for_a_closable_panel(qapp, widgets) -> None:  # noqa: ANN001
+    dock = _dock(widgets)
+    dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+    bar = _DockTitleBar("Panel", dock)
+    assert bar.close_button.isHidden()

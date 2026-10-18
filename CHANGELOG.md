@@ -12,7 +12,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Bug Fixes
 
-- Fixed floating panels (Filesystem, Properties, Log) that could no longer be moved after their first move on Wayland.
+- Fixed floating panels (Filesystem, Properties, Log) that could not be moved on Wayland; undock them by double-clicking the title bar.
 
 ### Changed
 

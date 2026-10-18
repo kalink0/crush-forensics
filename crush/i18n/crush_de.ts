@@ -11457,6 +11457,10 @@ Gesamt: {total:.2f} s</translation>
         <source>Dock</source>
         <translation>Dock</translation>
     </message>
+    <message>
+        <source>Close</source>
+        <translation>Schließen</translation>
+    </message>
 </context>
 <context>
     <name>_HexPlainTextEdit</name>

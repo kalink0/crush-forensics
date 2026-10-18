@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QProgressDialog,
     QStatusBar,
+    QStyle,
     QStackedWidget,
     QTabBar,
     QTabWidget,
@@ -232,10 +233,29 @@ class _DockTitleBar(QWidget):
         label = QLabel(title)
         layout.addWidget(label)
         layout.addStretch()
-        dock_btn = QPushButton(translate("_DockTitleBar", "Dock"))
-        dock_btn.setFixedHeight(20)
-        dock_btn.clicked.connect(self._dock_back)
-        layout.addWidget(dock_btn)
+        # The same icons as Qt's own dock title bar (float / close).
+        self.dock_button = self._icon_button(
+            QStyle.StandardPixmap.SP_TitleBarNormalButton, translate("_DockTitleBar", "Dock")
+        )
+        self.dock_button.clicked.connect(self._dock_back)
+        layout.addWidget(self.dock_button)
+        self.close_button = self._icon_button(
+            QStyle.StandardPixmap.SP_TitleBarCloseButton, translate("_DockTitleBar", "Close")
+        )
+        self.close_button.clicked.connect(dock.close)
+        self.close_button.setVisible(
+            bool(dock.features() & QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        )
+        layout.addWidget(self.close_button)
+
+    def _icon_button(self, pixmap: QStyle.StandardPixmap, text: str) -> QToolButton:
+        button = QToolButton(self)
+        button.setIcon(self._dock.style().standardIcon(pixmap, None, self._dock))
+        button.setAutoRaise(True)
+        button.setFixedSize(20, 20)
+        button.setToolTip(text)
+        button.setAccessibleName(text)
+        return button
 
     def mousePressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "button") and event.button() == Qt.MouseButton.LeftButton:
