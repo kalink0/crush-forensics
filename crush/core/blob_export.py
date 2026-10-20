@@ -3,7 +3,7 @@
 """What the BLOB Inspector writes next to an export — no Qt.
 
 An export is the bytes after the decode pipeline (or an image rendered from
-them); the sidecar JSON next to it records where they came from and how:
+them, or a decode's text/JSON export); the sidecar JSON next to it records where they came from and how:
 the source, the inspected bytes' and every step's size and SHA-256, what a
 step left undecoded, and the exported file's own size and SHA-256. It is
 versioned (``schema_version``) so later readers -- e.g. a saved pipeline
@@ -25,6 +25,8 @@ SIDECAR_SUFFIX = ".crush.json"
 # What the exported file holds.
 OUTPUT_BYTES = "bytes after the decode pipeline"
 OUTPUT_RENDERED_PNG = "image rendered from the bytes after the decode pipeline (PNG)"
+OUTPUT_DECODED_TEXT = "text export of the decode of the bytes after the decode pipeline"
+OUTPUT_DECODED_JSON = "JSON export of the decode of the bytes after the decode pipeline"
 
 
 @dataclass(frozen=True)
@@ -72,7 +74,8 @@ def build_sidecar(
 ) -> dict[str, Any]:
     """The sidecar's content. *source* is the provenance the inspector was
     opened with (source file, table/row, key …); *rendering* describes how
-    a rendered image was produced (only for :data:`OUTPUT_RENDERED_PNG`)."""
+    a derived output was produced (a rendered image, a decode's text/JSON
+    export); None for :data:`OUTPUT_BYTES`."""
     when = created or datetime.now(timezone.utc)
     sidecar: dict[str, Any] = {
         "schema_version": SIDECAR_SCHEMA_VERSION,

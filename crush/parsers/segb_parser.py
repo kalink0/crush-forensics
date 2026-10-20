@@ -120,7 +120,7 @@ class SegbPayloadDetail:
         when it isn't a record. notes say what the analyst must know: no
         payload located, fewer bytes in the file than the record states,
         a decode that stopped."""
-        from crush.parsers.protobuf_parser import decode_message
+        from crush.parsers.protobuf_parser import ambiguous_issue, decode_message
 
         if not isinstance(rowid, int) or not 0 <= rowid < len(self._locator.rows):
             return None
@@ -146,6 +146,9 @@ class SegbPayloadDetail:
         decoded, warning = decode_message(raw)
         if warning is not None:
             notes.append(warning)
+        ambiguous = ambiguous_issue(decoded)
+        if ambiguous is not None:
+            notes.append(ambiguous)
         return {"raw": raw, "decoded": decoded, "offset": start, "notes": notes}
 
 

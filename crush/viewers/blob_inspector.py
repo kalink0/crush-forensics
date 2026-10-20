@@ -7,8 +7,9 @@ import base64
 import html
 import json as _json
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QBuffer, QIODevice, Qt
 from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QImage, QShowEvent
@@ -46,6 +47,8 @@ from crush.core.blob_decode import (
 )
 from crush.core.blob_export import (
     OUTPUT_BYTES,
+    OUTPUT_DECODED_JSON,
+    OUTPUT_DECODED_TEXT,
     OUTPUT_RENDERED_PNG,
     PipelineStep,
     build_sidecar,
@@ -59,7 +62,7 @@ from crush.core.formatters import (
 )
 from crush.parsers.protobuf_schema import (
     SchemaLoadError,
-    decode_message_with_schema,
+    decode_for_tree,
     load_descriptor_set,
 )
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
@@ -73,6 +76,7 @@ if TYPE_CHECKING:
 
 _HEX_VIEW = "Hex view"
 _JSON_UNESCAPED = "JSON (unescaped from a string)"
+_PROTOBUF = "Protobuf (schema-less)"
 
 # Metadata fields on the first line above the Plist page's tree (what the
 # data is, whether it was resolved); every other field goes on the second.
@@ -80,6 +84,11 @@ _PLIST_SUMMARY_FIRST_LINE = ("Format", "Status")
 # The same for the Image page: what the image is, whether it was decoded,
 # and whether only its first frame is shown.
 _IMAGE_SUMMARY_FIRST_LINE = ("Format", "Decode status", "Frames")
+# The same for the Protobuf page: what it is and whether the decode stopped.
+_PROTOBUF_SUMMARY_FIRST_LINE = ("Format", "Parse warning")
+# The protobuf parser's notes a copy / export of the decoded text starts
+# with, as the page's summary shows them.
+_PROTOBUF_NOTES = ("Parse warning", "Nesting", "Ambiguous fields")
 
 
 def _summary_label() -> QLabel:
@@ -135,8 +144,6 @@ def _entry_label(name: str) -> str:
             message=name[len(_SCHEMA_PREFIX):-1]
         )
     return translate("BlobInspector", name)  # i18n: keep -- marked in _ENTRY_NAMES
-
-_PROTOBUF_INTERP_SKIP = {"uint64", "uint32"}
 
 
 # ---------------------------------------------------------------------------
@@ -218,23 +225,62 @@ def _try_xml(data: bytes) -> str:
     return xml_text(data)
 
 
-def _try_protobuf(data: bytes) -> str:
+@dataclass
+class _ProtobufReading:
+    """A Protobuf interpretation of the data, kept as decoded data (not as
+    text) for the tree page and for the tree's text / JSON export."""
+
+    decoded: dict[str, Any]
+    # The protobuf parser's metadata (schema-less); empty for a schema decode.
+    metadata: dict[str, Any] = field(default_factory=dict)
+    # Tree path → byte ranges; set for a schema decode only.
+    byte_ranges: dict[tuple[str, ...], Any] | None = None
+
+    @property
+    def schema(self) -> bool:
+        return self.byte_ranges is not None
+
+    def notes(self) -> list[tuple[str, str]]:
+        """(label, text) of the parser's notes: the decode stopped, fields
+        not tried as messages, fields with two candidate readings."""
+        from crush.core.issues import render_value
+
+        return [
+            (key, render_value(self.metadata[key]))
+            for key in _PROTOBUF_NOTES
+            if self.metadata.get(key)
+        ]
+
+    def text(self) -> str:
+        """The tree's text export (a schema decode: its JSON), after the
+        parser's notes as ``#`` lines."""
+        if self.schema:
+            return self.json()
+        from crush.viewers.protobuf_viewer import entries_to_text
+
+        body = entries_to_text(self.decoded.get("entries", []))
+        notes = [f"# {key}: {text}" for key, text in self.notes()]
+        return "\n".join(notes) + "\n\n" + body if notes else body
+
+    def json(self) -> str:
+        if self.schema:
+            return _json.dumps(self.decoded, indent=2, ensure_ascii=False)
+        from crush.viewers.protobuf_viewer import entries_to_json
+
+        return entries_to_json(self.decoded.get("entries", []))
+
+
+def _protobuf_reading(data: bytes) -> _ProtobufReading:
+    """The protobuf parser's result for *data* -- its decoded fields and its
+    metadata (warning, nesting limit, ambiguous fields), the same the
+    Protobuf viewer shows."""
     _no_bytes(data)
     from crush.core.vfs import BytesVFS
     from crush.parsers.protobuf_parser import ProtobufParser
 
-    # The parser's own result: its warning and nesting-limit note come from
-    # its metadata, the same ones the Protobuf viewer shows.
     vfs = BytesVFS(data, name="blob")
     parsed = ProtobufParser().parse(vfs.root(), vfs)
-    result = _render_protobuf(parsed.data["decoded"].get("entries", []))
-    nesting = parsed.metadata.get("Nesting")
-    if nesting:
-        result = f"# {nesting}\n\n{result}"
-    warning = parsed.metadata.get("Parse warning")
-    if warning:
-        result = f"# Warning: {warning}\n\n{result}"
-    return result
+    return _ProtobufReading(parsed.data["decoded"], dict(parsed.metadata))
 
 
 def _try_abx(data: bytes) -> str:
@@ -264,9 +310,10 @@ _TERMINAL_TEXT: dict[str, Callable[[bytes], str]] = {
     _JSON_UNESCAPED:            _try_json_unescaped,
     "Plist / bplist":           _try_plist,
     "XML":                      _try_xml,
-    "Protobuf (schema-less)":   _try_protobuf,
     "Android Binary XML (ABX)": _try_abx,
 }
+# "Protobuf (schema-less)" / "Protobuf (schema: …)" aren't text: they're
+# kept as decoded data (_ProtobufReading) and shown as a tree.
 
 # Subset of _TERMINAL_TEXT keys tried by auto-detection, in priority order
 _AUTO_ORDER: tuple[str, ...] = (
@@ -280,7 +327,7 @@ _AUTO_ORDER: tuple[str, ...] = (
 # Not a confirmation of the format: it (almost) always produces output, or
 # its reading rests on an assumption its output states.
 _PERMISSIVE: frozenset[str] = frozenset(
-    {"Latin-1 text", "Protobuf (schema-less)", _JSON_UNESCAPED}
+    {"Latin-1 text", _PROTOBUF, _JSON_UNESCAPED}
 )
 
 _INTERMEDIATE_FORMATS: tuple[str, ...] = tuple(_INTERMEDIATE)
@@ -324,45 +371,6 @@ def _is_protobuf_entry(name: str) -> bool:
     return name == "Protobuf (schema-less)" or name.startswith("Protobuf (schema: ")
 
 
-def _render_protobuf(entries: list, indent: int = 0) -> str:
-    lines: list[str] = []
-    pad = "  " * indent
-    ipad = pad + "    "
-    for entry in entries:
-        field = entry.get("field", "?")
-        wt = entry.get("wire_type", "?")
-        val = entry.get("value")
-        raw = entry.get("raw")  # full payload; only set for length-delimited entries
-        interpretations = [
-            i for i in entry.get("interpretations", [])
-            if i.label not in _PROTOBUF_INTERP_SKIP
-        ]
-        if isinstance(val, dict):
-            vtype = val.get("type")
-            if vtype == "message":
-                lines.append(f"{pad}{field} {{")
-                lines.append(_render_protobuf(val.get("entries", []), indent + 1))
-                lines.append(f"{pad}}}")
-            elif vtype == "string":
-                lines.append(f'{pad}{field}: "{val.get("text", "")}"')
-            else:
-                # hex_preview is capped at 64 bytes by the parser — show the complete
-                # payload here instead of repeating that truncated preview.
-                hex_full = raw.hex(" ") if raw else val.get("hex_preview", "")
-                lines.append(f"{pad}{field}: <{hex_full}>")
-        elif isinstance(val, bytes):
-            lines.append(f"{pad}{field}: {val.hex()}")
-        else:
-            lines.append(f"{pad}{field} [{wt}]: {val}")
-        for interp in interpretations:
-            if interp.label == "raw bytes" and raw:
-                # Same 64-byte-capped preview as above — use the full payload.
-                lines.append(f"{ipad}# {interp.label}: {raw.hex(' ')}")
-            else:
-                lines.append(f"{ipad}# {interp.label}: {interp.value}")
-    return "\n".join(lines)
-
-
 class _BlobViewerEdit(QPlainTextEdit):
     """QPlainTextEdit with a Copy All context-menu entry."""
 
@@ -397,7 +405,7 @@ def _step_labels() -> list[str]:
 
 
 def _interpretation_labels() -> list[str]:
-    names = [_HEX_VIEW, "Image", "Decoded (from table)", *_TERMINAL_TEXT]
+    names = [_HEX_VIEW, "Image", "Decoded (from table)", *_TERMINAL_TEXT, _PROTOBUF]
     # "✓  " / "~  " / "    " prefix as the list shows them.
     return [f"✓  {_entry_label(name)}" for name in names]
 
@@ -497,6 +505,11 @@ class _BlobPanel(QWidget):
         self._hex_view_data: bytes | None = None
         # The data the Plist page currently shows (built once per data).
         self._plist_view_data: bytes | None = None
+        # Each Protobuf interpretation that decoded, by name, and the one
+        # (name, data) the Protobuf page currently shows.
+        self._protobuf_readings: dict[str, _ProtobufReading] = {}
+        self._protobuf_view_for: tuple[str, bytes] | None = None
+        self._protobuf_shown: str | None = None
         self._schema_pool = None
         self._schema_message: str | None = None
         self._build_panel()
@@ -517,6 +530,8 @@ class _BlobPanel(QWidget):
         self._viewer.setPlainText(message)
         self._stack.setCurrentWidget(self._viewer)
         self._copy_shown_action.setEnabled(False)
+        self._protobuf_readings = {}
+        self._set_protobuf_shown(None)
         self._schema_toolbar.setVisible(False)
 
     def show_unreadable_input(self, reason: str) -> None:
@@ -684,6 +699,17 @@ class _BlobPanel(QWidget):
         self._plist_view: QWidget | None = None
         self._stack.addWidget(self._plist_page)
 
+        # "Protobuf (schema-less)" / "Protobuf (schema: …)": the same tree
+        # the Protobuf viewer shows for the same bytes, with the parser's
+        # Format / Parse warning / notes in a line above.
+        self._protobuf_page = QWidget()
+        protobuf_layout = QVBoxLayout(self._protobuf_page)
+        protobuf_layout.setContentsMargins(0, 0, 0, 0)
+        self._protobuf_summary = _summary_label()
+        protobuf_layout.addWidget(self._protobuf_summary)
+        self._protobuf_view: QWidget | None = None
+        self._stack.addWidget(self._protobuf_page)
+
         content_col.addWidget(self._stack, stretch=1)
 
         # Copy / Export / Open in new tab. Apart from "Shown text", they
@@ -694,6 +720,10 @@ class _BlobPanel(QWidget):
         copy_menu = QMenu(copy_btn)
         self._copy_shown_action = copy_menu.addAction(translate("_BlobPanel", "Shown text"))
         self._copy_shown_action.triggered.connect(self._copy_current)
+        # A Protobuf tree's JSON export; "Shown text" is its text export.
+        self._copy_json_action = copy_menu.addAction(translate("_BlobPanel", "Shown as JSON"))
+        self._copy_json_action.triggered.connect(self._copy_protobuf_json)
+        self._copy_json_action.setEnabled(False)
         copy_menu.addSeparator()
         self._bytes_actions: list[QAction] = []
         for label, fmt in (
@@ -716,6 +746,17 @@ class _BlobPanel(QWidget):
             translate("_BlobPanel", "Rendered image (PNG)…")
         )
         self._export_image_action.triggered.connect(self._export_rendered_image)
+        # The shown Protobuf tree's text / JSON export, complete payloads.
+        self._export_text_action = export_menu.addAction(
+            translate("_BlobPanel", "Decoded as text…")
+        )
+        self._export_text_action.triggered.connect(lambda: self._export_protobuf("text"))
+        self._export_json_action = export_menu.addAction(
+            translate("_BlobPanel", "Decoded as JSON…")
+        )
+        self._export_json_action.triggered.connect(lambda: self._export_protobuf("json"))
+        self._export_text_action.setEnabled(False)
+        self._export_json_action.setEnabled(False)
         export_btn.setMenu(export_menu)
         copy_row.addWidget(export_btn)
 
@@ -866,6 +907,7 @@ class _BlobPanel(QWidget):
         self._current_data = data
         self._hex_view_data = None
         self._plist_view_data = None
+        self._protobuf_readings = {}
 
         confident: list[str] = []
         uncertain: list[str] = []
@@ -901,21 +943,30 @@ class _BlobPanel(QWidget):
             else:
                 confident.append(key)
 
+        try:
+            self._protobuf_readings[_PROTOBUF] = _protobuf_reading(data)
+        except Exception as exc:
+            self._failed_reasons[_PROTOBUF] = _reason(exc)
+            failed.append(_PROTOBUF)
+        else:
+            uncertain.append(_PROTOBUF)
+
         if self._schema_pool is not None and self._schema_message:
             label = f"Protobuf (schema: {self._schema_message})"
             try:
-                from google.protobuf import json_format
-                msg = decode_message_with_schema(self._schema_pool, self._schema_message, data)
-                self._cached_results[label] = json_format.MessageToJson(
-                    msg,
-                    preserving_proto_field_name=True,
-                    always_print_fields_with_no_presence=True,
+                decoded, byte_ranges = decode_for_tree(
+                    self._schema_pool, self._schema_message, data
+                )
+            except Exception as exc:
+                self._failed_reasons[label] = translate(
+                    "BlobInspector", "schema decode failed: {error}"
+                ).format(error=_reason(exc))
+                failed.append(label)
+            else:
+                self._protobuf_readings[label] = _ProtobufReading(
+                    decoded, byte_ranges=byte_ranges
                 )
                 confident.append(label)
-            except Exception as exc:
-                self._cached_results[label] = f"[schema decode failed: {exc}]"
-                failed.append(label)
-
 
         prev = self._format_list.currentItem()
         prev_name: str | None = prev.data(Qt.ItemDataRole.UserRole) if prev else None
@@ -962,6 +1013,7 @@ class _BlobPanel(QWidget):
         prev_still_valid = prev_name is not None and (
             prev_name == _HEX_VIEW
             or prev_name in self._cached_results
+            or prev_name in self._protobuf_readings
             or (prev_name == "Image" and self._image is not None)
         )
         if prev_still_valid:
@@ -997,6 +1049,11 @@ class _BlobPanel(QWidget):
             return
 
         self._schema_toolbar.setVisible(_is_protobuf_entry(name))
+        self._set_protobuf_shown(name if name in self._protobuf_readings else None)
+
+        if name in self._protobuf_readings:
+            self._show_protobuf(name)
+            return
 
         if name == "Image" and self._image is not None:
             self._show_image(self._image, self._current_data)
@@ -1074,6 +1131,67 @@ class _BlobPanel(QWidget):
         self._plist_summary.setText(_summary_html(result.metadata, _PLIST_SUMMARY_FIRST_LINE))
         self._plist_view_data = data
         return True
+
+    def _show_protobuf(self, name: str) -> None:
+        """Put the Protobuf interpretation *name* on the Protobuf page: the
+        Protobuf viewer's tree (schema-less) or its schema-decode tree, built
+        once per interpretation and data."""
+        reading = self._protobuf_readings[name]
+        data = self._current_data
+        shown = self._protobuf_view_for
+        if shown is None or shown[0] != name or shown[1] is not data:
+            from crush.viewers.protobuf_viewer import ProtobufTreeWidget, schema_tree
+
+            if self._protobuf_view is not None:
+                self._protobuf_view.deleteLater()
+            if reading.byte_ranges is not None:
+                view: QWidget = schema_tree(
+                    reading.decoded, reading.byte_ranges, data, self._protobuf_page
+                )
+            else:
+                view = ProtobufTreeWidget(reading.decoded, raw=data, parent=self._protobuf_page)
+            self._protobuf_view = view
+            self._protobuf_page.layout().addWidget(view)
+            summary = _summary_html(reading.metadata, _PROTOBUF_SUMMARY_FIRST_LINE)
+            self._protobuf_summary.setText(summary)
+            self._protobuf_summary.setVisible(bool(summary))
+            self._protobuf_view_for = (name, data)
+        self._copy_shown_action.setEnabled(True)
+        self._stack.setCurrentWidget(self._protobuf_page)
+
+    def _set_protobuf_shown(self, name: str | None) -> None:
+        """The Protobuf interpretation shown (None: none) -- its tree's
+        text / JSON export is what Copy and Export offer for it."""
+        self._protobuf_shown = name
+        for action in (self._copy_json_action, self._export_text_action, self._export_json_action):
+            action.setEnabled(name is not None)
+
+    def _shown_protobuf_reading(self) -> _ProtobufReading | None:
+        if self._protobuf_shown is None:
+            return None
+        return self._protobuf_readings.get(self._protobuf_shown)
+
+    def _copy_protobuf_json(self) -> None:
+        reading = self._shown_protobuf_reading()
+        if reading is not None:
+            QApplication.clipboard().setText(reading.json())
+
+    def _export_protobuf(self, fmt: str) -> None:
+        reading = self._shown_protobuf_reading()
+        if reading is None:
+            return
+        if fmt == "json":
+            content, kind, suffix = reading.json(), OUTPUT_DECODED_JSON, ".json"
+        else:
+            content, kind, suffix = reading.text(), OUTPUT_DECODED_TEXT, ".txt"
+        rendering = {
+            "interpretation": self._protobuf_shown or "",
+            "renderer": "Crush Protobuf tree export (complete payloads)",
+            "format": "JSON" if fmt == "json" or reading.schema else "text",
+        }
+        for key, text in reading.notes():
+            rendering[key] = text
+        self._export(content.encode("utf-8"), kind, rendering, suffix)
 
     def _update_bytes_actions(self) -> None:
         ok = self._pipeline is not None
@@ -1230,6 +1348,11 @@ class _BlobPanel(QWidget):
         if self._stack.currentWidget() is self._hex_view:
             # The whole blob as a text hex dump, built only when asked for.
             QApplication.clipboard().setText(bytes_to_hexview(self._current_data))
+            return
+        reading = self._shown_protobuf_reading()
+        if self._stack.currentWidget() is self._protobuf_page and reading is not None:
+            # The tree's text export: complete payloads, built when asked for.
+            QApplication.clipboard().setText(reading.text())
             return
         QApplication.clipboard().setText(self._viewer.toPlainText())
 

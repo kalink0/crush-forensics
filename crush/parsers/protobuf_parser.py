@@ -43,6 +43,8 @@ class ProtobufParser(AbstractParser):
             meta["Nesting"] = ParseIssue("protobuf.depth_limit", {
                 "count": decoded["depth_limited"], "limit": MAX_DEPTH,
             })
+        if decoded.get("ambiguous"):
+            meta["Ambiguous fields"] = ambiguous_issue(decoded)
         return ParseResult(
             viewer_type="protobuf",
             data={"raw": raw, "decoded": decoded},
@@ -65,6 +67,15 @@ def decode_message(raw: bytes) -> tuple[dict[str, Any], ParseIssue | None]:
     return decoded, warning
 
 
+def ambiguous_issue(decoded: dict[str, Any]) -> ParseIssue | None:
+    """Why some fields show two candidates instead of a value (None when
+    no field does) -- for every place that shows a decoded message."""
+    count = decoded.get("ambiguous", 0)
+    if not count:
+        return None
+    return ParseIssue("protobuf.ambiguous_payloads", {"count": count})
+
+
 def _decode_message(
     raw: bytes,
     *,
@@ -76,12 +87,15 @@ def _decode_message(
 
     Returns: (decoded, warning, text_index). decoded["depth_limited"] counts
     the length-delimited fields at *max_depth* that were not tried as
-    nested messages.
+    nested messages; decoded["ambiguous"] the ones that decode both as a
+    nested message and as UTF-8 text -- their value is
+    {"type": "candidates", "candidates": [message, string]}.
     """
     entries: list[dict[str, Any]] = []
     warning: ParseIssue | None = None
     text_parts: list[str] = []
     depth_limited = 0
+    ambiguous = 0
 
     idx = 0
     try:
@@ -185,10 +199,10 @@ def _decode_message(
                         # end isn't taken as a message.
                         depth_limited += nested.get("depth_limited", 0)
                         if nested_warn is None and nested.get("entries"):
-                            entry["value"] = {"type": "message", "entries": nested["entries"]}
                             if nested_text:
                                 text_parts.append(nested_text)
                             nested_ok = True
+                            ambiguous += nested.get("ambiguous", 0)
                             # A length-delimited field decodes as a "message" just
                             # because its bytes happen to be grammatically valid
                             # protobuf — wire type 2 doesn't declare whether the
@@ -201,18 +215,23 @@ def _decode_message(
                                     _bytes_preview(payload)["hex_preview"],
                                 )
                             ]
-                            # Text can be valid protobuf too ("120533877" reads
-                            # as field 6, fixed64): offer the string the
-                            # payload would be shown as if it weren't a message.
                             if _looks_like_utf8(payload):
+                                # Text can be valid protobuf too ("120533877"
+                                # reads as field 6, fixed64; "event" as field
+                                # 12, fixed32): both readings are candidates,
+                                # neither is the field's value.
                                 text = payload.decode("utf-8")
-                                entry["interpretations"].append(
-                                    Interpretation(
-                                        QT_TRANSLATE_NOOP("GeneratedView", "string (UTF-8)"),
-                                        text,
-                                    )
-                                )
+                                entry["value"] = {
+                                    "type": "candidates",
+                                    "candidates": [
+                                        {"type": "message", "entries": nested["entries"]},
+                                        {"type": "string", "text": text},
+                                    ],
+                                }
                                 text_parts.append(text)
+                                ambiguous += 1
+                            else:
+                                entry["value"] = {"type": "message", "entries": nested["entries"]}
                     if not nested_ok:
                         if _looks_like_utf8(payload):
                             text = payload.decode("utf-8", errors="replace")
@@ -247,7 +266,9 @@ def _decode_message(
     except Exception as exc:  # noqa: BLE001
         warning = ParseIssue("protobuf.decode_error", detail=str(exc))
 
-    decoded: dict[str, Any] = {"entries": entries, "depth_limited": depth_limited}
+    decoded: dict[str, Any] = {
+        "entries": entries, "depth_limited": depth_limited, "ambiguous": ambiguous,
+    }
     text_index = " ".join(_limit_text(text_parts))
     return decoded, warning, text_index
 

@@ -4,6 +4,7 @@
 viewer with a hex/ASCII pane (LevelDB, Realm, SQLite blob cells, ...)."""
 from __future__ import annotations
 
+import pytest
 from PySide6.QtGui import QGuiApplication, QTextCursor
 
 from crush.viewers.hex_viewer import HexViewer
@@ -72,16 +73,120 @@ def test_copy_selected_hex_drag_not_starting_at_column_zero(qapp) -> None:
     assert all(len(t) == 2 for t in tokens)
 
 
-def test_selection_start_column_matches_actual_cursor_offset(qapp) -> None:
-    hv = _make_viewer(rows=2)
+_ALPHABET = bytes(range(0x41, 0x5B)) + bytes(range(0x61, 0x7B))  # A-Z a-z
+
+
+def _hex_col(hv: HexViewer, byte: int) -> int:
+    """Column of the first hex digit of *byte* (0-15) in its row."""
+    return hv._hex_start + 3 * byte + (1 if byte >= 8 else 0)
+
+
+def _ascii_col(hv: HexViewer, byte: int) -> int:
+    return hv._ascii_start + byte
+
+
+def _select(hv: HexViewer, start: tuple[int, int], end: tuple[int, int]) -> None:
+    """Select from (row, column) *start* to (row, column) *end*, end exclusive
+    -- as a mouse drag between those two character positions does."""
     doc = hv._text.document()
-    pos = doc.findBlockByNumber(1).position() + 17
     cursor = hv._text.textCursor()
-    cursor.setPosition(pos)
-    cursor.setPosition(pos + 5, QTextCursor.MoveMode.KeepAnchor)
+    cursor.setPosition(doc.findBlockByNumber(start[0]).position() + start[1])
+    cursor.setPosition(
+        doc.findBlockByNumber(end[0]).position() + end[1], QTextCursor.MoveMode.KeepAnchor
+    )
     hv._text.setTextCursor(cursor)
 
-    assert hv._selection_start_column() == 17
+
+def _copied(hv: HexViewer) -> tuple[str, str]:
+    QGuiApplication.clipboard().setText("<unchanged>")
+    hv._copy_selected_hex()
+    hex_text = QGuiApplication.clipboard().text()
+    QGuiApplication.clipboard().setText("<unchanged>")
+    hv._copy_selected_ascii()
+    return hex_text, QGuiApplication.clipboard().text()
+
+
+def _expected(first: int, last: int) -> tuple[str, str]:
+    chunk = _ALPHABET[first : last + 1]
+    return " ".join(f"{b:02X}" for b in chunk), chunk.decode("ascii")
+
+
+# Which bytes a selection covers, by where it starts and ends: (start row,
+# start column kind, start byte), (end row, end column kind, last byte).
+_SELECTIONS = {
+    "hex column, single row": ((0, "hex", 2), (0, "hex", 6)),
+    "ascii column, single row": ((0, "ascii", 2), (0, "ascii", 6)),
+    "hex column, multi row": ((0, "hex", 5), (1, "hex", 3)),
+    "ascii column, multi row": ((0, "ascii", 5), (1, "ascii", 3)),
+    "hex to ascii column": ((0, "hex", 5), (1, "ascii", 3)),
+    "ascii to hex column": ((0, "ascii", 5), (1, "hex", 3)),
+    "hex right group across rows": ((0, "hex", 12), (2, "hex", 9)),
+}
+
+
+@pytest.mark.parametrize("offset_mode", ["hex", "dec"])
+@pytest.mark.parametrize("name", list(_SELECTIONS))
+def test_copy_selected_takes_exactly_the_selected_bytes(qapp, name: str, offset_mode: str) -> None:
+    """Copy Selected Hex/ASCII copy the bytes from the first to the last
+    selected one, wherever (hex or ASCII column, which row) the selection
+    starts and ends -- not the text at fixed columns of each selected row."""
+    hv = HexViewer(_ALPHABET)
+    hv._set_offset_mode(offset_mode)
+    (s_row, s_kind, s_byte), (e_row, e_kind, e_byte) = _SELECTIONS[name]
+    start_col = _hex_col(hv, s_byte) if s_kind == "hex" else _ascii_col(hv, s_byte)
+    # End right after the byte's text: both hex digits, or its one character.
+    end_col = _hex_col(hv, e_byte) + 2 if e_kind == "hex" else _ascii_col(hv, e_byte) + 1
+    _select(hv, (s_row, start_col), (e_row, end_col))
+
+    first, last = s_row * 16 + s_byte, e_row * 16 + e_byte
+    assert hv._selection_byte_range() == (first, last)
+    assert _copied(hv) == _expected(first, last)
+
+
+def test_selection_ending_on_a_byte_first_hex_digit_includes_it(qapp) -> None:
+    hv = HexViewer(_ALPHABET)
+    _select(hv, (0, _hex_col(hv, 1)), (0, _hex_col(hv, 4) + 1))
+    assert hv._selection_byte_range() == (1, 4)
+
+
+def test_selection_starting_on_space_after_a_byte_starts_at_the_next(qapp) -> None:
+    hv = HexViewer(_ALPHABET)
+    _select(hv, (0, _hex_col(hv, 1) + 2), (0, _hex_col(hv, 3) + 2))
+    assert hv._selection_byte_range() == (2, 3)
+
+
+def test_selection_through_line_end_takes_the_row_to_its_last_byte(qapp) -> None:
+    hv = HexViewer(_ALPHABET)
+    # From row 0's byte 14 (ASCII) to the start of row 1: row 0's line end.
+    _select(hv, (0, _ascii_col(hv, 14)), (1, 0))
+    assert hv._selection_byte_range() == (14, 15)
+
+
+def test_selection_of_offsets_only_covers_no_bytes(qapp) -> None:
+    hv = HexViewer(_ALPHABET)
+    _select(hv, (1, 0), (1, 4))
+    assert hv._selection_byte_range() is None
+    assert _copied(hv) == ("<unchanged>", "<unchanged>")
+
+
+def test_selection_past_the_data_end_stops_at_the_last_byte(qapp) -> None:
+    hv = HexViewer(_ALPHABET)  # 52 B: row 3 holds bytes 48-51
+    _select(hv, (3, _hex_col(hv, 2)), (3, _hex_col(hv, 12) + 2))
+    assert hv._selection_byte_range() == (50, 51)
+
+
+@pytest.mark.parametrize("kind", ["hex", "ascii"])
+def test_search_selected_takes_no_byte_past_the_selection(qapp, kind: str) -> None:
+    """Regression: a selection ending in the ASCII column took the position
+    after its last character as one more byte."""
+    hv = HexViewer(_ALPHABET)
+    _select(hv, (0, _ascii_col(hv, 2)), (0, _ascii_col(hv, 5) + 1))
+    if kind == "ascii":
+        hv._search_selected_as_ascii()
+        assert hv._search_input.text() == "CDEF"
+    else:
+        hv._search_selected_as_hex()
+        assert hv._search_input.text() == "43 44 45 46"
 
 
 def test_offset_mode_defaults_to_hex(qapp) -> None:

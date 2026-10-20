@@ -23,6 +23,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Acquired (L01)"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Active"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Active top ref"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Ambiguous fields"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Array layers"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Attachments"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Block order"),
