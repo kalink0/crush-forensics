@@ -352,6 +352,10 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation>keine Bildsignatur, die Crush erkennt</translation>
     </message>
     <message>
+        <source>schema decode failed: {error}</source>
+        <translation>Schema-Dekodierung fehlgeschlagen: {error}]</translation>
+    </message>
+    <message>
         <source>[{name}: not recognised: {reason}]</source>
         <translation>[{name}: nicht erkannt: {reason}]</translation>
     </message>
@@ -3711,12 +3715,28 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Prozess</translation>
     </message>
     <message>
+        <source>{count} candidates (heuristic)</source>
+        <translation>{count} Kandidaten (heuristic)</translation>
+    </message>
+    <message>
+        <source>candidate: as message</source>
+        <translation>Kandidat: als Nachricht</translation>
+    </message>
+    <message>
+        <source>candidate: as string</source>
+        <translation>Kandidat: als Zeichenkette</translation>
+    </message>
+    <message>
         <source>{{ {count} field(s) }}</source>
         <translation>{{ {count} Feld(er) }}</translation>
     </message>
     <message>
         <source>field {number}</source>
         <translation>Feld {number}</translation>
+    </message>
+    <message>
+        <source>{count} character(s)</source>
+        <translation>{count} Zeichen</translation>
     </message>
     <message>
         <source>Realm file</source>
@@ -5624,6 +5644,10 @@ Speicherort öffnen?</translation>
         <translation>{count} Chunks haben die eigene Prüfsumme nicht bestanden.</translation>
     </message>
     <message>
+        <source>{count} chunk(s) hold less data than the bytes they cover; zeros are read in their place.</source>
+        <translation>{count} Chunks enthalten weniger Daten als die von ihnen abgedeckten Bytes; an ihrer Stelle werden Nullen gelesen.</translation>
+    </message>
+    <message>
         <source>{count} page(s) are not in the acquisition&apos;s files; they read as the bad-sector marker.</source>
         <translation>{count} Page(s) sind nicht in den Akquisitionsdateien enthalten; sie werden als Bad-Sector-Markierung gelesen.</translation>
     </message>
@@ -6200,6 +6224,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Active top ref</source>
         <translation>Aktive top ref</translation>
+    </message>
+    <message>
+        <source>Ambiguous fields</source>
+        <translation>Mehrdeutige Felder</translation>
     </message>
     <message>
         <source>Array layers</source>
@@ -8055,6 +8083,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>{count:,} length-delimited-Feld(er) in Verschachtelungstiefe {limit} wurde(n) nicht als verschachtelte Nachricht interpretiert (Tiefenlimit, Standardwert der Protobuf-Bibliotheken); als String/Bytes angezeigt</translation>
     </message>
     <message>
+        <source>{count:,} length-delimited field(s) decode both as a nested message and as UTF-8 text; wire type 2 doesn&apos;t record which it is. Both readings are shown as candidates (heuristic), neither as the field&apos;s value</source>
+        <comment>protobuf.ambiguous_payloads</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>{count:,} of {total:,} data files could not be read whole; Overview → Read problems says why</source>
         <comment>leveldb.data_files_not_read</comment>
         <translation>{count:,} von {total:,} Datendateien konnten nicht vollständig gelesen werden; den Grund nennt Übersicht → Leseprobleme</translation>
@@ -8905,6 +8938,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>{count} Pages dieser Akquisition sind nicht in ihren Dateien enthalten; sie werden als Bad-Sector-Markierung des Images gelesen, nicht als Daten vom Gerät</translation>
     </message>
     <message>
+        <source>{count} {unit}(s) of this acquisition read so far hold less data than the bytes they cover; the reader reads {zeros} zero bytes in their place, so what is listed or read from them can hold those zeros</source>
+        <comment>vfs.acquisition_padded_chunks</comment>
+        <translation>{count} {unit}(s) dieser bisher gelesenen Datensätze enthalten weniger Daten als die Anzahl der Bytes, die sie umfassen; der Reader liest stattdessen {zeros} Null-Bytes, sodass die darin aufgeführten oder ausgelesenen Daten diese Nullen enthalten können</translation>
+    </message>
+    <message>
         <source>Crush does not prevent access-time updates on this platform; mount the evidence read-only to prevent them</source>
         <comment>vfs.atime_platform</comment>
         <translation>Crush verhindert auf dieser Plattform keine Aktualisierung der Zugriffszeitstempel; Beweismittel schreibgeschützt einhängen, um dies zu verhindern</translation>
@@ -9208,6 +9246,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>{count} damaged structure(s) recorded and skipped while the volume was listed, first: {first}</source>
         <comment>entry.raw_volume_damage</comment>
         <translation>{count} beschädigte Struktur(en) beim Auflisten des Volumes erfasst und übersprungen, erste: {first}</translation>
+    </message>
+    <message>
+        <source>{count} file(s) recorded as damage while the volume was listed, and listed as stored, first: {first}</source>
+        <comment>entry.raw_volume_damage_listed</comment>
+        <translation>{count} Datei(en), die während der Listung des Datenträgers als beschädigt erfasst und als gespeichert aufgeführt wurden, erste: {first}</translation>
     </message>
     <message>
         <source>{bytes} bytes of this volume lie past the end of the image: the image holds only part of it</source>
@@ -11372,6 +11415,10 @@ Gesamt: {total:.2f} s</translation>
         <translation>Angezeigter Text</translation>
     </message>
     <message>
+        <source>Shown as JSON</source>
+        <translation>Als JSON angezeigt</translation>
+    </message>
+    <message>
         <source>Bytes as hex</source>
         <translation>Bytes als Hex-Wert</translation>
     </message>
@@ -11394,6 +11441,14 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>Rendered image (PNG)…</source>
         <translation>Gerendertes Bild (PNG)...</translation>
+    </message>
+    <message>
+        <source>Decoded as text…</source>
+        <translation>Dekodiert als Text...</translation>
+    </message>
+    <message>
+        <source>Decoded as JSON…</source>
+        <translation>Dekodiert als JSON...</translation>
     </message>
     <message>
         <source>Open in new tab</source>
