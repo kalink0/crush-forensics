@@ -11,7 +11,7 @@ from crush.viewers.protobuf_viewer import (
     ProtobufViewer,
     ProtobufTreeWidget,
     _ENTRY_ROLE,
-    _entries_to_json,
+    entries_to_json,
     _entry_to_jsonable,
 )
 from crush.viewers.tree_viewer import TreeViewer
@@ -189,11 +189,11 @@ def test_entry_to_jsonable_message_recurses() -> None:
     assert [e["value"] for e in out["entries"]] == [1, 2]
 
 
-def test_entries_to_json_is_valid_and_roundtrips() -> None:
+def testentries_to_json_is_valid_and_roundtrips() -> None:
     raw = b"\x08\x2a" + b"\x12" + _varint(5) + b"hello"
     decoded, warning, _ = _decode_message(raw)
     assert not warning
-    text = _entries_to_json(decoded["entries"])
+    text = entries_to_json(decoded["entries"])
     parsed = json.loads(text)  # must not raise
     assert len(parsed) == 2
     assert parsed[0]["value"] == 42
@@ -344,7 +344,7 @@ def test_schema_decoded_view_offers_hidden_hex_toggle(qapp, monkeypatch) -> None
     widget._pool = object()
     widget._msg_combo.addItem("fixtures.BasicWireTypes")
     monkeypatch.setattr(
-        "crush.viewers.protobuf_viewer.decode_message_with_schema",
+        "crush.parsers.protobuf_schema.decode_message_with_schema",
         lambda pool, name, data: object(),
     )
     monkeypatch.setattr(
@@ -353,7 +353,7 @@ def test_schema_decoded_view_offers_hidden_hex_toggle(qapp, monkeypatch) -> None
         lambda msg, **kwargs: {"small_count": 42},
     )
     monkeypatch.setattr(
-        "crush.viewers.protobuf_viewer.schema_byte_ranges",
+        "crush.parsers.protobuf_schema.schema_byte_ranges",
         lambda pool, name, data: {
             ("small_count",): {
                 "byte_range": (0, 2),
@@ -387,7 +387,7 @@ def test_schema_redecode_preserves_visible_hex_view(qapp, monkeypatch) -> None:
     widget._pool = object()
     widget._msg_combo.addItem("fixtures.First")
     monkeypatch.setattr(
-        "crush.viewers.protobuf_viewer.decode_message_with_schema",
+        "crush.parsers.protobuf_schema.decode_message_with_schema",
         lambda pool, name, data: object(),
     )
     monkeypatch.setattr(
@@ -396,7 +396,7 @@ def test_schema_redecode_preserves_visible_hex_view(qapp, monkeypatch) -> None:
         lambda msg, **kwargs: {"small_count": 42},
     )
     monkeypatch.setattr(
-        "crush.viewers.protobuf_viewer.schema_byte_ranges",
+        "crush.parsers.protobuf_schema.schema_byte_ranges",
         lambda pool, name, data: {
             ("small_count",): {
                 "byte_range": (0, 2),
@@ -466,3 +466,145 @@ def test_export_entries_no_file_written_when_dialog_cancelled(qapp, tmp_path, mo
     widget._export_entries(decoded["entries"], "text", "protobuf.txt")  # must not raise
 
     assert list(tmp_path.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Payloads that are both a message and text: two candidates, no value
+# ---------------------------------------------------------------------------
+
+def _ambiguous_widget(text: bytes = b"120533877") -> tuple[ProtobufTreeWidget, bytes]:
+    raw = b"\x0a" + _varint(len(text)) + text
+    decoded, warning, _ = _decode_message(raw)
+    assert warning is None
+    return ProtobufTreeWidget(decoded, raw=raw), raw
+
+
+def _row_texts(item) -> tuple[str, str, str]:  # noqa: ANN001
+    parent = item.parent() or item.model().invisibleRootItem()
+    return tuple(  # type: ignore[return-value]
+        (parent.child(item.row(), col).text() if parent.child(item.row(), col) else "")
+        for col in range(3)
+    )
+
+
+def test_ambiguous_field_row_shows_no_value_and_two_candidates(qapp) -> None:
+    widget, raw = _ambiguous_widget()
+    field_item = widget._model.item(0, 0)
+    field, value, wire_type = _row_texts(field_item)
+    assert field == "field 1"
+    assert wire_type == "length-delimited"
+    assert value == "2 candidates (heuristic)"
+    assert "120533877" not in value
+
+    children = [_row_texts(field_item.child(r, 0)) for r in range(field_item.rowCount())]
+    assert [c[0].strip() for c in children] == [
+        "raw bytes", "candidate: as message", "candidate: as string",
+    ]
+    assert children[1][1] == "{ 1 field(s) }"
+    assert children[2][1] == "9 character(s)"
+
+    as_message = field_item.child(1, 0)
+    assert as_message.child(0, 0).text() == "field 6"
+    assert widget._model.itemFromIndex(
+        as_message.child(0, 0).index().siblingAtColumn(2)
+    ).text() == "fixed64"
+    as_string = field_item.child(2, 0)
+    assert as_string.rowCount() == 1
+    assert as_string.child(0, 1).text() == '"120533877"'
+
+
+def test_ambiguous_candidates_point_at_the_payload_bytes(qapp) -> None:
+    from crush.viewers.protobuf_viewer import _BYTE_RANGE_ROLE, _RAW_ROLE
+
+    widget, raw = _ambiguous_widget()
+    field_item = widget._model.item(0, 0)
+    for row in (1, 2):
+        assert field_item.child(row, 0).data(_BYTE_RANGE_ROLE) == (2, len(raw))
+        assert field_item.child(row, 1).data(_RAW_ROLE) == b"120533877"
+
+
+def test_expand_all_opens_every_candidate_and_its_content(qapp) -> None:
+    """Expand All opens everything, both candidates included, so the analyst
+    can scroll through every reading; the first view stays at depth 1."""
+    inner = b"\x0a\x05event" + b"\x10\x80\x01"  # field 1 "event" (ambiguous) + non-text
+    raw = b"\x12" + _varint(len(inner)) + inner
+    decoded, warning, _ = _decode_message(raw)
+    assert warning is None
+    widget = ProtobufTreeWidget(decoded, raw=raw)
+    model = widget._model
+
+    def walk(parent_index, depth=0):  # noqa: ANN001, ANN202
+        for row in range(model.rowCount(parent_index)):
+            index = model.index(row, 0, parent_index)
+            if model.hasChildren(index):
+                yield index, depth
+                yield from walk(index, depth + 1)
+
+    parents = list(walk(model.index(-1, -1)))
+    # outer field 2 → its field 1 → both candidates of it → their content
+    assert max(depth for _index, depth in parents) >= 3
+    assert all(widget._tree.isExpanded(i) == (d <= 1) for i, d in parents)
+
+    widget._tree_expand_all()
+    assert all(widget._tree.isExpanded(index) for index, _depth in parents)
+    candidate_labels = {
+        model.data(index).strip() for index, _depth in parents
+        if "candidate" in str(model.data(index))
+    }
+    assert candidate_labels == {"candidate: as message", "candidate: as string"}
+
+
+def test_string_values_escape_control_characters(qapp) -> None:
+    """A control character in a string shows as an escape, so the row and
+    its indentation hold ("alert7This…" was 0x37, a length byte, followed by
+    text); the raw payload stays the untouched bytes."""
+    from crush.viewers.protobuf_viewer import _RAW_ROLE
+
+    text = b"line one\nline two\ttab\x0e\x07"
+    raw = b"\x0a" + _varint(len(text)) + text
+    decoded, _warning, _ = _decode_message(raw)
+    entry = decoded["entries"][0]
+    assert entry["value"]["type"] == "string"
+    widget = ProtobufTreeWidget(decoded, raw=raw)
+    shown = widget._model.item(0, 1).text()
+    assert shown == '"line one\\nline two\\ttab\\x0e\\x07"'
+    assert "\n" not in shown
+    assert widget._model.item(0, 1).data(_RAW_ROLE) == text
+    assert entry["raw"] == text
+
+
+def test_text_export_escapes_strings_and_lists_both_candidates() -> None:
+    from crush.viewers.protobuf_viewer import entries_to_text
+
+    decoded, _warning, _ = _decode_message(
+        b"\x0a\x09120533877" + b"\x12\x05a\nb\\c"
+    )
+    text = entries_to_text(decoded["entries"])
+    lines = text.splitlines()
+    assert lines[0] == "1 [length-delimited]: 2 candidates (heuristic)"
+    assert "    # raw bytes: 31 32 30 35 33 33 38 37 37" in lines
+    assert "    candidate: as message {" in lines
+    assert any(line.startswith("      6 [fixed64]:") for line in lines)
+    assert '    candidate: as string: "120533877"' in lines
+    assert '2: "a\\nb\\\\c"' in lines
+
+
+def test_json_export_keeps_both_candidates_and_full_raw_bytes() -> None:
+    payload = b"120533877"
+    decoded, _warning, _ = _decode_message(b"\x0a\x09" + payload)
+    out = json.loads(entries_to_json(decoded["entries"]))[0]
+    assert out["type"] == "candidates (heuristic)"
+    assert out["candidates"][0]["as"] == "message"
+    assert out["candidates"][0]["entries"][0]["field"] == 6
+    assert out["candidates"][1] == {"as": "string", "value": "120533877"}
+    assert out["interpretations"]["raw bytes"] == payload.hex(" ")
+
+
+def test_json_export_raw_bytes_hint_is_the_full_payload() -> None:
+    """The "raw bytes" reading next to a message used the parser's 64-byte
+    preview in the JSON export."""
+    inner = b"\x0a" + _varint(80) + bytes(range(0x80, 0xD0))  # valid message, not text
+    decoded, _warning, _ = _decode_message(b"\x12" + _varint(len(inner)) + inner)
+    out = json.loads(entries_to_json(decoded["entries"]))[0]
+    assert out["type"] == "message"
+    assert out["interpretations"]["raw bytes"] == inner.hex(" ")

@@ -238,8 +238,26 @@ def test_no_manifest_means_no_languages(tmp_path: Path) -> None:
 
 def test_display_names() -> None:
     assert i18n.display_name("en") == "English"
-    assert i18n.display_name("de") == "Deutsch — German"
-    assert "Brasil" in i18n.display_name("pt_BR")
+    assert i18n.display_name("de") == "Deutsch"
+    assert i18n.display_name("pt_BR") == "Português (Brasil)"
+
+
+@pytest.mark.parametrize(("frozen", "executable", "environ", "platform", "expected"), [
+    (False, "/usr/bin/python3", {}, "linux", ["/usr/bin/python3", "-m", "crush"]),
+    (False, "/usr/bin/python3", {"APPIMAGE": "/x/Crush.AppImage"}, "linux",
+     ["/usr/bin/python3", "-m", "crush"]),
+    (True, "/tmp/.mount_Crush/usr/bin/crush", {"APPIMAGE": "/home/a/Crush.AppImage"}, "linux",
+     ["/home/a/Crush.AppImage"]),
+    (True, "/opt/crush/crush", {}, "linux", ["/opt/crush/crush"]),
+    (True, "/Applications/crush.app/Contents/MacOS/crush", {}, "darwin",
+     ["open", "-n", "/Applications/crush.app"]),
+    (True, "C:\\Tools\\crush.exe", {}, "win32", ["C:\\Tools\\crush.exe"]),
+])
+def test_relaunch_command(frozen, executable, environ, platform, expected) -> None:
+    from crush.ui.relaunch import relaunch_command
+    assert relaunch_command(
+        frozen=frozen, executable=executable, environ=environ, platform=platform,
+    ) == expected
 
 
 def test_language_flag_parsed() -> None:

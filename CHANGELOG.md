@@ -2,6 +2,30 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- Added to the user interface -> Support for German. ([@BrunoFischerGermany](https://github.com/BrunoFischerGermany), [#170](https://github.com/kalink0/crush-forensics/pull/170))
+- Added to View → Language -> Support for restarting Crush right away to apply the chosen language.
+- Added to the Format Reference site -> Support for German, with any text not yet translated shown in English and marked.
+- Added to raw disk images -> Support for macOS compressed files on APFS and HFS+ (zlib, LZVN, LZFSE and stored), read as macOS reads them. A file compressed with LZBITMAP is listed and refused with the reason. ([@abrignoni](https://github.com/abrignoni), [#172](https://github.com/kalink0/crush-forensics/pull/172))
+- Added to raw disk images -> Support for naming acquisition chunks whose stored data ran out, which are read with zeros, on the source and in Verify Acquisition Hash. ([@abrignoni](https://github.com/abrignoni), [#172](https://github.com/kalink0/crush-forensics/pull/172))
+- Added to the BLOB Inspector -> Support for showing Protobuf, schema decodes included, in the Protobuf viewer's tree, with its text and JSON export for Copy and Export.
+- Added to the Protobuf viewer and BLOB Inspector -> Support for showing a field that reads both as a nested message and as text as two candidates, marked as a heuristic.
+
+### Bug Fixes
+
+- Fixed floating panels (Filesystem, Properties, Log) that could not be moved on Wayland; undock them by double-clicking the title bar.
+- Fixed Copy Selected Hex/ASCII in hex panes copying the wrong rows or nothing when a selection starts or ends mid-row, and Search Selected taking one byte too many.
+- Fixed control characters in Protobuf strings breaking rows and indentation in the Protobuf viewer and BLOB Inspector.
+- Fixed the Protobuf JSON export holding only the first 64 bytes of a nested message's raw bytes.
+
+### Changed
+
+- View → Language lists each language by its own name only, e.g. "Deutsch".
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.74 (from v1.72) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.14.0 (from v0.13.0).
+
 ## v0.23.0 - 2026-10-17
 
 **Focus: LevelDB read the way LevelDB reads it (decimal file numbers, the MANIFEST that CURRENT names, each file on its own, damaged `.log` parts skipped and named) and its records located in their file; strings with offset and region in SQLite and Realm; every candidate reading of a SEGB payload; SQLite columns decoded as the Value Inspector's timestamp formats; the BLOB Inspector opens, exports and copies its result; exports that continue and list what failed; qnxprobe v1.72 with XFS, Btrfs, ReFS, LVM2 and LUKS, its reads checked against the recorded size; bundled peach updated to v0.10.0.**

@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-263 checks in total.
+265 checks in total.
 
 ### Sources
 
@@ -59,8 +59,8 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
 | [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
-| [HFS+](#hfs) | not tested | not tested | not tested | not tested | not tested | not tested |
-| [APFS](#apfs) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [HFS+](#hfs) | not tested | not tested | not tested | 1 | not tested | not tested |
+| [APFS](#apfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [XFS](#xfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [Btrfs](#btrfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [ReFS](#refs) | not tested | not tested | not tested | 1 | not tested | not tested |
@@ -363,11 +363,13 @@ No forensic checks.
 
 #### HFS+
 
-No forensic checks.
+- **Known-output Verification** — Every macOS compressed file on an HFS+ volume reads back as macOS read it; an LZBITMAP file is refused with the reason ([test_raw_image_decmpfs.py](../../crush/tests/test_raw_image_decmpfs.py), `test_hfsplus_compressed_files_read_as_macos_read_them`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### APFS
 
-No forensic checks.
+- **Known-output Verification** — Every macOS compressed file on an APFS volume (zlib, LZVN, LZFSE, stored) reads back as macOS read it; an LZBITMAP file is refused with the reason ([test_raw_image_decmpfs.py](../../crush/tests/test_raw_image_decmpfs.py), `test_apfs_compressed_files_read_as_macos_read_them`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### XFS
 

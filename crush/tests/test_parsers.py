@@ -2510,7 +2510,7 @@ def test_leveldb_parse_record_has_offset(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# BlobInspector helpers: _image_result, _render_protobuf
+# BlobInspector helpers: _image_result; the Protobuf tree's text export
 # ---------------------------------------------------------------------------
 
 def test_image_result_covers_the_image_parsers_signatures() -> None:
@@ -2539,7 +2539,7 @@ def test_image_result_negative() -> None:
 
 
 def test_render_protobuf_simple() -> None:
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     entries = [
         {"field": 1, "wire_type": "varint", "value": 42},
         {"field": 2, "wire_type": "varint", "value": 0},
@@ -2552,7 +2552,7 @@ def test_render_protobuf_simple() -> None:
 def test_render_protobuf_nested() -> None:
     # wire_type is "length-delimited" (as _decode_message produces);
     # value shape is {"type": "message", "entries": [...]}
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     entries = [
         {"field": 1, "wire_type": "length-delimited", "value": {
             "type": "message",
@@ -2566,7 +2566,7 @@ def test_render_protobuf_nested() -> None:
 
 
 def test_render_protobuf_string_value() -> None:
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     entries = [
         {"field": 5, "wire_type": "length-delimited", "value": {"type": "string", "text": "hello"}},
     ]
@@ -2575,7 +2575,7 @@ def test_render_protobuf_string_value() -> None:
 
 
 def test_render_protobuf_bytes_dict_value() -> None:
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     entries = [
         {"field": 3, "wire_type": "length-delimited", "value": {
             "type": "bytes", "length": 4, "hex_preview": "de ad be ef",
@@ -2591,7 +2591,7 @@ def test_render_protobuf_bytes_value() -> None:
     bytes behind a display cutoff would be a forensic-accuracy bug, not a cosmetic
     one. This is distinct from the 40-byte 'value' shape here (a bare bytes object,
     not the {"type": "bytes", ...} dict _decode_message() actually produces)."""
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     payload = bytes(range(40))
     entries = [{"field": 2, "wire_type": "bytes", "value": payload}]
     result = _render_protobuf(entries)
@@ -2604,7 +2604,7 @@ def test_render_protobuf_bytes_dict_value_uses_full_raw_not_capped_preview() -> 
     """The parser's hex_preview is capped at 64 bytes for the tree/text display label —
     when the entry also carries the full raw payload (as real _decode_message() output
     does), the renderer must use that instead of repeating the capped preview."""
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     payload = bytes(range(256)) * 2  # 512 bytes, well past the 64-byte preview cap
     entries = [{
         "field": 3,
@@ -2622,7 +2622,7 @@ def test_render_protobuf_ambiguous_message_raw_bytes_hint_shows_full_payload() -
     decode is built from the same capped hex_preview — it must also be replaced
     with the full payload when available, not just the field's own primary value."""
     from crush.parsers.protobuf_parser import _decode_message
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
 
     inner_payload = bytes(range(64, 64 + 80))  # 80 bytes, not itself a nested submessage
     inner = b"\x0a" + _varint(len(inner_payload)) + inner_payload  # itself valid protobuf -> ambiguous
@@ -2639,7 +2639,7 @@ def test_render_protobuf_ambiguous_message_raw_bytes_hint_shows_full_payload() -
 def test_render_protobuf_integration_nested() -> None:
     """End-to-end: real wire bytes with a nested message render as a block, not a raw dict."""
     from crush.parsers.protobuf_parser import _decode_message
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
 
     # inner: field 1, varint 7  →  b'\x08\x07'
     inner = b"\x08\x07"
@@ -2745,7 +2745,7 @@ def _varint(n: int) -> bytes:
 def test_render_protobuf_shows_interpretations() -> None:
     """Interpretation hints appear as '# label: value' lines below the field."""
     from crush.parsers.proto_interp import Interpretation
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     entries = [
         {
             "field": 1,
@@ -2769,7 +2769,7 @@ def test_render_protobuf_shows_interpretations() -> None:
 def test_render_protobuf_suppresses_uint32() -> None:
     """uint32 is also suppressed as it equals the primary fixed32 value."""
     from crush.parsers.proto_interp import Interpretation
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
     entries = [
         {
             "field": 2,
@@ -2792,7 +2792,7 @@ def test_render_protobuf_integration_with_interpretations() -> None:
     """End-to-end: _decode_message produces interpretations shown in text output."""
     import struct
     from crush.parsers.protobuf_parser import _decode_message
-    from crush.viewers.blob_inspector import _render_protobuf
+    from crush.viewers.protobuf_viewer import entries_to_text as _render_protobuf
 
     # field 1: fixed64 containing a Cocoa timestamp (694656000.0 = 2023-01-07 UTC)
     raw = b"\x09" + struct.pack("<d", 694_656_000.0)
@@ -2804,31 +2804,26 @@ def test_render_protobuf_integration_with_interpretations() -> None:
     assert "2023" in result
 
 
-def test_try_protobuf_surfaces_warning() -> None:
-    """Truncated protobuf shows a Warning header in BlobInspector output."""
-    from crush.parsers.protobuf_parser import _decode_message
-    from crush.viewers.blob_inspector import _render_protobuf
+def test_protobuf_reading_text_surfaces_warning() -> None:
+    """Truncated protobuf: the BLOB Inspector's copied/exported text starts
+    with the parser's warning."""
+    from crush.viewers.blob_inspector import _protobuf_reading
 
     # field 1, wire_type 1 (64-bit) with only 4 bytes — truncated
     truncated = b"\x09\x00\x01\x02\x03"
-    decoded, warning, _ = _decode_message(truncated)
-    assert warning  # must have a warning
-
-    result = _render_protobuf(decoded["entries"])
-    # _try_protobuf prepends the warning — simulate that here
-    if warning:
-        result = f"# Warning: {warning}\n\n{result}"
-    assert "# Warning:" in result
+    result = _protobuf_reading(truncated).text()
+    assert result.startswith("# Parse warning:")
     assert "Truncated" in result
 
 
 # ---------------------------------------------------------------------------
-# _decode_message heuristic: nested-first, string/bytes fallback
+# _decode_message heuristic: nested and text are candidates, string/bytes fallback
 # ---------------------------------------------------------------------------
 
-def test_decode_message_prefers_nested_over_utf8() -> None:
-    """A length-delimited payload that is valid protobuf AND printable UTF-8 is decoded
-    as a nested message, not a string."""
+def test_decode_message_text_that_is_also_a_message_gives_both_candidates() -> None:
+    """A length-delimited payload that is valid protobuf AND printable UTF-8:
+    wire type 2 doesn't say which it is, so neither reading is the value --
+    both are candidates, counted for the parser's note."""
     from crush.parsers.protobuf_parser import _decode_message, _looks_like_utf8
 
     # tag 0x20 = field 4, wire_type 0 (varint); 0x41 = 65 — both are printable ASCII
@@ -2841,9 +2836,67 @@ def test_decode_message_prefers_nested_over_utf8() -> None:
 
     assert not warning
     entry = decoded["entries"][0]
-    assert entry["value"]["type"] == "message", (
-        "valid nested protobuf should be decoded as message, not string"
+    assert entry["value"]["type"] == "candidates"
+    message, string = entry["value"]["candidates"]
+    assert message["type"] == "message"
+    assert message["entries"][0]["field"] == 4
+    assert string == {"type": "string", "text": " A"}
+    assert entry["raw"] == inner
+    assert decoded["ambiguous"] == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "bogus_field", "bogus_wire_type"),
+    [
+        # Real-data examples: read as a message these give a bogus timestamp.
+        ("120533877", 6, "fixed64"),
+        ("event", 12, "fixed32"),
+    ],
+)
+def test_decode_message_real_text_is_not_presented_as_a_message(
+    text: str, bogus_field: int, bogus_wire_type: str
+) -> None:
+    from crush.core.issues import ParseIssue
+    from crush.core.vfs import BytesVFS
+    from crush.parsers.protobuf_parser import ProtobufParser
+
+    payload = text.encode()
+    raw = b"\x0a" + bytes([len(payload)]) + payload
+    vfs = BytesVFS(raw, name="t.pb")
+    result = ProtobufParser().parse(vfs.root(), vfs)
+    entry = result.data["decoded"]["entries"][0]
+    assert entry["value"]["type"] == "candidates"
+    message, string = entry["value"]["candidates"]
+    assert string["text"] == text
+    assert message["entries"][0]["field"] == bogus_field
+    assert message["entries"][0]["wire_type"] == bogus_wire_type
+    assert result.metadata["Ambiguous fields"] == ParseIssue(
+        "protobuf.ambiguous_payloads", {"count": 1}
     )
+
+
+def test_decode_message_message_only_payload_stays_a_message() -> None:
+    """Valid protobuf that isn't printable text stays a message (no candidates)."""
+    from crush.core.vfs import BytesVFS
+    from crush.parsers.protobuf_parser import ProtobufParser, _decode_message
+
+    inner = b"\x08\x07"
+    decoded, _warning, _ = _decode_message(b"\x12\x02" + inner)
+    assert decoded["entries"][0]["value"]["type"] == "message"
+    assert decoded["ambiguous"] == 0
+    vfs = BytesVFS(b"\x12\x02" + inner, name="t.pb")
+    assert "Ambiguous fields" not in ProtobufParser().parse(vfs.root(), vfs).metadata
+
+
+def test_decode_message_counts_ambiguous_fields_inside_nested_messages() -> None:
+    from crush.parsers.protobuf_parser import _decode_message
+
+    inner = b"\x0a\x05event"  # field 1: "event" -- text and a message
+    outer = b"\x12" + bytes([len(inner) + 3]) + inner + b"\x10\x80\x01"  # + non-text varint
+    decoded, warning, _ = _decode_message(outer)
+    assert not warning
+    assert decoded["entries"][0]["value"]["type"] == "message"
+    assert decoded["ambiguous"] == 1
 
 
 def test_decode_message_falls_back_to_string() -> None:
@@ -2982,17 +3035,19 @@ def test_interpret_fixed64_uint64_unix_ms() -> None:
 
 
 def test_protobuf_text_payload_parsing_as_message_keeps_string_candidate() -> None:
-    """Bytes that are grammatically valid protobuf are shown as a message;
-    the string the same bytes spell is offered as a candidate too."""
+    """Text bytes that are grammatically valid protobuf too: the message and
+    the string are both candidates, the raw bytes stay alongside."""
     from crush.parsers.protobuf_parser import _decode_message
     inner = b"\x0a\x07user_id" + b"\x12\x09120533877"  # "120533877" = field 6, fixed64
     decoded, warning, text_index = _decode_message(b"\x3a" + bytes([len(inner)]) + inner)
     assert warning is None
     entry = decoded["entries"][0]["value"]["entries"][1]
-    assert entry["value"]["type"] == "message"
+    assert entry["value"]["type"] == "candidates"
+    kinds = [c["type"] for c in entry["value"]["candidates"]]
+    assert kinds == ["message", "string"]
+    assert entry["value"]["candidates"][1]["text"] == "120533877"
     val = {i.label: i.value for i in entry["interpretations"]}
-    assert val["string (UTF-8)"] == "120533877"
-    assert val["raw bytes"] == "31 32 30 35 33 33 38 37 37"
+    assert val == {"raw bytes": "31 32 30 35 33 33 38 37 37"}
     assert "120533877" in text_index
 
 

@@ -60,6 +60,7 @@ def _ack_body() -> str:
     peach_version = get_bundled_peach_version()
     peach_label = f"peach {peach_version}" if peach_version else "peach"
     h_contributors = translate("AboutDialog", "Contributors")
+    h_translations = translate("AboutDialog", "Translations")
     h_bundled = translate("AboutDialog", "Bundled third-party code")
     h_python = translate("AboutDialog", "Python package dependencies")
     h_tools = translate("AboutDialog", "Development tools")
@@ -113,6 +114,14 @@ def _ack_body() -> str:
     return f"""\
 <h3>{h_contributors}</h3>
 <p>{intro}</p>
+
+<h3>{h_translations}</h3>
+<table>
+  <tr>
+    <td><b>Deutsch</b></td>
+    <td><a href="https://github.com/BrunoFischerGermany">@BrunoFischerGermany</a></td>
+  </tr>
+</table>
 
 <h3>{h_bundled}</h3>
 <table>

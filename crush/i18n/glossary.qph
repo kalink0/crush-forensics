@@ -76,6 +76,11 @@
     <definition>Do not translate -- Protobuf spec term</definition>
   </phrase>
   <phrase>
+    <source>length-delimited</source>
+    <target>length-delimited</target>
+    <definition>Do not translate -- Protobuf spec term (wire type LEN)</definition>
+  </phrase>
+  <phrase>
     <source>plist</source>
     <target>plist</target>
     <definition>Do not translate -- Apple property list</definition>
@@ -271,6 +276,26 @@
     <definition>Do not translate -- Term of art (Sanderson) for frames from an earlier WAL generation</definition>
   </phrase>
   <phrase>
+    <source>unallocated</source>
+    <target>unallocated</target>
+    <definition>Do not translate -- Forensic term of art: space not assigned to any live file or record (also unallocated space)</definition>
+  </phrase>
+  <phrase>
+    <source>allocated</source>
+    <target>allocated</target>
+    <definition>Do not translate -- Forensic term of art: counterpart of unallocated</definition>
+  </phrase>
+  <phrase>
+    <source>slack</source>
+    <target>slack</target>
+    <definition>Do not translate -- Forensic term of art: unused bytes inside an allocated unit</definition>
+  </phrase>
+  <phrase>
+    <source>hole</source>
+    <target>hole</target>
+    <definition>Do not translate -- Sparse-file term: a range with no stored data</definition>
+  </phrase>
+  <phrase>
     <source>BLOB</source>
     <target>BLOB</target>
     <definition>Do not translate -- SQLite data type</definition>
@@ -299,6 +324,51 @@
     <source>B-tree</source>
     <target>B-tree</target>
     <definition>Do not translate -- Data structure (SQLite spec term)</definition>
+  </phrase>
+  <phrase>
+    <source>freelist trunk</source>
+    <target>freelist trunk</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>freelist leaf</source>
+    <target>freelist leaf</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>cell content area</source>
+    <target>cell content area</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>cell pointer array</source>
+    <target>cell pointer array</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>pointer map</source>
+    <target>pointer map</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>lock-byte page</source>
+    <target>lock-byte page</target>
+    <definition>Do not translate -- SQLite spec term</definition>
+  </phrase>
+  <phrase>
+    <source>overflow</source>
+    <target>overflow</target>
+    <definition>Do not translate -- SQLite overflow page (spec term)</definition>
+  </phrase>
+  <phrase>
+    <source>value offset</source>
+    <target>value offset</target>
+    <definition>Do not translate -- TIFF/EXIF spec term: the IFD entry field holding the value or its offset</definition>
+  </phrase>
+  <phrase>
+    <source>page</source>
+    <target>page</target>
+    <definition>Do not translate -- Technical storage unit (SQLite / WAL / journal / AFF) -- a document page or paging in the GUI is translated</definition>
   </phrase>
   <phrase>
     <source>VFS</source>
@@ -379,11 +449,6 @@
     <source>carved</source>
     <target />
     <definition>Translate, always the same way -- Recovered by carving (found by content in free space)</definition>
-  </phrase>
-  <phrase>
-    <source>unallocated space</source>
-    <target />
-    <definition>Translate, always the same way -- Space not assigned to any live file or record</definition>
   </phrase>
   <phrase>
     <source>superseded</source>

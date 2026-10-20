@@ -70,7 +70,9 @@ def test_every_entry_has_a_page_and_a_json_record(site, published):
     slugs = {source.url_slug(f["short_name"]) for f in source.FORMATS}
     assert len(slugs) == len(source.FORMATS)
     pages_built = {p.name for p in site.iterdir() if (p / "index.html").is_file()}
-    assert pages_built == slugs
+    assert pages_built == slugs | set(pages.SITE_LANGUAGES)
+    for code in pages.SITE_LANGUAGES:
+        assert {p.name for p in (site / code).iterdir() if p.is_dir()} == slugs
     assert {r["slug"] for r in published["formats"]} == slugs
 
 
@@ -173,8 +175,11 @@ def test_no_external_resources(site):
         text = page.read_text(encoding="utf-8")
         for src in re.findall(r'<script[^>]*\ssrc="([^"]+)"', text):
             assert "://" not in src, (page, src)
-        for href in re.findall(r'<link[^>]*\shref="([^"]+)"', text):
+        # canonical / alternate name the page's address; they load nothing.
+        for href in re.findall(r'<link rel="stylesheet"[^>]*\shref="([^"]+)"', text):
             assert "://" not in href, (page, href)
+        assert len(re.findall(r"<link ", text)) == len(re.findall(
+            r'<link rel="(?:stylesheet|canonical|alternate)"', text)), page
     for asset in (site / "static").iterdir():
         assert "://" not in asset.read_text(encoding="utf-8").replace(
             "SPDX-License-Identifier", ""
@@ -413,10 +418,14 @@ def test_i18n_skips_the_same_website_contexts():
 
 def test_filesig_hint_only_once_on_the_overview(site):
     """One global hint on the overview; no format page links it."""
-    index = (site / "index.html").read_text(encoding="utf-8")
-    assert index.count(f'href="{pages.FILESIG_URL}"') == 1
-    for page in site.glob("*/index.html"):
-        assert pages.FILESIG_URL not in page.read_text(encoding="utf-8"), page
+    overviews = [site, *(site / code for code in pages.SITE_LANGUAGES)]
+    for overview in overviews:
+        index = (overview / "index.html").read_text(encoding="utf-8")
+        assert index.count(f'href="{pages.FILESIG_URL}"') == 1
+        for page in overview.glob("*/index.html"):
+            if page.parent in overviews:
+                continue
+            assert pages.FILESIG_URL not in page.read_text(encoding="utf-8"), page
 
 
 def test_footer_links_to_a_prefilled_issue(site, published):
@@ -498,3 +507,170 @@ def test_stylesheets_take_colours_from_the_theme():
     }
     for name, css in sheets.items():
         assert not re.findall(r"#[0-9a-fA-F]{3,6}\b", css), name
+
+
+# -- Translated site ------------------------------------------------------------
+
+def _catalog(path: Path, messages: list[tuple[str, str, str, str | None, str | None]]) -> Path:
+    """A .ts with (context, source, disambiguation, translation, type) messages."""
+    import xml.etree.ElementTree as ET
+
+    ts = ET.Element("TS", version="2.1", language="de_DE")
+    contexts: dict[str, ET.Element] = {}
+    for context, src, disambiguation, translation, kind in messages:
+        if context not in contexts:
+            contexts[context] = ET.SubElement(ts, "context")
+            ET.SubElement(contexts[context], "name").text = context
+        message = ET.SubElement(contexts[context], "message")
+        ET.SubElement(message, "source").text = src
+        if disambiguation:
+            ET.SubElement(message, "comment").text = disambiguation
+        tr = ET.SubElement(message, "translation")
+        tr.text = translation
+        if kind:
+            tr.set("type", kind)
+    path.mkdir(parents=True, exist_ok=True)
+    ET.ElementTree(ts).write(path / "crush_de.ts", encoding="utf-8", xml_declaration=True)
+    return path
+
+
+def test_load_catalog_keeps_only_finished_translations(tmp_path):
+    directory = _catalog(tmp_path, [
+        ("C", "done", "", "fertig", None),
+        ("C", "same", "", "same", None),
+        ("C", "open", "", "offen", "unfinished"),
+        ("C", "old", "", "alt", "vanished"),
+        ("C", "gone", "", "weg", "obsolete"),
+        ("C", "empty", "", None, None),
+        ("K", "text", "Fmt A", "Text A", None),
+        ("K", "text", "Fmt B", "Text B", None),
+    ])
+    assert pages.load_catalog(directory / "crush_de.ts") == {
+        ("C", "done", ""): "fertig",
+        ("C", "same", ""): "same",
+        ("K", "text", "Fmt A"): "Text A",
+        ("K", "text", "Fmt B"): "Text B",
+    }
+
+
+def test_every_language_has_every_page_with_switch_and_alternates(site, published):
+    url = pages.DEFAULT_SITE_URL
+    for code in (pages.SOURCE_LANG, *pages.SITE_LANGUAGES):
+        base = site if code == pages.SOURCE_LANG else site / code
+        for slug in (None, *(r["slug"] for r in published["formats"])):
+            page = (base / slug / "index.html" if slug else base / "index.html").read_text(
+                encoding="utf-8")
+            assert f'<html lang="{code}">' in page
+            assert f'<link rel="canonical" href="{pages.page_url(url, code, slug)}">' in page
+            for other in (pages.SOURCE_LANG, *pages.SITE_LANGUAGES):
+                assert (f'<link rel="alternate" hreflang="{other}" '
+                        f'href="{pages.page_url(url, other, slug)}">') in page
+            assert (f'<link rel="alternate" hreflang="x-default" '
+                    f'href="{pages.page_url(url, pages.SOURCE_LANG, slug)}">') in page
+            # The switch: the current language marked, the others linked to
+            # the same page -- the link resolves to an existing file.
+            nav = page[page.index('<nav class="lang"'):page.index("</nav>")]
+            assert f'<strong lang="{code}">' in nav
+            here = base / slug if slug else base
+            for href in re.findall(r'href="([^"]+)"', nav):
+                assert (here / href / "index.html").resolve().is_file(), (code, slug, href)
+
+
+def test_translated_site_uses_the_catalog(tmp_path, monkeypatch):
+    from crush.data import format_pages_text as site_text
+
+    monkeypatch.setattr(source, "FORMATS", [_entry(category="database")])
+    directory = _catalog(tmp_path / "i18n", [
+        ("FormatKnowledge", "Relevance <text> & more.", "Test Format", "Relevanz <Text>.", None),
+        ("FormatKnowledge", "Test magic", "Test Format", "Testsignatur", None),
+        ("FormatCategory", "database", "", "Datenbank", None),
+        *[(site_text.WEBSITE_CONTEXT, text, "", f"DE {key}", None)
+          for key, text in site_text.WEBSITE_TEXTS.items()],
+        *[(context, text, "", f"DE {key}", None)
+          for key, (context, text) in site_text.APP_TEXTS.items()],
+    ])
+    result = pages.build(tmp_path / "out", COMMIT, GENERATED, catalog_dir=directory)
+    assert result.untranslated == {"de": set()}
+    page = (tmp_path / "out" / "formats" / "de" / "testfmt" / "index.html").read_text(
+        encoding="utf-8")
+    assert "Relevanz &lt;Text&gt;." in page and "Testsignatur" in page and "Datenbank" in page
+    assert "DE f_relevance" in page
+    assert "untranslated" not in page
+    # The citation and the correction issue name the German page.
+    assert f"{pages.DEFAULT_SITE_URL}de/testfmt/" in page
+    index = (tmp_path / "out" / "formats" / "de" / "index.html").read_text(encoding="utf-8")
+    # The filter finds the category in German and in English.
+    search = re.search(r'data-search="([^"]*)"', index).group(1).split()
+    assert "database" in search and "datenbank" in search
+    assert 'href="../formats.json"' in index and 'src="../static/search.js"' in index
+
+
+def test_untranslated_text_is_shown_in_english_and_marked(tmp_path, monkeypatch):
+    monkeypatch.setattr(source, "FORMATS", [_entry()])
+    # The relevance translated for another format only; nothing else.
+    directory = _catalog(tmp_path / "i18n", [
+        ("FormatKnowledge", "Relevance <text> & more.", "Other Format", "Relevanz.", None),
+        ("FormatKnowledge", "Test magic", "Test Format", "Testsignatur", "unfinished"),
+    ])
+    result = pages.build(tmp_path / "out", COMMIT, GENERATED, catalog_dir=directory)
+    assert ("FormatKnowledge", "Relevance <text> & more.", "Test Format") in result.untranslated["de"]
+    assert ("FormatKnowledge", "Test magic", "Test Format") in result.untranslated["de"]
+    assert ("FormatCategory", "database", "") in result.untranslated["de"]
+    page = (tmp_path / "out" / "formats" / "de" / "testfmt" / "index.html").read_text(
+        encoding="utf-8")
+    assert ('<span lang="en">Relevance &lt;text&gt; &amp; more.</span> '
+            '<span class="badge untranslated">') in page
+    assert '<span lang="en">Test magic</span>' in page
+    assert 'class="untranslated-note"' in page
+    index = (tmp_path / "out" / "formats" / "de" / "index.html").read_text(encoding="utf-8")
+    assert 'class="untranslated-note"' in index
+    assert _format_data(index)["formats"][0]["signatures"] == [[0, "54535446", "Test magic", True]]
+    # The English site has no marks.
+    english = (tmp_path / "out" / "formats" / "testfmt" / "index.html").read_text(encoding="utf-8")
+    assert "untranslated" not in english
+
+
+def test_lookup_reports_an_untranslated_description(tmp_path, monkeypatch):
+    monkeypatch.setattr(source, "FORMATS", [_entry()])
+    directory = _catalog(tmp_path / "i18n", [("C", "x", "", "y", None)])
+    pages.build(tmp_path / "out", COMMIT, GENERATED, catalog_dir=directory)
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not found")
+    data = _format_data((tmp_path / "out" / "formats" / "de" / "index.html").read_text(
+        encoding="utf-8"))
+    out = subprocess.run(
+        [node, "-e", "const s = require(process.argv[1]);"
+         "const d = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+         "console.log(JSON.stringify(s.lookup(d.formats, '54 53').map(h => h.untranslated)));",
+         str(tmp_path / "out" / "formats" / "static" / "search.js")],
+        input=json.dumps(data), capture_output=True, text=True, check=True,
+    )
+    assert json.loads(out.stdout) == [True]
+
+
+def test_missing_catalog_fails_the_build(tmp_path):
+    with pytest.raises(pages.PagesError, match="not found"):
+        pages.build(tmp_path / "out", COMMIT, GENERATED, catalog_dir=tmp_path / "none")
+
+
+def test_slug_taken_by_a_site_language_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(source, "FORMATS", [_entry(short_name="DE")])
+    with pytest.raises(pages.PagesError, match="site language"):
+        _build(tmp_path)
+
+
+def test_language_names_match_the_app(qapp):
+    from crush.data import format_pages_text as site_text
+    from crush.ui import i18n
+
+    assert set(site_text.LANGUAGE_NAMES) == {pages.SOURCE_LANG, *pages.SITE_LANGUAGES}
+    for code, name in site_text.LANGUAGE_NAMES.items():
+        assert i18n.display_name(code) == name
+
+
+def test_site_index_links_every_site_language(tmp_path):
+    pages.write_site_index(tmp_path)
+    text = (tmp_path / "index.html").read_text(encoding="utf-8")
+    for code in pages.SITE_LANGUAGES:
+        assert f'href="formats/{code}/"' in text

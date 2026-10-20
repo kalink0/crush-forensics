@@ -50,8 +50,12 @@ tr:last-child td{border-bottom:none}
 .badge{font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 6px;
        border-radius:4px;text-transform:uppercase;vertical-align:middle}
 .badge.draft{background:var(--warn-bg);color:var(--warn-fg)}
+.badge.untranslated{background:var(--code-bg);color:var(--muted);border:1px solid var(--border-strong)}
 .draft-banner{background:var(--warn-bg);color:var(--warn-fg);font-weight:600;
               border:1px solid var(--warn-border)}
+.untranslated-note{border:1px solid var(--border-strong);color:var(--muted);font-size:13px}
+.lang{margin-top:8px;font-size:12px}
+.lang strong{font-weight:600}
 .relevance{white-space:pre-wrap}
 .url{color:var(--faint);word-break:break-all}
 .cite{font-size:13px;background:var(--code-bg);padding:8px 10px;border-radius:4px}

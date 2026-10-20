@@ -35,7 +35,6 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QFontMetrics,
-    QGuiApplication,
 )
 from shiboken6 import isValid
 from PySide6.QtWidgets import (
@@ -52,6 +51,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QProgressDialog,
     QStatusBar,
+    QStyle,
     QStackedWidget,
     QTabBar,
     QTabWidget,
@@ -67,7 +67,7 @@ import crush
 from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
 from crush.parsers.hex_fallback import HexFallbackParser
-from crush.ui import extract_dialog, i18n
+from crush.ui import extract_dialog, i18n, relaunch
 from crush.ui.busy_dialog import busy_call
 from crush.parsers.base import ParseResult
 from crush.core.issues import QT_TRANSLATE_NOOP, CatalogText, ParseIssue, render_value
@@ -233,14 +233,39 @@ class _DockTitleBar(QWidget):
         label = QLabel(title)
         layout.addWidget(label)
         layout.addStretch()
-        dock_btn = QPushButton(translate("_DockTitleBar", "Dock"))
-        dock_btn.setFixedHeight(20)
-        dock_btn.clicked.connect(self._dock_back)
-        layout.addWidget(dock_btn)
+        # The same icons as Qt's own dock title bar (float / close).
+        self.dock_button = self._icon_button(
+            QStyle.StandardPixmap.SP_TitleBarNormalButton, translate("_DockTitleBar", "Dock")
+        )
+        self.dock_button.clicked.connect(self._dock_back)
+        layout.addWidget(self.dock_button)
+        self.close_button = self._icon_button(
+            QStyle.StandardPixmap.SP_TitleBarCloseButton, translate("_DockTitleBar", "Close")
+        )
+        self.close_button.clicked.connect(dock.close)
+        self.close_button.setVisible(
+            bool(dock.features() & QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        )
+        layout.addWidget(self.close_button)
+
+    def _icon_button(self, pixmap: QStyle.StandardPixmap, text: str) -> QToolButton:
+        button = QToolButton(self)
+        button.setIcon(self._dock.style().standardIcon(pixmap, None, self._dock))
+        button.setAutoRaise(True)
+        button.setFixedSize(20, 20)
+        button.setToolTip(text)
+        button.setAccessibleName(text)
+        return button
 
     def mousePressEvent(self, event: object) -> None:  # type: ignore[override]
         if hasattr(event, "button") and event.button() == Qt.MouseButton.LeftButton:
             if self._dock.isFloating():
+                # The window system moves the window: a client can't place
+                # its own windows on Wayland, so a move() there is ignored.
+                handle = self._dock.windowHandle()
+                if handle is not None and handle.startSystemMove():
+                    return
+                # No system move (platform without it): move by the mouse delta.
                 self._drag_pos = event.globalPosition().toPoint()  # type: ignore[union-attr]
                 return
         super().mousePressEvent(event)  # type: ignore[arg-type]
@@ -1070,12 +1095,45 @@ class MainWindow(QMainWindow):
         if code == i18n.saved_language(self._settings):
             return
         i18n.save_language(self._settings, code)
+        self._settings.sync()
         self._logger.info("UI language set to %s (applies after restart)", code)
-        QMessageBox.information(
-            self,
-            translate("MainWindow", "Language"),
-            translate("MainWindow", "The new language applies after Crush is restarted."),
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(translate("MainWindow", "Language"))
+        box.setText(translate("MainWindow", "The new language applies after Crush is restarted."))
+        box.setInformativeText(translate(
+            "MainWindow",
+            "Restarting closes all Crush windows and everything open in them.",
+        ))
+        restart_btn = box.addButton(
+            translate("MainWindow", "Restart now"), QMessageBox.ButtonRole.AcceptRole
         )
+        later_btn = box.addButton(translate("MainWindow", "Later"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(later_btn)
+        box.exec()
+        if box.clickedButton() is restart_btn:
+            self._restart()
+
+    def _restart(self) -> None:
+        """Start a new Crush, then close every window and quit. If the new
+        process can't be started, nothing is closed."""
+        try:
+            relaunch.relaunch()
+        except OSError as exc:
+            self._logger.error("Restart failed: %s", exc)
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Language"),
+                translate(
+                    "MainWindow",
+                    "Crush could not be restarted ({error}). The new language applies "
+                    "the next time Crush is started.",
+                ).format(error=exc),
+            )
+            return
+        self._logger.info("Restarting Crush")
+        QApplication.closeAllWindows()
+        QApplication.quit()
 
     def _new_window(self) -> None:
         self._spawn_window()
@@ -2395,6 +2453,7 @@ class MainWindow(QMainWindow):
             match = result.get("match")  # type: ignore[attr-defined]
             checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
             missing_pages = result.get("missing_page_count") or 0  # type: ignore[attr-defined]
+            padded = result.get("padded_chunks") or []  # type: ignore[attr-defined]
             # Found while reading, whether or not a hash was stored: chunks whose
             # own checksum fails, pages the acquisition declares but doesn't hold.
             findings = []
@@ -2402,6 +2461,12 @@ class MainWindow(QMainWindow):
                 findings.append(translate(
                     "MainWindow", "{count} chunk(s) fail their own checksum."
                 ).format(count=f"{len(checksum_errors):,}"))
+            if padded:
+                findings.append(translate(
+                    "MainWindow",
+                    "{count} chunk(s) hold less data than the bytes they cover; zeros are "
+                    "read in their place.",
+                ).format(count=f"{len(padded):,}"))
             if missing_pages:
                 findings.append(translate(
                     "MainWindow",
@@ -4300,20 +4365,11 @@ class MainWindow(QMainWindow):
             self._spinner_timer.start()
 
     def _sync_dock_titlebar(self, dock: QDockWidget, floating: bool) -> None:
-        # On Wayland (native or XWayland) the compositor owns window decorations
-        # including resize handles. A custom title bar strips them entirely.
-        _on_wayland = (
-            QGuiApplication.platformName() == "wayland"
-            or os.environ.get("XDG_SESSION_TYPE") == "wayland"
-            or bool(os.environ.get("WAYLAND_DISPLAY"))
-        )
-        if _on_wayland:
-            if floating:
-                dock.setWindowFlag(Qt.WindowType.Window, True)
-                dock.show()
-            else:
-                dock.setWindowFlag(Qt.WindowType.Window, False)
-            return
+        # A floating panel gets our title bar on every platform, Wayland
+        # included: Qt's own drag of a floating dock grabs the mouse and
+        # move()s the window, neither of which Wayland allows, so the panel
+        # stuck after its first move. The title bar hands the move to the
+        # window system (_DockTitleBar.mousePressEvent).
         if floating:
             dock.setTitleBarWidget(_DockTitleBar(dock.windowTitle(), dock))
         else:

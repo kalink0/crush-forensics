@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 
-from PySide6.QtCore import QPoint, QRegularExpression, Qt, Signal
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QPoint, QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -76,20 +76,27 @@ class _HexPlainTextEdit(QPlainTextEdit):
         menu = self.createStandardContextMenu()
         cursor = self.textCursor()
         if cursor.hasSelection():
-            menu.addSeparator()
-            menu.addAction(translate("_HexPlainTextEdit", "Copy Selected Hex")).triggered.connect(
-                self._viewer._copy_selected_hex
-            )
-            menu.addAction(translate("_HexPlainTextEdit", "Copy Selected ASCII")).triggered.connect(
-                self._viewer._copy_selected_ascii
-            )
-            menu.addSeparator()
-            menu.addAction(
-                translate("_HexPlainTextEdit", "Search Selected as ASCII")
-            ).triggered.connect(self._viewer._search_selected_as_ascii)
-            menu.addAction(
-                translate("_HexPlainTextEdit", "Search Selected as Hex")
-            ).triggered.connect(self._viewer._search_selected_as_hex)
+            # Greyed out when the selection covers no byte (only offsets or
+            # gaps), so they never copy or search nothing without a sign.
+            covers_bytes = self._viewer._selection_byte_range() is not None
+            for label, slot in (
+                (None, None),
+                (QT_TRANSLATE_NOOP("_HexPlainTextEdit", "Copy Selected Hex"),
+                 self._viewer._copy_selected_hex),
+                (QT_TRANSLATE_NOOP("_HexPlainTextEdit", "Copy Selected ASCII"),
+                 self._viewer._copy_selected_ascii),
+                (None, None),
+                (QT_TRANSLATE_NOOP("_HexPlainTextEdit", "Search Selected as ASCII"),
+                 self._viewer._search_selected_as_ascii),
+                (QT_TRANSLATE_NOOP("_HexPlainTextEdit", "Search Selected as Hex"),
+                 self._viewer._search_selected_as_hex),
+            ):
+                if label is None:
+                    menu.addSeparator()
+                    continue
+                action = menu.addAction(translate("_HexPlainTextEdit", label))  # i18n: keep -- marked above
+                action.triggered.connect(slot)
+                action.setEnabled(covers_bytes)
         menu.addSeparator()
         menu.addAction(translate("_HexPlainTextEdit", "Copy All")).triggered.connect(
             self._viewer._copy_all
@@ -847,108 +854,101 @@ class HexViewer(QWidget):
     def _copy_all(self) -> None:
         QApplication.clipboard().setText(self._text.toPlainText())
 
+    def _first_selected_byte(self, col: int) -> int:
+        """Byte in its row (0-16) of the first selected character at *col*.
+        A character before a byte's text (offset, gap, gutter) starts the
+        selection at the next byte shown after it; 16 = none in this row."""
+        rel = col - self._hex_start
+        if rel < 0:                                    # offset column
+            return 0
+        if rel < 23:                                   # hex left (bytes 0-7)
+            return rel // 3 + (1 if rel % 3 == 2 else 0)
+        if rel < 25:                                   # gap between hex groups
+            return 8
+        if rel < _HEX_FIELD_LEN:                       # hex right (bytes 8-15)
+            return 8 + (rel - 25) // 3 + (1 if (rel - 25) % 3 == 2 else 0)
+        if col < self._ascii_start:                    # gutter before ASCII
+            return 0
+        return min(col - self._ascii_start, _BYTES_PER_ROW)  # ASCII column
+
+    def _last_selected_byte(self, col: int) -> int:
+        """Byte in its row (-1-15) of the last selected character at *col*.
+        A character after a byte's text (gap, gutter, line end) ends the
+        selection at the byte shown before it; -1 = none in this row."""
+        rel = col - self._hex_start
+        if rel < 0:                                    # offset column
+            return -1
+        if rel < 23:                                   # hex left (bytes 0-7)
+            return rel // 3
+        if rel < 25:                                   # gap between hex groups
+            return 7
+        if rel < _HEX_FIELD_LEN:                       # hex right (bytes 8-15)
+            return 8 + (rel - 25) // 3
+        if col < self._ascii_start:                    # gutter before ASCII
+            return _BYTES_PER_ROW - 1
+        return min(col - self._ascii_start, _BYTES_PER_ROW - 1)  # ASCII column / line end
+
     def _selection_byte_range(self) -> tuple[int, int] | None:
+        """(first, last) offset, both inclusive, of the bytes the selection
+        covers: from the byte at its first selected character to the byte at
+        its last one, whichever column (hex or ASCII) each sits in. None when
+        it covers no byte (only offsets/gaps, or a same-row selection that
+        starts in the hex column after where it ends in the ASCII one)."""
         cursor = self._text.textCursor()
         if not cursor.hasSelection():
             return None
         doc = self._text.document()
-
-        def col_to_byte(col: int) -> int:
-            if col <= self._hex_start:
-                return 0
-            if col <= self._hex_start + 22:                 # hex left (bytes 0–7)
-                return min((col - self._hex_start) // 3, 7)
-            if col <= self._hex_start + 24:                 # gap between hex groups
-                return 7
-            if col < self._hex_end:                         # hex right (bytes 8–15)
-                return min(8 + (col - (self._hex_start + 25)) // 3, 15)
-            if col < self._ascii_start:                     # gap before ASCII
-                return 15
-            return min(col - self._ascii_start, 15)         # ASCII column
-
         page_start = self._page * _PAGE_BYTES
         s_block = doc.findBlock(cursor.selectionStart())
-        s_byte = s_block.blockNumber() * _BYTES_PER_ROW + col_to_byte(
+        first = s_block.blockNumber() * _BYTES_PER_ROW + self._first_selected_byte(
             cursor.selectionStart() - s_block.position()
         )
-        e_block = doc.findBlock(cursor.selectionEnd())
-        e_byte = e_block.blockNumber() * _BYTES_PER_ROW + col_to_byte(
-            cursor.selectionEnd() - e_block.position()
+        # selectionEnd() is the position after the last selected character.
+        last_pos = cursor.selectionEnd() - 1
+        e_block = doc.findBlock(last_pos)
+        last = e_block.blockNumber() * _BYTES_PER_ROW + self._last_selected_byte(
+            last_pos - e_block.position()
         )
-        return page_start + s_byte, page_start + e_byte
+        page_len = len(self._page_data())
+        last = min(last, page_len - 1)
+        if first > last or first >= page_len:
+            return None
+        return page_start + first, page_start + last
 
-    def _search_selected_as_ascii(self) -> None:
+    def _selected_bytes(self) -> bytes:
         rng = self._selection_byte_range()
         if rng is None:
-            return
-        chunk = self._data[rng[0] : rng[1] + 1]
-        query = chunk.decode("latin-1")
+            return b""
+        return self._data[rng[0] : rng[1] + 1]
+
+    def _search_selected_as_ascii(self) -> None:
+        query = self._selected_bytes().decode("latin-1")
         if query:
             self._set_search_mode(_SEARCH_MODE_ASCII)
             self._search_input.setText(query)
             self._do_search()
 
     def _search_selected_as_hex(self) -> None:
-        rng = self._selection_byte_range()
-        if rng is None:
-            return
-        chunk = self._data[rng[0] : rng[1] + 1]
+        chunk = self._selected_bytes()
         if chunk:
             self._set_search_mode(_SEARCH_MODE_HEX)
             self._search_input.setText(" ".join(f"{b:02X}" for b in chunk))
             self._do_search()
 
-    def _selection_start_column(self) -> int:
-        """Column (0-based) within its row that the selection's first
-        character sits at.
-
-        A multi-row selection's first row is a *partial* row whenever the
-        drag didn't start at column 0 (the normal case -- nobody drags from
-        exactly the left edge) -- Qt's selectedText() still hands back that
-        row's text starting from wherever the selection actually begins, not
-        from column 0. Slicing that fragment at the usual fixed column
-        offsets (self._hex_start, self._ascii_start, ...) would then cut from the
-        wrong place, or make it look like there was nothing to take from
-        that row at all. Every row after the first is unaffected (a
-        multi-row selection always starts each subsequent row at its true
-        column 0), and the last row is only ever truncated on the right,
-        which fixed-offset slicing already handles correctly on its own.
-        """
-        cursor = self._text.textCursor()
-        doc = self._text.document()
-        start_block = doc.findBlock(cursor.selectionStart())
-        return cursor.selectionStart() - start_block.position()
-
+    # The selected bytes themselves, formatted as the hex / ASCII columns
+    # show them -- not the selected text cut at fixed columns, which takes
+    # the wrong rows when a selection starts or ends mid-row.
     def _copy_selected_hex(self) -> None:
-        text = _selected_text(self._text)
-        if not text:
-            return
-        first_col = self._selection_start_column()
-        tokens: list[str] = []
-        for i, line in enumerate(text.split("\u2029")):
-            col_offset = first_col if i == 0 else 0
-            hex_section = line[max(self._hex_start - col_offset, 0):max(self._hex_end - col_offset, 0)]
-            for part in hex_section.split():
-                if len(part) == 2 and all(c in "0123456789ABCDEFabcdef" for c in part):
-                    tokens.append(part.upper())
-        QApplication.clipboard().setText(" ".join(tokens))
+        chunk = self._selected_bytes()
+        if chunk:
+            QApplication.clipboard().setText(" ".join(f"{b:02X}" for b in chunk))
 
     def _copy_selected_ascii(self) -> None:
-        text = _selected_text(self._text)
-        if not text:
-            return
-        first_col = self._selection_start_column()
-        parts: list[str] = []
-        for i, line in enumerate(text.split("\u2029")):
-            col_offset = first_col if i == 0 else 0
-            parts.append(line[max(self._ascii_start - col_offset, 0):])
-        QApplication.clipboard().setText("".join(parts))
-
-
-def _selected_text(widget: QPlainTextEdit) -> str:
-    """Return the selected text, using Qt's paragraph separator \\u2029."""
-    cursor = widget.textCursor()
-    return cursor.selectedText() if cursor.hasSelection() else ""
+        chunk = self._selected_bytes()
+        if chunk:
+            QApplication.clipboard().setText(
+                "".join(chr(b) if 0x20 <= b < 0x7F else "." for b in chunk)
+            )
 
 
 def _focus_range_colors(palette: QPalette) -> list[QColor]:

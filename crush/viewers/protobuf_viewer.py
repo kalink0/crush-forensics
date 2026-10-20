@@ -24,11 +24,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from crush.core.formatters import escape_control_chars
 from crush.parsers.protobuf_schema import (
     SchemaLoadError,
-    decode_message_with_schema,
+    decode_for_tree,
     load_descriptor_set,
-    schema_byte_ranges,
 )
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
@@ -203,14 +203,7 @@ class ProtobufViewer(QWidget):
             self._status.setText(translate("ProtobufViewer", "Select a message type"))
             return
         try:
-            from google.protobuf import json_format
-            msg = decode_message_with_schema(self._pool, name, self._raw)
-            decoded = json_format.MessageToDict(
-                msg,
-                preserving_proto_field_name=True,
-                always_print_fields_with_no_presence=True,
-            )
-            byte_ranges = schema_byte_ranges(self._pool, name, self._raw)
+            decoded, byte_ranges = decode_for_tree(self._pool, name, self._raw)
         except Exception as exc:
             self._status.setText(
                 translate("ProtobufViewer", "Decode failed: {exc}").format(exc=exc)
@@ -220,14 +213,27 @@ class ProtobufViewer(QWidget):
         hex_visible = self._current_hex_visible()
         self._status.setText(translate("ProtobufViewer", "Decoded as {name}").format(name=name))
         self._replace_view(
-            TreeViewer(
-                decoded,
-                self,
-                raw=self._raw,
-                byte_ranges_by_path=byte_ranges,
-                hex_visible=hex_visible,
-            )
+            schema_tree(decoded, byte_ranges, self._raw, self, hex_visible=hex_visible)
         )
+
+
+def schema_tree(
+    decoded: dict[str, Any],
+    byte_ranges: dict[tuple[str, ...], Any],
+    raw: bytes,
+    parent: QWidget | None,
+    *,
+    hex_visible: bool = False,
+) -> TreeViewer:
+    """The tree a schema decode (decode_for_tree) is shown in -- the same in
+    the Protobuf viewer and the BLOB Inspector."""
+    return TreeViewer(
+        decoded,
+        parent,
+        raw=raw,
+        byte_ranges_by_path=byte_ranges,
+        hex_visible=hex_visible,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +255,27 @@ class _EntryRef:
         self.entry = entry
 
 
+# Interpretations the exports leave out: the field's own value repeated.
+_PROTOBUF_INTERP_SKIP = {"uint64", "uint32"}
+
+# A length-delimited payload that decodes both as a nested message and as
+# UTF-8 text (parser value type "candidates"): the field row says so, its
+# child rows hold both readings, neither is shown as the field's value.
+_CANDIDATES_LABEL = QT_TRANSLATE_NOOP("GeneratedView", "{count} candidates (heuristic)")
+_CANDIDATE_LABELS = {
+    "message": QT_TRANSLATE_NOOP("GeneratedView", "candidate: as message"),
+    "string": QT_TRANSLATE_NOOP("GeneratedView", "candidate: as string"),
+}
+
+
+def _interpretation_value(interp: Any, raw: bytes | None) -> str:
+    """An interpretation's value for an export: the full payload for "raw
+    bytes" (the parser's value is the 64-byte-capped preview)."""
+    if interp.label == "raw bytes" and raw:
+        return raw.hex(" ")
+    return escape_control_chars(interp.value)
+
+
 def _entry_to_jsonable(entry: dict[str, Any]) -> dict[str, Any]:
     """Convert one decoded protobuf entry to a JSON-safe dict.
 
@@ -256,8 +283,6 @@ def _entry_to_jsonable(entry: dict[str, Any]) -> dict[str, Any]:
     64-byte-capped hex_preview, per #60) so an export never contains less than the
     field actually holds.
     """
-    from crush.viewers.blob_inspector import _PROTOBUF_INTERP_SKIP
-
     out: dict[str, Any] = {"field": entry.get("field"), "wire_type": entry.get("wire_type")}
     val = entry.get("value")
     raw = entry.get("raw")
@@ -269,6 +294,9 @@ def _entry_to_jsonable(entry: dict[str, Any]) -> dict[str, Any]:
         elif vtype == "string":
             out["type"] = "string"
             out["value"] = val.get("text", "")
+        elif vtype == "candidates":
+            out["type"] = "candidates (heuristic)"
+            out["candidates"] = [_candidate_to_jsonable(c) for c in val.get("candidates", [])]
         else:
             out["type"] = "bytes"
             out["length"] = val.get("length")
@@ -281,12 +309,79 @@ def _entry_to_jsonable(entry: dict[str, Any]) -> dict[str, Any]:
         if i.label not in _PROTOBUF_INTERP_SKIP
     ]
     if interpretations:
-        out["interpretations"] = {i.label: i.value for i in interpretations}
+        out["interpretations"] = {
+            i.label: (raw.hex(" ") if i.label == "raw bytes" and raw else i.value)
+            for i in interpretations
+        }
     return out
 
 
-def _entries_to_json(entries: list[dict[str, Any]]) -> str:
+def _candidate_to_jsonable(candidate: dict[str, Any]) -> dict[str, Any]:
+    if candidate.get("type") == "message":
+        return {
+            "as": "message",
+            "entries": [_entry_to_jsonable(e) for e in candidate.get("entries", [])],
+        }
+    return {"as": "string", "value": candidate.get("text", "")}
+
+
+def entries_to_json(entries: list[dict[str, Any]]) -> str:
+    """The tree's JSON export of decoded entries (complete payloads)."""
     return json.dumps([_entry_to_jsonable(e) for e in entries], indent=2, ensure_ascii=False)
+
+
+def entries_to_text(entries: list[dict[str, Any]], indent: int = 0) -> str:
+    """The tree's text export of decoded entries: one line per field,
+    interpretations as ``#`` lines below it, complete payloads, strings with
+    their control characters escaped so each field stays on its line."""
+    lines: list[str] = []
+    pad = "  " * indent
+    ipad = pad + "    "
+    for entry in entries:
+        field = entry.get("field", "?")
+        wt = entry.get("wire_type", "?")
+        val = entry.get("value")
+        raw = entry.get("raw")  # full payload; only set for length-delimited entries
+        interpretations = [
+            i for i in entry.get("interpretations", [])
+            if i.label not in _PROTOBUF_INTERP_SKIP
+        ]
+        candidates: list[dict[str, Any]] = []
+        if isinstance(val, dict):
+            vtype = val.get("type")
+            if vtype == "message":
+                lines.append(f"{pad}{field} {{")
+                lines.append(entries_to_text(val.get("entries", []), indent + 1))
+                lines.append(f"{pad}}}")
+            elif vtype == "string":
+                lines.append(f'{pad}{field}: "{escape_control_chars(val.get("text", ""))}"')
+            elif vtype == "candidates":
+                candidates = val.get("candidates", [])
+                lines.append(
+                    f"{pad}{field} [{wt}]: "
+                    + _CANDIDATES_LABEL.format(count=len(candidates))
+                )
+            else:
+                # hex_preview is capped at 64 bytes by the parser — show the complete
+                # payload here instead of repeating that truncated preview.
+                hex_full = raw.hex(" ") if raw else val.get("hex_preview", "")
+                lines.append(f"{pad}{field}: <{hex_full}>")
+        elif isinstance(val, bytes):
+            lines.append(f"{pad}{field}: {val.hex()}")
+        else:
+            lines.append(f"{pad}{field} [{wt}]: {val}")
+        for interp in interpretations:
+            lines.append(f"{ipad}# {interp.label}: {_interpretation_value(interp, raw)}")
+        for candidate in candidates:
+            label = _CANDIDATE_LABELS.get(candidate.get("type", ""), "candidate")
+            if candidate.get("type") == "message":
+                lines.append(f"{ipad}{label} {{")
+                lines.append(entries_to_text(candidate.get("entries", []), indent + 3))
+                lines.append(f"{ipad}}}")
+            else:
+                text = escape_control_chars(candidate.get("text", ""))
+                lines.append(f'{ipad}{label}: "{text}"')
+    return "\n".join(lines)
 
 
 def _valid_byte_range(value: object) -> bool:
@@ -465,9 +560,14 @@ class ProtobufTreeWidget(QWidget):
                     )
                     full_text = label.pair()[1]
                 elif vtype == "string":
-                    text = val.get("text", "")
+                    # Escaped, so a control character (\n, \x0e, ...) in
+                    # the text can't break or shift the row.
+                    text = escape_control_chars(val.get("text", ""))
                     label = f'"{text}"'
                     full_text = text
+                elif vtype == "candidates":
+                    label = Gen(_CANDIDATES_LABEL, count=len(val.get("candidates", [])))
+                    full_text = label.pair()[1]
                 else:
                     label = f'<{val.get("hex_preview", "")}>'
                     # hex_preview is capped at 64 bytes by the parser — show the complete
@@ -503,7 +603,7 @@ class ProtobufTreeWidget(QWidget):
                     lbl_item.setForeground(_GRAY)
                     lbl_item.setFont(interp_font)
                     lbl_item.setEditable(False)
-                    v_item = QStandardItem(interp.value)
+                    v_item = QStandardItem(escape_control_chars(interp.value))
                     v_item.setForeground(_GRAY)
                     v_item.setFont(interp_font)
                     v_item.setEditable(False)
@@ -523,6 +623,59 @@ class ProtobufTreeWidget(QWidget):
             # Recurse into nested messages
             if isinstance(val, dict) and val.get("type") == "message":
                 self._populate(val.get("entries", []), field_item)
+            elif isinstance(val, dict) and val.get("type") == "candidates":
+                self._populate_candidates(val.get("candidates", []), entry, field_item)
+
+    def _populate_candidates(
+        self, candidates: list[dict[str, Any]], entry: dict[str, Any], parent: QStandardItem
+    ) -> None:
+        """One collapsible row per reading of an ambiguous payload, styled
+        alike: "as message" with the nested fields below it, "as string"
+        with the text below it. Both point at the field's payload bytes."""
+        raw_bytes = entry.get("raw")
+        value_range = entry.get("value_range")
+        for candidate in candidates:
+            kind = candidate.get("type", "")
+            key_item = gen_item(
+                Gen("  {label}", label=Gen(_CANDIDATE_LABELS.get(kind, kind)))  # i18n: keep -- layout
+            )
+            if kind == "message":
+                summary = Gen(
+                    QT_TRANSLATE_NOOP("GeneratedView", "{{ {count} field(s) }}"),
+                    count=len(candidate.get("entries", [])),
+                )
+            else:
+                summary = Gen(
+                    QT_TRANSLATE_NOOP("GeneratedView", "{count} character(s)"),
+                    count=len(candidate.get("text", "")),
+                )
+            val_item = gen_item(summary)
+            val_item.setData(summary.pair()[1], _FULLTEXT_ROLE)
+            val_item.setData(raw_bytes, _RAW_ROLE)
+            if _valid_byte_range(value_range):
+                key_item.setData(value_range, _BYTE_RANGE_ROLE)
+            empty = QStandardItem("")
+            for item in (key_item, val_item, empty):
+                item.setEditable(False)
+            parent.appendRow([key_item, val_item, empty])
+            if kind == "message":
+                self._populate(candidate.get("entries", []), key_item)
+            else:
+                text = escape_control_chars(candidate.get("text", ""))
+                text_key = gen_item(
+                    Gen("  {label}", label=Gen(  # i18n: keep -- layout
+                        QT_TRANSLATE_NOOP("GeneratedView", "string (UTF-8)")
+                    ))
+                )
+                text_item = QStandardItem(f'"{text}"')
+                text_item.setData(text, _FULLTEXT_ROLE)
+                text_item.setData(raw_bytes, _RAW_ROLE)
+                if _valid_byte_range(value_range):
+                    text_key.setData(value_range, _BYTE_RANGE_ROLE)
+                text_empty = QStandardItem("")
+                for item in (text_key, text_item, text_empty):
+                    item.setEditable(False)
+                key_item.appendRow([text_key, text_item, text_empty])
 
     def _tree_expand_all(self) -> None:
         self._tree.expandAll()
@@ -570,11 +723,10 @@ class ProtobufTreeWidget(QWidget):
 
     def _export_entries(self, entries: list[dict[str, Any]], fmt: str, default_name: str) -> None:
         if fmt == "json":
-            content = _entries_to_json(entries)
+            content = entries_to_json(entries)
             name_filter = "JSON (*.json)"
         else:
-            from crush.viewers.blob_inspector import _render_protobuf
-            content = _render_protobuf(entries)
+            content = entries_to_text(entries)
             name_filter = "Text (*.txt)"
         path, _ = QFileDialog.getSaveFileName(
             self, translate("ProtobufTreeWidget", "Export Protobuf"), default_name, name_filter

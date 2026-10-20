@@ -224,8 +224,6 @@ def test_failed_pipeline_disables_bytes_actions(qapp) -> None:
 
 
 def test_protobuf_depth_limit_is_stated(qapp) -> None:
-    from crush.viewers.blob_inspector import _try_protobuf
-
     def varint(n: int) -> bytes:
         out = b""
         while True:
@@ -237,7 +235,11 @@ def test_protobuf_depth_limit_is_stated(qapp) -> None:
     msg = b"\x08\x01"
     for _ in range(110):
         msg = b"\x0a" + varint(len(msg)) + msg
-    assert "depth limit" in _try_protobuf(msg).split("\n", 1)[0]
+    panel = _BlobPanel(msg)
+    panel._select_format("Protobuf (schema-less)")
+    assert "depth limit" in panel._protobuf_summary.text()
+    reading = panel._protobuf_readings["Protobuf (schema-less)"]
+    assert "depth limit" in reading.text().split("\n", 1)[0]
 
 
 def test_tree_inspect_says_when_bytes_are_crush_made() -> None:

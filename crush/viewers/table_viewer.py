@@ -1925,7 +1925,7 @@ class TableViewer(QWidget):
                     cell.setToolTip(
                         translate(
                             "TableViewer",
-                            "Dictionary column — {val_count} entrie(s). Stored as JSON text in SQL exports; query with json_each(..., 'value').",
+                            "Dictionary column — {val_count} entries. Stored as JSON text in SQL exports; query with json_each(..., 'value').",
                         ).format(val_count=len(val))
                     )
                     cell.setData(val, Qt.ItemDataRole.UserRole)
