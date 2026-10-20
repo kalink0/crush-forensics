@@ -1229,6 +1229,13 @@ MESSAGES: dict[str, str] = {
         "as string/bytes",
         "protobuf.depth_limit",
     ),
+    "protobuf.ambiguous_payloads": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} length-delimited field(s) decode both as a nested message and as "
+        "UTF-8 text; wire type 2 doesn't record which it is. Both readings are shown "
+        "as candidates (heuristic), neither as the field's value",
+        "protobuf.ambiguous_payloads",
+    ),
     # -- LevelDB ----------------------------------------------------------
     "leveldb.data_files_not_read": QT_TRANSLATE_NOOP(
         "ParseIssue",

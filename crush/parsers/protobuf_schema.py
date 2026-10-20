@@ -103,6 +103,25 @@ def decode_message_with_schema(pool: Any, message_name: str, raw: bytes) -> Any:
     return msg
 
 
+def decode_for_tree(
+    pool: Any, message_name: str, raw: bytes
+) -> tuple[dict[str, Any], dict[tuple[str, ...], dict[str, tuple[int, int] | list[tuple[int, int]]]]]:
+    """(decoded, byte ranges) of *raw* as *message_name*: the message as a
+    dict (field names, every field incl. unset ones with their default) and
+    the tree-path → byte-range map for it -- what the Protobuf viewer and the
+    BLOB Inspector show as a schema decode. Raises when *raw* isn't that
+    message."""
+    from google.protobuf import json_format
+
+    msg = decode_message_with_schema(pool, message_name, raw)
+    decoded = json_format.MessageToDict(
+        msg,
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
+    )
+    return decoded, schema_byte_ranges(pool, message_name, raw)
+
+
 def schema_byte_ranges(
     pool: Any,
     message_name: str,

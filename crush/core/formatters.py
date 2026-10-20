@@ -69,6 +69,29 @@ def pretty_object(obj: Any) -> str:
         return str(obj)
 
 
+_NAMED_ESCAPES = {"\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def escape_control_chars(text: str) -> str:
+    """*text* on one line: control characters (Unicode Cc) and line /
+    paragraph separators written as escapes (\\n, \\t, \\x0e, \\u2028), and a
+    backslash as \\\\ so an escape in the output always means one character
+    of *text*. Every other character -- emoji joiners included -- stays."""
+    import unicodedata
+
+    out: list[str] = []
+    for ch in text:
+        named = _NAMED_ESCAPES.get(ch)
+        if named is not None:
+            out.append(named)
+        elif unicodedata.category(ch) in ("Cc", "Zl", "Zp"):
+            code = ord(ch)
+            out.append(f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def bytes_to_hexview(b: bytes, width: int = 16, max_bytes: int = -1) -> str:
     """Hex + ASCII dump of *b*, all of it unless the caller passes *max_bytes*
     (then the caller has to say the dump is cut)."""
