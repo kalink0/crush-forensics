@@ -248,6 +248,24 @@ class TestRawImage:
         assert "join the segments into one file in order" in message
         assert "--allow-unequal-segments" not in message
 
+    def test_split_set_with_a_short_first_segment_names_every_other(
+        self, raw_ntfs_image: Path, tmp_path: Path
+    ) -> None:
+        # Sizes are compared with the first segment: when that one is cut,
+        # every other segment differs, and each is named -- none left out.
+        data = raw_ntfs_image.read_bytes()
+        chunk = len(data) // 5
+        bounds = [0, chunk - 512, 2 * chunk - 512, 3 * chunk - 512, 4 * chunk - 512, len(data)]
+        for n in range(5):
+            (tmp_path / f"short.{n + 1:03d}").write_bytes(data[bounds[n] : bounds[n + 1]])
+
+        with pytest.raises(RawImageOpenError) as caught:
+            RawImageVFS(tmp_path / "short.003")
+        message = str(caught.value)
+        for n in range(2, 6):
+            size = bounds[n] - bounds[n - 1]
+            assert f"short.{n:03d} is {size:,} bytes" in message
+
     def test_truncated_image_read_raises(self, raw_ntfs_image: Path) -> None:
         data = raw_ntfs_image.read_bytes()
         raw_ntfs_image.write_bytes(data[: len(data) // 2])

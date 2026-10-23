@@ -357,9 +357,11 @@ def open_raw_image(
         )) from exc
     except qnxprobe.SplitSegmentSizeError as exc:
         # qnxprobe's own advice names an option of its command line, which Crush
-        # does not have, so say what to do here instead
+        # does not have, so say what to do here instead. Every segment that
+        # doesn't fit is named: when the first one is the cut one, that is all
+        # of the others.
         odd = ", ".join(
-            f"{Path(exc.segments[i]).name} is {exc.sizes[i]:,} bytes" for i in exc.odd[:3]
+            f"{Path(exc.segments[i]).name} is {exc.sizes[i]:,} bytes" for i in exc.odd
         )
         raise RawImageOpenError(
             f"{path.name}: the segments of this split image are not one size: "
