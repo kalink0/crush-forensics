@@ -131,13 +131,37 @@ def detect_fast_label(peek_bytes: bytes, path: str) -> str:
     end = _SEGB_V1_MAGIC_OFFSET + len(SEGB_MAGIC)
     if len(peek_bytes) >= end and peek_bytes[_SEGB_V1_MAGIC_OFFSET:end] == SEGB_MAGIC:
         return "SEGB"
-    if _looks_like_plist_xml(peek_bytes):
+    if looks_like_plist_xml(peek_bytes):
         return "plist"
     return ""
 
 
-def _looks_like_plist_xml(peek_bytes: bytes) -> bool:
-    if not peek_bytes.lstrip().startswith(XML_PLIST_SIG):
+_UTF8_BOM: Final = b"\xef\xbb\xbf"
+# What an XML plist starts with once a UTF-8 BOM and whitespace are skipped:
+# the XML declaration, or -- without one -- the plist DOCTYPE or the <plist>
+# element itself (both well-formed XML; Apple's own files carry all three).
+_XML_PLIST_STARTS: Final = (XML_PLIST_SIG, b"<!doctype plist", b"<plist")
+
+
+def _xml_plist_offset(data: bytes) -> int:
+    """Where the XML in *data* starts: after a UTF-8 BOM and whitespace."""
+    start = len(_UTF8_BOM) if data.startswith(_UTF8_BOM) else 0
+    return len(data) - len(data[start:].lstrip())
+
+
+def looks_like_plist_xml(peek_bytes: bytes) -> bool:
+    """Whether *peek_bytes* begin an XML plist: after an optional UTF-8 BOM
+    and whitespace, an XML declaration, the plist DOCTYPE or a <plist>
+    element, with a <plist> element within the first 2 KiB. The one check
+    every detector (fast label, format DB, plist and XML parser) uses."""
+    head = peek_bytes[_xml_plist_offset(peek_bytes):][:2048]
+    if not head[:15].lower().startswith(_XML_PLIST_STARTS):
         return False
-    text = peek_bytes[:2048].decode("utf-8", errors="ignore")
-    return "<plist" in text.lower()
+    return b"<plist" in head.lower()
+
+
+def xml_plist_body(data: bytes) -> bytes:
+    """*data* from where its XML starts, for loading only: plistlib takes
+    neither a leading BOM + whitespace before the declaration nor a file
+    without one. The stored bytes stay as they are everywhere else."""
+    return data[_xml_plist_offset(data):]

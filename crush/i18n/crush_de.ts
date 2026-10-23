@@ -352,6 +352,10 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation>keine Bildsignatur, die Crush erkennt</translation>
     </message>
     <message>
+        <source>schema decode failed: {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>[{name}: not recognised: {reason}]</source>
         <translation>[{name}: nicht erkannt: {reason}]</translation>
     </message>
@@ -3711,12 +3715,28 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Prozess</translation>
     </message>
     <message>
+        <source>{count} candidates (heuristic)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>candidate: as message</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>candidate: as string</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>{{ {count} field(s) }}</source>
         <translation>{{ {count} Feld(er) }}</translation>
     </message>
     <message>
         <source>field {number}</source>
         <translation>Feld {number}</translation>
+    </message>
+    <message>
+        <source>{count} character(s)</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Realm file</source>
@@ -5624,6 +5644,10 @@ Speicherort öffnen?</translation>
         <translation>{count} Chunks haben die eigene Prüfsumme nicht bestanden.</translation>
     </message>
     <message>
+        <source>{count} chunk(s) hold less data than the bytes they cover; zeros are read in their place.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>{count} page(s) are not in the acquisition&apos;s files; they read as the bad-sector marker.</source>
         <translation>{count} Page(s) sind nicht in den Akquisitionsdateien enthalten; sie werden als Bad-Sector-Markierung gelesen.</translation>
     </message>
@@ -6202,6 +6226,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Aktive top ref</translation>
     </message>
     <message>
+        <source>Ambiguous fields</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Array layers</source>
         <translation>Array-Layer</translation>
     </message>
@@ -6488,6 +6516,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Mipmaps</source>
         <translation>Mipmaps</translation>
+    </message>
+    <message>
+        <source>NSDate kept as stored</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Nesting</source>
@@ -7870,11 +7902,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>XML (NSKeyedArchiver — nicht aufgelöst)</translation>
     </message>
     <message>
-        <source>NSKeyedArchiver archives in XML form are not resolved into an object tree; the tree shows the archive&apos;s undecoded object table</source>
-        <comment>plist.nska_xml_unresolved</comment>
-        <translation>NSKeyedArchiver-Archive in XML-Form werden nicht zu einem Objektbaum aufgelöst; der Baum zeigt die nicht dekodierte Objekttabelle des Archivs</translation>
-    </message>
-    <message>
         <source>{count:,} (plus {classes:,} class definitions)</source>
         <comment>plist.nska_shared</comment>
         <translation>{count:,} (zuzüglich {classes:,} Klassendefinitionen)</translation>
@@ -8328,6 +8355,51 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>PNG eXIf chunk not checked yet; tEXt chunks are shown under PNG text, zTXt and iTXt chunks are not read</source>
         <comment>exif.png_not_checked</comment>
         <translation>PNG-eXIf-Chunk noch nicht geprüft; tEXt-Chunks werden unter „PNG-Text“ angezeigt, zTXt- und iTXt-Chunks werden nicht gelesen</translation>
+    </message>
+    <message>
+        <source>XML (NSKeyedArchiver — deserialization failed)</source>
+        <comment>plist.format_nska_xml_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} (NS.time is not a representable date, so the NSDate is shown as stored)</source>
+        <comment>plist.nska_dates_kept</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not decoded: the bytes start like a plist but can&apos;t be read as one: {detail}</source>
+        <comment>plist.embedded_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>NSKeyedArchiver deserialization failed: {detail}. Inspect BLOB on the bytes shows the archive as stored</source>
+        <comment>plist.embedded_nska_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: {count:,} reference(s) point past the end of $objects. Inspect BLOB on the bytes shows the archive as stored</source>
+        <comment>plist.embedded_nska_missing_refs</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: an object reaches itself through its references (a cycle). Inspect BLOB on the bytes shows the archive as stored</source>
+        <comment>plist.embedded_nska_cycle</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: {count:,} reference(s) point past the end of $objects, so below is the archive&apos;s undecoded object table</source>
+        <comment>plist.nska_missing_refs_text</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: an object reaches itself through its references (a cycle), so below is the archive&apos;s undecoded object table</source>
+        <comment>plist.nska_cycle_text</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} length-delimited field(s) decode both as a nested message and as UTF-8 text; wire type 2 doesn&apos;t record which it is. Both readings are shown as candidates (heuristic), neither as the field&apos;s value</source>
+        <comment>protobuf.ambiguous_payloads</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Payload column: schema-less rendering (heuristic), valid UTF-8 shown as text and 64/32-bit fields as double/float. The selected record&apos;s payload is shown below the table with every candidate reading of each field</source>
@@ -8905,6 +8977,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>{count} Pages dieser Akquisition sind nicht in ihren Dateien enthalten; sie werden als Bad-Sector-Markierung des Images gelesen, nicht als Daten vom Gerät</translation>
     </message>
     <message>
+        <source>{count} {unit}(s) of this acquisition read so far hold less data than the bytes they cover; the reader reads {zeros} zero bytes in their place, so what is listed or read from them can hold those zeros</source>
+        <comment>vfs.acquisition_padded_chunks</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Crush does not prevent access-time updates on this platform; mount the evidence read-only to prevent them</source>
         <comment>vfs.atime_platform</comment>
         <translation>Crush verhindert auf dieser Plattform keine Aktualisierung der Zugriffszeitstempel; Beweismittel schreibgeschützt einhängen, um dies zu verhindern</translation>
@@ -9208,6 +9285,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>{count} damaged structure(s) recorded and skipped while the volume was listed, first: {first}</source>
         <comment>entry.raw_volume_damage</comment>
         <translation>{count} beschädigte Struktur(en) beim Auflisten des Volumes erfasst und übersprungen, erste: {first}</translation>
+    </message>
+    <message>
+        <source>{count} file(s) recorded as damage while the volume was listed, and listed as stored, first: {first}</source>
+        <comment>entry.raw_volume_damage_listed</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>{bytes} bytes of this volume lie past the end of the image: the image holds only part of it</source>
@@ -10742,6 +10824,10 @@ Gesamt: {total:.2f} s</translation>
 <context>
     <name>TreeViewer</name>
     <message>
+        <source>decoded ({kind})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Expand All</source>
         <translation>Alle anzeigen</translation>
     </message>
@@ -11372,6 +11458,10 @@ Gesamt: {total:.2f} s</translation>
         <translation>Angezeigter Text</translation>
     </message>
     <message>
+        <source>Shown as JSON</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Bytes as hex</source>
         <translation>Bytes als Hex-Wert</translation>
     </message>
@@ -11394,6 +11484,14 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>Rendered image (PNG)…</source>
         <translation>Gerendertes Bild (PNG)...</translation>
+    </message>
+    <message>
+        <source>Decoded as text…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Decoded as JSON…</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Open in new tab</source>

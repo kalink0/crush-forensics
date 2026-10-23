@@ -13,6 +13,11 @@ All notable changes to Crush will be documented in this file.
 - Added to raw disk images -> Support for naming acquisition chunks whose stored data ran out, which are read with zeros, on the source and in Verify Acquisition Hash. ([@abrignoni](https://github.com/abrignoni), [#172](https://github.com/kalink0/crush-forensics/pull/172))
 - Added to the BLOB Inspector -> Support for showing Protobuf, schema decodes included, in the Protobuf viewer's tree, with its text and JSON export for Copy and Export.
 - Added to the Protobuf viewer and BLOB Inspector -> Support for showing a field that reads both as a nested message and as text as two candidates, marked as a heuristic.
+- Added to plists -> Support for resolving NSKeyedArchiver archives in XML form.
+- Added to plists -> Support for resolving every `$top` key of an NSKeyedArchiver archive, not only `root`.
+- Added to plists -> Support for `NSUUID` values as UUID strings.
+- Added to plists and the BLOB Inspector -> Support for plists embedded in bytes values, decoded in a child row next to the bytes.
+- Added to plists -> Support for XML plists with a BOM or whitespace before the XML, or without an XML declaration.
 
 ### Bug Fixes
 
@@ -20,6 +25,8 @@ All notable changes to Crush will be documented in this file.
 - Fixed Copy Selected Hex/ASCII in hex panes copying the wrong rows or nothing when a selection starts or ends mid-row, and Search Selected taking one byte too many.
 - Fixed control characters in Protobuf strings breaking rows and indentation in the Protobuf viewer and BLOB Inspector.
 - Fixed the Protobuf JSON export holding only the first 64 bytes of a nested message's raw bytes.
+- Fixed one `NSDate` outside the date range, or NaN, leaving a whole NSKeyedArchiver archive unresolved.
+- Fixed the BLOB Inspector's plist text reporting a recursion or index error instead of the cycle or missing reference in an NSKeyedArchiver archive.
 
 ### Changed
 

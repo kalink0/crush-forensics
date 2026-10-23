@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.byte_mapped_tree_hex import ByteMappedTreeHex
+from crush.core.derived_bytes import DerivedBytes
 from crush.core.issues import ParseIssue, render
 from crush.ui.i18n import translate
 from crush.viewers.generated_text import EXPORT_TEXT_ROLE, Gen, gen_text
@@ -51,11 +52,13 @@ class _ObjRef:
     conversion — a bare dict/list/int stored via setData() gets walked by
     shiboken looking for a native Qt type, and a value in the uint64 range
     (e.g. an NSKeyedArchiver UID) raises OverflowError partway through.
-    *path* is the node's key path, for building its child rows later."""
+    *path* is the node's key path, for building its child rows later;
+    *hidden* the dict keys not shown as rows in this node's part of the tree."""
 
-    def __init__(self, obj: Any, path: tuple[str, ...] = ()) -> None:
+    def __init__(self, obj: Any, path: tuple[str, ...] = (), hidden: tuple[str, ...] = ()) -> None:
         self.obj = obj
         self.path = path
+        self.hidden = hidden
 
 
 # Every helper below takes *hidden*, the dict keys not shown as rows, so the
@@ -65,28 +68,45 @@ class _ObjRef:
 
 
 def _child_entries(obj: Any, hidden: tuple[str, ...]) -> list[tuple[str, Any]]:
-    """(key, value) of each child row of *obj*; empty for a leaf."""
+    """(key, value) of each child row of *obj*; empty for a leaf. Stored
+    bytes that carry a decoded form (DerivedBytes) stay a value of their
+    own, with that form as their one child row."""
     if isinstance(obj, dict):
         return [(str(k), v) for k, v in obj.items() if k not in hidden]
     if isinstance(obj, (list, tuple)):
         return [(str(i), v) for i, v in enumerate(obj)]
+    if isinstance(obj, DerivedBytes):
+        return [(translate("TreeViewer", "decoded ({kind})").format(kind=obj.kind), obj.derived)]
     return []
+
+
+def _hidden_below(obj: Any, hidden: tuple[str, ...]) -> tuple[str, ...]:
+    """*hidden* for the child rows of *obj*: the same, except below stored
+    bytes, where it follows what was decoded from them -- class metadata
+    folded in a resolved NSKeyedArchiver tree only, ordinary data anywhere else."""
+    if isinstance(obj, DerivedBytes):
+        return _CLASS_META_KEYS if obj.resolved_archive else ()
+    return hidden
 
 
 def _has_child_rows(obj: Any, hidden: tuple[str, ...]) -> bool:
     if isinstance(obj, dict):
         return any(k not in hidden for k in obj)
+    if isinstance(obj, DerivedBytes):
+        return True
     return isinstance(obj, (list, tuple)) and bool(obj)
 
 
-def _child_row_count(item: QStandardItem, hidden: tuple[str, ...]) -> int:
+def _child_row_count(item: QStandardItem) -> int:
     """Rows under *item*, built or not."""
     ref = item.data(_USER_ROLE)
     if not item.data(_PENDING_ROLE) or not isinstance(ref, _ObjRef):
         return item.rowCount()
     obj = ref.obj
     if isinstance(obj, dict):
-        return sum(1 for k in obj if k not in hidden)
+        return sum(1 for k in obj if k not in ref.hidden)
+    if isinstance(obj, DerivedBytes):
+        return 1
     return len(obj)
 
 
@@ -142,26 +162,26 @@ class _FilterPass:
     asks again at every level it builds on the way down to a hit) and each
     translated template."""
 
-    def __init__(self, text: str, hidden: tuple[str, ...]) -> None:
+    def __init__(self, text: str) -> None:
         self.text = text
-        self.hidden = hidden
         self.seen: dict[int, bool] = {}
         self.translated: dict[str, str] = {}
 
 
-def _subtree_matches(obj: Any, fp: _FilterPass) -> bool:
-    """Whether a row below *obj* would show the filter text (lowercase) in
-    its Key or Value cell -- the filter's test, run on the data of rows not
-    built yet."""
+def _subtree_matches(obj: Any, hidden: tuple[str, ...], fp: _FilterPass) -> bool:
+    """Whether a row below *obj* (its part of the tree hiding *hidden*)
+    would show the filter text (lowercase) in its Key or Value cell -- the
+    filter's test, run on the data of rows not built yet."""
     known = fp.seen.get(id(obj))
     if known is not None:
         return known
     found = False
-    for key, value in _child_entries(obj, fp.hidden):
+    below = _hidden_below(obj, hidden)
+    for key, value in _child_entries(obj, hidden):
         if (
             fp.text in key.lower()
-            or fp.text in _display_value_text(value, fp.translated, fp.hidden).lower()
-            or _subtree_matches(value, fp)
+            or fp.text in _display_value_text(value, fp.translated, below).lower()
+            or _subtree_matches(value, below, fp)
         ):
             found = True
             break
@@ -248,12 +268,13 @@ class TreeViewer(QWidget):
         """*fold_class_meta*: *data* was resolved from an NSKeyedArchiver
         archive -- its $class / $classes / $classname keys are class metadata
         of the resolved objects: not listed as rows, the classname shown in
-        the Type column. Only for such a tree; anywhere else they're data."""
+        the Type column. Only for such a tree; anywhere else they're data.
+        Below stored bytes with a decoded form (DerivedBytes) the decoded
+        form decides, see _hidden_below."""
         super().__init__(parent)
         self._raw = raw
         self._initial_hex_visible = hex_visible
         self._byte_ranges_by_path = byte_ranges_by_path or {}
-        self._fold_class_meta = fold_class_meta
         self._hidden_keys: tuple[str, ...] = _CLASS_META_KEYS if fold_class_meta else ()
         self._build_ui()
         self._load(data)
@@ -413,9 +434,9 @@ class TreeViewer(QWidget):
             # The top level follows the same rows rule as every level below
             # (a resolved NSKeyedArchiver root would otherwise show "$class").
             for key, value in _child_entries(data, self._hidden_keys):
-                self._build_items(root, value, key, ())
+                self._build_items(root, value, key, (), self._hidden_keys)
         else:
-            self._build_items(root, data, "value", ())
+            self._build_items(root, data, "value", (), self._hidden_keys)
         self._expand_initially()
 
     def _expand_initially(self) -> None:
@@ -429,7 +450,7 @@ class TreeViewer(QWidget):
         root = self._model.invisibleRootItem()
         level = [root.child(row, 0) for row in range(root.rowCount())]
         for _depth in range(2):
-            cost = sum(_child_row_count(item, self._hidden_keys) for item in level)
+            cost = sum(_child_row_count(item) for item in level)
             if cost == 0 or cost > budget:
                 return
             budget -= cost
@@ -448,29 +469,33 @@ class TreeViewer(QWidget):
         obj: Any,
         key: str,
         parent_path: tuple[str, ...],
+        hidden: tuple[str, ...],
     ) -> None:
-        """Append the row for *obj*. A container's own child rows are built
-        later, when first needed (_populate_children)."""
+        """Append the row for *obj*, in a part of the tree hiding *hidden*.
+        A container's own child rows are built later, when first needed
+        (_populate_children)."""
         node_path = parent_path + (key,)
-        if isinstance(obj, dict) and self._fold_class_meta:
+        if isinstance(obj, dict) and hidden:
             # Surface the NSKeyedArchiver classname in the Type column
             class_meta = obj.get("$class")
             classname = (
                 class_meta.get("$classname", "") if isinstance(class_meta, dict) else ""
             )
             type_name = classname if classname else "dict"
+        elif isinstance(obj, DerivedBytes):
+            type_name = "bytes"  # the stored value; its decoded form is the child row
         else:
             type_name = type(obj).__name__
 
-        english, display = _value_texts(obj, self._hidden_keys)
+        english, display = _value_texts(obj, hidden)
         key_item = QStandardItem(str(key))
         val_item = QStandardItem(display)
         if display != english:
             val_item.setData(english, EXPORT_TEXT_ROLE)
         type_item = QStandardItem(type_name)
-        key_item.setData(_ObjRef(obj, node_path), _USER_ROLE)
+        key_item.setData(_ObjRef(obj, node_path, hidden), _USER_ROLE)
         self._apply_byte_range_metadata(key_item, node_path)
-        if _has_child_rows(obj, self._hidden_keys):
+        if _has_child_rows(obj, hidden):
             key_item.setData(True, _PENDING_ROLE)
         parent.appendRow([key_item, val_item, type_item])
 
@@ -483,8 +508,9 @@ class TreeViewer(QWidget):
         ref = item.data(_USER_ROLE)
         if not isinstance(ref, _ObjRef):
             return
-        for key, value in _child_entries(ref.obj, self._hidden_keys):
-            self._build_items(item, value, key, ref.path)
+        below = _hidden_below(ref.obj, ref.hidden)
+        for key, value in _child_entries(ref.obj, ref.hidden):
+            self._build_items(item, value, key, ref.path, below)
         if apply_filter and self._filter_text:
             self._filter_items(item, self._filter_text)
 
@@ -506,7 +532,7 @@ class TreeViewer(QWidget):
     @staticmethod
     def _make_blob(obj: Any) -> bytes:
         if isinstance(obj, bytes):
-            return obj
+            return bytes(obj)  # the stored bytes only, without a decoded form
         if isinstance(obj, str):
             return obj.encode("utf-8", errors="replace")
         try:
@@ -546,7 +572,7 @@ class TreeViewer(QWidget):
         self, parent: QStandardItem, text: str, fp: _FilterPass | None = None
     ) -> bool:
         if fp is None:
-            fp = _FilterPass(text, self._hidden_keys)
+            fp = _FilterPass(text)
         any_visible = False
         for row in range(parent.rowCount()):
             key_item = parent.child(row, 0)
@@ -556,7 +582,7 @@ class TreeViewer(QWidget):
             if text and key_item.data(_PENDING_ROLE):
                 # Rows not built yet: build them only where there's a hit.
                 ref = key_item.data(_USER_ROLE)
-                if isinstance(ref, _ObjRef) and _subtree_matches(ref.obj, fp):
+                if isinstance(ref, _ObjRef) and _subtree_matches(ref.obj, ref.hidden, fp):
                     self._populate_children(key_item, apply_filter=False)
             child_visible = self._filter_items(key_item, text, fp)
             key_match = not text or text in key_item.text().lower()

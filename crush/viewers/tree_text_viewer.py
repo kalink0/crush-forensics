@@ -51,7 +51,7 @@ class TreeTextViewer(QWidget):
         self._tabs = QTabWidget()
         # Only a tree resolved from an NSKeyedArchiver archive folds its class
         # metadata into the Type column. Decoded is the archive itself when it
-        # wasn't resolved (XML form, missing references, resolving failed),
+        # wasn't resolved (missing references, a cycle, resolving failed),
         # and any other plist, JSON or XML is plain data: every key shown.
         resolved_archive = archive is not None and data is not archive
         self._tabs.addTab(

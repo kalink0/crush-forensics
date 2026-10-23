@@ -17,28 +17,41 @@ Layout, as written by Apple's open-source Foundation
 - The archiver keys objects by identity, so an object encoded twice is
   stored once and referenced by several UIDs.
 
-Resolving the graph into a tree (ccl_bplist) copies a shared object into
-every place that refers to it, drops objects no UID path from `$top`
-reaches, and -- when `$top` has a `root` -- follows `root` only, leaving
-any other `$top` key out (without `root` it resolves all of `$top`).
+Resolving the graph into a tree (resolve_keyed_archive, on ccl_bplist)
+copies a shared object into every place that refers to it and drops
+objects no UID path from `$top` reaches. When `$top` holds `root` only,
+the tree starts at the root object; when it holds other keys too (or no
+`root`), the tree is `$top` itself, each key resolved under its name.
 These counts say what the tree alone doesn't show.
 """
 from __future__ import annotations
 
+import datetime
 import plistlib
+import uuid
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Any, cast
 
 from crush.core.issues import ParseIssue
+from crush.third_party.ccl_bplist import (
+    deserialise_NsKeyedArchiver,
+    load as bplist_load,
+    set_object_converter,
+)
 from crush.third_party.ccl_bplist.ccl_bplist import (
     BplistUID,
     NSKeyedArchiver_common_objects_convertor,
+    is_nsdate,
     is_nsmutabledictionary,
 )
 
 ARCHIVERS = ("NSKeyedArchiver", "NRKeyedArchiver")
 _NULL = "$null"
+# NSDate's reference date, as ccl_bplist converts NS.time (naive, UTC).
+_NSDATE_EPOCH = datetime.datetime(2001, 1, 1)
 
 
 def convert_common_objects(obj: Any) -> Any:
@@ -54,6 +67,58 @@ def convert_common_objects(obj: Any) -> Any:
         if cast(Any, is_nsmutabledictionary)(obj):
             return obj
         raise
+
+
+def _class_name(obj: dict[str, Any]) -> str:
+    class_meta = obj.get("$class")
+    return str(class_meta.get("$classname", "")) if isinstance(class_meta, dict) else ""
+
+
+def _nsdate(seconds: Any) -> datetime.datetime | None:
+    """NS.time as ccl_bplist converts it; None when that's no datetime
+    (NaN, beyond year 1..9999, not a number)."""
+    try:
+        return _NSDATE_EPOCH + datetime.timedelta(seconds=seconds)
+    except (OverflowError, ValueError, TypeError):
+        return None
+
+
+_DATE_COMPONENT_LABELS = (
+    ("NS.year", "year"), ("NS.month", "month"), ("NS.day", "day"),
+    ("NS.hour", "hour"), ("NS.minute", "min"), ("NS.second", "sec"),
+    ("NS.weekday", "weekday"), ("NS.weekOfYear", "week"),
+)
+
+
+def convert_object(obj: Any) -> Any:
+    """The object converter for resolving an archive: convert_common_objects
+    plus NSData, NSNull, NSUUID and NSDateComponents. An NSDate whose
+    NS.time isn't a representable date and an NSUUID whose NS.uuidbytes
+    aren't 16 bytes stay as stored instead of failing the whole archive."""
+    if cast(Any, is_nsdate)(obj) and _nsdate(obj["NS.time"]) is None:
+        return obj
+    result = convert_common_objects(obj)
+    if result is not obj or not isinstance(obj, dict):
+        return result
+    classname = _class_name(obj)
+    if classname in ("NSData", "NSMutableData"):
+        return obj.get("NS.data", b"")
+    if classname == "NSNull":
+        return None
+    if classname == "NSUUID":
+        # Foundation's uuidString: the 16 bytes, uppercase, 8-4-4-4-12.
+        raw = obj.get("NS.uuidbytes")
+        if isinstance(raw, bytes) and len(raw) == 16:
+            return str(uuid.UUID(bytes=raw)).upper()
+        return obj
+    if classname == "NSDateComponents":
+        parts = [
+            f"{label}={obj[field]}"
+            for field, label in _DATE_COMPONENT_LABELS
+            if field in obj and obj[field] not in (None, -1)
+        ]
+        return f"NSDateComponents({', '.join(parts)})"
+    return result
 
 
 def is_keyed_archive(obj: Any) -> bool:
@@ -162,6 +227,46 @@ def _has_cycle(objects: list[Any]) -> bool:
     return False
 
 
+def _reachable(objects: list[Any], top: dict[Any, Any]) -> set[int]:
+    """`$objects` indexes some UID path from `$top` reaches."""
+    reachable: set[int] = set()
+    pending = [i for i in _uids_in(list(top.values())) if 0 <= i < len(objects)]
+    while pending:
+        index = pending.pop()
+        if index in reachable:
+            continue
+        reachable.add(index)
+        pending.extend(i for i in _uids_in(objects[index]) if 0 <= i < len(objects))
+    return reachable
+
+
+def unconvertible_dates(archive: dict[str, Any]) -> int | None:
+    """NSDate objects in the resolved tree whose NS.time is no representable
+    date (convert_object keeps those as stored): the ones some UID path
+    from `$top` reaches, counted once each however often they're
+    referenced. None when there is no graph (see archive_stats)."""
+    objects = archive.get("$objects")
+    top = archive.get("$top")
+    if not isinstance(objects, list) or not isinstance(top, dict):
+        return None
+    count = 0
+    for index in _reachable(objects, top):
+        entry = objects[index]
+        if not isinstance(entry, dict) or "NS.time" not in entry:
+            continue
+        class_index = _uid_index(entry.get("$class"))
+        if class_index is None or not 0 <= class_index < len(objects):
+            continue
+        # The class resolved as the converter sees it, checked by
+        # ccl_bplist's own NSDate test so both count the same objects.
+        definition = objects[class_index]
+        if not isinstance(definition, dict) or not isinstance(definition.get("$classname"), str):
+            continue
+        if cast(Any, is_nsdate)({**entry, "$class": definition}):
+            count += _nsdate(entry["NS.time"]) is None
+    return count
+
+
 def archive_stats(archive: dict[str, Any]) -> ArchiveStats | None:
     """Counts over the archive's object graph; None if `$objects` isn't a
     list or `$top` isn't a dict (then there is no graph to count)."""
@@ -177,14 +282,7 @@ def archive_stats(archive: dict[str, Any]) -> ArchiveStats | None:
     for entry in objects:
         references.update(_uids_in(entry))
 
-    reachable: set[int] = set()
-    pending = [i for i in _uids_in(list(top.values())) if 0 <= i < len(objects)]
-    while pending:
-        index = pending.pop()
-        if index in reachable:
-            continue
-        reachable.add(index)
-        pending.extend(i for i in _uids_in(objects[index]) if 0 <= i < len(objects))
+    reachable = _reachable(objects, top)
 
     shared = shared_classes = 0
     for index, count in references.items():
@@ -210,3 +308,77 @@ def archive_stats(archive: dict[str, Any]) -> ArchiveStats | None:
         has_cycle=_has_cycle(objects),
         top_keys=tuple(str(k) for k in top),
     )
+
+
+@dataclass(frozen=True)
+class Resolution:
+    """resolve_keyed_archive's outcome: the resolved *tree*, or -- when the
+    archive wasn't resolved -- None and why: *unresolvable* (missing
+    references, a cycle; resolving not attempted) or *error* (resolving
+    raised; the library's message)."""
+
+    tree: Any = None
+    unresolvable: tuple[ParseIssue, ...] = ()
+    error: str | None = None
+
+    @property
+    def resolved(self) -> bool:
+        return not self.unresolvable and self.error is None
+
+
+def _with_uids(value: Any) -> Any:
+    """An XML archive with each `{"CF$UID": n}` as a UID, as CoreFoundation
+    reads it back (same test as _uid_index), for the binary form."""
+    index = _uid_index(value)
+    if index is not None:
+        return plistlib.UID(index)
+    if isinstance(value, dict):
+        return {key: _with_uids(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_with_uids(item) for item in value]
+    return value
+
+
+def _materialize(value: Any) -> Any:
+    """ccl_bplist's lazily resolved tree as plain dicts and lists, each
+    object converted once: what every view and the text show is then one
+    fixed tree."""
+    if isinstance(value, dict):
+        return {key: _materialize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_materialize(item) for item in value]
+    return value
+
+
+def resolve_keyed_archive(archive: dict[str, Any], *, xml: bool) -> Resolution:
+    """*archive* (as loaded: ccl_bplist's binary form, or plistlib's for
+    *xml*) resolved into a tree, the one way every view resolves one.
+
+    Not attempted when a UID points past the end of `$objects` or an object
+    reaches itself (archive_stats): ccl_bplist resolves lazily, so the
+    first fails only where something reaches it and the second never ends.
+    An XML archive is written as a binary plist in memory (its CF$UID dicts
+    as UIDs) and resolved like one. `$top` holding `root` only resolves to
+    the root object; any other key (or no `root`) resolves all of `$top`."""
+    stats = archive_stats(archive)
+    unresolvable: list[ParseIssue] = []
+    if stats is not None and stats.missing_references:
+        unresolvable.append(ParseIssue("plist.nska_missing_refs", {"count": stats.missing_references}))
+    if stats is not None and stats.has_cycle:
+        unresolvable.append(ParseIssue("plist.nska_cycle"))
+    if unresolvable:
+        return Resolution(unresolvable=tuple(unresolvable))
+    try:
+        stored: Any = archive
+        if xml:
+            binary = plistlib.dumps(_with_uids(archive), fmt=plistlib.FMT_BINARY, sort_keys=False)
+            stored = cast(Any, bplist_load)(BytesIO(binary))
+        top = stored.get("$top")
+        whole = isinstance(top, dict) and any(key != "root" for key in top)
+        cast(Callable[[Any], None], set_object_converter)(convert_object)
+        tree = _materialize(
+            cast(Any, deserialise_NsKeyedArchiver)(stored, parse_whole_structure=whole)
+        )
+    except Exception as exc:
+        return Resolution(error=str(exc))
+    return Resolution(tree=tree)

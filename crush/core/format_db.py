@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crush.core.issues import QT_TRANSLATE_NOOP, CatalogText
-from crush.core.magic import XML_PLIST_SIG, _looks_like_plist_xml
+from crush.core.magic import XML_PLIST_SIG, looks_like_plist_xml
 
 
 def _resolve_db_path() -> Path:
@@ -186,7 +186,7 @@ class FormatDatabase:
                     # other XML only for the generic one.
                     if offset == 0 and i == len(XML_PLIST_SIG) and peek_bytes[:i] == XML_PLIST_SIG:
                         if is_plist_xml is None:
-                            is_plist_xml = _looks_like_plist_xml(peek_bytes)
+                            is_plist_xml = looks_like_plist_xml(peek_bytes)
                         if is_plist_xml != (fmt.parser_class == "PlistParser"):
                             continue
                     scores[fid] = scores.get(fid, 0) + (i - offset)
