@@ -33,7 +33,7 @@ def plist_text(blob: bytes) -> str:
     else:
         issues = [ParseIssue(f"{issue.code}_text", issue.params) for issue in resolution.unresolvable]
     notes = "\n".join(f"# {render_value(issue, localized=True)}" for issue in issues)
-    return f"{notes}\n\n{pretty_object(reading.loaded)}"
+    return f"{notes}\n\n{pretty_object(expand_derived(reading.data))}"
 
 
 def try_plist_text(blob: bytes) -> str | None:

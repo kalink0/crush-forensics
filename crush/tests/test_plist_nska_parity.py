@@ -343,6 +343,15 @@ def test_unresolved_archive_decodes_embedded_plists_in_decoded_only(qapp, tmp_pa
     assert "$class" in keys
 
 
+def test_plist_text_decodes_embedded_plists_in_an_unresolved_archive() -> None:
+    from crush.core.formatters import plist_text
+
+    archive = _archive(["$null", {"NS.data": UID(2), "gone": UID(99)}, _binary({"k": "inner value"})])
+    text = plist_text(_binary(archive))
+    assert text.startswith("# Not resolved: 1 reference(s)")
+    assert "decoded (plist)" in text and "inner value" in text
+
+
 def test_loaded_stays_as_stored_for_a_plain_plist() -> None:
     from crush.parsers.plist_parser import read_plist
 
