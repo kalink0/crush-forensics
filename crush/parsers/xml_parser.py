@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from crush.core.issues import ParseIssue
+from crush.core.magic import looks_like_plist_xml
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
 
@@ -22,7 +23,7 @@ class XmlParser(AbstractParser):
             return False
         if path.lower().endswith(".plist"):
             return False
-        return not _looks_like_plist_xml(peek_bytes)
+        return not looks_like_plist_xml(peek_bytes)
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         from lxml import etree
@@ -111,11 +112,6 @@ def _char_offset(text: str, line: int, column: int) -> int:
             return len(text)
         offset = newline + 1
     return min(len(text), offset + max(0, column - 1))
-
-
-def _looks_like_plist_xml(peek_bytes: bytes) -> bool:
-    text = peek_bytes[:2048].decode("utf-8", errors="ignore")
-    return "<plist" in text.lower()
 
 
 def _local_tag(el: Any) -> str:

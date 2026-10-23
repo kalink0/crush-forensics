@@ -15,29 +15,25 @@ def pretty_json(text: str) -> str | None:
 
 
 def plist_text(blob: bytes) -> str:
-    """The plist in *blob* as text; raises with the parser's reason if it isn't one."""
-    import plistlib
-    from io import BytesIO
-    obj = plistlib.loads(blob)
-    if isinstance(obj, dict) and obj.get("$archiver") in ("NSKeyedArchiver", "NRKeyedArchiver"):
-        try:
-            from crush.third_party.ccl_bplist import (
-                load as bplist_load,
-                deserialise_NsKeyedArchiver,
-                set_object_converter,
-            )
-            from crush.parsers.plist_parser import _nska_converter
-            from typing import cast, Any as _Any
-            cast(_Any, set_object_converter)(_nska_converter)
-            raw = cast(_Any, bplist_load)(BytesIO(blob))
-            obj = cast(_Any, deserialise_NsKeyedArchiver)(raw)
-        except Exception as exc:
-            # Shown as stored -- and said so, instead of passing the
-            # unresolved object table off as the decoded archive.
-            from crush.core.issues import ParseIssue, render_value
-            note = render_value(ParseIssue("plist.nska_failed_text", detail=str(exc)), localized=True)
-            return f"# {note}\n\n{pretty_object(obj)}"
-    return pretty_object(obj)
+    """The plist in *blob* as text, read as the plist parser reads it (an
+    NSKeyedArchiver archive resolved, embedded plists decoded); raises with
+    the parser's reason if it isn't one."""
+    from crush.core.derived_bytes import expand_derived
+    from crush.core.issues import ParseIssue, render_value
+    from crush.parsers.plist_parser import read_plist
+
+    reading = read_plist(blob)
+    resolution = reading.resolution
+    if resolution is None or resolution.resolved:
+        return pretty_object(expand_derived(reading.data))
+    # Shown as stored -- and said so, instead of passing the unresolved
+    # object table off as the decoded archive.
+    if resolution.error is not None:
+        issues = [ParseIssue("plist.nska_failed_text", detail=resolution.error)]
+    else:
+        issues = [ParseIssue(f"{issue.code}_text", issue.params) for issue in resolution.unresolvable]
+    notes = "\n".join(f"# {render_value(issue, localized=True)}" for issue in issues)
+    return f"{notes}\n\n{pretty_object(expand_derived(reading.data))}"
 
 
 def try_plist_text(blob: bytes) -> str | None:

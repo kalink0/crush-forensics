@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crush.core.issues import QT_TRANSLATE_NOOP, CatalogText
-from crush.core.magic import XML_PLIST_SIG, _looks_like_plist_xml
+from crush.core.magic import UTF8_BOM, XML_PLIST_SIG, looks_like_plist_xml
+
+# Signatures that are an XML declaration, as entries for XML formats list
+# them (with and without a UTF-8 BOM): shared by the XML plist entry and
+# generic XML entries, see top_matches.
+_XML_DECLARATION_SIGS = (XML_PLIST_SIG, UTF8_BOM + XML_PLIST_SIG)
 
 
 def _resolve_db_path() -> Path:
@@ -165,7 +170,14 @@ class FormatDatabase:
         """
         formats = self._load()
         n = len(peek_bytes)
-        is_plist_xml: bool | None = None
+        # Whether the bytes are an XML plist is the shared detector's call
+        # (looks_like_plist_xml, as the parsers decide), not a signature's:
+        # an XML declaration -- with or without a BOM -- counts for the
+        # plist entry only when they are one, for any other XML entry only
+        # when they aren't. An XML plist without a declaration at offset 0
+        # (BOM, whitespace before it, or none at all) gets the plist entry's
+        # declaration signature counted as matched.
+        is_plist_xml = looks_like_plist_xml(peek_bytes)
         scores: dict[int, int] = {}
         for offset, root in self._tries:
             if offset >= n:
@@ -181,16 +193,20 @@ class FormatDatabase:
                     fmt = formats[fid]
                     if parser_class is not None and fmt.parser_class != parser_class:
                         continue
-                    # "<?xml" is shared by the XML plist and the generic XML
-                    # entry: a plist counts only for the plist entry, any
-                    # other XML only for the generic one.
-                    if offset == 0 and i == len(XML_PLIST_SIG) and peek_bytes[:i] == XML_PLIST_SIG:
-                        if is_plist_xml is None:
-                            is_plist_xml = _looks_like_plist_xml(peek_bytes)
+                    if offset == 0 and peek_bytes[:i] in _XML_DECLARATION_SIGS:
                         if is_plist_xml != (fmt.parser_class == "PlistParser"):
                             continue
                     scores[fid] = scores.get(fid, 0) + (i - offset)
                 children = node.children
+
+        if is_plist_xml:
+            for fid, fmt in formats.items():
+                if parser_class is not None and fmt.parser_class != parser_class:
+                    continue
+                if fmt.parser_class == "PlistParser" and any(
+                    offset == 0 and pattern == XML_PLIST_SIG for offset, pattern, _ in fmt.magic
+                ):
+                    scores.setdefault(fid, len(XML_PLIST_SIG))
 
         if not scores:
             return []

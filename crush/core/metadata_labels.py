@@ -96,6 +96,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Meta version"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Metadata"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Mipmaps"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "NSDate kept as stored"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Nesting"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Not decoded"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Note"),

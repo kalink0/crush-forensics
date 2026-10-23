@@ -177,25 +177,28 @@ def test_binary_archive_gets_counts_and_the_archive_for_its_own_tab(tmp_path: Pa
     assert meta["Unreachable objects"] == "1"
     assert meta["Missing references"] == "0"
     assert meta["Top keys"] == "extra, root"  # file order (plistlib writes keys sorted)
-    # Decoded shows the resolved root only; the archive tab gets all of it.
-    assert result.data == {"a": "same value", "b": "same value"}
+    # $top holds more than root: Decoded resolves every $top key under its name.
+    assert result.data == {"root": {"a": "same value", "b": "same value"}, "extra": "b"}
     stored = result.viewer_hints["archive"]
     assert sorted(stored["$top"]) == ["extra", "root"]
     assert len(stored["$objects"]) == 7
 
 
-def test_xml_archive_is_marked_unresolved_and_counted(tmp_path: Path) -> None:
-    result = _parse(tmp_path, "a.plist", _xml(_resolvable_graph()))
+def test_xml_archive_is_resolved_like_the_binary_form(tmp_path: Path) -> None:
+    raw = _xml(_resolvable_graph())
+    result = _parse(tmp_path, "a.plist", raw)
 
     meta = result.metadata
-    assert meta["Format"] == ParseIssue("plist.format_nska_xml")
-    assert meta["Status"] == ParseIssue("plist.nska_xml_unresolved")
-    # Same graph, same counts as the binary form.
+    assert meta["Format"] == "XML (NSKeyedArchiver)"
+    assert "Status" not in meta
+    # Same graph, same counts and the same tree as the binary form.
     assert meta["Shared objects"] == ParseIssue("plist.nska_shared", {"count": 2, "classes": 0})
     assert meta["Unreachable objects"] == "1"
     assert meta["Top keys"] == "extra, root"  # file order (plistlib writes keys sorted)
-    # Its own tab too, although Decoded shows the same: always in one place.
-    assert result.viewer_hints["archive"] == result.data
+    assert result.data == {"root": {"a": "same value", "b": "same value"}, "extra": "b"}
+    # The Stored archive tab and the Text tab keep the XML as stored.
+    assert result.viewer_hints["archive"]["$top"]["root"] == {"CF$UID": 1}
+    assert result.viewer_hints["raw_text"] == raw
 
 
 def test_failed_resolution_still_counts(tmp_path: Path) -> None:
@@ -359,22 +362,23 @@ def test_object_table_keeps_class_references_and_definitions(qapp) -> None:  # n
 
 
 def test_unresolved_archive_keeps_class_rows_in_decoded_too(qapp, tmp_path: Path) -> None:  # noqa: ARG001
-    """An XML archive isn't resolved: Decoded shows the stored archive, so it
-    must be as complete as the Stored archive tab."""
+    """An archive with a missing reference isn't resolved: Decoded shows the
+    stored archive, so it must be as complete as the Stored archive tab."""
     from crush.viewers.tree_text_viewer import TreeTextViewer
 
     archive = _archive([
         "$null",
-        {"NS.string": "hello", "$class": UID(2)},
+        {"NS.string": "hello", "$class": UID(2), "gone": UID(9)},
         {"$classname": "NSString", "$classes": ["NSString", "NSObject"]},
     ])
     result = _parse(tmp_path, "a.plist", _xml(archive))
+    assert result.metadata["Format"] == ParseIssue("plist.format_nska_xml")
     viewer = TreeTextViewer(result.data, **result.viewer_hints)
     decoded = viewer._tabs.widget(0)
     top = {decoded._model.index(r, 0).data(): decoded._model.index(r, 0)
            for r in range(decoded._model.rowCount())}
     objects = _rows(decoded, top["$objects"])
-    assert set(_rows(decoded, objects["1"])) == {"NS.string", "$class"}
+    assert set(_rows(decoded, objects["1"])) == {"NS.string", "$class", "gone"}
 
 
 def test_decoded_tree_still_hides_class_metadata(qapp) -> None:  # noqa: ARG001
@@ -578,7 +582,7 @@ def test_plist_text_states_an_unresolved_archive() -> None:
     from crush.core.formatters import plist_text
 
     archive = _resolvable_graph()
-    archive["$top"] = {"root": UID(99)}  # dangling
+    archive["$version"] = 1  # ccl_bplist resolves $version 100000 only
     text = plist_text(plistlib.dumps(archive, fmt=plistlib.FMT_BINARY))
     assert text.startswith("# NSKeyedArchiver deserialization failed")
     assert "$objects" in text

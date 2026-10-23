@@ -6518,6 +6518,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Mipmaps</translation>
     </message>
     <message>
+        <source>NSDate kept as stored</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Nesting</source>
         <translation>Verschachtelung</translation>
     </message>
@@ -7898,11 +7902,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>XML (NSKeyedArchiver — nicht aufgelöst)</translation>
     </message>
     <message>
-        <source>NSKeyedArchiver archives in XML form are not resolved into an object tree; the tree shows the archive&apos;s undecoded object table</source>
-        <comment>plist.nska_xml_unresolved</comment>
-        <translation>NSKeyedArchiver-Archive in XML-Form werden nicht zu einem Objektbaum aufgelöst; der Baum zeigt die nicht dekodierte Objekttabelle des Archivs</translation>
-    </message>
-    <message>
         <source>{count:,} (plus {classes:,} class definitions)</source>
         <comment>plist.nska_shared</comment>
         <translation>{count:,} (zuzüglich {classes:,} Klassendefinitionen)</translation>
@@ -8361,6 +8360,46 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>PNG eXIf chunk not checked yet; tEXt chunks are shown under PNG text, zTXt and iTXt chunks are not read</source>
         <comment>exif.png_not_checked</comment>
         <translation>PNG-eXIf-Chunk noch nicht geprüft; tEXt-Chunks werden unter „PNG-Text“ angezeigt, zTXt- und iTXt-Chunks werden nicht gelesen</translation>
+    </message>
+    <message>
+        <source>XML (NSKeyedArchiver — deserialization failed)</source>
+        <comment>plist.format_nska_xml_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} (NS.time is not a representable date, so the NSDate is shown as stored)</source>
+        <comment>plist.nska_dates_kept</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not decoded: the bytes start like a plist but can&apos;t be read as one: {detail}</source>
+        <comment>plist.embedded_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>NSKeyedArchiver deserialization failed: {detail}. Inspect BLOB on the bytes shows the archive as stored</source>
+        <comment>plist.embedded_nska_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: {count:,} reference(s) point past the end of $objects. Inspect BLOB on the bytes shows the archive as stored</source>
+        <comment>plist.embedded_nska_missing_refs</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: an object reaches itself through its references (a cycle). Inspect BLOB on the bytes shows the archive as stored</source>
+        <comment>plist.embedded_nska_cycle</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: {count:,} reference(s) point past the end of $objects, so below is the archive&apos;s undecoded object table</source>
+        <comment>plist.nska_missing_refs_text</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not resolved: an object reaches itself through its references (a cycle), so below is the archive&apos;s undecoded object table</source>
+        <comment>plist.nska_cycle_text</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Payload column: schema-less rendering (heuristic), valid UTF-8 shown as text and 64/32-bit fields as double/float. The selected record&apos;s payload is shown below the table with every candidate reading of each field</source>
@@ -10784,6 +10823,10 @@ Gesamt: {total:.2f} s</translation>
 </context>
 <context>
     <name>TreeViewer</name>
+    <message>
+        <source>decoded ({kind})</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
         <source>Expand All</source>
         <translation>Alle anzeigen</translation>

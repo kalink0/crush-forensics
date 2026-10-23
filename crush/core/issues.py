@@ -1044,11 +1044,50 @@ MESSAGES: dict[str, str] = {
         "XML (NSKeyedArchiver — not resolved)",
         "plist.format_nska_xml",
     ),
-    "plist.nska_xml_unresolved": QT_TRANSLATE_NOOP(
+    "plist.format_nska_xml_failed": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "NSKeyedArchiver archives in XML form are not resolved into an object "
-        "tree; the tree shows the archive's undecoded object table",
-        "plist.nska_xml_unresolved",
+        "XML (NSKeyedArchiver — deserialization failed)",
+        "plist.format_nska_xml_failed",
+    ),
+    "plist.nska_dates_kept": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} (NS.time is not a representable date, so the NSDate is shown as stored)",
+        "plist.nska_dates_kept",
+    ),
+    "plist.embedded_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not decoded: the bytes start like a plist but can't be read as one: {detail}",
+        "plist.embedded_failed",
+    ),
+    "plist.embedded_nska_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "NSKeyedArchiver deserialization failed: {detail}. Inspect BLOB on the bytes "
+        "shows the archive as stored",
+        "plist.embedded_nska_failed",
+    ),
+    "plist.embedded_nska_missing_refs": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not resolved: {count:,} reference(s) point past the end of $objects. Inspect "
+        "BLOB on the bytes shows the archive as stored",
+        "plist.embedded_nska_missing_refs",
+    ),
+    "plist.embedded_nska_cycle": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not resolved: an object reaches itself through its references (a cycle). "
+        "Inspect BLOB on the bytes shows the archive as stored",
+        "plist.embedded_nska_cycle",
+    ),
+    "plist.nska_missing_refs_text": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not resolved: {count:,} reference(s) point past the end of $objects, "
+        "so below is the archive's undecoded object table",
+        "plist.nska_missing_refs_text",
+    ),
+    "plist.nska_cycle_text": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not resolved: an object reaches itself through its references (a cycle), "
+        "so below is the archive's undecoded object table",
+        "plist.nska_cycle_text",
     ),
     "plist.nska_shared": QT_TRANSLATE_NOOP(
         "ParseIssue",
