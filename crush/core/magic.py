@@ -136,7 +136,7 @@ def detect_fast_label(peek_bytes: bytes, path: str) -> str:
     return ""
 
 
-_UTF8_BOM: Final = b"\xef\xbb\xbf"
+UTF8_BOM: Final = b"\xef\xbb\xbf"
 # What an XML plist starts with once a UTF-8 BOM and whitespace are skipped:
 # the XML declaration, or -- without one -- the plist DOCTYPE or the <plist>
 # element itself (both well-formed XML; Apple's own files carry all three).
@@ -145,7 +145,7 @@ _XML_PLIST_STARTS: Final = (XML_PLIST_SIG, b"<!doctype plist", b"<plist")
 
 def _xml_plist_offset(data: bytes) -> int:
     """Where the XML in *data* starts: after a UTF-8 BOM and whitespace."""
-    start = len(_UTF8_BOM) if data.startswith(_UTF8_BOM) else 0
+    start = len(UTF8_BOM) if data.startswith(UTF8_BOM) else 0
     return len(data) - len(data[start:].lstrip())
 
 

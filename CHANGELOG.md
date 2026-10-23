@@ -26,6 +26,7 @@ All notable changes to Crush will be documented in this file.
 - Fixed control characters in Protobuf strings breaking rows and indentation in the Protobuf viewer and BLOB Inspector.
 - Fixed the Protobuf JSON export holding only the first 64 bytes of a nested message's raw bytes.
 - Fixed one `NSDate` outside the date range, or NaN, leaving a whole NSKeyedArchiver archive unresolved.
+- Fixed an XML plist with a UTF-8 BOM being identified as an XML document in the format information.
 - Fixed the BLOB Inspector's plist text reporting a recursion or index error instead of the cycle or missing reference in an NSKeyedArchiver archive.
 
 ### Changed

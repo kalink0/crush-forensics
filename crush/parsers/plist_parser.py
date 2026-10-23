@@ -51,7 +51,8 @@ class PlistParser(AbstractParser):
             raw_text: str | bytes = raw if reading.xml else ""
             status = reading.status
             fmt = reading.format
-            if reading.resolution is not None and reading.resolution.resolved:
+            resolved = reading.resolution is not None and reading.resolution.resolved
+            if resolved:
                 try:
                     # Built from the resolved tree inside this try: a
                     # failure there is a failed resolve too, not a failed
@@ -61,7 +62,8 @@ class PlistParser(AbstractParser):
                         raw_text = _text_tab(data)
                     text_index = _flatten_text(data)
                 except Exception as exc:
-                    data = reading.loaded
+                    resolved = False
+                    data = _decode_embedded(reading.loaded)
                     fmt = failed_format(reading.xml)
                     status = ParseIssue("plist.nska_failed", detail=str(exc))
                     raw_text = raw if reading.xml else ""
@@ -79,11 +81,12 @@ class PlistParser(AbstractParser):
             if status is not None:
                 hints["status"] = status
             if reading.keyed:
-                meta.update(_archive_metadata(reading.loaded, resolved=data is not reading.loaded))
+                meta.update(_archive_metadata(reading.loaded, resolved=resolved))
                 # The archive as stored, in its own tab for every keyed
                 # archive -- also where Decoded shows the same (resolving
                 # wasn't possible or failed), so it's always found in one place.
                 hints["archive"] = reading.loaded
+                hints["resolved"] = resolved
             return ParseResult(
                 viewer_type="tree_text",
                 data=data,
@@ -112,11 +115,11 @@ class PlistParser(AbstractParser):
 class PlistReading:
     """A plist read the one way the parser and the BLOB Inspector read it.
 
-    *loaded*: as stored (for an NSKeyedArchiver archive, the Stored archive
-    tab). *data*: what Decoded shows -- the resolved tree, or *loaded* when
-    the archive wasn't resolved -- with each plist embedded in a bytes value
-    decoded next to it (DerivedBytes). *status*: why an archive wasn't
-    resolved; None otherwise."""
+    *loaded*: as stored, never changed (for an NSKeyedArchiver archive, the
+    Stored archive tab). *data*: what Decoded shows -- the resolved tree, or
+    *loaded* when the archive wasn't resolved -- with each plist embedded in
+    a bytes value decoded next to it (DerivedBytes). *status*: why an
+    archive wasn't resolved; None otherwise."""
 
     xml: bool
     loaded: Any
@@ -152,11 +155,11 @@ def read_plist(raw: bytes) -> PlistReading:
         fmt: str | ParseIssue = ParseIssue(
             "plist.format_nska_xml" if xml else "plist.format_nska_unresolved"
         )
-        data = loaded
+        data = _decode_embedded(loaded)
     elif resolution.error is not None:
         status = ParseIssue("plist.nska_failed", detail=resolution.error)
         fmt = failed_format(xml)
-        data = loaded
+        data = _decode_embedded(loaded)
     else:
         status = None
         fmt = "XML (NSKeyedArchiver)" if xml else "binary (NSKeyedArchiver)"
@@ -209,29 +212,27 @@ def _embedded(value: bytes) -> DerivedBytes | None:
 def _decode_embedded(data: Any) -> Any:
     """*data* with every bytes value that holds a plist (binary or XML,
     archive or not) decoded next to it, recursively: each embedded plist is
-    shorter than the one holding it, so this ends without a depth limit."""
+    shorter than the one holding it, so this ends without a depth limit.
+    *data* itself is left as it is: a container with such a value inside is
+    returned as a new one, any other as it was."""
+    if isinstance(data, DerivedBytes):
+        return data
     if isinstance(data, bytes):
         return _embedded(data) or data
-    stack = [data]
-    seen: set[int] = set()
-    while stack:
-        container = stack.pop()
-        if id(container) in seen:
-            continue
-        seen.add(id(container))
-        if isinstance(container, dict):
-            entries: Any = list(container.items())
-        elif isinstance(container, list):
-            entries = list(enumerate(container))
-        else:
-            continue
-        for key, value in entries:
-            if isinstance(value, bytes) and not isinstance(value, DerivedBytes):
-                decoded = _embedded(value)
-                if decoded is not None:
-                    container[key] = decoded
-            elif isinstance(value, (dict, list)):
-                stack.append(value)
+    if isinstance(data, dict):
+        changed = {}
+        for key, value in data.items():
+            decoded = _decode_embedded(value)
+            if decoded is not value:
+                changed[key] = decoded
+        if not changed:
+            return data
+        return {key: changed[key] if key in changed else value for key, value in data.items()}
+    if isinstance(data, list):
+        items = [_decode_embedded(value) for value in data]
+        if all(new is old for new, old in zip(items, data)):
+            return data
+        return items
     return data
 
 

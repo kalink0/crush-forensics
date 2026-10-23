@@ -316,6 +316,47 @@ def test_bytes_starting_like_a_plist_that_isnt_one_say_why(tmp_path: Path) -> No
     assert result.data["t"] == b"plain bytes"
 
 
+def test_unresolved_archive_decodes_embedded_plists_in_decoded_only(qapp, tmp_path: Path) -> None:  # noqa: ARG001
+    from crush.viewers.tree_text_viewer import TreeTextViewer
+
+    inner = _binary(_chat())
+    archive = _archive(["$null", {"$class": UID(2), "NS.data": UID(3), "gone": UID(99)},
+                        _cls("Holder"), inner])
+    result = _parse(tmp_path, "a.plist", _binary(archive))
+
+    assert result.metadata["Status"] == ParseIssue("plist.nska_missing_refs", {"count": 1})
+    blob = _derived(result.data["$objects"][3])
+    assert blob.derived["body"] == "see you at 9"
+    stored = result.viewer_hints["archive"]["$objects"][3]
+    assert stored == inner and not isinstance(stored, DerivedBytes)
+    assert result.viewer_hints["resolved"] is False
+
+    # Decoded is the stored table: its class rows stay rows, not folded.
+    viewer = TreeTextViewer(result.data, **result.viewer_hints)
+    decoded = viewer._tabs.widget(0)
+    model = decoded._model
+    top = {model.index(r, 0).data(): model.index(r, 0) for r in range(model.rowCount())}
+    decoded._populate_children(model.itemFromIndex(top["$objects"]))
+    holder = model.index(1, 0, top["$objects"])
+    decoded._populate_children(model.itemFromIndex(holder))
+    keys = {model.index(r, 0, holder).data() for r in range(model.rowCount(holder))}
+    assert "$class" in keys
+
+
+def test_loaded_stays_as_stored_for_a_plain_plist() -> None:
+    from crush.parsers.plist_parser import read_plist
+
+    inner = _binary({"k": "v"})
+    reading = read_plist(_binary({"blob": inner, "nested": [inner]}))
+    assert isinstance(reading.data["blob"], DerivedBytes)
+    assert isinstance(reading.data["nested"][0], DerivedBytes)
+    assert type(reading.loaded["blob"]) is bytes
+    assert type(reading.loaded["nested"][0]) is bytes
+
+    unchanged = read_plist(_binary({"n": 1, "b": b"plain"}))
+    assert unchanged.data is unchanged.loaded  # nothing decoded: nothing copied
+
+
 def test_embedded_archive_that_cant_be_resolved_says_why(tmp_path: Path) -> None:
     result = _parse(tmp_path, "a.plist", _binary({"c": _binary(_cyclic())}))
     c = _derived(result.data["c"])
@@ -385,6 +426,19 @@ def test_xml_plist_variants_are_detected_and_parsed(tmp_path: Path) -> None:
         assert result.metadata["Format"] == "XML", name
         assert result.data == {"k": "v"}, name
         assert result.viewer_hints["raw_text"] == raw, name  # Text tab: as stored
+
+
+def test_format_db_identifies_xml_plist_variants_as_the_parser_does() -> None:
+    from crush.core.format_db import FormatDatabase
+
+    db = FormatDatabase.get()
+    for name, raw in {**_variants(), "plain": _XML_PLIST}.items():
+        match = db.identify(raw[:2048], "")
+        assert match is not None, name
+        assert match.parser_class == "PlistParser", name
+    for doc in (b"<?xml version='1.0'?><notes/>", b"\xef\xbb\xbf<?xml version='1.0'?><notes/>"):
+        match = db.identify(doc, "")
+        assert match is not None and match.parser_class == "XmlParser", doc
 
 
 def test_xml_that_doesnt_start_like_a_plist_is_xml() -> None:

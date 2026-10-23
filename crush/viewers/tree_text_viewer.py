@@ -29,7 +29,10 @@ class TreeTextViewer(QWidget):
         raw_text: str | bytes = "",
         archive: Any = None,
         status: ParseIssue | list[ParseIssue] | None = None,
+        resolved: bool = False,
     ) -> None:
+        """*archive*: the NSKeyedArchiver archive as stored, for its own tab.
+        *resolved*: *data* is the tree the parser resolved from it."""
         super().__init__(parent)
         self._raw_text = raw_text
         self._text_view: TextView | None = None
@@ -53,7 +56,7 @@ class TreeTextViewer(QWidget):
         # metadata into the Type column. Decoded is the archive itself when it
         # wasn't resolved (missing references, a cycle, resolving failed),
         # and any other plist, JSON or XML is plain data: every key shown.
-        resolved_archive = archive is not None and data is not archive
+        resolved_archive = archive is not None and resolved
         self._tabs.addTab(
             TreeViewer(data, self._tabs, fold_class_meta=resolved_archive),
             translate("TreeTextViewer", "Decoded"),
