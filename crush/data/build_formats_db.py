@@ -363,6 +363,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Object by Object — RealmDB Forensics with crush (beBinary)",
                 "https://bebinary4n6.blogspot.com/2026/05/object-by-object-realmdb-forensics-with.html",
             ),
+            (
+                "DFIR Notes — Realm databases (kalink0)",
+                "https://4n6.be-binary.de/en/deep-dives/realm/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04",
@@ -611,6 +615,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "EVTX and message resolution (Velociraptor docs)",
                 "https://docs.velociraptor.app/docs/forensic/event_logs/",
+            ),
+            (
+                "DFIR Notes — Windows Event Logs (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/event-logs/",
             ),
         ],
         "status": "reviewed",
@@ -1580,6 +1588,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Reading the CURRENT — LevelDB Forensics with crush (beBinary)",
                 "https://bebinary4n6.blogspot.com/2026/05/reading-current-leveldb-forensics-with.html",
             ),
+            (
+                "DFIR Notes — LevelDB (kalink0)",
+                "https://4n6.be-binary.de/en/deep-dives/leveldb/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04",
@@ -1782,6 +1794,14 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "Apple Unified Logging and Activity Tracing formats (libyal, Joachim Metz)",
                 "https://github.com/libyal/dtformats/blob/main/documentation/Apple%20Unified%20Logging%20and%20Activity%20Tracing%20formats.asciidoc",
+            ),
+            (
+                "DFIR Notes — Unified Logs (iOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/ios/unified-logs/",
+            ),
+            (
+                "DFIR Notes — Unified Logs (macOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/macos/unified-logs/",
             ),
         ],
         "status": "reviewed",
@@ -3389,6 +3409,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Registry Explorer and RECmd (Eric Zimmerman tools)",
                 "https://ericzimmerman.github.io/#!index.md",
             ),
+            (
+                "DFIR Notes — Windows Registry (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/registry/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04",
@@ -3469,6 +3493,14 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "Beyond the C — SEGB and Biome Forensics with crush (beBinary)",
                 "https://bebinary4n6.blogspot.com/2026/05/beyond-c-segb-and-biome-forensics-with.html",
+            ),
+            (
+                "DFIR Notes — Biome (iOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/ios/biome/",
+            ),
+            (
+                "DFIR Notes — Biome (macOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/macos/biome/",
             ),
         ],
         "status": "reviewed",
@@ -3603,6 +3635,10 @@ FORMATS: list[dict[str, Any]] = [
                 "What Hides in the WAL — SQLite Forensics with crush (beBinary)",
                 "https://bebinary4n6.blogspot.com/2026/05/what-hides-in-wal-sqlite-forensics-with.html",
             ),
+            (
+                "DFIR Notes — SQLite databases (kalink0)",
+                "https://4n6.be-binary.de/en/deep-dives/sqlite/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04",
@@ -3665,6 +3701,10 @@ FORMATS: list[dict[str, Any]] = [
                 "What Hides in the WAL — SQLite Forensics with crush (beBinary)",
                 "https://bebinary4n6.blogspot.com/2026/05/what-hides-in-wal-sqlite-forensics-with.html",
             ),
+            (
+                "DFIR Notes — SQLite databases (kalink0)",
+                "https://4n6.be-binary.de/en/deep-dives/sqlite/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04",
@@ -3726,6 +3766,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "What Hides in the WAL — SQLite Forensics with crush (beBinary)",
                 "https://bebinary4n6.blogspot.com/2026/05/what-hides-in-wal-sqlite-forensics-with.html",
+            ),
+            (
+                "DFIR Notes — SQLite databases (kalink0)",
+                "https://4n6.be-binary.de/en/deep-dives/sqlite/",
             ),
         ],
         "status": "reviewed",
@@ -4414,6 +4458,14 @@ FORMATS: list[dict[str, Any]] = [
                 "Thesis Friday — Unified Log analysis series (Tim Korver)",
                 "https://thesisfriday.com/",
             ),
+            (
+                "DFIR Notes — Unified Logs (iOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/ios/unified-logs/",
+            ),
+            (
+                "DFIR Notes — Unified Logs (macOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/macos/unified-logs/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04"
@@ -4927,6 +4979,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ForensicsWiki — Prefetch",
                 "https://forensics.wiki/prefetch/",
+            ),
+            (
+                "DFIR Notes — Prefetch (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/prefetch/",
             ),
         ],
         "status": "reviewed",
@@ -6134,6 +6190,10 @@ FORMATS: list[dict[str, Any]] = [
                 "BitLocker overview (Microsoft)",
                 "https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/",
             ),
+            (
+                "DFIR Notes — BitLocker (kalink0)",
+                "https://4n6.be-binary.de/en/glossary/encryption-and-attacks/bitlocker/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04"
@@ -6529,6 +6589,10 @@ FORMATS: list[dict[str, Any]] = [
                 "ForensicsWiki — LNK",
                 "https://forensics.wiki/lnk/",
             ),
+            (
+                "DFIR Notes — LNK and Jump Lists (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/lnk-jumplists/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04"
@@ -6581,6 +6645,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ForensicsWiki — Jump lists",
                 "https://forensics.wiki/jump_lists/",
+            ),
+            (
+                "DFIR Notes — LNK and Jump Lists (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/lnk-jumplists/",
             ),
         ],
         "status": "reviewed",
@@ -6728,6 +6796,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Event Log File Format (Microsoft)",
                 "https://learn.microsoft.com/en-us/windows/win32/eventlog/event-log-file-format",
             ),
+            (
+                "DFIR Notes — Windows Event Logs (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/event-logs/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04"
@@ -6778,6 +6850,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ForensicsWiki — Windows thumbcache",
                 "https://forensics.wiki/windows_thumbcache/",
+            ),
+            (
+                "DFIR Notes — Thumbcache (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/thumbcache/",
             ),
         ],
         "status": "reviewed",
@@ -6913,6 +6989,10 @@ FORMATS: list[dict[str, Any]] = [
                 "New Technologies File System (NTFS) — format documentation, USN change journal (libyal/libfsntfs)",
                 "https://github.com/libyal/libfsntfs/blob/main/documentation/New%20Technologies%20File%20System%20(NTFS).asciidoc",
             ),
+            (
+                "DFIR Notes — USN Journal (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/usn-journal/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04"
@@ -6942,6 +7022,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "Forensic Analysis of the Microsoft Windows Vista Recycle Bin (Mitchell Machor, Forensic Focus, 2008)",
                 "https://www.forensicfocus.com/articles/forensic-analysis-of-the-microsoft-windows-vista-recycle-bin/",
+            ),
+            (
+                "DFIR Notes — Recycle Bin (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/recycle-bin/",
             ),
         ],
         "status": "reviewed",
@@ -6983,6 +7067,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ForensicsWiki — Windows shadow volumes",
                 "https://forensics.wiki/windows_shadow_volumes/",
+            ),
+            (
+                "DFIR Notes — Volume Shadow Copies (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/windows/vss/",
             ),
         ],
         "status": "reviewed",
@@ -7172,6 +7260,10 @@ FORMATS: list[dict[str, Any]] = [
                 "ForensicsWiki — Hiberfil.sys",
                 "https://forensics.wiki/hiberfil.sys/",
             ),
+            (
+                "DFIR Notes — Hibernation file (kalink0)",
+                "https://4n6.be-binary.de/en/glossary/terms/hibernation-file/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-04"
@@ -7335,6 +7427,14 @@ FORMATS: list[dict[str, Any]] = [
                 "FSEventsParser (G-C Partners)",
                 "https://github.com/dlcowen/FSEventsParser",
             ),
+            (
+                "DFIR Notes — FSEvents (iOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/ios/fsevents/",
+            ),
+            (
+                "DFIR Notes — FSEvents (macOS) (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/macos/fsevents/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-05",
@@ -7384,6 +7484,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "spotlight_parser (Yogesh Khatri)",
                 "https://github.com/ydkhatri/spotlight_parser",
+            ),
+            (
+                "DFIR Notes — Spotlight (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/macos/spotlight/",
             ),
         ],
         "status": "reviewed",
@@ -7831,6 +7935,10 @@ FORMATS: list[dict[str, Any]] = [
                 "Systemd journal file format (libyal/dtformats)",
                 "https://github.com/libyal/dtformats/blob/main/documentation/Systemd%20journal%20file%20format.asciidoc",
             ),
+            (
+                "DFIR Notes — Journald (kalink0)",
+                "https://4n6.be-binary.de/en/artifacts/linux/journald/",
+            ),
         ],
         "status": "reviewed",
         "last_reviewed": "2026-10-05",
@@ -7891,6 +7999,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ForensicsWiki — Linux unified key setup (LUKS)",
                 "https://forensics.wiki/linux_unified_key_setup_(luks)/",
+            ),
+            (
+                "DFIR Notes — LUKS (kalink0)",
+                "https://4n6.be-binary.de/en/glossary/encryption-and-attacks/luks/",
             ),
         ],
         "status": "reviewed",
@@ -8691,6 +8803,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "ForensicsWiki — TrueCrypt",
                 "https://forensics.wiki/truecrypt/",
+            ),
+            (
+                "DFIR Notes — VeraCrypt (kalink0)",
+                "https://4n6.be-binary.de/en/glossary/encryption-and-attacks/veracrypt/",
             ),
         ],
         "status": "reviewed",

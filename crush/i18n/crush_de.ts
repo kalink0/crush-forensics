@@ -353,7 +353,7 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
     <message>
         <source>schema decode failed: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Schema-Dekodierung fehlgeschlagen: {error}]</translation>
     </message>
     <message>
         <source>[{name}: not recognised: {reason}]</source>
@@ -3716,15 +3716,15 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>{count} candidates (heuristic)</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Kandidaten (heuristic)</translation>
     </message>
     <message>
         <source>candidate: as message</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: als Nachricht</translation>
     </message>
     <message>
         <source>candidate: as string</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: als Zeichenkette</translation>
     </message>
     <message>
         <source>{{ {count} field(s) }}</source>
@@ -3736,7 +3736,7 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>{count} character(s)</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Zeichen</translation>
     </message>
     <message>
         <source>Realm file</source>
@@ -5645,7 +5645,7 @@ Speicherort öffnen?</translation>
     </message>
     <message>
         <source>{count} chunk(s) hold less data than the bytes they cover; zeros are read in their place.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Chunks enthalten weniger Daten als die von ihnen abgedeckten Bytes; an ihrer Stelle werden Nullen gelesen.</translation>
     </message>
     <message>
         <source>{count} page(s) are not in the acquisition&apos;s files; they read as the bad-sector marker.</source>
@@ -6227,7 +6227,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Ambiguous fields</source>
-        <translation type="unfinished"></translation>
+        <translation>Mehrdeutige Felder</translation>
     </message>
     <message>
         <source>Array layers</source>
@@ -8082,6 +8082,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>{count:,} length-delimited-Feld(er) in Verschachtelungstiefe {limit} wurde(n) nicht als verschachtelte Nachricht interpretiert (Tiefenlimit, Standardwert der Protobuf-Bibliotheken); als String/Bytes angezeigt</translation>
     </message>
     <message>
+        <source>{count:,} length-delimited field(s) decode both as a nested message and as UTF-8 text; wire type 2 doesn&apos;t record which it is. Both readings are shown as candidates (heuristic), neither as the field&apos;s value</source>
+        <comment>protobuf.ambiguous_payloads</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>{count:,} of {total:,} data files could not be read whole; Overview → Read problems says why</source>
         <comment>leveldb.data_files_not_read</comment>
         <translation>{count:,} von {total:,} Datendateien konnten nicht vollständig gelesen werden; den Grund nennt Übersicht → Leseprobleme</translation>
@@ -8394,11 +8399,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Not resolved: an object reaches itself through its references (a cycle), so below is the archive&apos;s undecoded object table</source>
         <comment>plist.nska_cycle_text</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{count:,} length-delimited field(s) decode both as a nested message and as UTF-8 text; wire type 2 doesn&apos;t record which it is. Both readings are shown as candidates (heuristic), neither as the field&apos;s value</source>
-        <comment>protobuf.ambiguous_payloads</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -8979,7 +8979,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>{count} {unit}(s) of this acquisition read so far hold less data than the bytes they cover; the reader reads {zeros} zero bytes in their place, so what is listed or read from them can hold those zeros</source>
         <comment>vfs.acquisition_padded_chunks</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} {unit}(s) dieser bisher gelesenen Datensätze enthalten weniger Daten als die Anzahl der Bytes, die sie umfassen; der Reader liest stattdessen {zeros} Null-Bytes, sodass die darin aufgeführten oder ausgelesenen Daten diese Nullen enthalten können</translation>
     </message>
     <message>
         <source>Crush does not prevent access-time updates on this platform; mount the evidence read-only to prevent them</source>
@@ -9289,7 +9289,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>{count} file(s) recorded as damage while the volume was listed, and listed as stored, first: {first}</source>
         <comment>entry.raw_volume_damage_listed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count} Datei(en), die während der Listung des Datenträgers als beschädigt erfasst und als gespeichert aufgeführt wurden, erste: {first}</translation>
     </message>
     <message>
         <source>{bytes} bytes of this volume lie past the end of the image: the image holds only part of it</source>
@@ -11459,7 +11459,7 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>Shown as JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>Als JSON angezeigt</translation>
     </message>
     <message>
         <source>Bytes as hex</source>
@@ -11487,11 +11487,11 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>Decoded as text…</source>
-        <translation type="unfinished"></translation>
+        <translation>Dekodiert als Text...</translation>
     </message>
     <message>
         <source>Decoded as JSON…</source>
-        <translation type="unfinished"></translation>
+        <translation>Dekodiert als JSON...</translation>
     </message>
     <message>
         <source>Open in new tab</source>
