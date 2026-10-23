@@ -230,6 +230,24 @@ class TestRawImage:
         with pytest.raises(RawImageOpenError):
             RawImageVFS(tmp_path / "gap.001")
 
+    def test_split_set_with_a_short_middle_segment_raises(
+        self, raw_ntfs_image: Path, tmp_path: Path
+    ) -> None:
+        # A middle segment cut short would put every byte after it at the wrong
+        # offset; qnxprobe 1.75 refuses the set, and Crush says how to open it by hand.
+        data = raw_ntfs_image.read_bytes()
+        third = len(data) // 3
+        (tmp_path / "cut.001").write_bytes(data[:third])
+        (tmp_path / "cut.002").write_bytes(data[third : 2 * third - 512])
+        (tmp_path / "cut.003").write_bytes(data[2 * third :])
+
+        with pytest.raises(RawImageOpenError) as caught:
+            RawImageVFS(tmp_path / "cut.001")
+        message = str(caught.value)
+        assert f"cut.002 is {third - 512:,} bytes" in message
+        assert "join the segments into one file in order" in message
+        assert "--allow-unequal-segments" not in message
+
     def test_truncated_image_read_raises(self, raw_ntfs_image: Path) -> None:
         data = raw_ntfs_image.read_bytes()
         raw_ntfs_image.write_bytes(data[: len(data) // 2])

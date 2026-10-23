@@ -355,6 +355,20 @@ def open_raw_image(
             "password.image_key_required" if by_key else "password.image_required",
             {"path": str(path)}, detail=str(exc),
         )) from exc
+    except qnxprobe.SplitSegmentSizeError as exc:
+        # qnxprobe's own advice names an option of its command line, which Crush
+        # does not have, so say what to do here instead
+        odd = ", ".join(
+            f"{Path(exc.segments[i]).name} is {exc.sizes[i]:,} bytes" for i in exc.odd[:3]
+        )
+        raise RawImageOpenError(
+            f"{path.name}: the segments of this split image are not one size: "
+            f"{Path(exc.segments[0]).name} is {exc.sizes[0]:,} bytes and {odd}. Not "
+            f"opened: a segment cut short or padded would put every byte after it at "
+            f"the wrong offset. Compare the segments with the acquisition's own record; "
+            f"if the set is whole as it is, join the segments into one file in order "
+            f"and open that file."
+        ) from exc
     except qnxprobe.SplitImageError as exc:
         raise RawImageOpenError(f"{path.name}: {exc}") from exc
     except Exception as exc:

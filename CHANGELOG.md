@@ -20,11 +20,15 @@ All notable changes to Crush will be documented in this file.
 - Fixed Copy Selected Hex/ASCII in hex panes copying the wrong rows or nothing when a selection starts or ends mid-row, and Search Selected taking one byte too many.
 - Fixed control characters in Protobuf strings breaking rows and indentation in the Protobuf viewer and BLOB Inspector.
 - Fixed the Protobuf JSON export holding only the first 64 bytes of a nested message's raw bytes.
+- Fixed HFS+ file names holding `:` in raw disk images being read as a folder path (`a:b.txt` showed as `a/b.txt`).
+- Fixed an E01 or L01 chunk table that fails its checksum being read as stored, which could put another chunk's data in its place; its table2 copy is read instead.
+- Fixed a VHDX whose log updated disk data being read without the update, and a QCOW reading a file of its backing file's name outside its folder ahead of the one beside it.
+- Fixed a split raw image whose segments are not one size being joined, which reads every byte after a cut segment at the wrong offset; it is now refused, naming the segments.
 
 ### Changed
 
 - View → Language lists each language by its own name only, e.g. "Deutsch".
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.74 (from v1.72) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.14.0 (from v0.13.0).
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.75 (from v1.72) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.0 (from v0.13.0).
 
 ## v0.23.0 - 2026-10-17
 
