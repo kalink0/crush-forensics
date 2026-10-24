@@ -12,6 +12,7 @@ from __future__ import annotations
 import sqlite3
 import struct
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Literal, overload
 
@@ -467,29 +468,100 @@ def get_btree_page_type(page: bytes, page_num: int) -> int | None:
 # ---------------------------------------------------------------------------
 
 _WAL_MAGIC = (0x377F0682, 0x377F0683)
+_WAL_HEADER_SIZE = 32
+_WAL_FRAME_HEADER_SIZE = 24
+_U32 = 0xFFFFFFFF
 
 
-def classify_wal_frames(data: bytes) -> tuple[int, list[dict[str, Any]]] | None:
+def _wal_checksum(
+    buf: bytes, s0: int, s1: int, word_fmt: str
+) -> tuple[int, int]:
+    """SQLite's WAL checksum over *buf* (a multiple of 8 bytes), continuing
+    from (s0, s1): for each pair of 32-bit words, s0 += x0 + s1 and
+    s1 += x1 + s0, mod 2**32 (https://www.sqlite.org/fileformat2.html#walformat).
+    *word_fmt* is "<II" or ">II", the word byte order the magic declares."""
+    for x0, x1 in struct.iter_unpack(word_fmt, buf):
+        s0 = (s0 + x0 + s1) & _U32
+        s1 = (s1 + x1 + s0) & _U32
+    return s0, s1
+
+
+@lru_cache(maxsize=2)
+def _wal_log_extent(data: bytes) -> tuple[bool, int, str, int]:
+    """Where the log SQLite reads from *data* ends, by the spec's frame
+    validity rules: a frame is valid only if its salts match the header's
+    and its checksum matches the cumulative checksum over the header's
+    first 24 bytes and every frame up to and including it. SQLite stops
+    reading at the first invalid frame, and ignores the whole file if the
+    header's own checksum doesn't match or its page size isn't a power of
+    two from 512 to 65536 (as SQLite's own WAL recovery checks).
+
+    Returns (header_ok, valid_frames, cause, cause_frame): if not
+    *header_ok*, *cause* is "page_size" or "checksum" and nothing is valid.
+    Otherwise *valid_frames* is the length of the valid prefix; *cause* is
+    why the next frame is invalid ("salt" / "checksum", "" if the file
+    simply ends) and *cause_frame* its 1-based number (0 if none). Cached
+    because callers rebuild the page index per hex-sync lookup and the
+    checksum covers every byte of the file. *data* must start with a valid
+    magic and hold a full header.
+    """
+    magic, _version, page_size = struct.unpack_from(">III", data, 0)
+    if not (512 <= page_size <= 65536 and page_size & (page_size - 1) == 0):
+        return False, 0, "page_size", 0
+    word_fmt = ">II" if magic & 1 else "<II"
+    salts = data[16:24]
+    s0, s1 = _wal_checksum(data[:24], 0, 0, word_fmt)
+    if (s0, s1) != struct.unpack_from(">II", data, 24):
+        return False, 0, "checksum", 0
+
+    frame_size = _WAL_FRAME_HEADER_SIZE + page_size
+    offset = _WAL_HEADER_SIZE
+    valid = 0
+    while offset + frame_size <= len(data):
+        if data[offset + 8:offset + 16] != salts:
+            return True, valid, "salt", valid + 1
+        s0, s1 = _wal_checksum(data[offset:offset + 8], s0, s1, word_fmt)
+        page_start = offset + _WAL_FRAME_HEADER_SIZE
+        s0, s1 = _wal_checksum(data[page_start:page_start + page_size], s0, s1, word_fmt)
+        if (s0, s1) != struct.unpack_from(">II", data, offset + 16):
+            return True, valid, "checksum", valid + 1
+        valid += 1
+        offset += frame_size
+    return True, valid, "", 0
+
+
+def classify_wal_frames(
+    data: bytes, problems: list[ParseIssue] | None = None
+) -> tuple[int, list[dict[str, Any]]] | None:
     """Parse a -wal file's raw bytes into a full, classified frame list.
 
     Returns (page_size, frames), or None if *data* is too short or its
     magic doesn't match. Each frame dict: frame (1-based index), page,
     db_size, is_commit, salt_ok, offset (absolute, in *data*), tx
-    (transaction number among salt-valid frames, None if not salt_ok), and
+    (transaction number within the log SQLite reads, None outside it),
     status -- one of:
-      "Active"      salt-valid, within the committed range, newest for its page
-      "Superseded"  salt-valid, within the committed range, an older version
+      "Active"      in the log, within the committed range, newest for its page
+      "Superseded"  in the log, within the committed range, an older version
                     of a page a later frame also covers
-      "Uncommitted" salt-valid but past the last commit marker -- captured
+      "Uncommitted" in the log but past its last commit frame -- captured
                     mid-transaction
+      "Invalid"     salt-valid, but outside the log SQLite reads (its own
+                    checksum, an earlier frame's or the header's doesn't
+                    match, or an earlier frame's salts don't)
       "WAL slack"   salt-mismatch -- reused space from a previous WAL cycle
+    -- and reason: a ParseIssue saying why an "Invalid" frame is outside the
+    log, None for every other status.
+
+    The log is the valid frame prefix per the spec (see _wal_log_extent()).
+    Pass *problems* to get one issue when the header checksum or page size
+    is not valid, i.e. SQLite ignores the whole file and no frame is Active.
 
     Shared by table_viewer.py's WAL Frames tab (against a -wal opened
     alongside its .db) and sqlite_wal_parser.py's standalone parser (a -wal
     opened on its own, no companion database) -- identical classification
     either way, since it only ever depends on the -wal file's own bytes.
     """
-    if len(data) < 32:
+    if len(data) < _WAL_HEADER_SIZE:
         return None
     magic = struct.unpack_from(">I", data, 0)[0]
     if magic not in _WAL_MAGIC:
@@ -498,12 +570,19 @@ def classify_wal_frames(data: bytes) -> tuple[int, list[dict[str, Any]]] | None:
     page_size = struct.unpack_from(">I", data, 8)[0]
     salt1 = struct.unpack_from(">I", data, 16)[0]
     salt2 = struct.unpack_from(">I", data, 20)[0]
+    header_ok, valid_frames, cause, cause_frame = _wal_log_extent(bytes(data))
+    if not header_ok and problems is not None:
+        problems.append(
+            ParseIssue("sqlite_wal.header_page_size_invalid", {"page_size": page_size})
+            if cause == "page_size"
+            else ParseIssue("sqlite_wal.header_checksum_mismatch")
+        )
 
-    frame_size = 24 + page_size
-    offset = 32
+    frame_size = _WAL_FRAME_HEADER_SIZE + page_size
+    offset = _WAL_HEADER_SIZE
     raw: list[dict[str, Any]] = []
 
-    while offset + frame_size <= len(data):
+    while page_size and offset + frame_size <= len(data):
         page_num = struct.unpack_from(">I", data, offset)[0]
         db_size  = struct.unpack_from(">I", data, offset + 4)[0]
         f_salt1  = struct.unpack_from(">I", data, offset + 8)[0]
@@ -517,34 +596,49 @@ def classify_wal_frames(data: bytes) -> tuple[int, list[dict[str, Any]]] | None:
             "offset":    offset,
             "tx":        None,
             "status":    "",
+            "reason":    None,
         })
         offset += frame_size
 
-    # Assign transaction numbers to salt-valid frames
+    log = raw[:valid_frames]
+
+    # Transaction numbers, within the log only
     tx = 0
-    for f in raw:
-        if not f["salt_ok"]:
-            continue
+    for f in log:
         f["tx"] = tx + 1
         if f["is_commit"]:
             tx += 1
 
-    # Find last committed frame index (salt-valid + is_commit)
+    # Last commit frame of the log
     last_commit_idx = -1
-    for i, f in enumerate(raw):
-        if f["salt_ok"] and f["is_commit"]:
+    for i, f in enumerate(log):
+        if f["is_commit"]:
             last_commit_idx = i
 
     # For committed range: track last occurrence of each page → active
     page_latest: dict[int, int] = {}
-    for i, f in enumerate(raw):
-        if f["salt_ok"] and i <= last_commit_idx:
-            page_latest[f["page"]] = i
+    for i, f in enumerate(log[:last_commit_idx + 1]):
+        page_latest[f["page"]] = i
+
+    # Why a salt-valid frame past the log is not read
+    if not header_ok:
+        outside_reason = ParseIssue("sqlite_wal.frame_after_header_mismatch")
+    elif cause == "checksum":
+        outside_reason = ParseIssue("sqlite_wal.frame_after_checksum_mismatch", {"frame": cause_frame})
+    else:
+        outside_reason = ParseIssue("sqlite_wal.frame_after_salt_mismatch", {"frame": cause_frame})
 
     # Classify
     for i, f in enumerate(raw):
         if not f["salt_ok"]:
             f["status"] = "WAL slack"
+        elif i >= valid_frames:
+            f["status"] = "Invalid"
+            f["reason"] = (
+                ParseIssue("sqlite_wal.frame_checksum_mismatch")
+                if header_ok and cause == "checksum" and f["frame"] == cause_frame
+                else outside_reason
+            )
         elif i > last_commit_idx:
             f["status"] = "Uncommitted"
         elif page_latest.get(f["page"]) == i:
@@ -556,38 +650,35 @@ def classify_wal_frames(data: bytes) -> tuple[int, list[dict[str, Any]]] | None:
 
 
 def build_wal_page_index(wal_data: bytes | None, page_size: int) -> dict[int, tuple[int, bytes]]:
-    """Return {page_num: (data_offset, latest committed page bytes)} from a
-    WAL file's salt-valid frames -- like build_wal_page_overlay() below, but
+    """Return {page_num: (data_offset, page bytes)} for every "Active"
+    frame of classify_wal_frames() -- each page's latest version up to the
+    last commit frame of the log SQLite reads (uncommitted, invalid and
+    slack frames never go in). Like build_wal_page_overlay() below, but
     also keeps each page's absolute byte offset *within wal_data* (the
     frame's data section, right after its 24-byte header). locate_cell()
     needs that offset to open the -wal file's own Hex view at the right
     spot, not just to know a page's current content.
+
+    Frames are laid out by the page size the WAL header declares; *page_size*
+    (the database's) only gates whether there is anything to resolve.
     """
     index: dict[int, tuple[int, bytes]] = {}
-    if not wal_data or not page_size or len(wal_data) < 32:
+    if not wal_data or not page_size:
         return index
-    magic = struct.unpack_from(">I", wal_data, 0)[0]
-    if magic not in _WAL_MAGIC:
+    classified = classify_wal_frames(wal_data)
+    if classified is None:
         return index
-    salt1 = struct.unpack_from(">I", wal_data, 16)[0]
-    salt2 = struct.unpack_from(">I", wal_data, 20)[0]
-    frame_size = 24 + page_size
-    offset = 32
-    # Collect last valid frame per page (active)
-    while offset + frame_size <= len(wal_data):
-        pn  = struct.unpack_from(">I", wal_data, offset)[0]
-        fs1 = struct.unpack_from(">I", wal_data, offset + 8)[0]
-        fs2 = struct.unpack_from(">I", wal_data, offset + 12)[0]
-        if fs1 == salt1 and fs2 == salt2:
-            data_offset = offset + 24
-            index[pn] = (data_offset, wal_data[data_offset: data_offset + page_size])
-        offset += frame_size
+    wal_page_size, frames = classified
+    for f in frames:
+        if f["status"] == "Active":
+            data_offset = f["offset"] + _WAL_FRAME_HEADER_SIZE
+            index[f["page"]] = (data_offset, wal_data[data_offset: data_offset + wal_page_size])
     return index
 
 
 def build_wal_page_overlay(wal_data: bytes | None, page_size: int) -> dict[int, bytes]:
-    """Return {page_num: latest committed page bytes} from a WAL file's
-    salt-valid frames.
+    """Return {page_num: page bytes} for every "Active" WAL frame (see
+    build_wal_page_index()) -- each page's latest committed version.
 
     A page's *logical* current content is its base-file copy unless a later,
     not-yet-checkpointed WAL frame overrides it -- which is exactly what a

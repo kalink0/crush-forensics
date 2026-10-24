@@ -15,7 +15,7 @@ from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.viewers.table_viewer import (
     TableViewer,
     _TS_UNDECODED_COLOR,
-    _format_wal_frame_content,
+    _format_wal_row_content,
     _STRUCTURE_BYTE_RANGE_ROLE,
     _STRUCTURE_FILE_KIND_ROLE,
 )
@@ -277,19 +277,16 @@ def test_query_result_row_header_has_tooltip(qapp, widgets, tmp_path: Path) -> N
     assert "not stored in the file" in tip
 
 
-def test_format_wal_frame_content_uses_real_column_names() -> None:
-    rows = [(1, ["alice", 30]), (2, ["bob", 25])]
-    text = _format_wal_frame_content(rows, ["name", "age"])
-    assert text == "1: [name=alice, age=30]; 2: [name=bob, age=25]"
+def test_format_wal_row_content_uses_real_column_names() -> None:
+    assert _format_wal_row_content(["alice", 30], ["name", "age"]) == "name=alice, age=30"
 
 
-def test_format_wal_frame_content_falls_back_to_positional_on_column_mismatch() -> None:
+def test_format_wal_row_content_falls_back_to_positional_on_column_mismatch() -> None:
     """No column-name list, or one whose length doesn't match the decoded
     row's value count (unknown/stale table mapping) — show plain values
     rather than misaligning them with the wrong names."""
-    rows = [(1, ["x", "y", "z"])]
-    assert _format_wal_frame_content(rows, []) == "1: [x, y, z]"
-    assert _format_wal_frame_content(rows, ["only_one_col"]) == "1: [x, y, z]"
+    assert _format_wal_row_content(["x", "y", "z"], []) == "x, y, z"
+    assert _format_wal_row_content(["x", "y", "z"], ["only_one_col"]) == "x, y, z"
 
 
 def _make_live_wal_db(path: Path) -> sqlite3.Connection:
@@ -609,7 +606,10 @@ def test_wal_frames_hex_sync_highlights_selected_frame(qapp, tmp_path: Path) -> 
     inside that highlight in the hex pane couldn't select anything back
     either. Each row now carries its own exact byte range in the -wal file
     (frame header + page) -- used directly, since an individual WAL frame
-    has no rowid/table-name identity the regular CellLocator could resolve."""
+    has no rowid/table-name identity the regular CellLocator could resolve.
+    A row for one decoded record narrows that to the record's own cell
+    (see test_wal_frames_one_row_per_record); a frame without records keeps
+    the whole-frame range, checked here."""
     db_path = tmp_path / "live.db"
     writer = _make_live_wal_db(db_path)
     try:
@@ -625,7 +625,10 @@ def test_wal_frames_hex_sync_highlights_selected_frame(qapp, tmp_path: Path) -> 
             model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
         ]
         offset_col = headers.index("Offset (B)")
-        source_row = 0
+        rowid_col = headers.index("RowID")
+        source_row = next(
+            r for r in range(model.rowCount()) if model.item(r, rowid_col).text() == "—"
+        )
         expected_offset = int(model.item(source_row, offset_col).text())
 
         proxy_idx = tv._proxy_model.mapFromSource(model.index(source_row, 0))
@@ -643,6 +646,72 @@ def test_wal_frames_hex_sync_highlights_selected_frame(qapp, tmp_path: Path) -> 
         selected = tv._table_view.currentIndex()
         assert selected.isValid()
         assert tv._proxy_model.mapToSource(selected).row() == source_row
+    finally:
+        writer.close()
+
+
+def test_wal_frames_one_row_per_record(qapp, widgets, tmp_path: Path) -> None:
+    """A frame whose page holds several records gets one row per record,
+    each repeating the frame's metadata, with its own rowid and content.
+    Every frame still appears (a frame without records keeps one row), and
+    the frame counter counts frames, not rows. Selecting a record row
+    highlights exactly that record's cell; a hex click inside a later
+    record's cell selects that record's row, not the frame's first row."""
+    db_path = tmp_path / "multi.db"
+    writer = sqlite3.connect(str(db_path))
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    writer.commit()
+    writer.executemany(
+        "INSERT INTO messages (body) VALUES (?)", [(f"body-{i}",) for i in range(1, 4)]
+    )
+    writer.commit()
+    try:
+        data = {
+            "__db_path": str(db_path),
+            "messages": {
+                "columns": ["id", "body"],
+                "rows": [[i, f"body-{i}"] for i in range(1, 4)],
+            },
+        }
+        tv = widgets(TableViewer(data, source_name="multi.db"))
+        tv._load_wal_frames()
+        frames = tv._get_wal_frames()
+        assert frames
+
+        model = tv._source_model
+        headers = [
+            model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
+        ]
+        col = {name: headers.index(name) for name in
+               ("Frame", "Status", "Table", "RowID", "Offset (B)", "Content")}
+
+        def cell(r: int, name: str) -> str:
+            return model.item(r, col[name]).text()
+
+        record_rows = [r for r in range(model.rowCount()) if cell(r, "Table") == "messages"
+                       and cell(r, "RowID") != "—"]
+        assert [cell(r, "RowID") for r in record_rows] == ["1", "2", "3"]
+        assert [cell(r, "Content") for r in record_rows] == [
+            f"id=None, body=body-{i}" for i in range(1, 4)
+        ]
+        assert len({(cell(r, "Frame"), cell(r, "Status"), cell(r, "Offset (B)"))
+                    for r in record_rows}) == 1
+
+        listed = {int(cell(r, "Frame")) for r in range(model.rowCount())}
+        assert listed == {f["frame"] for f in frames}
+        assert f"({len(frames)} total" in tv._row_count_label.text()
+
+        wal = Path(str(db_path) + "-wal").read_bytes()
+        last = record_rows[-1]
+        tv._sync_wal_hex_pane(tv._proxy_model.mapFromSource(model.index(last, 0)))
+        assert tv._hex_file_kind == "wal"
+        (start, end), = tv._hex_viewer._focus_ranges
+        assert wal[start:end].endswith(b"body-3")
+
+        tv._select_row_for_byte_offset(end - 1)
+        assert tv._proxy_model.mapToSource(tv._table_view.currentIndex()).row() == last
     finally:
         writer.close()
 

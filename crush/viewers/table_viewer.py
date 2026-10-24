@@ -3,6 +3,7 @@
 """Table viewer — displays SQLite tables as a sortable, searchable grid."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import bisect
@@ -87,6 +88,7 @@ from crush.core.sqlite_structure import (
 from crush.core.sqlite_strings import ATTRIBUTION_TYPE_BYTE, scan_sqlite_strings
 from crush.core.sqlite_unallocated import scan_database_unallocated
 from crush.core.sqlite_wal import (
+    RowByteLayout,
     SqliteCellLocator,
     build_page_table_map,
     build_wal_page_index,
@@ -160,7 +162,9 @@ _STRUCTURE_LAZY_PAGE_ROLE = Qt.ItemDataRole.UserRole + 23
 # CellLocation.row_ranges) and _WAL_COLUMN_RANGES_ROLE (one entry per value
 # column, each a list[tuple[int, int]] or None if unresolvable -- e.g. an
 # overflow segment that itself later became WAL-resident and no longer
-# matches the row's own home file).
+# matches the row's own home file). WAL Frames rows for a decoded record
+# (_load_wal_frames()) carry _WAL_ROW_RANGES_ROLE too, for the same reason:
+# several records share one frame.
 _WAL_ROW_RANGES_ROLE = Qt.ItemDataRole.UserRole + 24
 _WAL_COLUMN_RANGES_ROLE = Qt.ItemDataRole.UserRole + 25
 # "Decode column as timestamp" on the QStandardItemModel path rewrites a cell's
@@ -181,6 +185,7 @@ _GENERATED_VALUES = (
     QT_TRANSLATE_NOOP("GeneratedView", "Active"),
     QT_TRANSLATE_NOOP("GeneratedView", "Superseded"),
     QT_TRANSLATE_NOOP("GeneratedView", "Uncommitted"),
+    QT_TRANSLATE_NOOP("GeneratedView", "Invalid"),
     QT_TRANSLATE_NOOP("GeneratedView", "WAL slack"),
     # sqlite_journal row kind
     QT_TRANSLATE_NOOP("GeneratedView", "Live cell"),
@@ -764,19 +769,14 @@ def _wal_diag(db_path: "str | None", parser_diag: "_Localized | None" = None) ->
     )
 
 
-def _format_wal_frame_content(rows: list[tuple[int, list[Any]]], col_names: list[str]) -> str:
-    """Render decoded (rowid, values) tuples from a WAL frame's page as one
-    compact string for the Content column — real column names when the
+def _format_wal_row_content(values: list[Any], col_names: list[str]) -> str:
+    """Render one decoded record from a WAL frame's page as one compact
+    string for the WAL Frames Content column — real column names when the
     frame's page maps to a known table with a matching column count,
-    positional otherwise."""
-    parts: list[str] = []
-    for rowid, values in rows:
-        if col_names and len(col_names) == len(values):
-            body = ", ".join(f"{c}={v}" for c, v in zip(col_names, values))
-        else:
-            body = ", ".join(str(v) for v in values)
-        parts.append(f"{rowid}: [{body}]")
-    return "; ".join(parts)
+    positional otherwise. The rowid has its own column."""
+    if col_names and len(col_names) == len(values):
+        return ", ".join(f"{c}={v}" for c, v in zip(col_names, values))
+    return ", ".join(str(v) for v in values)
 
 
 class _SqlHighlighter(QSyntaxHighlighter):
@@ -1224,6 +1224,8 @@ class TableViewer(QWidget):
         self._journal_result_cache: JournalParseResult | None = None
         self._journal_result_loaded = False
         self._wal_frames_cache: list[dict] | None = None
+        # Why no frame is part of the current state (header checksum), if so.
+        self._wal_problems: list[Any] = []
         self._wal_page_size: int = 0
         self._db_page_size: int = 0
         self._wal_data_loaded = False
@@ -1987,7 +1989,8 @@ class TableViewer(QWidget):
             journal_row_count = self._inject_journal_rows(table_name, columns, _append_row)
         if show_wal or show_journal:
             self._set_source_status(
-                (self._page_table_problems if show_wal else []) + self._injection_problems
+                (self._wal_problems + self._page_table_problems if show_wal else [])
+                + self._injection_problems
             )
 
         self._resize_and_cap()
@@ -2031,6 +2034,7 @@ class TableViewer(QWidget):
         _status_color: dict[str, object] = {
             "Superseded":  QColor("#cc8800"),
             "Uncommitted": QColor("#4488ff"),
+            "Invalid":     QColor("#cc4444"),
             "WAL slack":   Qt.GlobalColor.darkGray,
         }
 
@@ -2479,7 +2483,8 @@ class TableViewer(QWidget):
         except OSError:
             return None
 
-        classified = classify_wal_frames(data)
+        self._wal_problems = []
+        classified = classify_wal_frames(data, self._wal_problems)
         if classified is None:
             return None
         page_size, raw = classified
@@ -2508,6 +2513,7 @@ class TableViewer(QWidget):
                 QT_TRANSLATE_NOOP("GeneratedView", "Transaction"),
                 QT_TRANSLATE_NOOP("GeneratedView", "Status"),
                 QT_TRANSLATE_NOOP("GeneratedView", "Table"),
+                QT_TRANSLATE_NOOP("GeneratedView", "RowID"),
                 QT_TRANSLATE_NOOP("GeneratedView", "Offset (B)"),
                 QT_TRANSLATE_NOOP("GeneratedView", "Content"),
             ),
@@ -2539,6 +2545,7 @@ class TableViewer(QWidget):
         _status_color: dict[str, object] = {
             "Superseded":  QColor("#cc8800"),
             "Uncommitted": QColor("#4488ff"),
+            "Invalid":     QColor("#cc4444"),
             "WAL slack":   Qt.GlobalColor.darkGray,
         }
 
@@ -2556,14 +2563,26 @@ class TableViewer(QWidget):
                 for name, cols in self._table_schema_columns(conn).items()
             }
 
+        # Resolves where a decoded row's overflow segments live, so a row's
+        # byte provenance covers them too (same as _inject_wal_rows()).
+        page_locator: Callable[[int], tuple[str, int] | None] | None = None
+        if self._db_path is not None and self._wal_page_size:
+            page_locator, _read = page_accessors(
+                self._db_path, self._wal_page_size,
+                build_wal_page_index(wal_data, self._wal_page_size),
+            )
+
         frame_problems: list[Any] = []
         for f in frames:
             color = _status_color.get(f["status"])
             table_name = self._page_table_map.get(f["page"], "—")
+            page_start = f["offset"] + 24
 
-            content_text: str | _Gen = "—"
+            # One table row per decoded record; a frame without any keeps
+            # exactly one row saying why, so no frame drops out of the list.
+            records: list[tuple[int, list[Any], RowByteLayout]] = []
+            placeholder: str | _Gen = "—"
             if f["salt_ok"] and wal_data is not None and self._wal_page_size:
-                page_start = f["offset"] + 24
                 page_bytes = wal_data[page_start: page_start + self._wal_page_size]
                 btree_offset = 100 if f["page"] == 1 else 0
                 decoded = parse_table_leaf_page(
@@ -2571,17 +2590,16 @@ class TableViewer(QWidget):
                     page_size=self._wal_page_size,
                     btree_offset=btree_offset,
                     overflow_reader=_overflow_reader,
+                    want_ranges=True,
                     problems=frame_problems,
                     page_num=f"{f['page']} (WAL frame {f['frame']})",
                 )
                 if decoded is None:
-                    content_text = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "(not a leaf page)"))
+                    placeholder = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "(not a leaf page)"))
                 elif not decoded:
-                    content_text = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "(empty leaf page)"))
+                    placeholder = _Gen(QT_TRANSLATE_NOOP("GeneratedView", "(empty leaf page)"))
                 else:
-                    content_text = _format_wal_frame_content(
-                        decoded, schema_col_names.get(table_name, [])
-                    )
+                    records = decoded
 
             def _item(
                 text: str | _Gen, sort_val: object = None, _c: object = color
@@ -2594,30 +2612,51 @@ class TableViewer(QWidget):
                     it.setForeground(_c)
                 return it
 
-            frame_item = _item(str(f["frame"]), f["frame"])
-            if self._wal_page_size:
-                frame_item.setData("wal", _STRUCTURE_FILE_KIND_ROLE)
-                frame_item.setData(
-                    (f["offset"], f["offset"] + 24 + self._wal_page_size),
-                    _STRUCTURE_BYTE_RANGE_ROLE,
-                )
+            def _append(
+                rowid: int | None, content: str | _Gen,
+                row_ranges: list[tuple[int, int]] | None,
+            ) -> None:
+                frame_item = _item(str(f["frame"]), f["frame"])
+                if self._wal_page_size:
+                    frame_item.setData("wal", _STRUCTURE_FILE_KIND_ROLE)
+                    frame_item.setData(
+                        (f["offset"], f["offset"] + 24 + self._wal_page_size),
+                        _STRUCTURE_BYTE_RANGE_ROLE,
+                    )
+                    if row_ranges:
+                        frame_item.setData(row_ranges, _WAL_ROW_RANGES_ROLE)
 
-            self._source_model.appendRow([
-                frame_item,
-                _item(str(f["page"]),                    f["page"]),
-                _item(str(f["tx"]) if f["tx"] else "—",  f["tx"] or 0),
-                _item(_Gen(f["status"])),
-                _item(table_name),
-                _item(str(f["offset"]),                  f["offset"]),
-                _item(content_text),
-            ])
+                status_item = _item(_Gen(f["status"]))
+                if f["reason"] is not None:
+                    status_item.setToolTip(render_value(f["reason"], localized=True))
+
+                self._source_model.appendRow([
+                    frame_item,
+                    _item(str(f["page"]),                    f["page"]),
+                    _item(str(f["tx"]) if f["tx"] else "—",  f["tx"] or 0),
+                    status_item,
+                    _item(table_name),
+                    _item(str(rowid) if rowid is not None else "—", rowid),
+                    _item(str(f["offset"]),                  f["offset"]),
+                    _item(content),
+                ])
+
+            if not records:
+                _append(None, placeholder, None)
+            col_names = schema_col_names.get(table_name, [])
+            for rowid, values, layout in records:
+                row_ranges = (
+                    row_ranges_from_layout(layout, page_start, "wal", page_locator)
+                    if page_locator is not None else None
+                )
+                _append(rowid, _format_wal_row_content(values, col_names), row_ranges)
 
         self._resize_and_cap()
-        self._set_source_status(self._page_table_problems + frame_problems)
+        self._set_source_status(self._wal_problems + self._page_table_problems + frame_problems)
 
         counts = Counter(f["status"] for f in frames)
         parts = [translate("TableViewer", "{count} total").format(count=len(frames))]
-        for status in ("Active", "Superseded", "Uncommitted", "WAL slack"):
+        for status in ("Active", "Superseded", "Uncommitted", "Invalid", "WAL slack"):
             n = counts.get(status, 0)
             if n:
                 parts.append(f"{n} {_gen_text(status).lower()}")  # i18n: keep -- layout
@@ -3850,7 +3889,7 @@ class TableViewer(QWidget):
 
         frame_num = _user(0)
         page_num  = _user(1)
-        offset    = _user(5)
+        offset    = _user(6)
         if offset is None:
             return
 
@@ -4102,6 +4141,18 @@ class TableViewer(QWidget):
                     "Frames beyond the last commit marker — captured mid-transaction",
                 ),
                 QColor("#4488ff") if n_unc else None,
+            )
+            n_inv = counts.get("Invalid", 0)
+            _wal_row(
+                QT_TRANSLATE_NOOP("GeneratedView", "WAL invalid frames"),
+                str(n_inv),
+                QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "Salt-valid frames outside the log SQLite reads — the frame's own "
+                    "checksum, an earlier frame's checksum or salts, or the header "
+                    "checksum does not match",
+                ),
+                QColor("#cc4444") if n_inv else None,
             )
             n_slack = counts.get("WAL slack", 0)
             _wal_row(
@@ -5247,19 +5298,25 @@ class TableViewer(QWidget):
         _load_journal_records()/_StringsModel already put on the row's first
         cell instead -- same _STRUCTURE_*_ROLE roles the File Structure tab
         uses, since the need (know which bytes a row means, in which file)
-        is identical. Read through the proxy, so it works for whichever
-        model is showing."""
-        file_kind = byte_range = None
+        is identical. A WAL Frames row for one decoded record also carries
+        that record's own cell (+ overflow) ranges (_WAL_ROW_RANGES_ROLE),
+        which are highlighted instead of the whole frame. Read through the
+        proxy, so it works for whichever model is showing."""
+        file_kind = byte_range = row_ranges = None
         if current is not None and current.isValid():
             anchor = current.sibling(current.row(), 0)
             file_kind = anchor.data(_STRUCTURE_FILE_KIND_ROLE)
             byte_range = anchor.data(_STRUCTURE_BYTE_RANGE_ROLE)
+            row_ranges = anchor.data(_WAL_ROW_RANGES_ROLE)
         if not file_kind or not _valid_structure_range(byte_range):
             self._hex_viewer.clear_byte_range_highlight()
             return
 
         self._ensure_hex_pane_loaded()
-        self._highlight_stashed_byte_ranges(file_kind, [[byte_range]])
+        if isinstance(row_ranges, list) and row_ranges:
+            self._highlight_stashed_byte_ranges(file_kind, [list(row_ranges)])
+        else:
+            self._highlight_stashed_byte_ranges(file_kind, [[byte_range]])
 
     def _resolve_hex_file_kind(self, file_kind: str) -> tuple[Path | None, str]:
         """Return (path, human label) for a _STRUCTURE_FILE_KIND_ROLE value
@@ -5433,7 +5490,12 @@ class TableViewer(QWidget):
         byte_range) -- WAL Frames, a WAL-history row injected into a normal
         table, or a Freeblocks/Unallocated Space row -- covers *offset* in
         whichever file the Hex pane is currently showing. None of these have
-        a rowid a CellLocator could resolve, only their own exact bytes."""
+        a rowid a CellLocator could resolve, only their own exact bytes.
+
+        Several rows can share one frame (one per decoded record), so a row
+        whose own record ranges (_WAL_ROW_RANGES_ROLE) cover *offset* wins
+        over one that only matches by its whole-frame range; among those,
+        the narrowest match wins."""
         if self._strings_active and self._strings_model is not None:
             if self._hex_file_kind is None:
                 return
@@ -5447,6 +5509,8 @@ class TableViewer(QWidget):
                 self._table_view.scrollTo(proxy_index)
                 self._syncing_hex_selection = False
             return
+        best_row: int | None = None
+        best_key: tuple[int, int] | None = None  # (0 = record range, 1 = frame range; span)
         for row in range(self._source_model.rowCount()):
             row_item = self._source_model.item(row, 0)
             if row_item is None:
@@ -5458,14 +5522,22 @@ class TableViewer(QWidget):
             start, end = byte_range
             if not (start <= offset < end):
                 continue
-            source_index = self._source_model.index(row, 0)
-            proxy_index = self._proxy_model.mapFromSource(source_index)
-            if proxy_index.isValid():
-                self._syncing_hex_selection = True
-                self._table_view.setCurrentIndex(proxy_index)
-                self._table_view.scrollTo(proxy_index)
-                self._syncing_hex_selection = False
-            break
+            key = (1, end - start)
+            row_ranges = row_item.data(_WAL_ROW_RANGES_ROLE)
+            if isinstance(row_ranges, list):
+                spans = [e - s for s, e in row_ranges if s <= offset < e]
+                if spans:
+                    key = (0, min(spans))
+            if best_key is None or key < best_key:
+                best_row, best_key = row, key
+        if best_row is None:
+            return
+        proxy_index = self._proxy_model.mapFromSource(self._source_model.index(best_row, 0))
+        if proxy_index.isValid():
+            self._syncing_hex_selection = True
+            self._table_view.setCurrentIndex(proxy_index)
+            self._table_view.scrollTo(proxy_index)
+            self._syncing_hex_selection = False
 
     def _select_structure_item_for_offset(self, offset: int) -> None:
         if self._hex_file_kind is None:

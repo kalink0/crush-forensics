@@ -32,9 +32,12 @@ All notable changes to Crush will be documented in this file.
 - Fixed an E01 or L01 chunk table that fails its checksum being read as stored, which could put another chunk's data in its place; its table2 copy is read instead. ([@abrignoni](https://github.com/abrignoni), [#176](https://github.com/kalink0/crush-forensics/pull/176))
 - Fixed a VHDX whose log updated disk data being read without the update, and a QCOW reading a file of its backing file's name outside its folder ahead of the one beside it. ([@abrignoni](https://github.com/abrignoni), [#176](https://github.com/kalink0/crush-forensics/pull/176))
 - Fixed a split raw image whose segments are not one size being joined, which reads every byte after a cut segment at the wrong offset; it is now refused, naming the segments. ([@abrignoni](https://github.com/abrignoni), [#176](https://github.com/kalink0/crush-forensics/pull/176))
+- Fixed SQLite WAL frames of an unfinished transaction, or frames SQLite does not read because a checksum fails, being used as a page's current content by the hex sync and the freelist, freeblock and unallocated scans; such frames are now marked Uncommitted or Invalid with the reason.
+- Fixed a hex click on a WAL-history row in a SQLite table always selecting the first record of its frame.
 
 ### Changed
 
+- The SQLite WAL Frames tab lists one row per decoded record, with its rowid, instead of one row per frame.
 - View → Language lists each language by its own name only, e.g. "Deutsch".
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.75 (from v1.72) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.0 (from v0.13.0).
 

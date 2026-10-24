@@ -3582,8 +3582,10 @@ FORMATS: list[dict[str, Any]] = [
             "(2) Freeblocks and page slack space — deleted records within active pages "
             "may survive in freeblocks or partially in the unallocated area below the "
             "live cell pointer array. "
-            "(3) WAL (Write-Ahead Log) — in WAL mode, the -wal file contains uncommitted "
-            "and recently checkpointed pages; must be analysed alongside the main DB. "
+            "(3) WAL (Write-Ahead Log) — in WAL mode, the -wal file holds committed "
+            "page versions not yet checkpointed into the main file, frames of a "
+            "transaction still open when the file was captured, and recently "
+            "checkpointed pages; must be analysed alongside the main DB. "
             "WAL slack: after checkpoint, old pages remain in the WAL until overwritten "
             "from the start — prior database states are recoverable. "
             "CRITICAL: opening a WAL-mode database with a standard SQLite driver "
@@ -3650,7 +3652,9 @@ FORMATS: list[dict[str, Any]] = [
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Write-Ahead Log companion file for SQLite databases in WAL journal mode. "
-            "Contains uncommitted database pages and, after checkpoint, WAL slack — "
+            "Contains committed page versions not yet checkpointed into the database "
+            "file, frames of a transaction still open when the file was captured, "
+            "and, after checkpoint, WAL slack — "
             "old page versions that persist until overwritten from the start of the file. "
             "Must be analysed alongside the parent database file using the same schema. "
             "CRITICAL: opening the parent database with a standard SQLite driver "

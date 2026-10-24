@@ -6,8 +6,8 @@ opened on its own, without its companion .db.
 Magic-detected (see crush.core.sqlite_wal.classify_wal_frames), same
 detection this module's already-existing companion handling in
 sqlite_parser.py uses. Unlike a rollback journal, every WAL frame is
-legitimately part of some version of the database's real content (Active,
-Superseded, or Uncommitted -- see classify_wal_frames' docstring), so there
+kept as found (Active, Superseded, Uncommitted, Invalid or WAL slack -- see
+classify_wal_frames' docstring), so there
 is no "merge into a reconstructed current view" step here: this just lists
 every frame's own decoded page content directly, the same inventory
 table_viewer.py's "WAL Frames" tab builds for a -wal opened alongside its
@@ -42,7 +42,8 @@ class SQLiteWALParser(AbstractParser):
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         raw = vfs.read(node)
-        classified = classify_wal_frames(raw)
+        wal_problems: list[ParseIssue] = []
+        classified = classify_wal_frames(raw, wal_problems)
 
         columns = ["Frame", "Page", "Transaction", "Status", "RowID", "Value", "Offset (B)"]
         rows: list[list[Any]] = []
@@ -105,7 +106,15 @@ class SQLiteWALParser(AbstractParser):
             meta["Active"] = str(counts.get("Active", 0))
             meta["Superseded"] = str(counts.get("Superseded", 0))
             meta["Uncommitted"] = str(counts.get("Uncommitted", 0))
+            meta["Invalid"] = str(counts.get("Invalid", 0))
             meta["WAL slack"] = str(counts.get("WAL slack", 0))
+            first_invalid = next((f for f in frames if f["status"] == "Invalid"), None)
+            if first_invalid is not None:
+                meta["Log end"] = ParseIssue("sqlite_wal.log_end", {
+                    "frame": first_invalid["frame"], "reason": first_invalid["reason"],
+                })
+            if wal_problems:
+                meta["Status"] = wal_problems
         meta["Note"] = ParseIssue("sqlite_wal.standalone")
 
         data: dict[str, Any] = {
