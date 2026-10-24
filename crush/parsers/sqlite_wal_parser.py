@@ -26,6 +26,7 @@ from crush.core.sqlite_wal import (
     classify_wal_frames,
     get_btree_page_type,
     parse_table_leaf_page,
+    wal_log_end,
 )
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
@@ -108,11 +109,9 @@ class SQLiteWALParser(AbstractParser):
             meta["Uncommitted"] = str(counts.get("Uncommitted", 0))
             meta["Invalid"] = str(counts.get("Invalid", 0))
             meta["WAL slack"] = str(counts.get("WAL slack", 0))
-            first_invalid = next((f for f in frames if f["status"] == "Invalid"), None)
-            if first_invalid is not None:
-                meta["Log end"] = ParseIssue("sqlite_wal.log_end", {
-                    "frame": first_invalid["frame"], "reason": first_invalid["reason"],
-                })
+            log_end = wal_log_end(raw)
+            if log_end is not None:
+                meta["Log end"] = log_end
             if wal_problems:
                 meta["Status"] = wal_problems
         meta["Note"] = ParseIssue("sqlite_wal.standalone")

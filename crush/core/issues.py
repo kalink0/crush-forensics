@@ -403,7 +403,9 @@ MESSAGES: dict[str, str] = {
     ),
     "sqlite_wal.frame_checksum_mismatch": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Frame checksum does not match; SQLite stops reading the log before this frame",
+        "Frame checksum does not match; SQLite stops reading the log before this frame. "
+        "A transaction still open when the file was captured also leaves this: SQLite "
+        "rewrites its frames in place and updates the checksums only at commit",
         "sqlite_wal.frame_checksum_mismatch",
     ),
     "sqlite_wal.frame_after_checksum_mismatch": QT_TRANSLATE_NOOP(
@@ -421,10 +423,23 @@ MESSAGES: dict[str, str] = {
         "The WAL header is not valid; SQLite ignores the whole file",
         "sqlite_wal.frame_after_header_mismatch",
     ),
-    "sqlite_wal.log_end": QT_TRANSLATE_NOOP(
+    "sqlite_wal.log_end_salt": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "First invalid frame: {frame:,} ({reason})",
-        "sqlite_wal.log_end",
+        "At frame {frame:,}: its salts do not match the WAL header; SQLite reads no frame "
+        "from there on",
+        "sqlite_wal.log_end_salt",
+    ),
+    "sqlite_wal.log_end_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "At frame {frame:,}: its checksum does not match; SQLite reads no frame from there "
+        "on. A transaction still open when the file was captured also leaves this: SQLite "
+        "rewrites its frames in place and updates the checksums only at commit",
+        "sqlite_wal.log_end_checksum",
+    ),
+    "sqlite_wal.log_end_header": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Before frame 1: the WAL header is not valid, so SQLite reads no frame",
+        "sqlite_wal.log_end_header",
     ),
     # -- Realm ------------------------------------------------------------
     "realm.encrypted_key_supplied": QT_TRANSLATE_NOOP(

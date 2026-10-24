@@ -4150,7 +4150,9 @@ class TableViewer(QWidget):
                     "GeneratedView",
                     "Salt-valid frames outside the log SQLite reads — the frame's own "
                     "checksum, an earlier frame's checksum or salts, or the header "
-                    "checksum does not match",
+                    "checksum does not match. A transaction still open when the file was "
+                    "captured also leaves this: SQLite rewrites its frames in place and "
+                    "updates the checksums only at commit",
                 ),
                 QColor("#cc4444") if n_inv else None,
             )

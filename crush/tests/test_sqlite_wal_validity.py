@@ -17,6 +17,7 @@ from crush.core.sqlite_wal import (
     build_wal_page_overlay,
     classify_wal_frames,
     locate_cell,
+    wal_log_end,
 )
 
 _PAGE_SIZE = 512
@@ -119,6 +120,7 @@ def test_real_wal_checksums_validate(tmp_path: Path) -> None:
     assert frames and not problems
     assert {f["status"] for f in frames} <= {"Active", "Superseded"}
     assert all(f["reason"] is None for f in frames)
+    assert wal_log_end(wal) is None
 
 
 def test_checksum_mismatch_ends_the_log(tmp_path: Path) -> None:
@@ -139,6 +141,9 @@ def test_checksum_mismatch_ends_the_log(tmp_path: Path) -> None:
         f["reason"] == ParseIssue("sqlite_wal.frame_after_checksum_mismatch",
                                   {"frame": bad["frame"]})
         for f in after[1:]
+    )
+    assert wal_log_end(corrupted) == ParseIssue(
+        "sqlite_wal.log_end_checksum", {"frame": bad["frame"]}
     )
     assert before[-1]["is_commit"] and before[-1]["status"] == "Active"
     assert {f["status"] for f in before} <= {"Active", "Superseded"}
@@ -184,6 +189,9 @@ def test_salt_valid_frames_after_salt_mismatch_are_invalid(tmp_path: Path) -> No
         and f["reason"] == ParseIssue("sqlite_wal.frame_after_salt_mismatch", {"frame": 2})
         for f in frames[2:]
     )
+    # The log ends at the salt-mismatch frame itself, not at the first
+    # Invalid frame after it.
+    assert wal_log_end(corrupted) == ParseIssue("sqlite_wal.log_end_salt", {"frame": 2})
 
 
 def test_standalone_parser_reports_invalid_frames(tmp_path: Path) -> None:
@@ -200,5 +208,5 @@ def test_standalone_parser_reports_invalid_frames(tmp_path: Path) -> None:
     meta = SQLiteWALParser().parse(node, vfs).metadata
     assert meta["Active"] == "0"
     assert meta["Invalid"] == str(len(wal[32:]) // _FRAME_SIZE)
-    assert meta["Log end"].code == "sqlite_wal.log_end"
+    assert meta["Log end"] == ParseIssue("sqlite_wal.log_end_header")
     assert [p.code for p in meta["Status"]] == ["sqlite_wal.header_checksum_mismatch"]

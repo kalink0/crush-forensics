@@ -4211,6 +4211,10 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Frame</translation>
     </message>
     <message>
+        <source>Salt-valid frames outside the log SQLite reads — the frame&apos;s own checksum, an earlier frame&apos;s checksum or salts, or the header checksum does not match. A transaction still open when the file was captured also leaves this: SQLite rewrites its frames in place and updates the checksums only at commit</source>
+        <translation type="unfinished">Frames mit passendem Salt außerhalb des Logs, das SQLite liest – die Prüfsumme des Frames selbst, Prüfsumme oder Salts eines früheren Frames oder die Header-Prüfsumme stimmen nicht. Eine bei der Sicherung noch offene Transaktion hinterlässt das ebenfalls: SQLite schreibt ihre Frames an Ort und Stelle neu und aktualisiert die Prüfsummen erst beim Commit</translation>
+    </message>
+    <message>
         <source>Page</source>
         <translation>Page</translation>
     </message>
@@ -4409,10 +4413,6 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>WAL invalid frames</source>
         <translation type="unfinished">Ungültige WAL-Frames</translation>
-    </message>
-    <message>
-        <source>Salt-valid frames outside the log SQLite reads — the frame&apos;s own checksum, an earlier frame&apos;s checksum or salts, or the header checksum does not match</source>
-        <translation type="unfinished">Frames mit passendem Salt außerhalb des Logs, das SQLite liest – die Prüfsumme des Frames selbst, Prüfsumme oder Salts eines früheren Frames oder die Header-Prüfsumme stimmen nicht</translation>
     </message>
     <message>
         <source>WAL slack frames</source>
@@ -7222,11 +7222,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished">Die Prüfsumme des WAL-Headers stimmt nicht, daher ignoriert SQLite die ganze Datei: Kein Frame gehört zum aktuellen Datenbankzustand</translation>
     </message>
     <message>
-        <source>Frame checksum does not match; SQLite stops reading the log before this frame</source>
-        <comment>sqlite_wal.frame_checksum_mismatch</comment>
-        <translation type="unfinished">Die Frame-Prüfsumme stimmt nicht; SQLite hört vor diesem Frame auf, das Log zu lesen</translation>
-    </message>
-    <message>
         <source>After the checksum mismatch at frame {frame:,}; SQLite stops reading the log there</source>
         <comment>sqlite_wal.frame_after_checksum_mismatch</comment>
         <translation type="unfinished">Nach der Prüfsummenabweichung bei Frame {frame:,}; SQLite hört dort auf, das Log zu lesen</translation>
@@ -7235,11 +7230,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>After the salt mismatch at frame {frame:,}; SQLite stops reading the log there</source>
         <comment>sqlite_wal.frame_after_salt_mismatch</comment>
         <translation type="unfinished">Nach der Salt-Abweichung bei Frame {frame:,}; SQLite hört dort auf, das Log zu lesen</translation>
-    </message>
-    <message>
-        <source>First invalid frame: {frame:,} ({reason})</source>
-        <comment>sqlite_wal.log_end</comment>
-        <translation type="unfinished">Erster ungültiger Frame: {frame:,} ({reason})</translation>
     </message>
     <message>
         <source>Yes (AES-256, key supplied)</source>
@@ -8412,9 +8402,29 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished">Der WAL-Header gibt eine Page-Größe von {page_size:,} B an, keine Zweierpotenz von 512 bis 65.536, daher ignoriert SQLite die ganze Datei: Kein Frame gehört zum aktuellen Datenbankzustand</translation>
     </message>
     <message>
+        <source>Frame checksum does not match; SQLite stops reading the log before this frame. A transaction still open when the file was captured also leaves this: SQLite rewrites its frames in place and updates the checksums only at commit</source>
+        <comment>sqlite_wal.frame_checksum_mismatch</comment>
+        <translation type="unfinished">Die Frame-Prüfsumme stimmt nicht; SQLite hört vor diesem Frame auf, das Log zu lesen. Eine bei der Sicherung noch offene Transaktion hinterlässt das ebenfalls: SQLite schreibt ihre Frames an Ort und Stelle neu und aktualisiert die Prüfsummen erst beim Commit</translation>
+    </message>
+    <message>
         <source>The WAL header is not valid; SQLite ignores the whole file</source>
         <comment>sqlite_wal.frame_after_header_mismatch</comment>
         <translation type="unfinished">Der WAL-Header ist nicht gültig; SQLite ignoriert die ganze Datei</translation>
+    </message>
+    <message>
+        <source>At frame {frame:,}: its salts do not match the WAL header; SQLite reads no frame from there on</source>
+        <comment>sqlite_wal.log_end_salt</comment>
+        <translation type="unfinished">Bei Frame {frame:,}: Seine Salts stimmen nicht mit dem WAL-Header überein; SQLite liest ab dort keinen Frame mehr</translation>
+    </message>
+    <message>
+        <source>At frame {frame:,}: its checksum does not match; SQLite reads no frame from there on. A transaction still open when the file was captured also leaves this: SQLite rewrites its frames in place and updates the checksums only at commit</source>
+        <comment>sqlite_wal.log_end_checksum</comment>
+        <translation type="unfinished">Bei Frame {frame:,}: Seine Prüfsumme stimmt nicht; SQLite liest ab dort keinen Frame mehr. Eine bei der Sicherung noch offene Transaktion hinterlässt das ebenfalls: SQLite schreibt ihre Frames an Ort und Stelle neu und aktualisiert die Prüfsummen erst beim Commit</translation>
+    </message>
+    <message>
+        <source>Before frame 1: the WAL header is not valid, so SQLite reads no frame</source>
+        <comment>sqlite_wal.log_end_header</comment>
+        <translation type="unfinished">Vor Frame 1: Der WAL-Header ist nicht gültig, daher liest SQLite keinen Frame</translation>
     </message>
     <message>
         <source>XML (NSKeyedArchiver — deserialization failed)</source>
