@@ -650,11 +650,10 @@ def classify_wal_frames(
 
 
 def wal_log_end(data: bytes) -> ParseIssue | None:
-    """Where and why the log SQLite reads from a -wal file ends before the
-    file's last full frame: the frame whose salts or checksum don't match
-    (that frame itself, not one after it), or the header if it isn't valid.
-    None if the log runs to the last full frame, or *data* isn't a WAL
-    (see classify_wal_frames())."""
+    """Where the log SQLite reads from a -wal file ends: at the frame whose
+    salts or checksum don't match (that frame itself, not one after it),
+    before frame 1 if the header isn't valid, or at the last full frame.
+    None only if *data* isn't a WAL (see classify_wal_frames())."""
     if len(data) < _WAL_HEADER_SIZE or struct.unpack_from(">I", data, 0)[0] not in _WAL_MAGIC:
         return None
     header_ok, _valid, cause, cause_frame = _wal_log_extent(bytes(data))
@@ -664,7 +663,7 @@ def wal_log_end(data: bytes) -> ParseIssue | None:
         return ParseIssue("sqlite_wal.log_end_salt", {"frame": cause_frame})
     if cause == "checksum":
         return ParseIssue("sqlite_wal.log_end_checksum", {"frame": cause_frame})
-    return None
+    return ParseIssue("sqlite_wal.log_end_file")
 
 
 def build_wal_page_index(wal_data: bytes | None, page_size: int) -> dict[int, tuple[int, bytes]]:

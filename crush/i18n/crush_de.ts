@@ -4211,10 +4211,6 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Frame</translation>
     </message>
     <message>
-        <source>Salt-valid frames outside the log SQLite reads — the frame&apos;s own checksum, an earlier frame&apos;s checksum or salts, or the header checksum does not match. A transaction still open when the file was captured also leaves this: SQLite rewrites its frames in place and updates the checksums only at commit</source>
-        <translation type="unfinished">Frames mit passendem Salt außerhalb des Logs, das SQLite liest – die Prüfsumme des Frames selbst, Prüfsumme oder Salts eines früheren Frames oder die Header-Prüfsumme stimmen nicht. Eine bei der Sicherung noch offene Transaktion hinterlässt das ebenfalls: SQLite schreibt ihre Frames an Ort und Stelle neu und aktualisiert die Prüfsummen erst beim Commit</translation>
-    </message>
-    <message>
         <source>Page</source>
         <translation>Page</translation>
     </message>
@@ -4415,12 +4411,24 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation type="unfinished">Ungültige WAL-Frames</translation>
     </message>
     <message>
+        <source>Salt-valid frames outside the log SQLite reads — the frame&apos;s own checksum or an earlier frame&apos;s checksum or salts do not match, or the WAL header is not valid (checksum or page size). A transaction still open when the file was captured also leaves this: SQLite rewrites its frames in place and updates the checksums only at commit</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>WAL slack frames</source>
         <translation>WAL-Slack-Frames</translation>
     </message>
     <message>
         <source>Salt-mismatch frames from a previous WAL cycle — reused WAL space</source>
         <translation>Frames mit Salt-Mismatch aus einem früheren WAL-Zyklus – wiederverwendeter WAL-Speicherplatz</translation>
+    </message>
+    <message>
+        <source>WAL log end</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Where the log SQLite reads ends; frames from there on are not part of the current database state</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Journal file size (B)</source>
@@ -7230,6 +7238,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>After the salt mismatch at frame {frame:,}; SQLite stops reading the log there</source>
         <comment>sqlite_wal.frame_after_salt_mismatch</comment>
         <translation type="unfinished">Nach der Salt-Abweichung bei Frame {frame:,}; SQLite hört dort auf, das Log zu lesen</translation>
+    </message>
+    <message>
+        <source>At the last full frame: every frame&apos;s salts and checksum match</source>
+        <comment>sqlite_wal.log_end_file</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Yes (AES-256, key supplied)</source>
@@ -10415,6 +10428,14 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     <message>
         <source>Double-click a row to open the raw page in the hex viewer — click a Content cell to see the full decoded value below</source>
         <translation>Doppelklick auf eine Zeile öffnet die Page im Rohformat in der Hex-Ansicht — Klick auf eine Zelle der Spalte „Inhalt“ zeigt unten den vollständigen dekodierten Wert</translation>
+    </message>
+    <message>
+        <source>{frames} frames, {rows} rows</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>frames: {breakdown}</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>{count} checksum mismatch</source>

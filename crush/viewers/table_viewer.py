@@ -98,6 +98,7 @@ from crush.core.sqlite_wal import (
     page_accessors,
     parse_table_leaf_page,
     row_ranges_from_layout,
+    wal_log_end,
 )
 from crush.core.ts_decode import TS_FORMATS as _TS_FORMATS
 from crush.core.ts_decode import decode_cell as _decode_cell
@@ -1855,6 +1856,7 @@ class TableViewer(QWidget):
                         wal_row_ranges: list[tuple[int, int]] | None = None,
                         wal_column_ranges: list[list[tuple[int, int]] | None] | None = None,
                         injected_file_kind: str = "wal",
+                        source_tooltip: str | None = None,
                         ) -> None:
             row_index = self._source_model.rowCount() + 1
             row_item = QStandardItem(str(row_index))
@@ -1882,6 +1884,10 @@ class TableViewer(QWidget):
                     row_item.setData(wal_column_ranges, _WAL_COLUMN_RANGES_ROLE)
             if row_color:
                 row_item.setForeground(row_color)
+            if source_tooltip:
+                # Why the injected row's source has its status (e.g. an
+                # Invalid WAL frame's reason), next to the label saying which.
+                row_item.setToolTip(source_tooltip)
             items = [row_item]
             for val in row_data:
                 if isinstance(val, _Gen):
@@ -1945,6 +1951,8 @@ class TableViewer(QWidget):
             if show_source_col:
                 src = _gen_item(source_label) if source_label else QStandardItem("")
                 src.setEditable(False)
+                if source_tooltip:
+                    src.setToolTip(source_tooltip)
                 if row_color:
                     src.setForeground(row_color)
                 items.append(src)
@@ -2074,6 +2082,9 @@ class TableViewer(QWidget):
                 status=_Gen(f["status"]),
                 frame=f["frame"],
             )
+            reason_tip = (
+                render_value(f["reason"], localized=True) if f["reason"] is not None else None
+            )
             n_cols = len(columns)
             byte_range = (f["offset"], f["offset"] + 24 + self._wal_page_size)
             for _rowid, values, layout in parsed:
@@ -2089,6 +2100,7 @@ class TableViewer(QWidget):
                     wal_byte_range=byte_range,
                     wal_row_ranges=row_ranges,
                     wal_column_ranges=col_ranges,
+                    source_tooltip=reason_tip,
                 )
                 injected += 1
 
@@ -2654,13 +2666,20 @@ class TableViewer(QWidget):
         self._resize_and_cap()
         self._set_source_status(self._wal_problems + self._page_table_problems + frame_problems)
 
+        # Rows are records, the status breakdown counts frames -- say both.
         counts = Counter(f["status"] for f in frames)
-        parts = [translate("TableViewer", "{count} total").format(count=len(frames))]
+        totals = translate("TableViewer", "{frames} frames, {rows} rows").format(
+            frames=len(frames), rows=self._source_model.rowCount()
+        )
+        parts = []
         for status in ("Active", "Superseded", "Uncommitted", "Invalid", "WAL slack"):
             n = counts.get(status, 0)
             if n:
                 parts.append(f"{n} {_gen_text(status).lower()}")  # i18n: keep -- layout
-        self._row_count_label.setText(f"({', '.join(parts)})")  # i18n: keep -- layout
+        frame_breakdown = translate("TableViewer", "frames: {breakdown}").format(
+            breakdown=", ".join(parts)  # i18n: keep -- layout
+        )
+        self._row_count_label.setText(f"({totals}; {frame_breakdown})")  # i18n: keep -- layout
         self._sql_status.setText(
             translate("TableViewer", "Double-click a row to open the raw page in the hex viewer — "
             "click a Content cell to see the full decoded value below")
@@ -4149,8 +4168,9 @@ class TableViewer(QWidget):
                 QT_TRANSLATE_NOOP(
                     "GeneratedView",
                     "Salt-valid frames outside the log SQLite reads — the frame's own "
-                    "checksum, an earlier frame's checksum or salts, or the header "
-                    "checksum does not match. A transaction still open when the file was "
+                    "checksum or an earlier frame's checksum or salts do not match, or the "
+                    "WAL header is not valid (checksum or page size). A transaction still "
+                    "open when the file was "
                     "captured also leaves this: SQLite rewrites its frames in place and "
                     "updates the checksums only at commit",
                 ),
@@ -4166,6 +4186,18 @@ class TableViewer(QWidget):
                 ),
                 Qt.GlobalColor.darkGray if n_slack else None,
             )
+            wal_data = self._get_wal_data()
+            log_end = wal_log_end(wal_data) if wal_data is not None else None
+            if log_end is not None:
+                _wal_row(
+                    QT_TRANSLATE_NOOP("GeneratedView", "WAL log end"),
+                    render_value(log_end, localized=True),
+                    QT_TRANSLATE_NOOP(
+                        "GeneratedView",
+                        "Where the log SQLite reads ends; frames from there on are not "
+                        "part of the current database state",
+                    ),
+                )
 
             # Visual separator
             sep = QStandardItem("─" * 30)

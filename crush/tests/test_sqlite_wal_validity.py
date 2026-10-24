@@ -120,7 +120,7 @@ def test_real_wal_checksums_validate(tmp_path: Path) -> None:
     assert frames and not problems
     assert {f["status"] for f in frames} <= {"Active", "Superseded"}
     assert all(f["reason"] is None for f in frames)
-    assert wal_log_end(wal) is None
+    assert wal_log_end(wal) == ParseIssue("sqlite_wal.log_end_file")
 
 
 def test_checksum_mismatch_ends_the_log(tmp_path: Path) -> None:

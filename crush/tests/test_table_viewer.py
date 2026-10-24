@@ -423,6 +423,7 @@ def test_inject_wal_rows_resolves_overflow_value(qapp, tmp_path: Path) -> None:
             wal_byte_range: tuple[int, int] | None = None,
             wal_row_ranges: list[tuple[int, int]] | None = None,
             wal_column_ranges: list[list[tuple[int, int]] | None] | None = None,
+            source_tooltip: str | None = None,
         ) -> None:
             injected_rows.append(row_data)
 
@@ -654,7 +655,7 @@ def test_wal_frames_one_row_per_record(qapp, widgets, tmp_path: Path) -> None:
     """A frame whose page holds several records gets one row per record,
     each repeating the frame's metadata, with its own rowid and content.
     Every frame still appears (a frame without records keeps one row), and
-    the frame counter counts frames, not rows. Selecting a record row
+    the counter names frames and rows separately. Selecting a record row
     highlights exactly that record's cell; a hex click inside a later
     record's cell selects that record's row, not the frame's first row."""
     db_path = tmp_path / "multi.db"
@@ -701,7 +702,9 @@ def test_wal_frames_one_row_per_record(qapp, widgets, tmp_path: Path) -> None:
 
         listed = {int(cell(r, "Frame")) for r in range(model.rowCount())}
         assert listed == {f["frame"] for f in frames}
-        assert f"({len(frames)} total" in tv._row_count_label.text()
+        assert tv._row_count_label.text().startswith(
+            f"({len(frames)} frames, {model.rowCount()} rows; frames: "
+        )
 
         wal = Path(str(db_path) + "-wal").read_bytes()
         last = record_rows[-1]
@@ -712,6 +715,61 @@ def test_wal_frames_one_row_per_record(qapp, widgets, tmp_path: Path) -> None:
 
         tv._select_row_for_byte_offset(end - 1)
         assert tv._proxy_model.mapToSource(tv._table_view.currentIndex()).row() == last
+    finally:
+        writer.close()
+
+
+def test_wal_invalid_frames_show_log_end_and_reason(qapp, widgets, tmp_path: Path) -> None:
+    """A checksum break in the -wal: the DB Info overview names where the
+    log ends, WAL-history rows injected from Invalid frames carry the
+    frame's reason as tooltip, and the WAL Frames counter says frames and
+    rows separately."""
+    from crush.core.sqlite_wal import classify_wal_frames
+
+    db_path = tmp_path / "broken.db"
+    writer = sqlite3.connect(str(db_path))
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
+    writer.commit()
+    for i in range(1, 4):
+        writer.execute("INSERT INTO messages (body) VALUES (?)", (f"body-{i}",))
+        writer.commit()
+    wal_path = Path(str(db_path) + "-wal")
+    try:
+        wal = bytearray(wal_path.read_bytes())
+        _page_size, frames = classify_wal_frames(bytes(wal))
+        bad = next(f for f in frames if f["tx"] == max(g["tx"] for g in frames))
+        wal[bad["offset"] + 24 + 200] ^= 0xFF
+        wal_path.write_bytes(bytes(wal))
+
+        data = {
+            "__db_path": str(db_path),
+            "messages": {
+                "columns": ["id", "body"],
+                "rows": [[i, f"body-{i}"] for i in range(1, 4)],
+            },
+        }
+        tv = widgets(TableViewer(data, source_name="broken.db"))
+
+        tv._load_db_info()
+        model = tv._source_model
+        overview = {model.item(r, 0).text(): model.item(r, 1).text()
+                    for r in range(model.rowCount()) if model.item(r, 1) is not None}
+        assert overview["WAL log end"].startswith(f"At frame {bad['frame']:,}: its checksum")
+
+        tv._wal_toggle.setChecked(True)
+        tv._load_table("messages")
+        model = tv._source_model
+        tips = [model.item(r, 0).toolTip() for r in range(model.rowCount())]
+        assert any(t.startswith("Frame checksum does not match") for t in tips)
+
+        tv._load_wal_frames()
+        label = tv._row_count_label.text()
+        assert label.startswith(
+            f"({len(frames)} frames, {tv._source_model.rowCount()} rows; frames: "
+        )
+        assert "1 invalid" in label
     finally:
         writer.close()
 

@@ -436,6 +436,11 @@ MESSAGES: dict[str, str] = {
         "rewrites its frames in place and updates the checksums only at commit",
         "sqlite_wal.log_end_checksum",
     ),
+    "sqlite_wal.log_end_file": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "At the last full frame: every frame's salts and checksum match",
+        "sqlite_wal.log_end_file",
+    ),
     "sqlite_wal.log_end_header": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Before frame 1: the WAL header is not valid, so SQLite reads no frame",
