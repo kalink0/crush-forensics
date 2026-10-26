@@ -7,8 +7,9 @@ through it step by step. You don't need to program or know Git.
 ## What is translated — and what isn't
 
 **Translated:** the application's user interface — menus, dialogs, buttons, tooltips, status
-messages, the explanations Crush shows next to data, and the format knowledge texts (what a
-file format contains, what its magic bytes are).
+messages, the explanations Crush shows next to data — and, optionally, the format knowledge
+texts (what a file format contains, what its magic bytes are; see
+[Format knowledge texts](#format-knowledge-texts)).
 
 **Not translated** (these stay English on purpose, so results look the same for every analyst
 and can be compared or exchanged):
@@ -92,9 +93,33 @@ a note below the English: for a parser message it is the message's code, for a f
 knowledge text the format's name. The same English text can appear in two contexts and be
 translated differently there.
 
-Contexts whose name starts with **Website** (e.g. `WebsiteFormatReference`) hold texts of the
-[format reference website](https://kalink0.github.io/crush-forensics/formats/), not of the app.
-They are optional: they don't count towards the 90 % below.
+Two kinds of texts are optional — they don't count towards the
+[90 %](#when-your-language-appears-in-crush) your language needs to appear in Crush:
+
+- **Format knowledge texts** — the context **FormatKnowledge**; see
+  [Format knowledge texts](#format-knowledge-texts).
+- **Website texts** — contexts whose name starts with **Website** (e.g.
+  `WebsiteFormatReference`) hold texts of the
+  [format reference website](https://kalink0.github.io/crush-forensics/formats/), not of the
+  app.
+
+#### Format knowledge texts
+
+The context **FormatKnowledge** holds what Crush knows about each file format: what the format
+contains and why it matters, and what each of its magic bytes is. Crush shows them in a file's
+Properties, in Format Info and in the Format Reference; the
+[format reference website](https://kalink0.github.io/crush-forensics/formats/) shows them too.
+They are longer than the other texts: about 500 texts, but more than half of all the words
+in the file.
+
+You can recognise them in Qt Linguist in two ways: they are all in the context
+**FormatKnowledge**, and each one shows, under **Developer comments**, the note "Format
+knowledge: optional, doesn't count towards the 90 % for View → Language". The note below the
+English (the comment) is the format's name.
+
+Translate them whenever you like — together with the rest, later, or not at all. A format
+knowledge text that isn't translated is shown in English. The [rule for knowledge
+texts](#rules) applies to them.
 
 ### 5. Send it back
 
@@ -178,9 +203,10 @@ in plain text, if you'd like to read it outside Qt Linguist.
 
 ## When your language appears in Crush
 
-A language is offered under **View → Language** once at least **90 %** of its texts are
-translated (website texts not counted). Below that it can only be tried with `--language <code>`. English is used for
-every text not translated yet.
+A language is offered under **View → Language** once at least **90 %** of its app texts are
+translated — every context except **FormatKnowledge** and those starting with **Website**
+(see [Translate](#4-translate)). Below that it can only be tried with `--language <code>`.
+English is used for every text not translated yet, in all three kinds.
 
 ## When Crush changes
 
@@ -201,6 +227,19 @@ python scripts/i18n.py check                 # placeholders, %1, HTML tags, brac
 python scripts/i18n.py release               # compile; prints how much is translated
 python -m crush --language <code>            # run Crush in that language
 ```
+
+`check` and `release` both print, per language, how much of its app texts, format knowledge
+texts and website texts is translated:
+
+```
+de: app texts 2080/2080 (100.0%) | format knowledge texts 489/489 (100.0%) | website texts 42/42 (100.0%)
+```
+
+`check` counts the catalog as it is; `release` counts it against Crush's current texts (a
+text added since the catalog was last updated counts as untranslated). The percentages are
+rounded down, so 89.96 % shows as 89.9 %. Only the app texts decide whether a language is
+offered; `release` records them in `languages.json`, which Crush reads for
+**View → Language**.
 
 `release` leaves out any translation that fails `check` (that text is then shown in English)
 and says which. Don't commit `.qm` files or `languages.json` — they are built from the

@@ -13,7 +13,14 @@ is written as QT_TRANSLATE_NOOP("FormatKnowledge", text, <the format's
 name>) so it lands in the translation catalog (scripts/i18n.py update); the
 UI translates it at display time. Write a multi-line text as adjacent
 string literals *without* parentheses around them -- lupdate silently
-skips a parenthesised text. test_format_db checks both.
+skips a parenthesised text. test_format_knowledge_i18n checks both.
+
+Put the line `#: ` + KNOWLEDGE_NOTE right above each of these
+QT_TRANSLATE_NOOP calls: lupdate stores it as the text's developer
+comment, which Qt Linguist shows translators next to the text (a `#:`
+comment at the end of the line is not picked up). It is not part of the
+text's key, so changing it leaves every translation in place.
+test_format_knowledge_i18n checks every text carries it.
 """
 from __future__ import annotations
 
@@ -26,6 +33,10 @@ from typing import Any
 from crush.core.issues import QT_TRANSLATE_NOOP
 
 _OUT = Path(__file__).parent / "formats.db"
+
+# The translators' note on every format knowledge text (see the module
+# docstring): what it is, and that a translation is offered without it.
+KNOWLEDGE_NOTE = "Format knowledge: optional, doesn't count towards the 90 % for View → Language"
 
 # ---------------------------------------------------------------------------
 # Format definitions
@@ -95,6 +106,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Binary XML (ABX)",
         "short_name": "ABX",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Android system configuration stored as compact binary XML, introduced "
@@ -111,6 +123,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x41\x42\x58\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Android Binary XML header",
@@ -144,6 +157,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Backup Archive",
         "short_name": "Android backup",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Backup created via ADB backup functionality (deprecated; restricted since Android 12 / API 31). "
@@ -161,6 +175,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x41\x4e\x44\x52\x4f\x49\x44\x20\x42\x41\x43\x4b\x55\x50\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Android backup header",
@@ -198,6 +213,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Binary Property List",
         "short_name": "bplist",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "App preferences, caches, configuration, and iOS/macOS backup structures "
@@ -216,6 +232,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x62\x70\x6c\x69\x73\x74",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Binary plist magic ('bplist')",
@@ -253,6 +270,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "CBOR (Concise Binary Object Representation)",
         "short_name": "CBOR",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "RFC 8949 binary serialization format increasingly found in mobile and web app data. "
@@ -271,6 +289,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xd9\xd9\xf7",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Optional self-described CBOR tag 55799 (RFC 8949, 3.4.6)",
@@ -304,6 +323,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Realm Database",
         "short_name": "Realm",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Mobile app local object store used as a SQLite alternative, marketed by "
@@ -326,6 +346,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 16,
                 "value": b"\x54\x2d\x44\x42",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Realm header mnemonic (T-DB)",
@@ -375,6 +396,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android DEX Bytecode",
         "short_name": "DEX",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Compiled Android application bytecode executed by the Android Runtime (ART). "
@@ -392,6 +414,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x64\x65\x78\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "DEX magic ('dex\\n'), followed by a 3-digit version and NUL",
@@ -421,6 +444,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Disk Image (DMG)",
         "short_name": "DMG",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple disk image format. A UDIF image consists of data blocks (raw or "
@@ -444,6 +468,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x6b\x6f\x6c\x79",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "UDIF 'koly' trailer block at EOF-512 (no file header magic)",
@@ -453,6 +478,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"encrcdsa",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Encrypted disk image, version 2 header",
@@ -462,6 +488,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"cdsaencr",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Encrypted disk image, version 1 marker in the last 8 bytes",
@@ -471,6 +498,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"sprs",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Sparse image (.sparseimage) header",
@@ -512,6 +540,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ELF Executable",
         "short_name": "ELF",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Native executable and shared library format for Android and Linux. "
@@ -531,6 +560,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x7f\x45\x4c\x46",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ELF magic number",
@@ -568,6 +598,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Event Log (EVTX)",
         "short_name": "EVTX",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows structured event log format used since Vista/Server 2008, "
@@ -591,6 +622,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x45\x6c\x66\x46\x69\x6c\x65\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "EVTX file signature ('ElfFile')",
@@ -628,6 +660,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JPEG Image",
         "short_name": "JPEG",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Photos and screenshots from device cameras, messaging apps, and downloads. "
@@ -654,6 +687,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xd8\xff",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "JPEG SOI marker",
@@ -695,6 +729,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "PNG Image",
         "short_name": "PNG",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Lossless image format used for screenshots, app icons, and UI graphics. "
@@ -719,6 +754,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "PNG signature",
@@ -756,6 +792,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "GIF Image",
         "short_name": "GIF",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Palette-based image format supporting animation, used in messaging apps, "
@@ -780,6 +817,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x47\x49\x46\x38\x37\x61",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "GIF87a header — static images only",
@@ -789,6 +827,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x47\x49\x46\x38\x39\x61",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "GIF89a header — animation, comments, and extensions supported",
@@ -822,6 +861,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "BMP Image",
         "short_name": "BMP",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Uncompressed bitmap format common in Windows apps, legacy software, "
@@ -842,6 +882,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x42\x4d",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "BMP file header signature ('BM')",
@@ -875,6 +916,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "TIFF Image",
         "short_name": "TIFF",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Flexible container format for high-quality images, document scans, and "
@@ -899,6 +941,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x49\x49\x2a\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "TIFF little-endian (Intel byte order, 'II')",
@@ -908,6 +951,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x4d\x4d\x00\x2a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "TIFF big-endian (Motorola byte order, 'MM')",
@@ -917,6 +961,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x49\x49\x2b\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "BigTIFF little-endian (version 43, 'II')",
@@ -926,6 +971,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x4d\x4d\x00\x2b",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "BigTIFF big-endian (version 43, 'MM')",
@@ -963,6 +1009,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WebP Image",
         "short_name": "WebP",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Modern image format used by Chrome, Android apps, and messaging platforms "
@@ -984,6 +1031,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"RIFF",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "RIFF container header",
@@ -993,6 +1041,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x57\x45\x42\x50",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "WebP signature within RIFF container ('WEBP' at offset 8)",
@@ -1026,6 +1075,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "HEIC / HEIF Image",
         "short_name": "HEIC/HEIF",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Default photo format on iOS 11+; Android decodes HEIF since version 9 and "
@@ -1055,6 +1105,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypheic",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'heic' (HEVC image)",
@@ -1064,6 +1115,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypheix",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'heix' (HEVC image, Main 10 / range extensions)",
@@ -1073,6 +1125,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftyphevc",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'hevc' (HEVC image sequence)",
@@ -1082,6 +1135,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftyphevx",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'hevx' (HEVC image sequence, extended profiles)",
@@ -1091,6 +1145,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypheim",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'heim' (multiview HEVC image)",
@@ -1100,6 +1155,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypheis",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'heis' (scalable HEVC image)",
@@ -1109,6 +1165,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftyphevm",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'hevm' (multiview HEVC image sequence)",
@@ -1118,6 +1175,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftyphevs",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'hevs' (scalable HEVC image sequence)",
@@ -1127,6 +1185,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypmif1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'mif1' (generic HEIF image)",
@@ -1136,6 +1195,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypmsf1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'msf1' (generic HEIF image sequence)",
@@ -1185,6 +1245,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JPEG XL Image",
         "short_name": "JPEG XL",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Next-generation image format standardised as ISO/IEC 18181 (2022). "
@@ -1214,6 +1275,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "JPEG XL naked codestream signature",
@@ -1223,6 +1285,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x00\x00\x00\x0c\x4a\x58\x4c\x20\x0d\x0a\x87\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "JPEG XL ISOBMFF/JXL container signature",
@@ -1264,6 +1327,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AVIF Image",
         "short_name": "AVIF",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "AV1 Image File Format — a royalty-free still-image format based on the AV1 video "
@@ -1294,6 +1358,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypavif",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'avif' (AVIF image)",
@@ -1303,6 +1368,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypavis",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with major brand 'avis' (AVIF image sequence / animation)",
@@ -1340,6 +1406,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple ATX Texture Archive",
         "short_name": "ATX",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple AAPL texture container wrapping ASTC image payloads, including "
@@ -1356,6 +1423,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x41\x41\x50\x4c\x0d\x0a\x1a\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Apple ATX AAPL container signature",
@@ -1385,6 +1453,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Khronos KTX 1.1 Texture",
         "short_name": "KTX",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Khronos texture container. On iOS the payload is normally ASTC 4x4, "
@@ -1407,6 +1476,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xabKTX 11\xbb\r\n\x1a\n",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Khronos KTX 1.1 file identifier",
@@ -1436,6 +1506,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "iOS Crash Report",
         "short_name": "IPS / crash",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Application and system crash reports generated by iOS and macOS. "
@@ -1480,6 +1551,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JSON Document",
         "short_name": "JSON",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Human-readable serialization format used pervasively in mobile and web apps. "
@@ -1523,6 +1595,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LevelDB Database",
         "short_name": "LevelDB",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Key-value store used by Chrome/Chromium (IndexedDB, localStorage, sessionStorage), "
@@ -1547,6 +1620,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x57\xfb\x80\x8b\x24\x75\x47\xdb",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Table file (.ldb/.sst) footer magic 0xdb4775248b80fb57 (little-endian) in the last 8 bytes",
@@ -1600,6 +1674,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "RocksDB Database",
         "short_name": "RocksDB",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Key-value store developed by Facebook as a fork of LevelDB, used as the storage "
@@ -1626,6 +1701,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xf7\xcf\xf4\x85\xb7\x41\xe2\x88",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Block-based table (.sst) footer magic 0x88e241b785f4cff7 (little-endian) in the last 8 bytes",
@@ -1635,6 +1711,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x64\x95\xbf\x63\x96\x22\x42\x82",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Plain table (.sst) footer magic 0x8242229663bf9564 (little-endian) in the last 8 bytes",
@@ -1644,6 +1721,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xb8\x13\x8f\x7a\xeb\x18\x34\x4f",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Plain table (.sst) with footer format 0: magic 0x4f3418eb7a8f13b8 (little-endian) in the last 8 bytes",
@@ -1653,6 +1731,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x73\x78\xf1\xc5\xd0\x89\x67\x92",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Cuckoo table (.sst) footer magic 0x926789d0c5f17873 (little-endian) in the last 8 bytes",
@@ -1698,6 +1777,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MMKV Key-Value Store",
         "short_name": "MMKV",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Tencent's mmap-backed key-value store (github.com/Tencent/MMKV, BSD-3-Clause), "
@@ -1743,6 +1823,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Unified Log Archive (logarchive)",
         "short_name": "logarchive",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Packaged Apple Unified Log bundle containing tracev3 binary log files, "
@@ -1811,6 +1892,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LZFSE Compressed Data",
         "short_name": "LZFSE",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple-proprietary lossless compression algorithm introduced with iOS 9 "
@@ -1832,6 +1914,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x62\x76\x78\x32",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "LZFSE magic ('bvx2', compressed block with compressed tables)",
@@ -1841,6 +1924,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"bvx1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "LZFSE magic ('bvx1', compressed block with uncompressed tables)",
@@ -1850,6 +1934,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"bvxn",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "LZVN-compressed block ('bvxn')",
@@ -1859,6 +1944,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"bvx-",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Uncompressed block ('bvx-')",
@@ -1888,6 +1974,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Mach-O Executable",
         "short_name": "Mach-O",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Native executable, library, and object format for iOS and macOS. "
@@ -1909,6 +1996,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xcf\xfa\xed\xfe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Mach-O 64-bit little-endian (arm64, x86_64) — most common on modern devices",
@@ -1918,6 +2006,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xce\xfa\xed\xfe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Mach-O 32-bit little-endian",
@@ -1927,6 +2016,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xca\xfe\xba\xbe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Fat/Universal Binary — contains multiple architecture slices (same magic as Java class files)",
@@ -1936,6 +2026,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xfe\xed\xfa\xcf",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Mach-O 64-bit big-endian",
@@ -1945,6 +2036,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xfe\xed\xfa\xce",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Mach-O 32-bit big-endian",
@@ -1982,6 +2074,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MP4 Video",
         "short_name": "MP4",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Versatile ISOBMFF container format (ISO/IEC 14496-12) for video recordings, "
@@ -2003,6 +2096,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\x66\x74\x79\x70",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ISOBMFF ftyp box at offset 4",
@@ -2040,6 +2134,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MOV Video (QuickTime)",
         "short_name": "MOV",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's native video container format — the QuickTime File Format, on which "
@@ -2065,6 +2160,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypqt  ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with QuickTime brand 'qt  '",
@@ -2074,6 +2170,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"moov",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Older QuickTime file without ftyp, starting with a movie atom ('moov')",
@@ -2083,6 +2180,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"mdat",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Older QuickTime file without ftyp, starting with a media data atom ('mdat')",
@@ -2092,6 +2190,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"wide",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Older QuickTime file without ftyp, starting with a 'wide' placeholder atom",
@@ -2129,6 +2228,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AVI Video",
         "short_name": "AVI",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Legacy RIFF-based video container format common in older Windows recordings, "
@@ -2154,6 +2254,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x52\x49\x46\x46",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "RIFF container header",
@@ -2163,6 +2264,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x41\x56\x49\x20",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AVI subtype identifier ('AVI ') at offset 8",
@@ -2196,6 +2298,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MKV Video (Matroska)",
         "short_name": "MKV",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Open EBML-based container format for HD video, commonly found in "
@@ -2217,6 +2320,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1a\x45\xdf\xa3",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "EBML header (Matroska/WebM) — DocType 'matroska' identifies MKV",
@@ -2250,6 +2354,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WebM Video",
         "short_name": "WebM",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Web-optimised video container based on a restricted subset of Matroska/EBML. "
@@ -2271,6 +2376,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x1a\x45\xdf\xa3",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "EBML header (Matroska/WebM) — DocType 'webm' identifies WebM",
@@ -2300,6 +2406,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "3GP / 3G2 Video",
         "short_name": "3GP",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Mobile video container format based on ISOBMFF, defined by 3GPP (3GP) "
@@ -2322,6 +2429,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftyp3g",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with a 3GPP/3GPP2 major brand ('3gp…', '3g2…', '3ge…' etc.)",
@@ -2351,6 +2459,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MP3 Audio",
         "short_name": "MP3",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Ubiquitous lossy audio format for music, voice memos, voicemails, "
@@ -2373,6 +2482,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x49\x44\x33",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ID3 tag header (MP3 with ID3v2 metadata)",
@@ -2382,6 +2492,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xfb",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MPEG-1 Layer 3 sync word (MP3 without ID3 header)",
@@ -2391,6 +2502,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xfa",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MPEG-1 Layer 3 sync word with CRC (MP3 without ID3 header)",
@@ -2400,6 +2512,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf3",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MPEG-2 Layer 3 sync word (MP3 without ID3 header)",
@@ -2409,6 +2522,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf2",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MPEG-2 Layer 3 sync word with CRC (MP3 without ID3 header)",
@@ -2418,6 +2532,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xe3",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MPEG-2.5 Layer 3 sync word (MP3 without ID3 header)",
@@ -2427,6 +2542,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xe2",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MPEG-2.5 Layer 3 sync word with CRC (MP3 without ID3 header)",
@@ -2460,6 +2576,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WAV Audio",
         "short_name": "WAV",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "RIFF-based audio container, typically holding uncompressed PCM, used for voice "
@@ -2480,6 +2597,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x52\x49\x46\x46",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "RIFF container header",
@@ -2489,6 +2607,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"RF64",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "RF64 header (WAV/BWF larger than 4 GB)",
@@ -2498,6 +2617,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x57\x41\x56\x45",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "WAVE subtype identifier at offset 8",
@@ -2531,6 +2651,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "M4A Audio",
         "short_name": "M4A",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "ISOBMFF audio-only container (ftyp brand 'M4A ') typically containing "
@@ -2555,6 +2676,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypM4A ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with Apple audio major brand 'M4A '",
@@ -2564,6 +2686,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypM4B ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with Apple audiobook major brand 'M4B '",
@@ -2573,6 +2696,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"ftypM4P ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ftyp box with Apple protected audio major brand 'M4P '",
@@ -2602,6 +2726,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AAC Audio",
         "short_name": "AAC",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Advanced Audio Coding — the dominant lossy audio codec on iOS and Android. "
@@ -2625,6 +2750,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ADTS AAC sync word — MPEG-4 AAC, no CRC",
@@ -2634,6 +2760,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf9",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ADTS AAC sync word — MPEG-2 AAC, no CRC",
@@ -2643,6 +2770,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf0",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ADTS AAC sync word — MPEG-4 AAC, with CRC",
@@ -2652,6 +2780,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xf8",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ADTS AAC sync word — MPEG-2 AAC, with CRC",
@@ -2661,6 +2790,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"ADIF",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ADIF header identifier",
@@ -2686,6 +2816,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "FLAC Audio",
         "short_name": "FLAC",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Free Lossless Audio Codec — bit-perfect audio with native metadata support. "
@@ -2708,6 +2839,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x66\x4c\x61\x43",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "FLAC stream marker ('fLaC')",
@@ -2741,6 +2873,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "OGG Audio",
         "short_name": "OGG",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Open bitstream container supporting multiple codecs — forensically "
@@ -2763,6 +2896,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x4f\x67\x67\x53",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "OGG capture pattern ('OggS')",
@@ -2800,6 +2934,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Opus Audio",
         "short_name": "Opus",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Low-latency voice and audio codec (RFC 6716) used in WebRTC, Discord, "
@@ -2824,6 +2959,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 28,
                 "value": b"\x4f\x70\x75\x73\x48\x65\x61\x64",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "OpusHead codec identification (RFC 7845 §5.1, offset 28 in first Ogg page)",
@@ -2853,6 +2989,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WMA Audio",
         "short_name": "WMA",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows Media Audio — Microsoft proprietary audio format stored in the "
@@ -2876,6 +3013,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ASF Header Object GUID (shared with WMV; distinguished by stream type)",
@@ -2913,6 +3051,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AMR Audio",
         "short_name": "AMR",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Adaptive Multi-Rate speech codec standardised by 3GPP for GSM/UMTS networks. "
@@ -2935,6 +3074,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x23\x21\x41\x4d\x52\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AMR-NB file magic ('#!AMR\\n')",
@@ -2944,6 +3084,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x23\x21\x41\x4d\x52\x2d\x57\x42\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AMR-WB file magic ('#!AMR-WB\\n')",
@@ -2953,6 +3094,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"#!AMR_MC1.0\n",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AMR-NB multichannel file magic ('#!AMR_MC1.0\\n')",
@@ -2962,6 +3104,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"#!AMR-WB_MC1.0\n",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AMR-WB multichannel file magic ('#!AMR-WB_MC1.0\\n')",
@@ -2995,6 +3138,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MessagePack",
         "short_name": "MsgPack",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Compact binary serialization format used as a JSON alternative in "
@@ -3035,6 +3179,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "NSKeyedArchiver",
         "short_name": "NSKeyedArchiver",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's object graph serialization format, stored as a binary plist (bplist00) "
@@ -3060,6 +3205,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"$archiver",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "'$archiver' key inside a binary plist (bplist00) — not detectable from the header",
@@ -3093,6 +3239,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android OAT/ART",
         "short_name": "OAT/ART",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Android Runtime (ART) ahead-of-time compiled code artifacts introduced "
@@ -3118,6 +3265,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"oat\n",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "OAT header magic inside the ELF 'oatdata' section (.oat/.odex files are ELF binaries)",
@@ -3127,6 +3275,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"vdex",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "VDEX file magic",
@@ -3136,6 +3285,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"art\n",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ART image file magic",
@@ -3165,6 +3315,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "PDF Document",
         "short_name": "PDF",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Portable Document Format — used pervasively for official documents, "
@@ -3194,6 +3345,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x25\x50\x44\x46\x2d",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "PDF header ('%PDF-')",
@@ -3231,6 +3383,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Property List (XML plist)",
         "short_name": "XML plist",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Human-readable Apple property list format using XML serialization. "
@@ -3257,6 +3410,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x3c\x3f\x78\x6d\x6c",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "XML declaration ('<?xml')",
@@ -3266,6 +3420,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"<!DOCTYPE plist",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Apple plist DOCTYPE after the XML declaration — distinguishes a plist from generic XML",
@@ -3299,6 +3454,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Protocol Buffers (protobuf)",
         "short_name": "protobuf",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Google's binary serialization format used by Android system services, "
@@ -3352,6 +3508,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Registry Hive",
         "short_name": "Registry Hive",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows hierarchical configuration database stored as binary hive files. "
@@ -3380,6 +3537,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x72\x65\x67\x66",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Registry hive signature ('regf')",
@@ -3421,6 +3579,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple SEGB (Biome store)",
         "short_name": "SEGB",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's Segmented Binary format — the on-disk storage container for iOS "
@@ -3448,6 +3607,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x53\x45\x47\x42",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SEGB v2 signature at offset 0 (32-byte header)",
@@ -3457,6 +3617,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 52,
                 "value": b"\x53\x45\x47\x42",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SEGB v1 signature at offset 52 (within 56-byte header)",
@@ -3510,6 +3671,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Sparse Image",
         "short_name": "simg",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Android's space-efficient flash image format that replaces empty and "
@@ -3535,6 +3697,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x3a\xff\x26\xed",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Android sparse image magic (0xED26FF3A little-endian)",
@@ -3568,6 +3731,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLite Database",
         "short_name": "SQLite",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The dominant embedded database on iOS, Android, macOS, and Windows. "
@@ -3600,6 +3764,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x53\x51\x4c\x69\x74\x65\x20\x66\x6f\x72\x6d\x61\x74\x20\x33\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SQLite magic string ('SQLite format 3\\x00')",
@@ -3649,6 +3814,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLite WAL",
         "short_name": "SQLite WAL",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Write-Ahead Log companion file for SQLite databases in WAL journal mode. "
@@ -3671,6 +3837,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x37\x7f\x06\x82",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SQLite WAL magic 0x377F0682 (checksums computed little-endian)",
@@ -3680,6 +3847,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x37\x7f\x06\x83",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SQLite WAL magic 0x377F0683 (checksums computed big-endian)",
@@ -3717,6 +3885,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLite Rollback Journal",
         "short_name": "SQLite Journal",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Legacy (pre-WAL) companion file for a SQLite database in DELETE/TRUNCATE/"
@@ -3746,6 +3915,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xd9\xd5\x05\xf9\x20\xa1\x63\xd7",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SQLite rollback-journal magic",
@@ -3783,6 +3953,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "TAR Archive",
         "short_name": "TAR",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Unix standard archive format packaging files and directory trees with "
@@ -3810,6 +3981,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 257,
                 "value": b"\x75\x73\x74\x61\x72",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "USTAR/GNU magic ('ustar') at offset 257 in first header block",
@@ -3839,6 +4011,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "EWF Acquisition",
         "short_name": "EWF",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Expert Witness Format (EWF) — the .E01 forensic disk image format "
@@ -3868,6 +4041,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x45\x56\x46\x09\x0d\x0a\xff\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "EWF-E01 / SMART signature ('EVF' + control bytes)",
@@ -3901,6 +4075,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "EWF2 Acquisition",
         "short_name": "Ex01",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "EWF2 (.Ex01) — the second version of the Expert Witness Format, "
@@ -3918,6 +4093,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"EVF2\x0d\x0a\x81\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "EWF2 signature ('EVF2' + control bytes)",
@@ -3943,6 +4119,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AFF Acquisition",
         "short_name": "AFF",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Advanced Forensic Format (AFF) — an open disk acquisition format "
@@ -3963,6 +4140,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"AFF10\x0d\x0a\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AFF signature ('AFF10' + control bytes), in every file of an AFD",
@@ -3992,6 +4170,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AFF4 Acquisition",
         "short_name": "AFF4",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Advanced Forensic Format 4 — an acquisition format stored as a ZIP64 "
@@ -4015,6 +4194,7 @@ FORMATS: list[dict[str, Any]] = [
                 # ZIP's signature, and the format identified by it.
                 "offset": None,
                 "value": b"aff4://",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "A ZIP whose comment holds the aff4:// volume URI, or whose first "
@@ -4063,6 +4243,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Microsoft Virtual Hard Disk (VHD)",
         "short_name": "VHD",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Virtual Hard Disk — a 512-byte footer starting 'conectix' at the end of the "
@@ -4083,6 +4264,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"conectix",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Footer cookie 'conectix' in the last 512 bytes",
@@ -4092,6 +4274,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"conectix",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Copy of the footer at offset 0, in a dynamic or differencing VHD",
@@ -4129,6 +4312,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Microsoft Virtual Hard Disk v2 (VHDX)",
         "short_name": "VHDX",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Virtual Hard Disk v2 — the successor of VHD. Begins with the file type "
@@ -4149,6 +4333,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"vhdxfile",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "VHDX file type identifier 'vhdxfile'",
@@ -4183,6 +4368,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "VMware Virtual Disk (VMDK)",
         "short_name": "VMDK",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "VMware virtual disk. A disk is a text descriptor ('# Disk DescriptorFile') "
@@ -4202,6 +4388,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"KDMV",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Sparse extent magic 'KDMV'",
@@ -4211,6 +4398,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"COWD",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Older ESX sparse (COWD) extent",
@@ -4220,6 +4408,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"# Disk DescriptorFile",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Standalone VMDK descriptor file",
@@ -4249,6 +4438,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "QEMU Copy-On-Write Disk (QCOW)",
         "short_name": "QCOW",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "QEMU Copy-On-Write disk (QCOW version 1, QCOW2 versions 2 and 3). Begins "
@@ -4268,6 +4458,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"QFI\xfb",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "QCOW magic 'QFI' 0xFB, followed by the version (1, 2 or 3)",
@@ -4301,6 +4492,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "EnCase Logical Evidence",
         "short_name": "L01",
         "category": "logical_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "EnCase logical evidence file (.L01) — copies "
@@ -4320,6 +4512,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"LVF\x09\x0d\x0a\xff\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "L01 signature ('LVF' + control bytes)",
@@ -4345,6 +4538,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "FTK Imager Logical Evidence (AD1)",
         "short_name": "AD1",
         "category": "logical_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "AccessData (now Exterro) custom content image — a logical image of selected "
@@ -4365,6 +4559,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"ADSEGMENTEDFILE\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AD1 segment signature 'ADSEGMENTEDFILE', in every file of the set",
@@ -4374,6 +4569,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0x200,
                 "value": b"ADLOGICALIMAGE",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Logical image header, in the first file of the set",
@@ -4383,6 +4579,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"ADCRYPT",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Encrypted AD1 (AD encryption header)",
@@ -4416,6 +4613,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Unified Log (tracev3)",
         "short_name": "tracev3",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Binary log file format used by Apple's Unified Logging System. "
@@ -4437,6 +4635,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x00\x10\x00\x00\x11\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header chunk: tag 0x1000, sub tag 0x11 (little-endian)",
@@ -4478,6 +4677,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "XML Document",
         "short_name": "XML",
         "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Human-readable markup format used pervasively for configuration, "
@@ -4506,6 +4706,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x3c\x3f\x78\x6d\x6c",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "XML declaration ('<?xml'); optional, so many XML files have no magic",
@@ -4515,6 +4716,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xef\xbb\xbf<?xml",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "XML declaration with UTF-8 byte order mark",
@@ -4524,6 +4726,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xff\xfe<\x00?\x00x\x00m\x00l\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "XML declaration in UTF-16LE with byte order mark",
@@ -4553,6 +4756,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ZIP Archive",
         "short_name": "ZIP",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Ubiquitous archive format and basis for many higher-level formats: "
@@ -4582,6 +4786,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x50\x4b\x03\x04",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ZIP Local File Header signature ('PK\\x03\\x04')",
@@ -4591,6 +4796,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x50\x4b\x05\x06",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Empty archive (End of Central Directory record only)",
@@ -4600,6 +4806,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x50\x4b\x07\x08\x50\x4b\x03\x04",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "First segment of a split/spanned archive (span signature followed by Local File Header)",
@@ -4609,6 +4816,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x50\x4b\x05\x06",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "End of Central Directory record, within the last 64 KB of the file",
@@ -4646,6 +4854,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "7-Zip Archive",
         "short_name": "7Z",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "General-purpose archive format with high compression ratios (LZMA/LZMA2), "
@@ -4673,6 +4882,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x37\x7a\xbc\xaf\x27\x1c",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "7z signature ('7z' BC AF 27 1C), followed by the format version",
@@ -4702,6 +4912,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Keychain",
         "short_name": "Keychain",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's password management system storing credentials, private keys, "
@@ -4735,6 +4946,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x53\x51\x4c\x69\x74\x65\x20\x66\x6f\x72\x6d\x61\x74\x20\x33\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "SQLite magic — keychain-2.db is a standard SQLite database",
@@ -4768,6 +4980,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Keystore",
         "short_name": "Keystore",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Android's credential and key storage system. Two distinct layers: "
@@ -4796,6 +5009,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x30",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "PKCS#12/PFX — ASN.1 SEQUENCE tag (too generic to match on)",
@@ -4829,6 +5043,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "iOS Backup (iTunes/Finder)",
         "short_name": "iOS Backup",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Local iOS device backup created by iTunes (Windows/older macOS), "
@@ -4884,6 +5099,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Prefetch",
         "short_name": "Prefetch",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows execution evidence artifacts created when an application is run "
@@ -4914,6 +5130,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x11\x00\x00\x00\x53\x43\x43\x41",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Prefetch v17 header (Windows XP/2003)",
@@ -4923,6 +5140,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x17\x00\x00\x00\x53\x43\x43\x41",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Prefetch v23 header (Windows Vista/7)",
@@ -4932,6 +5150,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1a\x00\x00\x00\x53\x43\x43\x41",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Prefetch v26 header (Windows 8.0/8.1)",
@@ -4941,6 +5160,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1e\x00\x00\x00\x53\x43\x43\x41",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Prefetch v30 header (Windows 10, decompressed)",
@@ -4950,6 +5170,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1f\x00\x00\x00\x53\x43\x43\x41",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Prefetch v31 header (Windows 11, decompressed)",
@@ -4959,6 +5180,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x4d\x41\x4d\x04",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Compressed prefetch file, MAM container 'MAM\\x04' (Windows 10+)",
@@ -4996,6 +5218,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Gzip Compressed Data",
         "short_name": "gzip",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Single-file lossless compression format using DEFLATE (RFC 1951), "
@@ -5022,6 +5245,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x1f\x8b\x08",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Gzip magic number (ID1=0x1F, ID2=0x8B) and compression method 8 (DEFLATE)",
@@ -5055,6 +5279,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Raw Disk Image",
         "short_name": "Raw",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A sector-for-sector copy of a disk, partition or flash chip with no container "
@@ -5094,6 +5319,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Master Boot Record (MBR) Partition Table",
         "short_name": "MBR",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The classic PC partition scheme in the first sector of a disk: boot code, a "
@@ -5112,6 +5338,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 510,
                 "value": b"U\xaa",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Boot signature 0x55AA at the end of sector 0 (also present in FAT/NTFS boot sectors)",
@@ -5141,6 +5368,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "GUID Partition Table (GPT)",
         "short_name": "GPT",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The UEFI partition scheme: a header in the second logical block, a partition "
@@ -5157,6 +5385,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 512,
                 "value": b"EFI PART",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "GPT header signature in LBA 1 (512-byte sectors)",
@@ -5166,6 +5395,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4096,
                 "value": b"EFI PART",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "GPT header signature in LBA 1 (4096-byte sectors)",
@@ -5199,6 +5429,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple File System (APFS)",
         "short_name": "APFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's copy-on-write filesystem on iOS 10.3+ and macOS 10.13+. A container "
@@ -5216,6 +5447,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 32,
                 "value": b"NXSB",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Container superblock magic 'NXSB' (block 0)",
@@ -5249,6 +5481,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "HFS Plus / HFSX",
         "short_name": "HFS+",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's filesystem before APFS (Mac OS 8.1 to macOS 10.12, on hard disks and "
@@ -5266,6 +5499,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 1024,
                 "value": b"H+\x00\x04",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "HFS Plus volume header ('H+', version 4)",
@@ -5275,6 +5509,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 1024,
                 "value": b"HX\x00\x05",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "HFSX volume header ('HX', version 5)",
@@ -5308,6 +5543,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "NTFS",
         "short_name": "NTFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The Windows filesystem. Every file and directory is an entry in the Master "
@@ -5328,6 +5564,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 3,
                 "value": b"NTFS    ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "OEM identifier 'NTFS    ' in the boot sector",
@@ -5357,6 +5594,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "FAT32",
         "short_name": "FAT32",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The 32-bit File Allocation Table filesystem, used on USB sticks, SD cards, "
@@ -5375,6 +5613,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 82,
                 "value": b"FAT32   ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Filesystem type string 'FAT32   ' in the boot sector",
@@ -5384,6 +5623,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 82,
                 "value": b"TFAT32  ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Filesystem type string 'TFAT32  ' in the boot sector (Windows CE "
@@ -5414,6 +5654,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "FAT12 / FAT16",
         "short_name": "FAT12/16",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The 12- and 16-bit File Allocation Table variants, found on small volumes, old "
@@ -5429,6 +5670,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 54,
                 "value": b"FAT12   ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Filesystem type string 'FAT12   ' (informational field)",
@@ -5438,6 +5680,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 54,
                 "value": b"FAT16   ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Filesystem type string 'FAT16   ' (informational field)",
@@ -5447,6 +5690,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 54,
                 "value": b"TFAT16  ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Filesystem type string 'TFAT16  ' (informational field; Windows CE "
@@ -5477,6 +5721,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "exFAT",
         "short_name": "exFAT",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Microsoft's Extended FAT for flash media: SDXC cards, large USB drives and "
@@ -5492,6 +5737,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 3,
                 "value": b"EXFAT   ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Filesystem name 'EXFAT   ' in the boot sector",
@@ -5521,6 +5767,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ext2 / ext3 / ext4",
         "short_name": "ext",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The Linux extended filesystem family, also the data and system partitions of "
@@ -5538,6 +5785,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 1080,
                 "value": b"S\xef",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 0xEF53 (superblock at byte 1024)",
@@ -5575,6 +5823,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Flash-Friendly File System (F2FS)",
         "short_name": "F2FS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A log-structured filesystem for NAND flash, used as the userdata partition on "
@@ -5590,6 +5839,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 1024,
                 "value": b"\x10 \xf5\xf2",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 0xF2F52010 (byte 1024)",
@@ -5623,6 +5873,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "QNX6 Filesystem",
         "short_name": "QNX6",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The QNX Neutrino power-safe filesystem, used in vehicle infotainment and "
@@ -5638,6 +5889,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8192,
                 "value": b"\x22\x11\x19h",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 0x68191122 after the 8 KiB boot block (little-endian)",
@@ -5647,6 +5899,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8192,
                 "value": b"h\x19\x11\x22",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 0x68191122 after the 8 KiB boot block (big-endian)",
@@ -5656,6 +5909,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x22\x11\x19h",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 0x68191122 at byte 0, layouts without boot block, e.g. Audi MMI 3G (little-endian)",
@@ -5665,6 +5919,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"h\x19\x11\x22",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 0x68191122 at byte 0, layouts without boot block (big-endian)",
@@ -5698,6 +5953,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "QNX4 Filesystem",
         "short_name": "QNX4",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The older QNX filesystem, still found in embedded and automotive devices. It "
@@ -5732,6 +5988,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "QNX Image Filesystem (IFS)",
         "short_name": "QNX IFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A QNX boot image: a startup header and startup code followed by a read-only "
@@ -5747,6 +6004,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xeb~\xff\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Startup header signature 0x00FF7EEB (little-endian)",
@@ -5756,6 +6014,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x00\xff~\xeb",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Startup header signature 0x00FF7EEB (big-endian)",
@@ -5765,6 +6024,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xeb~\xff\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Startup header after a preboot section (x86 BIOS/UEFI images)",
@@ -5794,6 +6054,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "QNX Embedded Transaction Filesystem (ETFS)",
         "short_name": "ETFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A transaction-based QNX filesystem for NAND flash. Every write is a new "
@@ -5833,6 +6094,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "QNX Embedded Flash Filesystem (EFS / F3S)",
         "short_name": "EFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The QNX flash filesystem for NOR flash (FFS3, fs-flash3). The flash is divided "
@@ -5848,6 +6110,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"QSSL_F3S",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Boot record signature 'QSSL_F3S' (offset depends on the unit layout)",
@@ -5877,6 +6140,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SquashFS",
         "short_name": "SquashFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A compressed read-only filesystem used for firmware images of routers, IoT "
@@ -5893,6 +6157,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"hsqs",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 'hsqs' (little-endian)",
@@ -5902,6 +6167,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"sqsh",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic 'sqsh' (big-endian, versions before 4.0)",
@@ -5927,6 +6193,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "JFFS2 (Journalling Flash File System v2)",
         "short_name": "JFFS2",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A log-structured filesystem for raw NOR/NAND flash in embedded Linux devices. "
@@ -5941,6 +6208,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x85\x19\x03\x20",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x1985 + cleanmarker node 0x2003 (little-endian)",
@@ -5950,6 +6218,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x85\x19\x01\xe0",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x1985 + directory entry node 0xE001 (little-endian)",
@@ -5959,6 +6228,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x85\x19\x02\xe0",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x1985 + inode node 0xE002 (little-endian)",
@@ -5968,6 +6238,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x19\x85\x20\x03",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x1985 + cleanmarker node 0x2003 (big-endian)",
@@ -5977,6 +6248,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x19\x85\xe0\x01",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x1985 + directory entry node 0xE001 (big-endian)",
@@ -5986,6 +6258,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x19\x85\xe0\x02",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x1985 + inode node 0xE002 (big-endian)",
@@ -6019,6 +6292,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "UBI (Unsorted Block Images)",
         "short_name": "UBI",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A volume layer on raw NAND flash in embedded Linux devices. Each physical "
@@ -6034,6 +6308,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"UBI#",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Erase-counter header magic 'UBI#'",
@@ -6043,6 +6318,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"UBI!",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Volume-ID header magic 'UBI!' (at the VID header offset given in the erase-counter header)",
@@ -6072,6 +6348,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "UBIFS",
         "short_name": "UBIFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The flash filesystem that runs on a UBI volume. Nodes are written out of place "
@@ -6085,6 +6362,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"1\x18\x10\x06",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Node magic 0x06101831 (little-endian), superblock node in LEB 0",
@@ -6114,6 +6392,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "YAFFS1 / YAFFS2",
         "short_name": "YAFFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Yet Another Flash File System, used on NAND flash in older Android devices and "
@@ -6145,6 +6424,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "BitLocker Drive Encryption",
         "short_name": "BitLocker",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows full-volume encryption. The volume keeps a boot sector with the "
@@ -6164,6 +6444,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 3,
                 "value": b"-FVE-FS-",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "BitLocker signature '-FVE-FS-' in the volume boot sector",
@@ -6173,6 +6454,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"-FVE-FS-",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "FVE metadata block signature (three copies; also on BitLocker To Go volumes)",
@@ -6206,6 +6488,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AccessData AD Encryption (ADCRYPT)",
         "short_name": "ADCRYPT",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The encryption wrapper FTK Imager can put around an acquisition (raw or E01 "
@@ -6221,6 +6504,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"ADCRYPT\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AD encryption header 'ADCRYPT'",
@@ -6246,6 +6530,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Cellebrite UFDR",
         "short_name": "UFDR",
         "category": "logical_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The report/delivery container exported by Cellebrite Physical Analyzer. It is "
@@ -6262,6 +6547,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"PK\x03\x04",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ZIP container holding report.xml and DbData/database.db",
@@ -6291,6 +6577,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Cellebrite UFD",
         "short_name": "UFD",
         "category": "logical_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Plain-text INI file written beside a mobile device extraction by Cellebrite "
@@ -6312,6 +6599,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"[",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "INI text: it starts with a [section] header, whose name varies "
@@ -6334,6 +6622,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android logcat (text)",
         "short_name": "logcat",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Text output of Android's logcat: one line per log message with date and time "
@@ -6365,6 +6654,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Intrusion Log (Advanced Protection)",
         "short_name": "Intrusion Log",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Security event log of Android's Intrusion Logging, an opt-in part of Advanced "
@@ -6427,6 +6717,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Syslog (RFC 3164 / RFC 5424)",
         "short_name": "Syslog",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Text log format of Unix-like systems and network devices: one message per line "
@@ -6460,6 +6751,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "SQLCipher Encrypted Database",
         "short_name": "SQLCipher",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "An SQLite database with every page AES-256 encrypted, used by messengers and "
@@ -6499,6 +6791,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows PE Executable",
         "short_name": "PE",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The Portable Executable format of Windows programs and libraries (.exe, .dll, "
@@ -6518,6 +6811,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"MZ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MS-DOS header 'MZ' (the PE header follows at e_lfanew)",
@@ -6527,6 +6821,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"PE\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "PE signature at the file offset stored in e_lfanew (0x3C)",
@@ -6556,6 +6851,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Shortcut (LNK)",
         "short_name": "LNK",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows shell link files, created when files are opened (Recent folder, Office "
@@ -6572,6 +6868,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"L\x00\x00\x00\x01\x14\x02\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00F",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header size 0x4C and LinkCLSID {00021401-0000-0000-C000-000000000046}",
@@ -6605,6 +6902,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Jump Lists",
         "short_name": "Jump List",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Per-application lists of recently and frequently used items, keyed by an "
@@ -6623,6 +6921,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "OLE compound file signature (AutomaticDestinations-ms); "
@@ -6633,6 +6932,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xab\xfb\xbf\xba",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "CustomDestinations-ms footer signature 0xBABFFBAB at the end of the file",
@@ -6662,6 +6962,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "OLE Compound File (CFB)",
         "short_name": "CFB",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Microsoft's Compound File Binary format: a FAT-like filesystem inside one file "
@@ -6678,6 +6979,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Compound file signature D0 CF 11 E0 A1 B1 1A E1",
@@ -6687,6 +6989,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x0e\x11\xfc\x0d\xd0\xcf\x11\x0e",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature of early beta OLE2 compound files",
@@ -6712,6 +7015,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Extensible Storage Engine (ESE) Database",
         "short_name": "ESE",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Microsoft's embedded database engine (JET Blue). Used by SRUM (SRUDB.dat — "
@@ -6729,6 +7033,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\xef\xcd\xab\x89",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "File header signature 0x89ABCDEF at offset 4",
@@ -6758,6 +7063,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Event Log (EVT, legacy)",
         "short_name": "EVT",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The binary event log of Windows NT to XP/2003 (AppEvent.Evt, SecEvent.Evt, "
@@ -6774,6 +7080,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x30\x00\x00\x00LfLe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "File header: size 0x30 followed by signature 'LfLe' at offset 4",
@@ -6783,6 +7090,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"LfLe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Event record signature 'LfLe' at offset 4 of every record",
@@ -6812,6 +7120,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Thumbnail Cache",
         "short_name": "Thumbcache",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Explorer's thumbnail databases (thumbcache_*.db with an index file "
@@ -6829,6 +7138,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"CMMM",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Cache file signature 'CMMM'",
@@ -6838,6 +7148,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"IMMM",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Index file signature 'IMMM'",
@@ -6867,6 +7178,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "NTFS Master File Table ($MFT)",
         "short_name": "$MFT",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The NTFS metadata file holding one 1 KiB (sometimes 4 KiB) record per file and "
@@ -6883,6 +7195,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"FILE0\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MFT entry signature 'FILE' with fixup offset 0x30 (NTFS 3.1, Windows XP and later)",
@@ -6892,6 +7205,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"FILE*\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "MFT entry signature 'FILE' with fixup offset 0x2A (NTFS 3.0 and earlier)",
@@ -6917,6 +7231,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "NTFS Transaction Log ($LogFile)",
         "short_name": "$LogFile",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The NTFS metadata journal: restart pages ('RSTR') followed by log record "
@@ -6931,6 +7246,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"RSTR",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Restart page signature 'RSTR'",
@@ -6940,6 +7256,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"RCRD",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Log record page signature 'RCRD' (pages after the restart area)",
@@ -6965,6 +7282,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "NTFS Change Journal ($UsnJrnl:$J)",
         "short_name": "$UsnJrnl",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The update sequence number journal in the $J stream of $Extend\\$UsnJrnl: one "
@@ -7005,6 +7323,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Recycle Bin ($I files)",
         "short_name": "$I",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "For each file moved to the Recycle Bin (Windows Vista and later), "
@@ -7039,6 +7358,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Volume Shadow Copy (VSS)",
         "short_name": "VSS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Copy-on-write snapshots of an NTFS volume (System Restore, backups, previous "
@@ -7055,6 +7375,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 7680,
                 "value": b"k\x87\x088v\xc1HN\xb7\xae\x04\x04nl\xc7R",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "VSS identifier {3808876B-C176-4E48-B7AE-04046E6CC752} at volume offset 0x1E00",
@@ -7084,6 +7405,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Outlook Personal Folders (PST / OST)",
         "short_name": "PST",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Outlook's mailbox file: e-mails, attachments, calendar, contacts and tasks in "
@@ -7100,6 +7422,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"!BDN",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature '!BDN'",
@@ -7109,6 +7432,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"SM",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Content type 'SM' — Personal Storage Table (.pst)",
@@ -7118,6 +7442,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"SO",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Content type 'SO' — Offline Storage Table (.ost)",
@@ -7147,6 +7472,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Minidump",
         "short_name": "MDMP",
         "category": "memory",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A partial user-mode process memory dump written on application crashes "
@@ -7164,6 +7490,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"MDMP\x93\xa7",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'MDMP' followed by format version 0xA793",
@@ -7189,6 +7516,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Hibernation File (hiberfil.sys)",
         "short_name": "hiberfil",
         "category": "memory",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The compressed copy of physical memory Windows writes on hibernation and, with "
@@ -7206,6 +7534,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"hibr",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header signature 'hibr' (Windows XP and earlier)",
@@ -7215,6 +7544,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"HIBR",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header signature 'HIBR' (Windows Vista and later)",
@@ -7224,6 +7554,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"wake",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header signature 'wake' after resume (Windows XP and earlier)",
@@ -7233,6 +7564,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"WAKE",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header signature 'WAKE' after resume (Windows Vista and later)",
@@ -7242,6 +7574,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"RSTR",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header signature 'RSTR' at offset 0 during restore; the same bytes "
@@ -7276,6 +7609,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Resilient File System (ReFS)",
         "short_name": "ReFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Microsoft's copy-on-write filesystem for Windows Server and Dev Drives on "
@@ -7291,6 +7625,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 3,
                 "value": b"ReFS\x00\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "File system signature 'ReFS' in the volume boot record",
@@ -7300,6 +7635,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 16,
                 "value": b"FSRS",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "File system recognition structure signature 'FSRS'",
@@ -7325,6 +7661,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "macOS Keychain (file-based)",
         "short_name": "kych",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The legacy file-based macOS Keychain format used by files such as login.keychain-db and System.keychain. "
@@ -7346,6 +7683,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"kych",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'kych'",
@@ -7371,6 +7709,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple File System Events (FSEvents)",
         "short_name": "FSEvents",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Persistent file system event logs stored in /.fseventsd on macOS volumes and also "
@@ -7396,6 +7735,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"1SLD",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Page signature '1SLD' at offset 0 of the decompressed (gzip) stream",
@@ -7405,6 +7745,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"2SLD",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Page signature '2SLD' at offset 0 of the decompressed (gzip) stream",
@@ -7414,6 +7755,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"3SLD",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Page signature '3SLD' at offset 0 of the decompressed (gzip) stream",
@@ -7447,6 +7789,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Spotlight Store",
         "short_name": "Spotlight",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple Spotlight metadata indexes used by macOS and iOS. On macOS, stores are typically "
@@ -7472,6 +7815,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"8tsd",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature '8tsd' at the beginning of a Spotlight store database",
@@ -7501,6 +7845,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple System Log (ASL)",
         "short_name": "ASL",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The binary Apple System Log database format used by Mac OS X/macOS up to 10.11 and by "
@@ -7523,6 +7868,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"ASL DB\x00\x00\x00\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ASL database signature",
@@ -7544,6 +7890,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "macOS Finder .DS_Store",
         "short_name": ".DS_Store",
         "category": "configuration",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Hidden Finder files storing per-directory metadata and view settings in a B-tree "
@@ -7563,6 +7910,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x00\x00\x00\x01Bud1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Initial alignment value 1 followed by buddy-allocator magic 'Bud1'",
@@ -7584,6 +7932,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "AppleDouble / AppleSingle",
         "short_name": "AppleDouble",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Containers for Macintosh file metadata and resource forks when the underlying "
@@ -7607,6 +7956,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x00\x05\x16\x07",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AppleDouble magic 0x00051607",
@@ -7616,6 +7966,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x00\x05\x16\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AppleSingle magic 0x00051600",
@@ -7641,6 +7992,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Bill of Materials (BOM)",
         "short_name": "BOM",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's BOMStore container format used for installer Bill of Materials files and "
@@ -7662,6 +8014,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"BOMStore",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "BOMStore signature 'BOMStore'",
@@ -7683,6 +8036,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "XAR Archive",
         "short_name": "XAR",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The eXtensible ARchive format used by macOS flat installer packages (.pkg), XIP archives "
@@ -7703,6 +8057,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"xar!",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "XAR signature 'xar!'",
@@ -7728,6 +8083,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Encrypted Archive (AEA)",
         "short_name": "AEA",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's archive container providing signing and/or encryption, selected by a profile ID in "
@@ -7747,6 +8103,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"AEA1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AEA format signature 'AEA1'",
@@ -7772,6 +8129,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Partition Map (APM)",
         "short_name": "APM",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The Apple Partition Map partitioning scheme used by classic Macintosh systems and "
@@ -7793,6 +8151,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"ER",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Driver descriptor signature 'ER' in block 0 (too short to identify on its own)",
@@ -7802,6 +8161,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 512,
                 "value": b"PM",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Partition map entry signature 'PM' in block 1",
@@ -7811,6 +8171,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 2048,
                 "value": b"PM",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Partition map entry signature 'PM' in block 1 on 2048-byte block media (e.g. CD-ROM)",
@@ -7820,6 +8181,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 560,
                 "value": b"Apple_partition_map",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Partition type 'Apple_partition_map' of the first map entry, which describes the map itself",
@@ -7829,6 +8191,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 2096,
                 "value": b"Apple_partition_map",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Partition type 'Apple_partition_map' of the first map entry on 2048-byte block media",
@@ -7850,6 +8213,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Boot Image",
         "short_name": "Boot image",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Android boot partition images (boot, recovery, init_boot, vendor_boot) consisting of a "
@@ -7869,6 +8233,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"ANDROID!",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Boot image magic 'ANDROID!'",
@@ -7878,6 +8243,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"VNDRBOOT",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Vendor boot image magic 'VNDRBOOT'",
@@ -7903,6 +8269,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "systemd Journal",
         "short_name": "journal",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The binary log of systemd-journald, stored persistently below "
@@ -7922,6 +8289,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"LPKSHHRH",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'LPKSHHRH'",
@@ -7951,6 +8319,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LUKS Encrypted Volume",
         "short_name": "LUKS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Linux Unified Key Setup, the standard Linux disk encryption format. A header "
@@ -7969,6 +8338,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"LUKS\xba\xbe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Primary header magic 'LUKS' 0xBA 0xBE",
@@ -7978,6 +8348,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 16384,
                 "value": b"SKUL\xba\xbe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "LUKS2 secondary header magic 'SKUL' 0xBA 0xBE at default offset 0x4000 "
@@ -8016,6 +8387,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Linux Logical Volume Manager (LVM2)",
         "short_name": "LVM2",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Linux volume management: a physical volume label in one of the first four "
@@ -8033,6 +8405,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 512,
                 "value": b"LABELONE",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Physical volume label 'LABELONE' (normally sector 1)",
@@ -8042,6 +8415,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 536,
                 "value": b"LVM2 001",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Label type indicator 'LVM2 001' (offset 24 within the label)",
@@ -8067,6 +8441,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "utmp / wtmp / btmp Login Records",
         "short_name": "utmp",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Binary login records on Linux and other Unix systems: utmp (current sessions, "
@@ -8101,6 +8476,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LiME Memory Image",
         "short_name": "LiME",
         "category": "memory",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Physical memory captured from Linux and Android devices with the LiME kernel "
@@ -8118,6 +8494,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"EMiL",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Range header magic 0x4C694D45 (little-endian 'EMiL')",
@@ -8127,6 +8504,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"AVML",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "AVML compressed range header magic 0x4C4D5641 (little-endian 'AVML', version 2)",
@@ -8152,6 +8530,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "XFS",
         "short_name": "XFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A journaling filesystem used as the default on Red Hat Enterprise Linux and "
@@ -8168,6 +8547,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"XFSB",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock signature 'XFSB'",
@@ -8193,6 +8573,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Btrfs",
         "short_name": "Btrfs",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A copy-on-write Linux filesystem with subvolumes and snapshots (default on "
@@ -8209,6 +8590,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 65600,
                 "value": b"_BHRfS_M",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock magic '_BHRfS_M' (superblock at 64 KiB)",
@@ -8218,6 +8600,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"_BHRfS_M",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Superblock mirror magic at 64 MiB + 0x40 and 256 GiB + 0x40 (if present)",
@@ -8239,6 +8622,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "PCAP Packet Capture",
         "short_name": "PCAP",
         "category": "network",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The classic libpcap capture format written by tcpdump, Wireshark and many "
@@ -8255,6 +8639,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xd4\xc3\xb2\xa1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Magic 0xA1B2C3D4 little-endian (microseconds)",
@@ -8264,6 +8649,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xa1\xb2\xc3\xd4",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Magic 0xA1B2C3D4 big-endian (microseconds)",
@@ -8273,6 +8659,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"M<\xb2\xa1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Magic 0xA1B23C4D little-endian (nanoseconds)",
@@ -8282,6 +8669,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xa1\xb2<M",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Magic 0xA1B23C4D big-endian (nanoseconds)",
@@ -8311,6 +8699,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "PCAPNG Packet Capture",
         "short_name": "PCAPNG",
         "category": "network",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The block-based successor of PCAP and Wireshark's default: section header, "
@@ -8327,6 +8716,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x0a\x0d\x0d\x0a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Section header block type 0x0A0D0D0A",
@@ -8336,6 +8726,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"M<+\x1a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Byte-order magic 0x1A2B3C4D (little-endian)",
@@ -8345,6 +8736,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 8,
                 "value": b"\x1a\x2b\x3c\x4d",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Byte-order magic 0x1A2B3C4D (big-endian)",
@@ -8370,6 +8762,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "RAR Archive",
         "short_name": "RAR",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The RAR archive format (versions 1.5–4.x and 5.0): headers with file names, "
@@ -8389,6 +8782,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"Rar!\x1a\x07\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "RAR 1.5–4.x signature",
@@ -8398,6 +8792,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"Rar!\x1a\x07\x01\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "RAR 5.0 signature",
@@ -8407,6 +8802,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"RE~^",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature of RAR versions before 1.5 (sparsely documented)",
@@ -8432,6 +8828,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "bzip2 Compressed Data",
         "short_name": "bzip2",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Block-sorting compressed stream holding a single file, often a TAR archive "
@@ -8448,6 +8845,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"BZh",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'BZh' followed by the block size digit",
@@ -8457,6 +8855,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"1AY&SY",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "First block magic 0x314159265359 (BCD pi)",
@@ -8466,6 +8865,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"\x17rE8P\x90",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Stream footer magic 0x177245385090 (BCD sqrt(pi)) of an empty stream",
@@ -8491,6 +8891,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "XZ Compressed Data",
         "short_name": "XZ",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "LZMA2-based compressed stream holding a single file, often a TAR archive "
@@ -8506,6 +8907,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xfd7zXZ\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Stream header magic FD 37 7A 58 5A 00",
@@ -8527,6 +8929,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Zstandard Compressed Data",
         "short_name": "zstd",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Zstandard frames as used for .zst files, Linux packages (e.g. Arch Linux "
@@ -8543,6 +8946,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"(\xb5/\xfd",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Frame magic 0xFD2FB528",
@@ -8552,6 +8956,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x50\x2a\x4d\x18",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Skippable frame magic 0x184D2A50–0x184D2A5F (low nibble of first byte varies)",
@@ -8573,6 +8978,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LZ4 Frame",
         "short_name": "LZ4",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The LZ4 frame format for .lz4 files and LZ4-compressed data in apps, kernels "
@@ -8588,6 +8994,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x04\x22M\x18",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Frame magic 0x184D2204",
@@ -8597,6 +9004,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x02\x21\x4c\x18",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Legacy frame magic 0x184C2102",
@@ -8618,6 +9026,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Mozilla LZ4 (jsonlz4)",
         "short_name": "jsonlz4",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Firefox's LZ4-compressed JSON files: session store (sessionstore.jsonlz4, "
@@ -8633,6 +9042,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"mozLz40\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header magic 'mozLz40'",
@@ -8654,6 +9064,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Microsoft Cabinet (CAB)",
         "short_name": "CAB",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Microsoft's compressed archive format for installers, Windows updates and "
@@ -8671,6 +9082,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"MSCF\x00\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'MSCF' followed by the zeroed reserved1 field",
@@ -8692,6 +9104,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ISO 9660 Optical Disc Image",
         "short_name": "ISO",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The CD/DVD filesystem image format, also used to deliver software and malware "
@@ -8710,6 +9123,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 32769,
                 "value": b"CD001",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Volume descriptor identifier 'CD001' (sector 16)",
@@ -8731,6 +9145,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "KeePass Database (KDBX)",
         "short_name": "KDBX",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The password database of KeePass, KeePassXC and compatible apps. Outside the "
@@ -8749,6 +9164,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x03\xd9\xa2\x9a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 1 0x9AA2D903 (shared with KeePass 1.x)",
@@ -8758,6 +9174,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"g\xfbK\xb5",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 2 0xB54BFB67 (KeePass 2.x / KDBX)",
@@ -8783,6 +9200,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "VeraCrypt / TrueCrypt Volume",
         "short_name": "VeraCrypt",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Encrypted containers and partitions of VeraCrypt and its predecessor "
@@ -8820,6 +9238,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Mbox Mailbox",
         "short_name": "mbox",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A mailbox stored as one text file of concatenated e-mail messages, each "
@@ -8838,6 +9257,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"From ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Separator line 'From '",
@@ -8863,6 +9283,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "E-mail Message (EML / RFC 5322)",
         "short_name": "EML",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A single e-mail message as text: header fields (From, To, Date, Subject, "
@@ -8890,6 +9311,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Chromium Disk Cache",
         "short_name": "Chrome cache",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The HTTP cache of Chrome, Edge and other Chromium browsers and Electron apps. "
@@ -8908,6 +9330,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xc3\xca\x03\xc1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Blockfile index magic 0xC103CAC3",
@@ -8917,6 +9340,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xc3\xca\x04\xc1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Blockfile data file magic 0xC104CAC3",
@@ -8926,6 +9350,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"0\x5cr\xa7\x1bm\xfb\xfc",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Simple cache entry magic 0xFCFB6D1BA7725C30",
@@ -8935,6 +9360,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xd8\x41\x0d\x97\x45\x6f\xfa\xf4",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Simple cache end-of-stream magic 0xF4FA6F45970D41D8 (EOF records within entry files)",
@@ -8964,6 +9390,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Microsoft Access Database (MDB / ACCDB)",
         "short_name": "MDB",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The Jet / ACE database format of Microsoft Access: .mdb (Jet 3 for Access 97, Jet 4 "
@@ -8984,6 +9411,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"Standard Jet DB",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Engine name 'Standard Jet DB' (Jet 3 / Jet 4, .mdb)",
@@ -8993,6 +9421,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"Standard ACE DB",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Engine name 'Standard ACE DB' (Access 2007 and later, .accdb)",
@@ -9002,6 +9431,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"MSISAM Database",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Engine name 'MSISAM Database' (Microsoft Money variant)",
@@ -9023,6 +9453,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Kernel Crash Dump",
         "short_name": "Kernel dump",
         "category": "memory",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Kernel-mode crash dumps written by Windows after a bug check, by default as "
@@ -9041,6 +9472,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"PAGEDUMP",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'PAGE' + valid dump marker 'DUMP' (32-bit)",
@@ -9050,6 +9482,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"PAGEDU64",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'PAGE' + valid dump marker 'DU64' (64-bit)",
@@ -9075,6 +9508,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "KeePass 1.x Database (KDB)",
         "short_name": "KDB",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The password database format of KeePass 1.x and KeePassX. The fixed-size header is "
@@ -9092,6 +9526,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x03\xd9\xa2\x9a",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 1 0x9AA2D903 (shared with KDBX)",
@@ -9101,6 +9536,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4,
                 "value": b"e\xfbK\xb5",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 2 0xB54BFB65 (KeePass 1.x)",
@@ -9126,6 +9562,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Outlook Item (MSG)",
         "short_name": "MSG",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "A single Outlook item (e-mail, appointment, contact, task) stored in a Compound File "
@@ -9144,6 +9581,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "CFB signature at offset 0 (shared with all CFB files); identified by "
@@ -9166,6 +9604,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Mail Message (EMLX)",
         "short_name": "EMLX",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple Mail's per-message storage on macOS, typically below ~/Library/Mail/V<n>/ in "
@@ -9194,6 +9633,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Binary Cookies",
         "short_name": "binarycookies",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Cookie store of Safari and WebKit-based apps (Cookies.binarycookies) on macOS and "
@@ -9211,6 +9651,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"cook",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'cook'",
@@ -9232,6 +9673,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Chromium Session File (SNSS)",
         "short_name": "SNSS",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Session restore files of Chrome, Edge and other Chromium browsers in the profile's "
@@ -9251,6 +9693,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"SNSS",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Signature 'SNSS' (0x53534E53)",
@@ -9276,6 +9719,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Super Partition (Dynamic Partitions)",
         "short_name": "super",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The 'super' partition of Android devices with dynamic partitions, holding logical "
@@ -9293,6 +9737,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 4096,
                 "value": b"gDla",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Geometry magic 0x616C4467 (after 4096 reserved bytes)",
@@ -9302,6 +9747,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 12288,
                 "value": b"0PLA",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Primary metadata header magic 0x414C5030 (after geometry and its backup)",
@@ -9327,6 +9773,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android OTA Update Payload (payload.bin)",
         "short_name": "payload.bin",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The update payload of Android A/B (seamless) updates, usually named payload.bin "
@@ -9344,6 +9791,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"CrAU",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Payload magic 'CrAU'",
@@ -9365,6 +9813,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "VirtualBox Disk Image (VDI)",
         "short_name": "VDI",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Virtual disk format of Oracle VirtualBox. A 64-byte text header (e.g. '<<< Oracle VM "
@@ -9381,6 +9830,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"<<< ",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Start of the text header '<<< … VirtualBox Disk Image >>>'",
@@ -9390,6 +9840,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 64,
                 "value": b"\x7f\x10\xda\xbe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Image signature 0xBEDA107F (little-endian)",
@@ -9411,6 +9862,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Berkeley DB Database",
         "short_name": "BDB",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Embedded key-value database library format with Btree, Hash and Queue access "
@@ -9428,6 +9880,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 12,
                 "value": b"\x62\x31\x05\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Btree metadata magic 0x00053162 (little-endian)",
@@ -9437,6 +9890,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 12,
                 "value": b"\x00\x05\x31\x62",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Btree metadata magic 0x00053162 (big-endian)",
@@ -9446,6 +9900,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 12,
                 "value": b"\x61\x15\x06\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Hash metadata magic 0x00061561 (little-endian)",
@@ -9455,6 +9910,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 12,
                 "value": b"\x00\x06\x15\x61",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Hash metadata magic 0x00061561 (big-endian)",
@@ -9480,6 +9936,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WMV Video (ASF)",
         "short_name": "WMV",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Windows Media Video in the Advanced Systems Format (ASF) container, which is also "
@@ -9497,6 +9954,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "ASF header object GUID 75B22630-668E-11CF-A6D9-00AA0062CE6C at offset 0 "
@@ -9523,6 +9981,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "MPEG Transport Stream (TS / M2TS)",
         "short_name": "MPEG-TS",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Packet-based MPEG-2 systems container of fixed 188-byte packets, each starting with "
@@ -9540,6 +9999,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x47",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "TS: sync byte 0x47 at offsets 0, 188, 376, … (188-byte packets); "
@@ -9550,6 +10010,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x47",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "M2TS: sync byte 0x47 at offsets 4, 196, 388, … (192-byte packets); "
@@ -9576,6 +10037,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Dahua Video (DAV / DHAV)",
         "short_name": "DAV",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Proprietary recording and export format of Dahua video surveillance recorders and "
@@ -9593,6 +10055,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"DHAV",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Frame header 'DHAV'",
@@ -9602,6 +10065,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"DAHUA",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "File header 'DAHUA'",
@@ -9623,6 +10087,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "vCard Contact",
         "short_name": "vCard",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Text format for contact data (versions 2.1, 3.0 and 4.0), used for contact exports "
@@ -9639,6 +10104,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"BEGIN:VCARD",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Start line 'BEGIN:VCARD' (may be preceded by a byte order mark)",
@@ -9660,6 +10126,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "iCalendar",
         "short_name": "iCal",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Text format for calendar data used for calendar exports, invitations sent as e-mail "
@@ -9676,6 +10143,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"BEGIN:VCALENDAR",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Start line 'BEGIN:VCALENDAR' (may be preceded by a byte order mark)",
@@ -9697,6 +10165,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Apple Core Audio Format (CAF)",
         "short_name": "CAF",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Apple's chunk-based audio container on macOS and iOS. A big-endian file header "
@@ -9713,6 +10182,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"caff\x00\x01\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "File type 'caff', version 1, flags 0",
@@ -9734,6 +10204,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Event Trace Log (ETL)",
         "short_name": "ETL",
         "category": "log",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The file format of Event Tracing for Windows (ETW) sessions, including the kernel "
@@ -9768,6 +10239,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "RDP Bitmap Cache",
         "short_name": "RDP cache",
         "category": "media",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Persistent bitmap cache of the Windows Remote Desktop client, stored in the user "
@@ -9784,6 +10256,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"RDP8bmp\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header 'RDP8bmp' of Cache????.bin files (bcache*.bmc files have no signature)",
@@ -9805,6 +10278,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "OneNote Revision Store (ONE)",
         "short_name": "OneNote",
         "category": "document",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The OneNote revision store format of section files (.one) and table-of-contents "
@@ -9820,6 +10294,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xe4\x52\x5c\x7b\x8c\xd8\xa7\x4d\xae\xb1\x53\x78\xd0\x29\x96\xd3",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "guidFileType {7B5C52E4-D88C-4DA7-AEB1-5378D02996D3} (.one section)",
@@ -9829,6 +10304,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xa1\x2f\xff\x43\xd9\xef\x76\x4c\x9e\xe2\x10\xea\x57\x22\x76\x5f",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "guidFileType {43FF2FA1-EFD9-4C76-9EE2-10EA5722765F} (.onetoc2)",
@@ -9838,6 +10314,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 48,
                 "value": b"\x3f\xdd\x9a\x10\x1b\x91\xf5\x49\xa5\xd0\x17\x91\xed\xc8\xae\xd8",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "guidFileFormat {109ADD3F-911B-49F5-A5D0-1791EDC8AED8}",
@@ -9863,6 +10340,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Windows Imaging Format (WIM / ESD)",
         "short_name": "WIM",
         "category": "archive",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "File-based image format for Windows installation media, deployment and backup "
@@ -9879,6 +10357,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"MSWIM\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Header magic 'MSWIM'",
@@ -9904,6 +10383,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Firefox Cache (cache2)",
         "short_name": "cache2",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The HTTP cache of Firefox and other Gecko-based browsers in the profile's cache2 "
@@ -9937,6 +10417,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Java KeyStore (JKS / JCEKS)",
         "short_name": "JKS",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Key and certificate containers of the Java platform. Entries carry an alias and "
@@ -9953,6 +10434,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xfe\xed\xfe\xed",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "JKS magic 0xFEEDFEED",
@@ -9962,6 +10444,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xce\xce\xce\xce",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "JCEKS magic 0xCECECECE",
@@ -9987,6 +10470,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Java Class File",
         "short_name": "class",
         "category": "execution",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Compiled Java bytecode, usually packaged in JAR, WAR or similar ZIP-based archives. "
@@ -10004,6 +10488,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\xca\xfe\xba\xbe",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Magic 0xCAFEBABE at offset 0 (shared with Mach-O universal binaries; "
@@ -10030,6 +10515,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Android Verified Boot Metadata (vbmeta)",
         "short_name": "vbmeta",
         "category": "disk_image",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Signed metadata of Android Verified Boot 2.0, stored in the vbmeta partition or "
@@ -10047,6 +10533,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"AVB0",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "vbmeta image magic 'AVB0'",
@@ -10056,6 +10543,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"AVBf",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Footer magic 'AVBf' in the last 64 bytes of a partition with embedded vbmeta",
@@ -10077,6 +10565,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "ZFS",
         "short_name": "ZFS",
         "category": "filesystem",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Copy-on-write filesystem and volume manager (OpenZFS), common on NAS and server "
@@ -10094,6 +10583,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x0c\xb1\xba\x00\x00\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Uberblock magic 0x00BAB10C (little-endian) in the uberblock ring at "
@@ -10104,6 +10594,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x00\x00\x00\x00\x00\xba\xb1\x0c",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Uberblock magic 0x00BAB10C (big-endian)",
@@ -10129,6 +10620,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "WMI Repository (CIM)",
         "short_name": "WMI repository",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "The Common Information Model repository of Windows Management Instrumentation in "
@@ -10146,6 +10638,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 0,
                 "value": b"\xcd\xab\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "Mapping file header signature 0x0000ABCD (MAPPING*.MAP)",
@@ -10167,6 +10660,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Hive Database (Dart / Flutter)",
         "short_name": "Hive",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Append-only key-value store of the Dart/Flutter Hive library (Hive 2.x and its "
@@ -10217,6 +10711,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "Isar Database (Dart / Flutter)",
         "short_name": "Isar",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Embedded object database of the Dart/Flutter Isar library. Isar 3.x and its "
@@ -10246,6 +10741,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": None,
                 "value": b"\x03\x11\x4c\xef\xbd\x9d\x65\x59",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "libmdbx meta page signature at offset 20, shared with every libmdbx file "
@@ -10280,6 +10776,7 @@ FORMATS: list[dict[str, Any]] = [
         "name": "LMDB / libmdbx Database",
         "short_name": "LMDB",
         "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
             "Memory-mapped key-value store built as a copy-on-write B+tree. LMDB and its "
@@ -10309,6 +10806,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 16,
                 "value": b"\xde\xc0\xef\xbe\x01\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "LMDB 0.9 meta page: magic 0xBEEFC0DE and data version 1 (little-endian, "
@@ -10319,6 +10817,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 12,
                 "value": b"\xde\xc0\xef\xbe\x01\x00\x00\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "LMDB 0.9 meta page: magic 0xBEEFC0DE and data version 1 (little-endian, "
@@ -10329,6 +10828,7 @@ FORMATS: list[dict[str, Any]] = [
             {
                 "offset": 20,
                 "value": b"\x03\x11\x4c\xef\xbd\x9d\x65\x59",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
                 "description": QT_TRANSLATE_NOOP(
                     "FormatKnowledge",
                     "libmdbx meta page: 56-bit magic 0x59659DBDEF4C11 with data version 3 "

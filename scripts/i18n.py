@@ -17,8 +17,10 @@ update   extracts every translatable string from crush/ (tests and
          glossary.csv.
 release  compiles every catalog and records per-language completeness in
          languages.json (View → Language offers a language from 90 %).
-         Website texts (contexts starting with "Website") are compiled
-         but not counted: they aren't in the app.
+         Only app texts count towards it: format knowledge texts (context
+         "FormatKnowledge") and website texts (contexts starting with
+         "Website") are compiled but not counted. Prints, per language,
+         how much of each of the three is translated.
          Compiles a copy merged with the current code, in which every text
          without a finished translation carries its English source -- so
          an untranslated text shows English, never the translation of
@@ -35,6 +37,8 @@ check    every finished translation keeps the English text's {placeholders}
          (same names and format specs), %1/%n arguments and HTML tags, and
          has balanced braces. The UI fills values in after translating, so
          a translation that doesn't would crash or lose a value. Runs in CI.
+         Also prints, per catalog as it is, how much of its app, format
+         knowledge and website texts is translated.
 
 lupdate/lrelease come with PySide6 (pyside6-lupdate / pyside6-lrelease).
 """
@@ -64,6 +68,14 @@ MANIFEST_NAME = "languages.json"
 # WEBSITE_CONTEXT_PREFIX; test_format_pages checks both agree): in the
 # catalogs, not counted towards a language's completeness in the app.
 WEBSITE_CONTEXT_PREFIX = "Website"
+# Context of the format knowledge texts (crush/core/format_db.py
+# KNOWLEDGE_CONTEXT; test_i18n checks both agree): shown in the app, but
+# optional for a translation -- not counted towards its completeness either.
+KNOWLEDGE_CONTEXT = "FormatKnowledge"
+# The groups count_messages() counts, in the order they are printed. Only
+# APP_TEXTS decides whether a language is offered (languages.json).
+APP_TEXTS, KNOWLEDGE_TEXTS, WEBSITE_TEXTS = "app", "format knowledge", "website"
+TEXT_GROUPS = (APP_TEXTS, KNOWLEDGE_TEXTS, WEBSITE_TEXTS)
 GLOSSARY_CSV = I18N_DIR / "glossary.csv"
 GLOSSARY_QPH = I18N_DIR / "glossary.qph"
 _CODE_RE = re.compile(r"^[a-z]{2,3}(?:_[A-Za-z0-9]{2,4})?$")
@@ -266,25 +278,54 @@ def _drop_broken(ts: Path) -> int:
 def cmd_check() -> int:
     problems = [p for ts in _catalogs() for p in catalog_problems(ts)]
     print("\n".join(problems) or f"{len(_catalogs())} catalog(s), no problems")
+    for ts in _catalogs():
+        print(f"{_code(ts)}: {counts_line(count_messages(ts))}")
     return 1 if problems else 0
 
 
-def count_messages(ts: Path) -> tuple[int, int]:
-    """(translated, total) for the current (non-obsolete) messages of *ts*
-    that the app shows. Website texts (contexts starting with
-    WEBSITE_CONTEXT_PREFIX, crush/data/format_pages_text.py) are in the
-    catalog but not in the app, so they don't count towards the 90 %."""
-    translated = total = 0
+def text_group(context: str) -> str:
+    """Which of TEXT_GROUPS the texts of *context* belong to."""
+    if context == KNOWLEDGE_CONTEXT:
+        return KNOWLEDGE_TEXTS
+    if context.startswith(WEBSITE_CONTEXT_PREFIX):
+        return WEBSITE_TEXTS
+    return APP_TEXTS
+
+
+def count_messages(ts: Path) -> dict[str, tuple[int, int]]:
+    """(translated, total) of the current (non-obsolete) messages of *ts*,
+    per text group (TEXT_GROUPS, each present). Only APP_TEXTS count
+    towards the 90 %: format knowledge texts (KNOWLEDGE_CONTEXT) are
+    optional, website texts (contexts starting with WEBSITE_CONTEXT_PREFIX,
+    crush/data/format_pages_text.py) are in the catalog but not in the app."""
+    counts = {group: [0, 0] for group in TEXT_GROUPS}
     for context in ET.parse(ts).getroot().iter("context"):
-        if (context.findtext("name") or "").startswith(WEBSITE_CONTEXT_PREFIX):
-            continue
+        group = counts[text_group(context.findtext("name") or "")]
         for message in context.iter("message"):
             translation = message.find("translation")
             if translation is not None and translation.get("type") in ("obsolete", "vanished"):
                 continue
-            total += 1
-            translated += _is_translated(message)
-    return translated, total
+            group[1] += 1
+            group[0] += _is_translated(message)
+    return {group: (translated, total) for group, (translated, total) in counts.items()}
+
+
+def _share(translated: int, total: int) -> str:
+    """translated/total as a percentage, rounded *down* to 0.1 %: 89.96 %
+    reads 89.9 %, never the 90 % it doesn't reach."""
+    if not total:
+        return "n/a"
+    return f"{translated * 1000 // total / 10:.1f}%"
+
+
+def counts_line(counts: dict[str, tuple[int, int]]) -> str:
+    """One line with every group's count, e.g. 'app texts 2080/2080
+    (100.0%) | format knowledge texts 489/489 (100.0%) | website texts
+    42/42 (100.0%)'."""
+    return " | ".join(
+        f"{group} texts {translated}/{total} ({_share(translated, total)})"
+        for group, (translated, total) in counts.items()
+    )
 
 
 def _fill_untranslated(ts: Path) -> None:
@@ -316,8 +357,9 @@ def _fill_untranslated(ts: Path) -> None:
     tree.write(ts, encoding="utf-8", xml_declaration=True)
 
 
-def compile_catalog(ts: Path, qm: Path) -> tuple[int, int]:
-    """Compile *ts* to *qm*; return (translated, total).
+def compile_catalog(ts: Path, qm: Path) -> dict[str, tuple[int, int]]:
+    """Compile *ts* to *qm*; return (translated, total) per text group
+    (see count_messages).
 
     Works on a temporary copy, the catalog itself is left as it is:
     1. the copy is merged with the strings in the code now, so a text added
@@ -349,10 +391,11 @@ def compile_catalog(ts: Path, qm: Path) -> tuple[int, int]:
 def cmd_release() -> None:
     manifest: dict[str, dict[str, int]] = {}
     for ts in _catalogs(include_pseudo=True):
-        translated, total = compile_catalog(ts, ts.with_suffix(".qm"))
+        counts = compile_catalog(ts, ts.with_suffix(".qm"))
+        translated, total = counts[APP_TEXTS]
         manifest[_code(ts)] = {"translated": translated, "total": total}
-        share = f"{translated / total:.0%}" if total else "n/a"
-        print(f"{_code(ts)}: {translated}/{total} translated ({share})")
+        print(f"{_code(ts)}: {counts_line(counts)}")
+    print("View > Language offers a language from 90 % of its app texts.")
     I18N_DIR.mkdir(exist_ok=True)
     (I18N_DIR / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"

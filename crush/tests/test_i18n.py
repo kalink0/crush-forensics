@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -207,11 +208,11 @@ def test_untranslated_code_never_borrows_another_codes_translation(
 def test_release_counts_against_current_code(tmp_path: Path) -> None:
     _compile(tmp_path, "de", {("exif.present", "Present"): ("Vorhanden", True)})
     ts = tmp_path / "crush_de.ts"
-    translated, total = script.compile_catalog(ts, tmp_path / "again.qm")
+    translated, total = script.compile_catalog(ts, tmp_path / "again.qm")[script.APP_TEXTS]
     assert translated == 1
     assert total >= len(MESSAGES)   # every code in the source tree, not just the 1 listed
     # The catalog itself is left as it was.
-    assert script.count_messages(ts) == (1, 1)
+    assert script.count_messages(ts)[script.APP_TEXTS] == (1, 1)
 
 
 # -- Menu offer -------------------------------------------------------------------
@@ -298,24 +299,100 @@ def test_count_messages(tmp_path: Path) -> None:
         "</context></TS>",
         encoding="utf-8",
     )
-    assert script.count_messages(ts) == (1, 4)
+    assert script.count_messages(ts)[script.APP_TEXTS] == (1, 4)
 
 
-def test_count_messages_leaves_out_website_texts(tmp_path: Path) -> None:
-    """Website texts are in the catalog but not in the app: not counted."""
-    ts = tmp_path / "x.ts"
+def _three_groups_catalog(tmp_path: Path) -> Path:
+    ts = tmp_path / "crush_de.ts"
     ts.write_text(
         '<?xml version="1.0" encoding="utf-8"?><TS version="2.1" language="de">'
         "<context><name>C</name>"
         "<message><source>a</source><translation>A</translation></message>"
         '<message><source>b</source><translation type="unfinished"></translation></message>'
+        "</context><context><name>FormatKnowledge</name>"
+        '<message><source>k</source><comment>F</comment><translation type="unfinished">'
+        "</translation></message>"
+        '<message><source>l</source><comment>F</comment><translation type="unfinished">'
+        "</translation></message>"
+        "<message><source>m</source><comment>F</comment><translation>M</translation></message>"
         "</context><context><name>WebsiteFormatReference</name>"
         '<message><source>w</source><translation type="unfinished"></translation></message>'
         "<message><source>v</source><translation>V</translation></message>"
+        "<message><source>u</source><translation>U</translation></message>"
+        "<message><source>t</source><translation>T</translation></message>"
         "</context></TS>",
         encoding="utf-8",
     )
-    assert script.count_messages(ts) == (1, 2)
+    return ts
+
+
+def test_count_messages_per_group(tmp_path: Path) -> None:
+    """Format knowledge and website texts are counted apart from the app
+    texts, which alone decide whether a language is offered."""
+    assert script.count_messages(_three_groups_catalog(tmp_path)) == {
+        script.APP_TEXTS: (1, 2),
+        script.KNOWLEDGE_TEXTS: (1, 3),
+        script.WEBSITE_TEXTS: (3, 4),
+    }
+
+
+def test_every_group_is_counted_even_when_empty(tmp_path: Path) -> None:
+    ts = tmp_path / "x.ts"
+    ts.write_text('<?xml version="1.0" encoding="utf-8"?><TS version="2.1" language="de"></TS>',
+                  encoding="utf-8")
+    assert script.count_messages(ts) == {group: (0, 0) for group in script.TEXT_GROUPS}
+    assert script.counts_line(script.count_messages(ts)).count("n/a") == 3
+
+
+def test_share_never_rounds_up_to_the_threshold() -> None:
+    assert script._share(8999, 10000) == "89.9%"
+    assert script._share(8996, 10000) == "89.9%"
+    assert script._share(9, 10) == "90.0%"
+    assert script._share(2080, 2080) == "100.0%"
+
+
+def test_check_prints_the_three_counts(tmp_path: Path, monkeypatch, capsys) -> None:
+    ts = _three_groups_catalog(tmp_path)
+    monkeypatch.setattr(script, "I18N_DIR", tmp_path)
+    assert script.cmd_check() == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "1 catalog(s), no problems",
+        f"de: {script.counts_line(script.count_messages(ts))}",
+    ]
+    assert out[1] == (
+        "de: app texts 1/2 (50.0%) | format knowledge texts 1/3 (33.3%)"
+        " | website texts 3/4 (75.0%)"
+    )
+
+
+def test_release_records_only_app_texts(tmp_path: Path, monkeypatch, capsys) -> None:
+    """languages.json, which decides View → Language, holds the app texts;
+    format knowledge and website texts are printed, not recorded."""
+    _compile(tmp_path, "de", {("exif.present", "Present"): ("Vorhanden", True)})
+    monkeypatch.setattr(script, "I18N_DIR", tmp_path)
+    capsys.readouterr()
+    script.cmd_release()
+    manifest = json.loads((tmp_path / script.MANIFEST_NAME).read_text(encoding="utf-8"))
+    out = capsys.readouterr().out
+    # Counted against the current code, as release does: all three groups
+    # have texts there, only the app texts are recorded.
+    line = re.search(
+        r"^de: app texts (\d+)/(\d+) \S+ \| format knowledge texts 0/(\d+) \S+"
+        r" \| website texts 0/(\d+) \S+$", out, re.M,
+    )
+    assert line, out
+    app_translated, app_total, knowledge_total, website_total = map(int, line.groups())
+    assert manifest["de"] == {"translated": app_translated, "total": app_total}
+    assert app_translated == 1 and app_total >= len(MESSAGES)
+    assert knowledge_total > 0 and website_total > 0
+    assert "View > Language offers a language from 90 % of its app texts." in out
+
+
+def test_knowledge_context_matches_the_format_db() -> None:
+    from crush.core.format_db import KNOWLEDGE_CONTEXT
+
+    assert script.KNOWLEDGE_CONTEXT == KNOWLEDGE_CONTEXT
 
 
 # -- Translation check (placeholders) ---------------------------------------------
@@ -389,7 +466,9 @@ def test_release_counts_a_left_out_translation_as_untranslated(tmp_path: Path) -
         ("exif.present", "Present"): ("Vorhanden", True),
         ("json.not_utf8", MESSAGES["json.not_utf8"]): ("Kein UTF-8 ({kaputt})", True),
     })
-    translated, _total = script.compile_catalog(tmp_path / "crush_de.ts", tmp_path / "x.qm")
+    translated, _total = script.compile_catalog(
+        tmp_path / "crush_de.ts", tmp_path / "x.qm"
+    )[script.APP_TEXTS]
     assert translated == 1
 
 

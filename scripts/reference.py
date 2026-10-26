@@ -32,8 +32,8 @@ stamp   a translated file starts with `<!-- source_hash: ... -->`, the hash
 The Feature Reference is not translated for now (decided 2026-09): stamp,
 status and the <lang> folders are ready for when that changes. Its
 progress would be its own either way -- whether a language is offered
-under View → Language (90 %) depends only on the application's catalog
-(scripts/i18n.py).
+under View → Language (90 %) depends only on the app texts of the
+application's catalog (scripts/i18n.py).
 """
 from __future__ import annotations
 

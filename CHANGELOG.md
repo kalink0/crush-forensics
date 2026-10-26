@@ -2,6 +2,12 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- Added to translations -> Support for offering a language under View → Language from 90 % of its app texts, with format knowledge texts optional and marked as such in Qt Linguist; `scripts/i18n.py check` and `release` show app, format knowledge and website texts separately.
+
 ## v0.24.0 - 2026-10-26
 
 **Focus: German as the first translation; NSKeyedArchiver resolution extended to all $top keys, XML archives and embedded plists; the BLOB Inspector shows Protobuf in the Protobuf viewer's tree; SQLite WAL frames used only when SQLite would use them; qnxprobe v1.75 / ewfprobe v0.15 with macOS compressed files and more robust image handling.**

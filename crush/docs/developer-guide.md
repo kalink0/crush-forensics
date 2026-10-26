@@ -445,7 +445,12 @@ The UI is translated with Qt Linguist; English is the source language. Catalogs 
   descriptions) is written as `QT_TRANSLATE_NOOP("FormatKnowledge", text, <format name>)`;
   formats.db itself stays English. Such a text reaches the UI as a `CatalogText`
   (`fmt.relevance_text()`), which `str()` keeps English and the UI shows translated — or in
-  the English original, if the analyst chose that.
+  the English original, if the analyst chose that. Put the line
+  `#: Format knowledge: optional, doesn't count towards the 90 % for View → Language`
+  (`build_formats_db.KNOWLEDGE_NOTE`) right above each such call — Qt Linguist shows it to
+  translators; a test fails without it. Format knowledge texts don't count towards the 90 %
+  a language needs to be offered under View → Language; `python scripts/i18n.py check` and
+  `release` print their share separately, next to the app texts and the website texts.
 - Check with the pseudo locale: `python scripts/i18n.py pseudo`, then
   `python -m crush --language pseudo`. Every text still in plain English isn't translatable
   yet; a missing closing `]` means the text is cut off.
@@ -470,7 +475,8 @@ into anchors on the single page. `python scripts/reference.py check` checks ever
 The Feature Reference is not translated for now. `scripts/reference.py stamp` / `status`
 and `crush/docs/reference/<lang>/` folders are ready for when that changes; it would
 never count towards the 90 % a language needs to be offered under View → Language (that
-is the application's catalog alone).
+is the app texts of the application's catalog alone — not its format knowledge texts or
+website texts).
 
 ## Forensic tests and their coverage page
 

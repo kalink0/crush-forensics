@@ -32,8 +32,8 @@ PACKAGE = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = PACKAGE / "data" / "build_formats_db.py"
 
 
-def _lupdate(tmp_path: Path, *files: Path) -> set[tuple[str, str, str]]:
-    """(context, source, disambiguation) of every text lupdate extracts."""
+def _lupdate_ts(tmp_path: Path, *files: Path) -> Path:
+    """The catalog lupdate writes for *files*."""
     here = Path(sys.executable).parent
     tool = shutil.which("pyside6-lupdate") or shutil.which(
         "pyside6-lupdate", path=f"{here}{os.pathsep}{here / 'Scripts'}"
@@ -41,9 +41,14 @@ def _lupdate(tmp_path: Path, *files: Path) -> set[tuple[str, str, str]]:
     assert tool, "pyside6-lupdate not found (installed with PySide6)"
     ts = tmp_path / "out.ts"
     subprocess.run([tool, *map(str, files), "-ts", str(ts)], check=True, capture_output=True)
+    return ts
+
+
+def _lupdate(tmp_path: Path, *files: Path) -> set[tuple[str, str, str]]:
+    """(context, source, disambiguation) of every text lupdate extracts."""
     return {
         (ctx.findtext("name") or "", m.findtext("source") or "", m.findtext("comment") or "")
-        for ctx in ET.parse(ts).getroot().iter("context")
+        for ctx in ET.parse(_lupdate_ts(tmp_path, *files)).getroot().iter("context")
         for m in ctx.iter("message")
     }
 
@@ -119,6 +124,20 @@ def test_lupdate_extracts_every_knowledge_text(tmp_path: Path) -> None:
             if m.get("description"):
                 expected.add((KNOWLEDGE_CONTEXT, m["description"], fmt["name"]))
     assert expected - extracted == set()
+
+
+def test_every_knowledge_text_carries_the_translators_note(tmp_path: Path) -> None:
+    """Qt Linguist shows translators, on each format knowledge text, that
+    it is optional (the developer comment from the `#:` line above it)."""
+    ts = _lupdate_ts(tmp_path, BUILD_SCRIPT)
+    notes = [
+        m.findtext("extracomment")
+        for ctx in ET.parse(ts).getroot().iter("context")
+        if ctx.findtext("name") == KNOWLEDGE_CONTEXT
+        for m in ctx.iter("message")
+    ]
+    assert notes
+    assert set(notes) == {build_formats_db.KNOWLEDGE_NOTE}
 
 
 def test_lupdate_extracts_categories(tmp_path: Path) -> None:

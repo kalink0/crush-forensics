@@ -11,7 +11,8 @@ APP_TEXTS      labels the app already has: the (context, text) of its
 WEBSITE_TEXTS  texts only the website has, marked with
                QT_TRANSLATE_NOOP(WEBSITE_CONTEXT, ...). Contexts starting
                with WEBSITE_CONTEXT_PREFIX don't count towards a language's
-               completeness in the app (scripts/i18n.py count_messages),
+               completeness in the app (scripts/i18n.py count_messages
+               counts them as a group of their own),
                and translators see from the context that they're website
                texts.
 ENGLISH_TEXTS  never translated: the prefilled issue for a correction,

@@ -8,8 +8,9 @@ loaded, every tr()/translate() returns the English source text, so an
 English session is exactly the untranslated UI.
 
 What the analyst chose is the saved `language` setting (View → Language).
-The menu offers only languages whose catalog is at least
-COMPLETENESS_THRESHOLD translated. The `--language CODE` command-line
+The menu offers only languages whose app texts are at least
+COMPLETENESS_THRESHOLD translated (format knowledge and website texts
+don't count; scripts/i18n.py count_messages). The `--language CODE` command-line
 option loads any compiled translation for one run -- also one below the
 threshold, and the `pseudo` test locale -- so translators and developers
 can check their work; it doesn't change the saved setting.
@@ -23,7 +24,8 @@ formatting doesn't change with the UI language).
 
 Files: crush/i18n/crush_<code>.ts (source catalogs, in git) are compiled
 by `python scripts/i18n.py release` into crush_<code>.qm plus
-languages.json (per-language completeness); both are build output.
+languages.json (per-language completeness of the app texts); both are
+build output.
 """
 from __future__ import annotations
 
@@ -51,8 +53,9 @@ _log = logging.getLogger(__name__)
 SOURCE_LANGUAGE = "en"
 PSEUDO_LANGUAGE = "pseudo"
 SETTINGS_KEY = "language"
-# A language appears in View → Language once this share of its catalog is
-# translated (agreed 2026-09-24). --language ignores it.
+# A language appears in View → Language once this share of its app texts
+# is translated (agreed 2026-09-24; format knowledge texts not counted since
+# 2026-10-26). --language ignores it.
 COMPLETENESS_THRESHOLD = 0.90
 MANIFEST_NAME = "languages.json"
 
