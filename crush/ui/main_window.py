@@ -652,6 +652,17 @@ class _ExportMultiWorker(QObject):
         )
 
 
+def _folder_formats(parser: object) -> list[Any]:
+    """The formats.db entry of a folder format: a folder has no bytes of its
+    own to match signatures against, so its format is that of the parser
+    that recognised it (LevelDB, Chromium Disk Cache). Empty for none."""
+    from crush.core.format_db import FormatDatabase
+
+    if parser is None:
+        return []
+    return FormatDatabase.get().for_parser(type(parser).__name__, b"")
+
+
 def _format_peek(vfs: VFS, node: VFSNode) -> bytes:
     """The bytes the Properties panel and Format Info match against
     formats.db: as far in as its farthest signature, so a format known by a
@@ -4202,10 +4213,13 @@ class MainWindow(QMainWindow):
             # they don't single one out, that is said -- never another
             # format's knowledge in its place.
             db = FormatDatabase.get()
-            peek = _format_peek(vfs, node)
-            matches = db.for_parser(type(parser).__name__, peek) if parser else []
-            if not matches:
-                matches = db.top_matches(peek)
+            if node.is_dir:
+                matches = _folder_formats(parser)
+            else:
+                peek = _format_peek(vfs, node)
+                matches = db.for_parser(type(parser).__name__, peek) if parser else []
+                if not matches:
+                    matches = db.top_matches(peek)
             fmt = matches[0] if len(matches) == 1 else None
             if len(matches) > 1:
                 fmt_meta["Format (identified)"] = ParseIssue(
@@ -4239,10 +4253,17 @@ class MainWindow(QMainWindow):
         try:
             from crush.core.format_db import FormatDatabase
             from crush.ui.format_info_dialog import FormatInfoDialog
-            peek = _format_peek(vfs, node)
-            matches = FormatDatabase.get().top_matches(peek)
+            if node.is_dir:
+                import crush.parsers  # noqa: F401 — triggers parser registration
+                from crush.core.registry import ParserRegistry
+
+                matches = _folder_formats(ParserRegistry.best(node, vfs))
+                peek = b""
+            else:
+                peek = _format_peek(vfs, node)
+                matches = FormatDatabase.get().top_matches(peek)
             fmt = matches[0] if len(matches) == 1 else None
-            if not matches:
+            if not matches and not node.is_dir:
                 from crush.core.magic import detect_fast_label
                 label = detect_fast_label(peek, node.path or node.name)
                 if label:

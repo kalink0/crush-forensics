@@ -834,6 +834,45 @@ def test_parse_is_reproducible(tmp_path: Path) -> None:
             render_value(o["note"]) for o in r2.data["orphans"]]
 
 
+# -- format info for folder formats --------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["chromium", "leveldb"])
+def test_folder_format_info_comes_from_the_parser(qapp, tmp_path: Path, monkeypatch, kind: str) -> None:
+    """Regression: a folder has no bytes to match formats.db against -- the
+    Properties panel showed no format knowledge for an opened cache or
+    LevelDB folder, and Open Format Info… failed silently."""
+    import crush.parsers  # noqa: F401
+    import crush.ui.main_window as main_window
+    from crush.tests.test_parsers import _make_minimal_leveldb
+
+    if kind == "chromium":
+        _http_cache(tmp_path / "folder")
+        expected = "Chromium Disk Cache"
+    else:
+        _make_minimal_leveldb(tmp_path / "folder", [(b"k", b"v")])
+        expected = "LevelDB Database"
+    vfs = DirectoryVFS(tmp_path)
+    node = _dir_node(vfs, "folder")
+    parser = ParserRegistry.best(node, vfs)
+    shown: list[Any] = []
+    monkeypatch.setattr(
+        "crush.ui.format_info_dialog.FormatInfoDialog.exec", lambda self: shown.append(self) or 0
+    )
+    win = main_window.MainWindow()
+    try:
+        result = win._enrich_with_format_info(parser, node, vfs, parser.parse(node, vfs))
+        assert result.metadata["Forensic relevance"]
+        assert result.metadata["Platforms"]
+        win._show_format_info(node, vfs)
+        assert len(shown) == 1
+        from PySide6.QtWidgets import QLabel
+
+        assert any(expected in label.text() for label in shown[0].findChildren(QLabel))
+    finally:
+        win.close()
+
+
 # -- viewer ------------------------------------------------------------------------
 
 
