@@ -97,7 +97,7 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
     <message>
         <source>FlatBuffers schema compiler (.fbs → .bfbs) for the FlatBuffers viewer — bundled in portable builds; when running from source, run &lt;code&gt;scripts/download_flatc_binaries.py&lt;/code&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Schema-Compiler (.fbs → .bfbs) für den FlatBuffers-Viewer — in den portablen Builds enthalten; beim Ausführen aus dem Quellcode &lt;code&gt;scripts/download_flatc_binaries.py&lt;/code&gt; ausführen</translation>
     </message>
     <message>
         <source>Sibling analyzer-module runner for &quot;Run Analyzer&quot; — individual modules ported from &lt;a href=&quot;https://github.com/abrignoni/iLEAPP&quot;&gt;iLEAPP&lt;/a&gt;/&lt;a href=&quot;https://github.com/abrignoni/aLEAPP&quot;&gt;aLEAPP&lt;/a&gt; artifact scripts by Alexis Brignoni (MIT); a normal pip dependency, not a bundled binary</source>
@@ -267,7 +267,7 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
     <message>
         <source>FlatBuffers (schema-less)</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers (schemalos)</translation>
     </message>
     <message>
         <source>Base64 (decode)</source>
@@ -299,7 +299,7 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
     <message>
         <source>FlatBuffers (schema: {root_type})</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers (Schema: {root_type})</translation>
     </message>
     <message>
         <source>no bytes</source>
@@ -353,7 +353,7 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
     <message>
         <source>FlatBuffers schema</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Schema</translation>
     </message>
     <message>
         <source>→ failed: {reason}</source>
@@ -921,7 +921,7 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
     </message>
     <message>
         <source>FlatBuffers</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers</translation>
     </message>
     <message>
         <source>MMKV</source>
@@ -1040,110 +1040,110 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
     <name>FlatBuffersTreeWidget</name>
     <message>
         <source>Field</source>
-        <translation type="unfinished"></translation>
+        <translation>Feld</translation>
     </message>
     <message>
         <source>Value</source>
-        <translation type="unfinished"></translation>
+        <translation>Wert</translation>
     </message>
     <message>
         <source>Type</source>
-        <translation type="unfinished"></translation>
+        <translation>Typ</translation>
     </message>
     <message>
         <source>Offset</source>
-        <translation type="unfinished"></translation>
+        <translation>Offset</translation>
     </message>
     <message>
         <source>Export FlatBuffers</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers exportieren</translation>
     </message>
     <message>
         <source>Exporting…</source>
-        <translation type="unfinished"></translation>
+        <translation>Exportiere...</translation>
     </message>
 </context>
 <context>
     <name>FlatBuffersViewer</name>
     <message>
         <source>{name}: compiled by the bundled {compiler}</source>
-        <translation type="unfinished"></translation>
+        <translation>{name}: kompiliert mit dem mitgelieferten {compiler}</translation>
     </message>
     <message>
         <source>{name}: binary schema (.bfbs); a .bfbs doesn&apos;t record the flatc version that wrote it</source>
-        <translation type="unfinished"></translation>
+        <translation>{name}: Binärschema (.bfbs); eine .bfbs hält die flatc-Version, die sie geschrieben hat, nicht fest</translation>
     </message>
     <message>
         <source>Decoded as {name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Dekodiert als {name}</translation>
     </message>
     <message>
         <source>Schema:</source>
-        <translation type="unfinished"></translation>
+        <translation>Schema:</translation>
     </message>
     <message>
         <source>None</source>
-        <translation type="unfinished"></translation>
+        <translation>None</translation>
     </message>
     <message>
         <source>Load .fbs / .bfbs…</source>
-        <translation type="unfinished"></translation>
+        <translation>.fbs / .bfbs laden...</translation>
     </message>
     <message>
         <source>Clear</source>
-        <translation type="unfinished"></translation>
+        <translation>Leeren</translation>
     </message>
     <message>
         <source>Root type:</source>
-        <translation type="unfinished"></translation>
+        <translation>Root-Typ:</translation>
     </message>
     <message>
         <source>Decode</source>
-        <translation type="unfinished"></translation>
+        <translation>Dekodieren</translation>
     </message>
     <message>
         <source>Show Schema-less Decode</source>
-        <translation type="unfinished"></translation>
+        <translation>Schemalose Dekodierung anzeigen</translation>
     </message>
     <message>
         <source>Schema-less decode</source>
-        <translation type="unfinished"></translation>
+        <translation>Schemalose Dekodierung</translation>
     </message>
     <message>
         <source>Schema cleared</source>
-        <translation type="unfinished"></translation>
+        <translation>Schema entfernt</translation>
     </message>
     <message>
         <source>Load FlatBuffers schema</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Schema laden</translation>
     </message>
     <message>
         <source>FlatBuffers schema</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Schema</translation>
     </message>
     <message>
         <source>All files</source>
-        <translation type="unfinished"></translation>
+        <translation>Alle Dateien</translation>
     </message>
     <message>
         <source>Loading schema…</source>
-        <translation type="unfinished"></translation>
+        <translation>Schema wird geladen...</translation>
     </message>
     <message>
         <source>Loaded {count} table type(s)</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Tabellentyp(en) geladen</translation>
     </message>
     <message>
         <source>Load a schema first</source>
-        <translation type="unfinished"></translation>
+        <translation>Laden Sie zunächst ein Schema</translation>
     </message>
     <message>
         <source>Select a root type</source>
-        <translation type="unfinished"></translation>
+        <translation>Wählen Sie einen Root-Typ</translation>
     </message>
     <message>
         <source>Decoding as {name}…</source>
-        <translation type="unfinished"></translation>
+        <translation>Wird als {name} dekodiert...</translation>
     </message>
 </context>
 <context>
@@ -2253,31 +2253,31 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <source>Google&apos;s zero-copy binary serialization format. Values are read in place through offsets instead of being parsed first. Uses include the object store of the ObjectBox database (object values are FlatBuffers), TensorFlow Lite models, and the storage format Facebook moved most of its Android app to (Meta engineering blog, 2015). No reliable magic bytes: a buffer starts with a 32-bit offset to its root table; an optional 4-character file_identifier at bytes 4-7 names the schema, and a size-prefixed buffer puts a 32-bit length in front. Each table points to a vtable that lists which fields are stored and where; field types and names are not stored, so without the schema (.fbs, or its binary form .bfbs) a field&apos;s width and meaning are open. Fields equal to their default are usually not written at all. Bytes that no table, vector or string references (padding, superseded data) can remain inside a buffer.</source>
         <comment>FlatBuffers</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>Zero-Copy-Binärserialisierungsformat von Google. Werte werden über Offsets direkt an ihrer Stelle gelesen, statt zuerst geparst zu werden. Verwendet unter anderem im Objektspeicher der Datenbank ObjectBox (Objektwerte sind FlatBuffers), in TensorFlow-Lite-Modellen und als Speicherformat, auf das Facebook den Großteil seiner Android-App umgestellt hat (Meta-Engineering-Blog, 2015). Keine verlässlichen Magic Bytes: Ein Puffer beginnt mit einem 32-Bit-Offset auf seine Root-Tabelle; ein optionaler file_identifier aus 4 Zeichen in den Bytes 4-7 benennt das Schema, ein Puffer mit Größenpräfix stellt eine 32-Bit-Länge voran. Jede Tabelle verweist auf eine vtable, die angibt, welche Felder wo gespeichert sind; Feldtypen und -namen werden nicht gespeichert, ohne Schema (.fbs oder seine Binärform .bfbs) bleiben Breite und Bedeutung eines Felds offen. Felder mit ihrem Standardwert werden meist gar nicht geschrieben. Bytes, auf die keine Tabelle, kein Vektor und keine Zeichenkette verweist (Padding, überholte Daten), können in einem Puffer verbleiben.</translation>
     </message>
     <message>
         <source>On-device machine-learning model stored as a FlatBuffer with the file_identifier TFL3 (schema root type tflite.Model). Found in Android and iOS app data and system components (camera, text recognition, keyboard and speech features). The model&apos;s description field, its metadata entries and its signature names can identify what the model is for and which app shipped it; tensors and weights are stored as byte buffers. The schema is public, so a model can be decoded exactly.</source>
         <comment>TensorFlow Lite Model</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>Machine-Learning-Modell auf dem Gerät, gespeichert als FlatBuffer mit dem file_identifier TFL3 (Root-Typ tflite.Model). Zu finden in App-Daten und Systemkomponenten unter Android und iOS (Kamera, Texterkennung, Tastatur und Sprachfunktionen). Beschreibungsfeld, Metadateneinträge und Signaturnamen des Modells können zeigen, wofür es dient und welche App es mitgebracht hat; Tensoren und Gewichte sind als Byte-Puffer gespeichert. Das Schema ist öffentlich, ein Modell lässt sich also exakt dekodieren.</translation>
     </message>
     <message>
         <source>FlatBuffers file_identifier TFL3 after the root offset</source>
         <comment>TensorFlow Lite Model</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-file_identifier TFL3 nach dem Root-Offset</translation>
     </message>
     <message>
         <source>A FlatBuffers schema compiled to binary form (flatc -b --schema): itself a FlatBuffer with the file_identifier BFBS, root type reflection.Schema. It lists every table, struct, enum and union with field names, types, ids and defaults, and the schema&apos;s root type and file_identifier. A .bfbs found next to FlatBuffers data is the key to decoding that data exactly. It does not record the flatc version that wrote it. Android ships .bfbs files for Bluetooth LE Audio configurations.</source>
         <comment>FlatBuffers Binary Schema (.bfbs)</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>Ein in Binärform kompiliertes FlatBuffers-Schema (flatc -b --schema): selbst ein FlatBuffer mit dem file_identifier BFBS, Root-Typ reflection.Schema. Es führt jede Tabelle, jedes Struct, Enum und jede Union mit Feldnamen, Typen, IDs und Standardwerten auf, dazu Root-Typ und file_identifier des Schemas. Eine .bfbs neben FlatBuffers-Daten ist der Schlüssel, um diese Daten exakt zu dekodieren. Sie hält nicht fest, welche flatc-Version sie geschrieben hat. Android liefert .bfbs-Dateien für Bluetooth-LE-Audio-Konfigurationen mit.</translation>
     </message>
     <message>
         <source>FlatBuffers file_identifier BFBS after the root offset</source>
         <comment>FlatBuffers Binary Schema (.bfbs)</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-file_identifier BFBS nach dem Root-Offset</translation>
     </message>
     <message>
         <source>Write-Ahead Log companion file for SQLite databases in WAL journal mode. Contains committed page versions not yet checkpointed into the database file, frames of a transaction still open when the file was captured, and, after checkpoint, WAL slack — old page versions that persist until overwritten from the start of the file. Must be analysed alongside the parent database file using the same schema. CRITICAL: opening the parent database with a standard SQLite driver triggers a checkpoint, committing and clearing the WAL — use read-only forensic tools only. Without the companion database, frames can still be decoded, but column names are only available from the schema. See SQLite Database entry for full forensic context.</source>
@@ -4670,163 +4670,163 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>plain</source>
-        <translation type="unfinished"></translation>
+        <translation>einfach</translation>
     </message>
     <message>
         <source>size-prefixed</source>
-        <translation type="unfinished"></translation>
+        <translation>mit Größenpräfix</translation>
     </message>
     <message>
         <source>root offset</source>
-        <translation type="unfinished"></translation>
+        <translation>Root-Offset</translation>
     </message>
     <message>
         <source>size prefix</source>
-        <translation type="unfinished"></translation>
+        <translation>Größenpräfix</translation>
     </message>
     <message>
         <source>vtable size</source>
-        <translation type="unfinished"></translation>
+        <translation>vtable-Größe</translation>
     </message>
     <message>
         <source>table inline size</source>
-        <translation type="unfinished"></translation>
+        <translation>Inline-Größe der Tabelle</translation>
     </message>
     <message>
         <source>candidate: {width}-byte scalar</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: {width}-Byte-Skalar</translation>
     </message>
     <message>
         <source>candidate: inline struct ({size} B)</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: Inline-Struct ({size} B)</translation>
     </message>
     <message>
         <source>candidate: offset → string</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: Offset → Zeichenkette</translation>
     </message>
     <message>
         <source>candidate: 64-bit offset → string</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: 64-Bit-Offset → Zeichenkette</translation>
     </message>
     <message>
         <source>candidate: offset → vector</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: Offset → Vektor</translation>
     </message>
     <message>
         <source>candidate: 64-bit offset → vector</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: 64-Bit-Offset → Vektor</translation>
     </message>
     <message>
         <source>candidate: offset → table</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: Offset → Tabelle</translation>
     </message>
     <message>
         <source>candidate: offset → vector at {offset}, decoded where first reached (double-click to go there)</source>
-        <translation type="unfinished"></translation>
+        <translation>Kandidat: Offset → Vektor bei {offset}, dekodiert an der zuerst erreichten Stelle (Doppelklick springt dorthin)</translation>
     </message>
     <message>
         <source>elements as {width}-byte scalars</source>
-        <translation type="unfinished"></translation>
+        <translation>Elemente als {width}-Byte-Skalare</translation>
     </message>
     <message>
         <source>elements as offsets to strings</source>
-        <translation type="unfinished"></translation>
+        <translation>Elemente als Offsets auf Zeichenketten</translation>
     </message>
     <message>
         <source>elements as offsets to tables</source>
-        <translation type="unfinished"></translation>
+        <translation>Elemente als Offsets auf Tabellen</translation>
     </message>
     <message>
         <source>bytes as a nested FlatBuffer</source>
-        <translation type="unfinished"></translation>
+        <translation>Bytes als verschachtelter FlatBuffer</translation>
     </message>
     <message>
         <source>buffer ({layout})</source>
-        <translation type="unfinished"></translation>
+        <translation>Puffer ({layout})</translation>
     </message>
     <message>
         <source>bytes {start}–{end}: file_identifier, if the buffer has one</source>
-        <translation type="unfinished"></translation>
+        <translation>Bytes {start}–{end}: file_identifier, falls der Puffer einen hat</translation>
     </message>
     <message>
         <source>table</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabelle</translation>
     </message>
     <message>
         <source>vtable</source>
-        <translation type="unfinished"></translation>
+        <translation>vtable</translation>
     </message>
     <message>
         <source>slot {slot}</source>
-        <translation type="unfinished"></translation>
+        <translation>Slot {slot}</translation>
     </message>
     <message>
         <source>table at {offset}, decoded where first reached (double-click to go there)</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabelle bei {offset}, dekodiert an der zuerst erreichten Stelle (Doppelklick springt dorthin)</translation>
     </message>
     <message>
         <source>cycle: back to the table at {offset}, which contains it</source>
-        <translation type="unfinished"></translation>
+        <translation>Zyklus: zurück zur Tabelle bei {offset}, die ihn enthält</translation>
     </message>
     <message>
         <source>unreferenced bytes</source>
-        <translation type="unfinished"></translation>
+        <translation>nicht referenzierte Bytes</translation>
     </message>
     <message>
         <source>bytes after the size prefix&apos;s end</source>
-        <translation type="unfinished"></translation>
+        <translation>Bytes nach dem Ende laut Größenpräfix</translation>
     </message>
     <message>
         <source>true (stored byte {byte})</source>
-        <translation type="unfinished"></translation>
+        <translation>true (gespeichertes Byte {byte})</translation>
     </message>
     <message>
         <source>root table at {offset}</source>
-        <translation type="unfinished"></translation>
+        <translation>Root-Tabelle bei {offset}</translation>
     </message>
     <message>
         <source>{{ {stored} of {count} slot(s) stored }}</source>
-        <translation type="unfinished"></translation>
+        <translation>{{ {stored} von {count} Slot(s) gespeichert }}</translation>
     </message>
     <message>
         <source>at {offset} (soffset {soffset})</source>
-        <translation type="unfinished"></translation>
+        <translation>bei {offset} (soffset {soffset})</translation>
     </message>
     <message>
         <source>0 (not stored)</source>
-        <translation type="unfinished"></translation>
+        <translation>0 (nicht gespeichert)</translation>
     </message>
     <message>
         <source>{count} × {width} B</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} × {width} B</translation>
     </message>
     <message>
         <source>{count} B</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} B</translation>
     </message>
     <message>
         <source>{count} element(s)</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Element(e)</translation>
     </message>
     <message>
         <source>{bytes:,} B in {count} range(s)</source>
-        <translation type="unfinished"></translation>
+        <translation>{bytes:,} B in {count} Bereich(en)</translation>
     </message>
     <message>
         <source>not valid UTF-8 ({length} B)</source>
-        <translation type="unfinished"></translation>
+        <translation>kein gültiges UTF-8 ({length} B)</translation>
     </message>
     <message>
         <source>empty vector</source>
-        <translation type="unfinished"></translation>
+        <translation>leerer Vektor</translation>
     </message>
     <message>
         <source>table at {offset}</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabelle bei {offset}</translation>
     </message>
     <message>
         <source>not stored (absent, or equal to its default)</source>
-        <translation type="unfinished"></translation>
+        <translation>nicht gespeichert (fehlt oder entspricht dem Standardwert)</translation>
     </message>
     <message>
         <source>{count} candidates (heuristic)</source>
@@ -4834,43 +4834,43 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>{value} (default — not stored)</source>
-        <translation type="unfinished"></translation>
+        <translation>{value} (Standardwert — nicht gespeichert)</translation>
     </message>
     <message>
         <source>[{count} × {type}]</source>
-        <translation type="unfinished"></translation>
+        <translation>[{count} × {type}]</translation>
     </message>
     <message>
         <source>struct {name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Struct {name}</translation>
     </message>
     <message>
         <source>[{count} element(s)]</source>
-        <translation type="unfinished"></translation>
+        <translation>[{count} Element(e)]</translation>
     </message>
     <message>
         <source>nested FlatBuffer</source>
-        <translation type="unfinished"></translation>
+        <translation>verschachtelter FlatBuffer</translation>
     </message>
     <message>
         <source>{type} (deprecated)</source>
-        <translation type="unfinished"></translation>
+        <translation>{type} (veraltet)</translation>
     </message>
     <message>
         <source>slot +{offset}, {gap} B to the next</source>
-        <translation type="unfinished"></translation>
+        <translation>Slot +{offset}, {gap} B bis zum nächsten</translation>
     </message>
     <message>
         <source>{width} B</source>
-        <translation type="unfinished"></translation>
+        <translation>{width} B</translation>
     </message>
     <message>
         <source>64-bit length</source>
-        <translation type="unfinished"></translation>
+        <translation>64-Bit-Länge</translation>
     </message>
     <message>
         <source>issue</source>
-        <translation type="unfinished"></translation>
+        <translation>Problem</translation>
     </message>
     <message>
         <source>candidate: as message</source>
@@ -6911,11 +6911,11 @@ Speicherort öffnen?</translation>
     </message>
     <message>
         <source>FlatBuffers parse error: {exc}</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Parsing-Fehler: {exc}</translation>
     </message>
     <message>
         <source>FlatBuffers parse error</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Parsing-Fehler</translation>
     </message>
     <message>
         <source>MMKV parse error: {exc}</source>
@@ -7613,7 +7613,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Cycles</source>
-        <translation type="unfinished"></translation>
+        <translation>Zyklen</translation>
     </message>
     <message>
         <source>Declared payload bytes</source>
@@ -7709,7 +7709,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Field widths</source>
-        <translation type="unfinished"></translation>
+        <translation>Feldbreiten</translation>
     </message>
     <message>
         <source>File format</source>
@@ -7989,7 +7989,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Root</source>
-        <translation type="unfinished"></translation>
+        <translation>Root</translation>
     </message>
     <message>
         <source>Root class</source>
@@ -7997,7 +7997,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Root layouts not valid</source>
-        <translation type="unfinished"></translation>
+        <translation>Ungültige Root-Layouts</translation>
     </message>
     <message>
         <source>Row data</source>
@@ -8009,11 +8009,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Schema</source>
-        <translation type="unfinished"></translation>
+        <translation>Schema</translation>
     </message>
     <message>
         <source>Schema mismatches</source>
-        <translation type="unfinished"></translation>
+        <translation>Abweichungen vom Schema</translation>
     </message>
     <message>
         <source>Source field</source>
@@ -8141,7 +8141,7 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Unreferenced bytes</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht referenzierte Bytes</translation>
     </message>
     <message>
         <source>Version</source>
@@ -9463,237 +9463,237 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Not read as a FlatBuffer: no root layout validates ({reasons})</source>
         <comment>flatbuffers.no_root</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nicht als FlatBuffer gelesen: kein Root-Layout ist gültig ({reasons})</translation>
     </message>
     <message>
         <source>{layout} buffer (the other root layout doesn&apos;t validate)</source>
         <comment>flatbuffers.root_layout</comment>
-        <translation type="unfinished"></translation>
+        <translation>Puffer {layout} (das andere Root-Layout ist ungültig)</translation>
     </message>
     <message>
         <source>Both root layouts validate (plain and size-prefixed); the bytes don&apos;t record which one was written. Both are shown</source>
         <comment>flatbuffers.root_both_layouts</comment>
-        <translation type="unfinished"></translation>
+        <translation>Beide Root-Layouts sind gültig (einfach und mit Größenpräfix); die Bytes halten nicht fest, welches geschrieben wurde. Beide werden angezeigt</translation>
     </message>
     <message>
         <source>plain</source>
         <comment>flatbuffers.layout_plain</comment>
-        <translation type="unfinished"></translation>
+        <translation>einfach</translation>
     </message>
     <message>
         <source>size-prefixed</source>
         <comment>flatbuffers.layout_size_prefixed</comment>
-        <translation type="unfinished"></translation>
+        <translation>mit Größenpräfix</translation>
     </message>
     <message>
         <source>{layout}: {reason}</source>
         <comment>flatbuffers.layout_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>{layout}: {reason}</translation>
     </message>
     <message>
         <source>A field&apos;s width and type are not recorded without a schema: each width is inferred from the gap to the next stored slot (heuristic; padding makes it ambiguous), every width that fits is offered. Vectors are read with 1-, 2-, 4- and 8-byte elements and as offsets to strings or tables; elements of other sizes (structs) aren&apos;t listed as readings</source>
         <comment>flatbuffers.widths_heuristic</comment>
-        <translation type="unfinished"></translation>
+        <translation>Breite und Typ eines Felds sind ohne Schema nicht festgehalten: Jede Breite wird aus dem Abstand zum nächsten gespeicherten Slot abgeleitet (heuristisch; Padding macht das mehrdeutig), jede passende Breite wird angeboten. Vektoren werden mit 1-, 2-, 4- und 8-Byte-Elementen und als Offsets auf Zeichenketten oder Tabellen gelesen; Elemente anderer Größe (Structs) werden nicht als Lesart aufgeführt</translation>
     </message>
     <message>
         <source>{count:,} field(s) or vector(s) have more than one structurally consistent reading. All are shown as candidates (heuristic), none as the value</source>
         <comment>flatbuffers.ambiguous_fields</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Feld(er) oder Vektor(en) haben mehr als eine strukturell stimmige Lesart. Alle werden als Kandidaten gezeigt (heuristisch), keine als Wert</translation>
     </message>
     <message>
         <source>{count:,} offset(s) lead back into a table or vector that contains them; shown as a cycle, not followed again</source>
         <comment>flatbuffers.cycles</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Offset(s) führen zurück in eine Tabelle oder einen Vektor, die sie enthalten; als Zyklus gezeigt, nicht erneut verfolgt</translation>
     </message>
     <message>
         <source>{bytes:,} B in {ranges:,} range(s) not covered by any structure or reading (padding, or remnants of earlier data); listed under &quot;unreferenced bytes&quot;</source>
         <comment>flatbuffers.unreferenced</comment>
-        <translation type="unfinished"></translation>
+        <translation>{bytes:,} B in {ranges:,} Bereich(en), die keine Struktur und keine Lesart abdecken (Padding oder Reste früherer Daten); aufgeführt unter „nicht referenzierte Bytes“</translation>
     </message>
     <message>
         <source>{size:,} B is too short for a root offset and a table</source>
         <comment>flatbuffers.too_short</comment>
-        <translation type="unfinished"></translation>
+        <translation>{size:,} B sind zu kurz für einen Root-Offset und eine Tabelle</translation>
     </message>
     <message>
         <source>the size prefix ({size:,} B) is larger than the {available:,} B after it</source>
         <comment>flatbuffers.prefix_too_large</comment>
-        <translation type="unfinished"></translation>
+        <translation>das Größenpräfix ({size:,} B) ist größer als die {available:,} B danach</translation>
     </message>
     <message>
         <source>root offset {offset:,} is 0 or negative</source>
         <comment>flatbuffers.root_offset_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Root-Offset {offset:,} ist 0 oder negativ</translation>
     </message>
     <message>
         <source>the root table at {table:#x} lies outside the {size:,}-byte buffer</source>
         <comment>flatbuffers.root_out_of_bounds</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Root-Tabelle bei {table:#x} liegt außerhalb des {size:,} Byte großen Puffers</translation>
     </message>
     <message>
         <source>the table at {table:#x} isn&apos;t 4-byte aligned</source>
         <comment>flatbuffers.table_unaligned</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Tabelle bei {table:#x} ist nicht auf 4 Byte ausgerichtet</translation>
     </message>
     <message>
         <source>the table at {table:#x} lies outside the buffer</source>
         <comment>flatbuffers.table_out_of_bounds</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Tabelle bei {table:#x} liegt außerhalb des Puffers</translation>
     </message>
     <message>
         <source>the vtable of the table at {table:#x} ({vtable:#x}) lies outside the buffer</source>
         <comment>flatbuffers.vtable_out_of_bounds</comment>
-        <translation type="unfinished"></translation>
+        <translation>die vtable der Tabelle bei {table:#x} ({vtable:#x}) liegt außerhalb des Puffers</translation>
     </message>
     <message>
         <source>the vtable of the table at {table:#x} ({vtable:#x}) isn&apos;t 2-byte aligned</source>
         <comment>flatbuffers.vtable_unaligned</comment>
-        <translation type="unfinished"></translation>
+        <translation>die vtable der Tabelle bei {table:#x} ({vtable:#x}) ist nicht auf 2 Byte ausgerichtet</translation>
     </message>
     <message>
         <source>the vtable at {vtable:#x} states {size} B (must be even and at least 4)</source>
         <comment>flatbuffers.vtable_size_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>die vtable bei {vtable:#x} gibt {size} B an (muss gerade und mindestens 4 sein)</translation>
     </message>
     <message>
         <source>the table at {table:#x} states {size} B of inline data, which doesn&apos;t fit the buffer</source>
         <comment>flatbuffers.table_inline_out_of_bounds</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Tabelle bei {table:#x} gibt {size} B Inline-Daten an, die nicht in den Puffer passen</translation>
     </message>
     <message>
         <source>slot {slot} of the table at {table:#x} points to offset {offset}, outside its {size} B of inline data</source>
         <comment>flatbuffers.slot_outside_table</comment>
-        <translation type="unfinished"></translation>
+        <translation>Slot {slot} der Tabelle bei {table:#x} zeigt auf Offset {offset}, außerhalb ihrer {size} B Inline-Daten</translation>
     </message>
     <message>
         <source>The schema file couldn&apos;t be read: {detail}</source>
         <comment>flatbuffers.schema.unreadable</comment>
-        <translation type="unfinished"></translation>
+        <translation>Die Schemadatei konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Not a binary schema: bytes 4-7 aren&apos;t the BFBS identifier</source>
         <comment>flatbuffers.schema.not_bfbs</comment>
-        <translation type="unfinished"></translation>
+        <translation>Kein Binärschema: die Bytes 4-7 sind nicht die Kennung BFBS</translation>
     </message>
     <message>
         <source>The binary schema is damaged or not a reflection schema: {detail}</source>
         <comment>flatbuffers.schema.bfbs_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>Das Binärschema ist beschädigt oder kein Reflection-Schema: {detail}</translation>
     </message>
     <message>
         <source>The schema declares no table that could be a buffer&apos;s root</source>
         <comment>flatbuffers.schema.no_tables</comment>
-        <translation type="unfinished"></translation>
+        <translation>Das Schema deklariert keine Tabelle, die Root eines Puffers sein könnte</translation>
     </message>
     <message>
         <source>A .fbs schema needs flatc, and Crush bundles none for {platform}; load a .bfbs instead (flatc -b --schema)</source>
         <comment>flatbuffers.schema.flatc_no_platform</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ein .fbs-Schema braucht flatc, und Crush liefert keins für {platform} mit; stattdessen eine .bfbs laden (flatc -b --schema)</translation>
     </message>
     <message>
         <source>A .fbs schema needs the bundled flatc, which isn&apos;t there ({path}); when running from source, run scripts/download_flatc_binaries.py, or load a .bfbs</source>
         <comment>flatbuffers.schema.flatc_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ein .fbs-Schema braucht das mitgelieferte flatc, das fehlt ({path}); beim Ausführen aus dem Quellcode scripts/download_flatc_binaries.py ausführen oder eine .bfbs laden</translation>
     </message>
     <message>
         <source>flatc couldn&apos;t be started: {detail}</source>
         <comment>flatbuffers.schema.flatc_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>flatc konnte nicht gestartet werden: {detail}</translation>
     </message>
     <message>
         <source>flatc couldn&apos;t compile the schema (exit code {code}): {detail}</source>
         <comment>flatbuffers.schema.fbs_compile_failed</comment>
-        <translation type="unfinished"></translation>
+        <translation>flatc konnte das Schema nicht kompilieren (Exit-Code {code}): {detail}</translation>
     </message>
     <message>
         <source>bytes 4-7 are &quot;{stored}&quot;, not the schema&apos;s file_identifier &quot;{expected}&quot; (the identifier is optional; the bytes may also be other data)</source>
         <comment>flatbuffers.schema.identifier_differs</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Bytes 4-7 sind „{stored}“, nicht der file_identifier „{expected}“ des Schemas (der Identifier ist optional; die Bytes können auch andere Daten sein)</translation>
     </message>
     <message>
         <source>the offset leads back to the table at {offset:#x}, which contains it (cycle); not followed again</source>
         <comment>flatbuffers.schema.cycle</comment>
-        <translation type="unfinished"></translation>
+        <translation>der Offset führt zurück zur Tabelle bei {offset:#x}, die ihn enthält (Zyklus); nicht erneut verfolgt</translation>
     </message>
     <message>
         <source>slot {slot} is stored (at {offset:#x}) but the schema has no field for it; its width isn&apos;t known, the {gap} B up to the next stored slot are shown</source>
         <comment>flatbuffers.schema.slot_not_in_schema</comment>
-        <translation type="unfinished"></translation>
+        <translation>Slot {slot} ist gespeichert (bei {offset:#x}), aber das Schema hat kein Feld dafür; seine Breite ist unbekannt, die {gap} B bis zum nächsten gespeicherten Slot werden gezeigt</translation>
     </message>
     <message>
         <source>{field} is required by the schema but not stored</source>
         <comment>flatbuffers.schema.required_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>{field} ist laut Schema erforderlich, aber nicht gespeichert</translation>
     </message>
     <message>
         <source>{size} B at {offset:#x} lie outside the buffer</source>
         <comment>flatbuffers.schema.out_of_bounds</comment>
-        <translation type="unfinished"></translation>
+        <translation>{size} B bei {offset:#x} liegen außerhalb des Puffers</translation>
     </message>
     <message>
         <source>the offset at {offset:#x} is 0, negative or points outside the buffer</source>
         <comment>flatbuffers.schema.offset_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>der Offset bei {offset:#x} ist 0, negativ oder zeigt aus dem Puffer heraus</translation>
     </message>
     <message>
         <source>type {type} isn&apos;t decoded here</source>
         <comment>flatbuffers.schema.type_unsupported</comment>
-        <translation type="unfinished"></translation>
+        <translation>Typ {type} wird hier nicht dekodiert</translation>
     </message>
     <message>
         <source>bits {bits:#x} are set but not declared in {enum}</source>
         <comment>flatbuffers.schema.flags_undeclared</comment>
-        <translation type="unfinished"></translation>
+        <translation>Bits {bits:#x} sind gesetzt, aber in {enum} nicht deklariert</translation>
     </message>
     <message>
         <source>{value} is not a value {enum} declares (if {enum} is a bit_flags enum, a .bfbs written without --bfbs-builtins doesn&apos;t record that, and a combination of flags shows here too)</source>
         <comment>flatbuffers.schema.enum_undeclared</comment>
-        <translation type="unfinished"></translation>
+        <translation>{value} ist kein Wert, den {enum} deklariert (ist {enum} ein bit_flags-Enum, hält eine ohne --bfbs-builtins geschriebene .bfbs das nicht fest, und eine Kombination von Flags erscheint ebenfalls hier)</translation>
     </message>
     <message>
         <source>union type {value} is not a member {enum} declares</source>
         <comment>flatbuffers.schema.union_member_undeclared</comment>
-        <translation type="unfinished"></translation>
+        <translation>Union-Typ {value} ist kein Mitglied, das {enum} deklariert</translation>
     </message>
     <message>
         <source>the string at {offset:#x} doesn&apos;t fit the buffer or lacks its 0 terminator</source>
         <comment>flatbuffers.schema.string_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Zeichenkette bei {offset:#x} passt nicht in den Puffer oder ihr fehlt der 0-Terminator</translation>
     </message>
     <message>
         <source>the string isn&apos;t valid UTF-8 (first invalid byte at {offset:#x}); its bytes are shown</source>
         <comment>flatbuffers.schema.string_not_utf8</comment>
-        <translation type="unfinished"></translation>
+        <translation>die Zeichenkette ist kein gültiges UTF-8 (erstes ungültiges Byte bei {offset:#x}); ihre Bytes werden gezeigt</translation>
     </message>
     <message>
         <source>the vector at {offset:#x} doesn&apos;t fit the buffer</source>
         <comment>flatbuffers.schema.vector_invalid</comment>
-        <translation type="unfinished"></translation>
+        <translation>der Vektor bei {offset:#x} passt nicht in den Puffer</translation>
     </message>
     <message>
         <source>declared as FlexBuffers content, which isn&apos;t decoded; its bytes are shown</source>
         <comment>flatbuffers.schema.flexbuffer_not_decoded</comment>
-        <translation type="unfinished"></translation>
+        <translation>als FlexBuffers-Inhalt deklariert, der nicht dekodiert wird; die Bytes werden gezeigt</translation>
     </message>
     <message>
         <source>the union&apos;s type field ({field}_type) isn&apos;t stored, so its member is unknown</source>
         <comment>flatbuffers.schema.union_type_missing</comment>
-        <translation type="unfinished"></translation>
+        <translation>das Typfeld der Union ({field}_type) ist nicht gespeichert, daher ist ihr Mitglied unbekannt</translation>
     </message>
     <message>
         <source>declared as a nested FlatBuffer of {type}, which the schema doesn&apos;t define as a table</source>
         <comment>flatbuffers.schema.nested_type_unknown</comment>
-        <translation type="unfinished"></translation>
+        <translation>als verschachtelter FlatBuffer vom Typ {type} deklariert, den das Schema nicht als Tabelle definiert</translation>
     </message>
     <message>
         <source>declared as a nested FlatBuffer, but no root layout validates ({reasons})</source>
         <comment>flatbuffers.schema.nested_no_root</comment>
-        <translation type="unfinished"></translation>
+        <translation>als verschachtelter FlatBuffer deklariert, aber kein Root-Layout ist gültig ({reasons})</translation>
     </message>
     <message>
         <source>{count:,} field(s) disagree with the schema (marked on each field)</source>
         <comment>flatbuffers.schema.mismatches</comment>
-        <translation type="unfinished"></translation>
+        <translation>{count:,} Feld(er) weichen vom Schema ab (am jeweiligen Feld markiert)</translation>
     </message>
     <message>
         <source>Could not be read: {detail}</source>
@@ -12817,7 +12817,7 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>FlatBuffers</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers</translation>
     </message>
     <message>
         <source>Decode column as timestamp</source>
@@ -13687,11 +13687,11 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>Load .fbs / .bfbs schema…</source>
-        <translation type="unfinished"></translation>
+        <translation>.fbs-/.bfbs-Schema laden...</translation>
     </message>
     <message>
         <source>Load a .fbs or .bfbs schema for FlatBuffers decoding</source>
-        <translation type="unfinished"></translation>
+        <translation>Ein .fbs- oder .bfbs-Schema zum Dekodieren von FlatBuffers laden</translation>
     </message>
     <message>
         <source>Copy</source>
@@ -13759,7 +13759,7 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>FlatBuffers (schema-less)</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers (schemalos)</translation>
     </message>
     <message>
         <source>Load Protobuf schema</source>
@@ -13767,15 +13767,15 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>Load FlatBuffers schema</source>
-        <translation type="unfinished"></translation>
+        <translation>FlatBuffers-Schema laden</translation>
     </message>
     <message>
         <source>Loading schema…</source>
-        <translation type="unfinished"></translation>
+        <translation>Schema wird geladen...</translation>
     </message>
     <message>
         <source>Decoding as FlatBuffers…</source>
-        <translation type="unfinished"></translation>
+        <translation>Wird als FlatBuffers dekodiert...</translation>
     </message>
     <message>
         <source>Opening a tab is not available from here.</source>
