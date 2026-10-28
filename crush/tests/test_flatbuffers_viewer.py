@@ -7,6 +7,7 @@ offers the same readings."""
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QModelIndex
@@ -124,7 +125,34 @@ def test_deep_structure_exports_without_recursion_limit() -> None:
     raw = deep_chain(levels)
     decoded = decode_buffer(raw)
     assert nodes_to_text(top_nodes(decoded), raw).count("\n") > levels
-    json.loads(nodes_to_json(top_nodes(decoded), raw))
+    text = nodes_to_json(top_nodes(decoded), raw)
+    # Reading it back nests as deep as the structure: Python 3.11's json
+    # decoder counts that against the recursion limit.
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(limit, 20 * levels))
+    try:
+        json.loads(text)
+    finally:
+        sys.setrecursionlimit(limit)
+
+
+def test_schema_decode_states_its_root_layout_like_the_schema_less_one() -> None:
+    from crush.core.issues import render_value
+    from crush.parsers.flatbuffers_parser import root_metadata
+    from crush.parsers.flatbuffers_schema import decode_with_schema, load_schema
+    from crush.viewers.blob_inspector import _flatbuffers_schema_reading
+    from crush.viewers.flatbuffers_viewer import decode_summary
+
+    schema = load_schema(FIXTURES_DIR / "flatbuffers_record.bfbs")
+    root = "crush.fixtures.Record"
+    roots = root_metadata(decode_with_schema(schema, root, RECORD))
+    assert roots["Root"].code == "flatbuffers.root_layout"
+    meta = _flatbuffers_schema_reading(schema, root, RECORD).metadata
+    assert meta["Root"] == roots["Root"]
+    assert meta["Root layouts not valid"] == roots["Root layouts not valid"]
+    summary = decode_summary(decode_with_schema(schema, root, RECORD))
+    assert render_value(roots["Root"], localized=True) in summary
+    assert render_value(roots["Root layouts not valid"], localized=True) in summary
 
 
 def _shared_child() -> bytes:

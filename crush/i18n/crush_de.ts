@@ -9491,11 +9491,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>{layout}: {reason}</translation>
     </message>
     <message>
-        <source>A field&apos;s width and type are not recorded without a schema: each width is inferred from the gap to the next stored slot (heuristic; padding makes it ambiguous), every width that fits is offered. Vectors are read with 1-, 2-, 4- and 8-byte elements and as offsets to strings or tables; elements of other sizes (structs) aren&apos;t listed as readings</source>
-        <comment>flatbuffers.widths_heuristic</comment>
-        <translation>Breite und Typ eines Felds sind ohne Schema nicht festgehalten: Jede Breite wird aus dem Abstand zum nächsten gespeicherten Slot abgeleitet (heuristisch; Padding macht das mehrdeutig), jede passende Breite wird angeboten. Vektoren werden mit 1-, 2-, 4- und 8-Byte-Elementen und als Offsets auf Zeichenketten oder Tabellen gelesen; Elemente anderer Größe (Structs) werden nicht als Lesart aufgeführt</translation>
-    </message>
-    <message>
         <source>{count:,} field(s) or vector(s) have more than one structurally consistent reading. All are shown as candidates (heuristic), none as the value</source>
         <comment>flatbuffers.ambiguous_fields</comment>
         <translation>{count:,} Feld(er) oder Vektor(en) haben mehr als eine strukturell stimmige Lesart. Alle werden als Kandidaten gezeigt (heuristisch), keine als Wert</translation>
@@ -10569,6 +10564,16 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Not resolved: an object reaches itself through its references (a cycle), so below is the archive&apos;s undecoded object table</source>
         <comment>plist.nska_cycle_text</comment>
         <translation>Nicht aufgelöst: Ein Objekt erreicht über seine Referenzen sich selbst (Zyklus), daher folgt unten die nicht dekodierte Objekttabelle des Archivs</translation>
+    </message>
+    <message>
+        <source>A field&apos;s width and type are not recorded without a schema: each width is inferred from the gap to the next stored slot (heuristic; padding makes it ambiguous), every width that fits is offered, and the whole gap as an inline struct when it&apos;s 2 bytes or more. Vectors are read with 1-, 2-, 4- and 8-byte elements and as offsets to strings or tables; elements of other sizes (structs) aren&apos;t listed as readings</source>
+        <comment>flatbuffers.widths_heuristic</comment>
+        <translation>Breite und Typ eines Felds sind ohne Schema nicht festgehalten: Jede Breite wird aus dem Abstand zum nächsten gespeicherten Slot abgeleitet (heuristisch; Padding macht das mehrdeutig), jede passende Breite wird angeboten, ab 2 Byte außerdem der ganze Abstand als Inline-Struct. Vektoren werden mit 1-, 2-, 4- und 8-Byte-Elementen und als Offsets auf Zeichenketten oder Tabellen gelesen; Elemente anderer Größe (Structs) werden nicht als Lesart aufgeführt</translation>
+    </message>
+    <message>
+        <source>the union vector holds {values:,} value(s), its type vector ({field}_type) {types:,} type(s); the format pairs them one to one</source>
+        <comment>flatbuffers.schema.union_type_count_mismatch</comment>
+        <translation>der Union-Vektor enthält {values:,} Wert(e), sein Typ-Vektor ({field}_type) {types:,} Typ(en); das Format ordnet sie einander eins zu eins zu</translation>
     </message>
     <message>
         <source>The index lies in the opened folder itself, not in an index-dir subfolder: records are matched to the entry files in this folder by key hash; a record without one is listed with its entry files not checked, since Chromium keeps them in the folder above index-dir -- open that cache folder for those</source>

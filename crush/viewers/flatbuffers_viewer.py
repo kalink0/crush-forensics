@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from crush.core.formatters import escape_control_chars
 from crush.core.issues import ParseIssue, render_value
+from crush.parsers.flatbuffers_parser import root_metadata
 from crush.parsers.flatbuffers_schema import (
     Schema,
     SchemaLoadError,
@@ -384,10 +385,7 @@ def _hex_pieces(data: bytes) -> Any:
         yield (" " if start else "") + data[start:start + _PIECE_BYTES].hex(" ")
 
 
-def _typed_pieces(data: bytes, base_type: str) -> Any:
-    from crush.parsers.flatbuffers_wire import SCALAR_SIZES
-
-    size = SCALAR_SIZES[base_type]
+def _typed_pieces(data: bytes, base_type: str, size: int) -> Any:
     step = _PIECE_BYTES - _PIECE_BYTES % size
     for start in range(0, len(data), step):
         values = typed_element_values(data[start:start + step], base_type)
@@ -408,7 +406,7 @@ def full_value_pieces(node: Node, raw: bytes) -> Any:
         if node["elements"] in ("UByte", "Byte"):
             yield from _hex_pieces(data)
         else:
-            yield from _typed_pieces(data, node["elements"])
+            yield from _typed_pieces(data, node["elements"], node["element_size"])
         return
     if kind == "candidate" and node.get("as") == "string" and node.get("text") is not None:
         yield str(node["text"])
@@ -564,9 +562,9 @@ def _jsonable(node: Node, raw: bytes) -> dict[str, Any]:
     out: dict[str, Any] = {"node": node.get("node")}
     for key in ("layout", "field", "entry", "slot", "id", "name", "type", "type_text", "as", "via",
                 "width", "size", "length", "length_size", "count", "index", "stored", "default",
-                "deprecated", "enum", "union_member", "elements", "struct", "slot_offset", "gap",
-                "kind", "root", "offset", "vtable", "target", "soffset", "inline_size",
-                "slot_count"):
+                "deprecated", "enum", "union_member", "elements", "element_size", "struct",
+                "slot_offset", "gap", "kind", "root", "offset", "vtable", "target", "soffset",
+                "inline_size", "slot_count"):
         if node.get(key) is not None:
             out[key] = node[key]
     if node.get("range"):
@@ -951,10 +949,12 @@ def schema_note(schema: Schema) -> str:
 
 def decode_summary(decoded: dict[str, Any]) -> str:
     """One status line for a schema decode: layouts, mismatches, unreferenced bytes."""
+    roots = root_metadata(decoded)
     if not decoded.get("buffers"):
-        return render_value(ParseIssue(
-            "flatbuffers.no_root", {"reasons": decoded.get("root_failures", [])}), localized=True)
+        return render_value(roots["Parse warning"], localized=True)
     parts = [translate("FlatBuffersViewer", "Decoded as {name}").format(name=decoded.get("root_type", ""))]
+    parts += [render_value(roots[key], localized=True)
+              for key in ("Root", "Root layouts not valid") if key in roots]
     if decoded.get("issues"):
         parts.append(render_value(ParseIssue(
             "flatbuffers.schema.mismatches", {"count": decoded["issues"]}), localized=True))

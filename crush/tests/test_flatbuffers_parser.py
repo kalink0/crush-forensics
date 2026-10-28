@@ -157,6 +157,26 @@ def test_absent_slot_is_shown_not_dropped() -> None:
     assert fields[6]["stored"] is False
 
 
+def test_scalar_sized_gap_is_also_offered_as_an_inline_struct() -> None:
+    # One table (vtable at 4: 6 B, inline 12 B, slot 0 at +4) whose 8-byte
+    # slot holds two floats -- a struct as much as a scalar.
+    buf = struct.pack("<I", 12) + struct.pack("<HHH", 6, 12, 4) + b"\0\0"
+    buf += struct.pack("<i", 12 - 4) + struct.pack("<ff", 1.5, -2.0)
+    field = _fields(_root_table(decode_buffer(buf)))[0]
+    assert field["gap"] == 8
+    readings = {(c["as"], c.get("width"), c.get("size")) for c in field["children"]}
+    assert ("scalar", 8, None) in readings
+    assert ("struct", None, 8) in readings
+
+
+def test_one_byte_gap_has_no_struct_reading() -> None:
+    # A struct of one byte is the 1-byte scalar's byte.
+    buf = struct.pack("<I", 12) + struct.pack("<HHH", 6, 5, 4) + b"\0\0"
+    buf += struct.pack("<iB", 12 - 4, 1)
+    field = _fields(_root_table(decode_buffer(buf)))[0]
+    assert [c["as"] for c in field["children"]] == ["scalar"]
+
+
 def test_vector_readings_list_widths_and_offsets() -> None:
     nodes = _walk(decode_buffer(RECORD)["buffers"])
     tags = next(n for n in nodes if n.get("as") == "strings")  # [string] tags

@@ -330,17 +330,18 @@ def _flatbuffers_schema_reading(schema: Any, root_type: str, data: bytes) -> _Pr
     raises with the reason when no root layout validates."""
     _no_bytes(data)
     from crush.core.issues import ParseIssue, render_value
+    from crush.parsers.flatbuffers_parser import root_metadata
     from crush.parsers.flatbuffers_schema import decode_with_schema
     from crush.viewers.flatbuffers_viewer import schema_note
 
     decoded = decode_with_schema(schema, root_type, data)
+    roots = root_metadata(decoded)
     if not decoded["buffers"]:
-        raise ValueError(render_value(
-            ParseIssue("flatbuffers.no_root", {"reasons": decoded["root_failures"]}), localized=True
-        ))
+        raise ValueError(render_value(roots["Parse warning"], localized=True))
     meta: dict[str, Any] = {
         "Format": f"FlatBuffers (schema: {root_type})",
         "Schema": schema_note(schema),
+        **roots,
     }
     if decoded["issues"]:
         meta["Schema mismatches"] = ParseIssue(

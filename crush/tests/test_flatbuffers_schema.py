@@ -6,6 +6,8 @@ of the same bytes, and every disagreement with the schema is reported on its
 field."""
 from __future__ import annotations
 
+import struct
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -236,3 +238,49 @@ def test_identifier_is_checked_for_the_schemas_root_type_only(flatbuffers_fixtur
     # The nested buffer (root type Inner) has no identifier to check.
     nested = _fields(root_table(decoded))["nested"]["children"][0]
     assert all(c.get("field") != "file_identifier" for c in nested["children"])
+
+
+def test_nested_flatbuffer_type_is_resolved_in_the_declaring_namespace(flatbuffers_fixture: dict) -> None:
+    # nested_flatbuffer: "Inner" on crush.fixtures.Record names
+    # crush.fixtures.Inner (flatc looks in the declaring namespace first),
+    # not a table "Inner" of the root namespace.
+    raw = flatbuffers_fixture["bin"].read_bytes()
+    schema = load_schema(flatbuffers_fixture["bfbs"])
+    inner = schema.object_named("crush.fixtures.Inner")
+    assert inner is not None
+    schema.objects.append(replace(inner, name="Inner", fields=()))
+    nested = _fields(root_table(decode_with_schema(schema, ROOT, raw)))["nested"]
+    assert "id" in _fields(nested["children"][0]["children"][-1])
+
+
+def _union_vector_schema() -> fbs.Schema:
+    """t.T { items: [t.Payload] } with Payload = NONE | t.Note, t.Note an
+    empty table."""
+    payload = fbs.Enum(
+        name="t.Payload",
+        values=(fbs.EnumVal("NONE", 0, fbs.Type("None")), fbs.EnumVal("Note", 1, fbs.Type("Obj", index=1))),
+        is_union=True,
+        underlying_type=fbs.Type("UType", index=0),
+    )
+    table = fbs.Object("t.T", (
+        fbs.Field("items_type", fbs.Type("Vector", element="UType", index=0), id=0, offset=4),
+        fbs.Field("items", fbs.Type("Vector", element="Union", index=0), id=1, offset=6),
+    ), is_struct=False, minalign=4, bytesize=0)
+    note = fbs.Object("t.Note", (), is_struct=False, minalign=4, bytesize=0)
+    return fbs.Schema([table, note], [payload], "", "", "t.T")
+
+
+def test_union_vector_with_more_types_than_values_is_a_mismatch() -> None:
+    buf = struct.pack("<I", 12) + struct.pack("<HHHH", 8, 12, 4, 8)  # root, vtable T
+    buf += struct.pack("<iII", 12 - 4, 12, 16)  # T at 12 -> types at 28, values at 36
+    buf += struct.pack("<HH", 4, 4)  # vtable Note at 24
+    buf += struct.pack("<I", 2) + bytes([1, 1, 0, 0])  # 2 types
+    buf += struct.pack("<II", 1, 4)  # 1 value -> Note at 44
+    buf += struct.pack("<i", 44 - 24)
+    decoded = decode_with_schema(_union_vector_schema(), "t.T", buf)
+    items = _fields(root_table(decoded))["items"]
+    assert items["issue"].code == "flatbuffers.schema.union_type_count_mismatch"
+    assert (items["issue"].params["types"], items["issue"].params["values"]) == (2, 1)
+    # The one value still decodes with its type.
+    assert items["children"][0]["union_member"] == "Note"
+    assert decoded["issues"] == 1

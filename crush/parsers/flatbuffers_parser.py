@@ -131,18 +131,7 @@ def schema_less_metadata(decoded: dict[str, Any]) -> dict[str, Any]:
     """The parser's notes on a schema-less decode -- for every place that
     shows one (the viewer tab's Properties, the BLOB Inspector's summary)."""
     meta: dict[str, Any] = {"Format": "FlatBuffers (schema-less)"}
-    layouts = [b["layout"] for b in decoded.get("buffers", [])]
-    if not layouts:
-        meta["Parse warning"] = ParseIssue(
-            "flatbuffers.no_root", {"reasons": decoded.get("root_failures", [])}
-        )
-    else:
-        meta["Root"] = ParseIssue(
-            "flatbuffers.root_both_layouts" if len(layouts) > 1 else "flatbuffers.root_layout",
-            {"layout": ParseIssue(f"flatbuffers.layout_{layouts[0]}")},
-        )
-        if decoded.get("root_failures"):
-            meta["Root layouts not valid"] = decoded["root_failures"]
+    meta.update(root_metadata(decoded))
     meta["Field widths"] = ParseIssue("flatbuffers.widths_heuristic")
     if decoded.get("ambiguous"):
         meta["Ambiguous fields"] = ambiguous_issue(decoded)
@@ -154,6 +143,26 @@ def schema_less_metadata(decoded: dict[str, Any]) -> dict[str, Any]:
             "flatbuffers.unreferenced",
             {"bytes": sum(e - s for s, e in unref), "ranges": len(unref)},
         )
+    return meta
+
+
+def root_metadata(decoded: dict[str, Any]) -> dict[str, Any]:
+    """Which root layouts validate and why the others don't, for a
+    schema-less or a schema decode: "Root" and "Root layouts not valid", or
+    "Parse warning" when none does."""
+    meta: dict[str, Any] = {}
+    layouts = [b["layout"] for b in decoded.get("buffers", [])]
+    if not layouts:
+        meta["Parse warning"] = ParseIssue(
+            "flatbuffers.no_root", {"reasons": decoded.get("root_failures", [])}
+        )
+        return meta
+    meta["Root"] = ParseIssue(
+        "flatbuffers.root_both_layouts" if len(layouts) > 1 else "flatbuffers.root_layout",
+        {"layout": ParseIssue(f"flatbuffers.layout_{layouts[0]}")},
+    )
+    if decoded.get("root_failures"):
+        meta["Root layouts not valid"] = decoded["root_failures"]
     return meta
 
 
@@ -484,9 +493,11 @@ class _Decoder:
                 candidates.extend((yield self._offset_targets(pos, 4)))
             elif w == 8:
                 candidates.extend((yield self._offset_targets(pos, 8)))
-        if gap not in SCALAR_WIDTHS:
+        if gap > 1:
             # A struct stored inline: any size, so the whole gap (its
-            # trailing padding included -- not recorded either).
+            # trailing padding included -- not recorded either). Also at
+            # 2, 4 or 8 bytes, e.g. two floats; at 1 byte a struct's bytes
+            # are the 1-byte scalar's.
             candidates.append({
                 "node": "candidate", "as": "struct", "size": gap,
                 "range": self.rng(pos, pos + gap), "highlight": [self.rng(pos, pos + gap)],

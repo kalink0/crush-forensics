@@ -868,6 +868,7 @@ class _SchemaDecoder:
         node["count"] = t.fixed_length
         if elem != "Obj":
             node["elements"] = elem
+            node["element_size"] = esize
             return None
         children = []
         for i in range(t.fixed_length):
@@ -901,9 +902,10 @@ class _SchemaDecoder:
         if elem in _SCALARS:
             node["value_range"] = self.rng(data, end)
             node["elements"] = elem
+            node["element_size"] = esize
             nested = f.attributes.get("nested_flatbuffer") if f is not None else None
             if nested is not None:
-                yield self._nested(node, data, end, nested)
+                yield self._nested(node, data, end, nested, obj)
             if f is not None and "flexbuffer" in f.attributes:
                 self._issue(node, ParseIssue("flatbuffers.schema.flexbuffer_not_decoded"))
             if t.index >= 0 and elem != "UType":
@@ -935,6 +937,10 @@ class _SchemaDecoder:
                 children.append(child)
         elif elem == "Union":
             types = self._companion_vector(f, obj, vt)
+            if types is not None and len(types) != count:
+                self._issue(node, ParseIssue("flatbuffers.schema.union_type_count_mismatch", {
+                    "field": f.name if f else "?", "types": len(types), "values": count,
+                }))
             for i in range(count):
                 at = data + 4 * i
                 child = {"node": "element", "index": i, "range": self.rng(at, at + 4),
@@ -1022,15 +1028,12 @@ class _SchemaDecoder:
             "type": ut.base_type,
         }))
 
-    def _nested(self, node: Node, start: int, end: int, root_name: str) -> _Task:
+    def _nested(
+        self, node: Node, start: int, end: int, root_name: str, owner: Object | None,
+    ) -> _Task:
         """A [ubyte] declared nested_flatbuffer: decoded as its own buffer
         with the declared root type."""
-        obj = self.schema.object_named(root_name)
-        if obj is None:
-            for o in self.schema.objects:
-                if o.name.endswith("." + root_name):
-                    obj = o
-                    break
+        obj = self._lookup_type(root_name, owner)
         if obj is None or obj.is_struct:
             self._issue(node, ParseIssue("flatbuffers.schema.nested_type_unknown", {"type": root_name}))
             return None
@@ -1046,4 +1049,15 @@ class _SchemaDecoder:
             }))
             return None
         node["children"] = buffers
+        return None
+
+    def _lookup_type(self, name: str, owner: Object | None) -> Object | None:
+        """The type *name* refers to where *owner* is declared, resolved as
+        flatc does: in owner's namespace, then each enclosing one, then the
+        name as written (schema objects carry their qualified names)."""
+        parts = owner.name.split(".")[:-1] if owner is not None else []
+        for depth in range(len(parts), -1, -1):
+            obj = self.schema.object_named(".".join([*parts[:depth], name]))
+            if obj is not None:
+                return obj
         return None

@@ -1369,7 +1369,8 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "A field's width and type are not recorded without a schema: each width is "
         "inferred from the gap to the next stored slot (heuristic; padding makes it "
-        "ambiguous), every width that fits is offered. Vectors are read with 1-, 2-, 4- "
+        "ambiguous), every width that fits is offered, and the whole gap as an inline "
+        "struct when it's 2 bytes or more. Vectors are read with 1-, 2-, 4- "
         "and 8-byte elements and as offsets to strings or tables; elements of other "
         "sizes (structs) aren't listed as readings",
         "flatbuffers.widths_heuristic",
@@ -1570,6 +1571,12 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "the union's type field ({field}_type) isn't stored, so its member is unknown",
         "flatbuffers.schema.union_type_missing",
+    ),
+    "flatbuffers.schema.union_type_count_mismatch": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the union vector holds {values:,} value(s), its type vector ({field}_type) "
+        "{types:,} type(s); the format pairs them one to one",
+        "flatbuffers.schema.union_type_count_mismatch",
     ),
     "flatbuffers.schema.nested_type_unknown": QT_TRANSLATE_NOOP(
         "ParseIssue",
