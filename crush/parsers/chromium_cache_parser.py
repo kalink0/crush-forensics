@@ -363,8 +363,9 @@ class _DirectoryParse:
             if not doomed and re.fullmatch(r"[0-9a-f]{16}_[01s]", n.name) and int(name_hash, 16) != h:
                 entry.notes.append(ParseIssue("chromium_cache.name_hash_mismatch", {"name": n.name}))
 
-        checked = self.real_index is not None and not self.index_unchecked
-        records = {r.hash: r for r in self.real_index.records} if checked and self.real_index else {}
+        # Records and entries meet by the key hash wherever the index lies;
+        # only what a record without an entry means depends on it.
+        records = {r.hash: r for r in self.real_index.records} if self.real_index else {}
         for entry in self.entries:
             if entry.backend != FORMAT_SIMPLE or entry.simple_hash is None:
                 continue
@@ -373,10 +374,10 @@ class _DirectoryParse:
                 entry.index_record = rec
                 if rec.size_rejected:
                     entry.notes.append(ParseIssue("chromium_cache.index_record_size_rejected"))
-            elif checked and entry.state != STATE_DOOMED:
+            elif self.real_index is not None and entry.state != STATE_DOOMED:
                 entry.notes.append(ParseIssue("chromium_cache.not_in_index"))
         self._classify_simple()
-        on_disk = {e.simple_hash for e in self.entries if e.simple_hash is not None} if checked else set()
+        on_disk = {e.simple_hash for e in self.entries if e.simple_hash is not None}
         for rec in self.real_index.records if self.real_index else []:
             if rec.hash not in on_disk:
                 self.orphans.append(self._orphan_record(rec))
@@ -1247,11 +1248,14 @@ class ChromiumCacheStore:
             out["structure"].append({"title": name, "raw": raw, "tree": t.root, "ranges": t.ranges})
         sparse: list[dict[str, Any]] = []
         if store.flags & bfmt.PARENT_ENTRY:
-            sparse, out["sparse_rejected"] = self._blockfile_children(e)
+            sparse, out["sparse_rejected"], child_notes = self._blockfile_children(e)
+            out["notes"].extend(child_notes)
         self._finish(e, out, streams, sparse)
         return out
 
-    def _blockfile_children(self, parent: _Entry) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def _blockfile_children(
+        self, parent: _Entry,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[ParseIssue]]:
         """The sparse data of a parent entry: its children (keys
         Range_<key>:<signature>:<child id>), each child's 1 KB blocks that
         its bitmap marks written -- and apart from them, the children
@@ -1260,9 +1264,10 @@ class ChromiumCacheStore:
         magic, the parent's child bitmap), each with why and its blocks."""
         used: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
+        notes_out: list[ParseIssue] = []
         cache = self._blockfile
         if cache is None or parent.store is None:
-            return used, rejected
+            return used, rejected, notes_out
         data_size = bfmt.SPARSE_HEADER_SIZE + 128  # sizeof(SparseData)
         header, _ = _blockfile_stream(cache, parent.store, bfmt.SPARSE_INDEX_STREAM)
         header = header or b""
@@ -1334,7 +1339,8 @@ class ChromiumCacheStore:
             data, _ = _blockfile_stream(cache, child.store, bfmt.SPARSE_DATA_STREAM)
             if data is None:
                 other.append(ParseIssue("chromium_cache.sparse_no_data"))
-            ranges = _child_ranges(child, child_id, child_header, data)
+            ranges, range_notes = _child_ranges(child, child_id, child_header, data)
+            notes_out.extend(range_notes)
             if not reasons and not other and not parent_reasons:
                 used.extend(ranges)
                 continue
@@ -1347,7 +1353,7 @@ class ChromiumCacheStore:
             rejected.append({
                 "child": child.id, "key": child.key.text, "reason": join_notes(list(notes)), "ranges": ranges,
             })
-        return sorted(used, key=lambda r: r["offset"]), rejected
+        return sorted(used, key=lambda r: r["offset"]), rejected, notes_out
 
     # -- common -----------------------------------------------------------------
 
@@ -1427,16 +1433,26 @@ class ChromiumCacheStore:
 
 def _child_ranges(
     child: _Entry, child_id: int | None, header: bytes, data: bytes | None,
-) -> list[dict[str, Any]]:
-    """A sparse child's 1 KB blocks its block bitmap marks written, placed
-    at child id × 1 MB in the parent's data (sparse_control.cc). None
-    without a child id: they have no place in the parent's data (the
-    child's streams are in its own row in Entries)."""
+) -> tuple[list[dict[str, Any]], list[ParseIssue]]:
+    """A sparse child's stored data, placed at child id × 1 MB in the
+    parent's data (sparse_control.cc): the 1 KB blocks its block bitmap
+    marks written, and the partly written block its header keeps apart
+    (last_block, last_block_len: PartialBlockLength, DoGetAvailableRange),
+    joined to the run before it where they meet. None without a child id:
+    they have no place in the parent's data (the child's streams are in
+    its own row in Entries). With notes on the header's partial block."""
     if child_id is None or data is None or len(header) < bfmt.SPARSE_HEADER_SIZE + 128:
-        return []
+        return [], []
     bitmap = int.from_bytes(header[bfmt.SPARSE_HEADER_SIZE:bfmt.SPARSE_HEADER_SIZE + 128], "little")
-    base = child_id * bfmt.SPARSE_CHILD_SIZE
-    out: list[dict[str, Any]] = []
+    last_block, last_len = struct.unpack_from("<ii", header, 16)
+    notes: list[ParseIssue] = []
+    if last_block >= 0 and not 0 <= last_len < bfmt.SPARSE_BLOCK:
+        # OpenChild: such a value is reset to "no partial block".
+        notes.append(ParseIssue("chromium_cache.sparse_last_block_reset", {
+            "child": child.id, "block": last_block, "length": last_len,
+        }))
+        last_block = -1
+    runs: list[tuple[int, int]] = []  # byte ranges in the child, end exclusive
     block = 0
     while block < 1024:
         if not bitmap >> block & 1:
@@ -1445,14 +1461,23 @@ def _child_ranges(
         start = block
         while block < 1024 and bitmap >> block & 1:
             block += 1
-        lo, hi = start * bfmt.SPARSE_BLOCK, block * bfmt.SPARSE_BLOCK
-        out.append({
-            "offset": base + lo,
-            "length": max(0, min(hi, len(data)) - lo),
-            "data": data[lo:hi],
-            "where": f"#{child.id} stream 1 0x{lo:x}",
-        })
-    return out
+        runs.append((start * bfmt.SPARSE_BLOCK, block * bfmt.SPARSE_BLOCK))
+    if 0 <= last_block < 1024 and last_len > 0 and not bitmap >> last_block & 1:
+        lo = last_block * bfmt.SPARSE_BLOCK
+        before = next((i for i, (_s, e) in enumerate(runs) if e == lo), None)
+        if before is not None:
+            runs[before] = (runs[before][0], lo + last_len)
+        else:
+            runs.append((lo, lo + last_len))
+            runs.sort()
+    base = child_id * bfmt.SPARSE_CHILD_SIZE
+    out = [{
+        "offset": base + lo,
+        "length": max(0, min(hi, len(data)) - lo),
+        "data": data[lo:hi],
+        "where": f"#{child.id} stream 1 0x{lo:x}",
+    } for lo, hi in runs]
+    return out, notes
 
 
 def _gaps(ranges: list[dict[str, Any]]) -> list[tuple[int, int]]:

@@ -1500,9 +1500,10 @@ MESSAGES: dict[str, str] = {
     ),
     "chromium_cache.index_in_opened_folder": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "The index lies in the opened folder itself, not in its index-dir subfolder, so the "
-        "entry files aren't in this folder: its records are listed, the entry files aren't "
-        "checked -- open the cache folder (the parent of index-dir) for those",
+        "The index lies in the opened folder itself, not in an index-dir subfolder: records are "
+        "matched to the entry files in this folder by key hash; a record without one is listed "
+        "with its entry files not checked, since Chromium keeps them in the folder above "
+        "index-dir -- open that cache folder for those",
         "chromium_cache.index_in_opened_folder",
     ),
     "chromium_cache.index_version": QT_TRANSLATE_NOOP(
@@ -1881,6 +1882,13 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "{count:,} sparse child entr(ies) not part of the body: listed apart with why",
         "chromium_cache.sparse_children_apart",
+    ),
+    "chromium_cache.sparse_last_block_reset": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Sparse child #{child}: its header names block {block} as partly written with length "
+        "{length}, outside 0–1,023 -- Chromium resets that to no partly written block, so that "
+        "block isn't part of the data",
+        "chromium_cache.sparse_last_block_reset",
     ),
     "chromium_cache.sparse_key_id": QT_TRANSLATE_NOOP(
         "ParseIssue",

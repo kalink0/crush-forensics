@@ -9220,11 +9220,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Das gepackte Feld für die Eintragsgröße passt nicht in 38 Bit: Chromium verwirft wegen dieses Records den ganzen Index</translation>
     </message>
     <message>
-        <source>The index lies in the opened folder itself, not in its index-dir subfolder, so the entry files aren&apos;t in this folder: its records are listed, the entry files aren&apos;t checked -- open the cache folder (the parent of index-dir) for those</source>
-        <comment>chromium_cache.index_in_opened_folder</comment>
-        <translation>Der Index liegt im geöffneten Ordner selbst, nicht in dessen Unterordner index-dir; die Entry-Dateien liegen also nicht in diesem Ordner: Seine Records werden aufgelistet, die Entry-Dateien nicht geprüft -- dafür den Cache-Ordner öffnen (den übergeordneten Ordner von index-dir)</translation>
-    </message>
-    <message>
         <source>Index version {version}: outside the versions Chromium reads (8 and 9)</source>
         <comment>chromium_cache.index_version</comment>
         <translation type="unfinished"></translation>
@@ -9945,6 +9940,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Nicht aufgelöst: Ein Objekt erreicht über seine Referenzen sich selbst (Zyklus), daher folgt unten die nicht dekodierte Objekttabelle des Archivs</translation>
     </message>
     <message>
+        <source>The index lies in the opened folder itself, not in an index-dir subfolder: records are matched to the entry files in this folder by key hash; a record without one is listed with its entry files not checked, since Chromium keeps them in the folder above index-dir -- open that cache folder for those</source>
+        <comment>chromium_cache.index_in_opened_folder</comment>
+        <translation>Der Index liegt im geöffneten Ordner selbst, nicht in einem Unterordner index-dir: Records werden den Entry-Dateien in diesem Ordner über den Schlüssel-Hash zugeordnet; ein Record ohne Entry-Datei wird ohne Prüfung der Entry-Dateien aufgeführt, da Chromium sie im Ordner oberhalb von index-dir ablegt -- dafür diesen Cache-Ordner öffnen</translation>
+    </message>
+    <message>
         <source>Partial: the body doesn&apos;t decode completely as the declared Content-Encoding {coding} ({detail}); the derived body holds the {size:,} B decoded before that point (input {input:,} B)</source>
         <comment>chromium_cache.coding_partial</comment>
         <translation>Teilweise: Der Body lässt sich nicht vollständig mit dem deklarierten Content-Encoding {coding} dekodieren ({detail}); der abgeleitete Body enthält die {size:,} B, die bis zu dieser Stelle dekodiert wurden (Eingabe {input:,} B)</translation>
@@ -9978,6 +9978,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>{count:,} B follow the end of the {coding} stream (from offset {offset:,} of its input): Chromium ignores them, so they aren&apos;t in the derived body; RAW holds them</source>
         <comment>chromium_cache.coding_trailing_ignored</comment>
         <translation>Nach dem Ende des {coding}-Streams folgen {count:,} B (ab Offset {offset:,} seiner Eingabe): Chromium ignoriert sie, sie sind daher nicht im abgeleiteten Body; RAW enthält sie</translation>
+    </message>
+    <message>
+        <source>Sparse child #{child}: its header names block {block} as partly written with length {length}, outside 0–1,023 -- Chromium resets that to no partly written block, so that block isn&apos;t part of the data</source>
+        <comment>chromium_cache.sparse_last_block_reset</comment>
+        <translation>Sparse-Kind #{child}: Sein Header nennt Block {block} als teilweise geschrieben mit der Länge {length}, außerhalb von 0–1.023 -- Chromium setzt das auf „kein teilweise geschriebener Block“ zurück, dieser Block ist daher nicht Teil der Daten</translation>
     </message>
     <message>
         <source>its key doesn&apos;t end in a signature and a child number in hex, each after a colon</source>

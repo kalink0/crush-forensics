@@ -939,10 +939,12 @@ def test_rankings_node_of_another_file_type_does_not_point_back(tmp_path: Path) 
 _SPARSE_SIG = 0x0123456789ABCDEF
 
 
-def _sparse_header(signature: int, key_len: int, bitmap: int, map_bytes: int = 128) -> bytes:
+def _sparse_header(
+    signature: int, key_len: int, bitmap: int, map_bytes: int = 128, *, last: tuple[int, int] = (-1, 0),
+) -> bytes:
     """SparseData: SparseHeader (signature, magic, parent key length, last
     block, last block length, padding) and the bitmap."""
-    head = struct.pack("<qIiii", signature, bfmt.INDEX_MAGIC, key_len, 0, 0) + b"\0" * 40
+    head = struct.pack("<qIiii", signature, bfmt.INDEX_MAGIC, key_len, *last) + b"\0" * 40
     return head + bitmap.to_bytes(map_bytes, "little")
 
 
@@ -1006,6 +1008,82 @@ def test_sparse_children_checked_like_chromium(tmp_path: Path) -> None:
     assert by_child["1"]["ranges"][0]["data"] == built["contents"][1]
     assert by_child["1"]["ranges"][0]["offset"] == bfmt.SPARSE_CHILD_SIZE
     assert "2 sparse child" in render_value(body["note"])
+
+
+def _child_header_with_last_block(folder: Path, last: tuple[int, int], data: bytes) -> None:
+    """Child 0 of _sparse_cache: block 0 in the bitmap, *last* as its
+    partly written block, *data* as its data stream (1 KB block 2 of data_2
+    onward, up to 4 KB)."""
+    raw = bytearray((folder / "data_2").read_bytes())
+    start = bfmt.BLOCK_HEADER_SIZE + 1 * 1024
+    raw[start:start + 192] = _sparse_header(_SPARSE_SIG, len(b"https://media.test/video.mp4"), 0b1, last=last)
+    start = bfmt.BLOCK_HEADER_SIZE + 2 * 1024
+    raw[start:start + len(data)] = data
+    (folder / "data_2").write_bytes(bytes(raw))
+    entries = bytearray((folder / "data_1").read_bytes())
+    start = bfmt.BLOCK_HEADER_SIZE + 1 * 256
+    key = b"Range_https://media.test/video.mp4:%x:0" % _SPARSE_SIG
+    entries[start:start + 256] = _entry_store(
+        key, rankings=_addr(bfmt.RANKINGS, 0, 1), state=0, sizes=[0, len(data), 192, 0],
+        addrs=[0, _addr(bfmt.BLOCK_1K, 2, 2, 4), _addr(bfmt.BLOCK_1K, 2, 1), 0], flags=bfmt.CHILD_ENTRY,
+    )
+    (folder / "data_1").write_bytes(bytes(entries))
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="Chromium Disk Cache",
+    desc="A sparse child's partly written last block (kept in its header) must be part of the data, not a gap",
+)
+def test_sparse_child_partly_written_last_block_is_data(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    _sparse_cache(folder)
+    data = bytes(range(256)) * 16  # 4 KB
+    _child_header_with_last_block(folder, (1, 300), data[:1324])
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    body = result.data["__store"].detail(0)["body"]
+    # Block 0 from the bitmap and 300 B of block 1, joined.
+    assert [(r["offset"], r["length"]) for r in body["sparse"]] == [(0, 1324)]
+    assert body["sparse"][0]["data"] == data[:1324]
+
+
+def test_sparse_child_partial_block_apart_from_the_bitmap_blocks(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    _sparse_cache(folder)
+    data = bytes(range(256)) * 16
+    _child_header_with_last_block(folder, (3, 10), data)
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    body = result.data["__store"].detail(0)["body"]
+    assert [(r["offset"], r["length"]) for r in body["sparse"]] == [(0, 1024), (3072, 10)]
+    assert body["gaps"] == [(1024, 3072)]
+
+
+def test_sparse_child_partial_block_length_out_of_range_is_reset_with_a_note(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    _sparse_cache(folder)
+    _child_header_with_last_block(folder, (1, 2000), bytes(4096))
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    detail = result.data["__store"].detail(0)
+    assert [(r["offset"], r["length"]) for r in detail["body"]["sparse"]] == [(0, 1024)]
+    assert "chromium_cache.sparse_last_block_reset" in {
+        n.code for n in detail["notes"] if isinstance(n, ParseIssue)
+    }
+
+
+def test_flat_folder_with_index_and_entries_still_matches_them(tmp_path: Path) -> None:
+    """A flat export (entry files and the-real-index in one folder): records
+    meet their entries by key hash; only the rest is "entry files not checked"."""
+    folder = tmp_path / "flat"
+    folder.mkdir()
+    encoded = gzip.compress(_BODY, mtime=0)
+    _write_simple(folder, _HTTP_KEY, _response_info([("Content-Encoding", "gzip")]), encoded)
+    (folder / "the-real-index").write_bytes(_real_index([
+        (sfmt.entry_hash(_HTTP_KEY), _T_RESPONSE + 5_000_000, len(encoded)), (0x1122334455667788, _T_REQUEST, 512),
+    ]))
+    result, _vfs, _node = _parse_dir(tmp_path, "flat")
+    assert result.data["entries"][0]["last_used"] == _T_RESPONSE + 5_000_000
+    assert [o["hash"] for o in result.data["orphans"]] == ["0x1122334455667788"]
+    assert result.data["orphans"][0]["source"] == "index record (entry files not checked)"
 
 
 def test_entry_structure_self_hash_check_is_text(tmp_path: Path) -> None:
