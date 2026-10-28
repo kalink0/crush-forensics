@@ -14,6 +14,7 @@ All notable changes to Crush will be documented in this file.
 ### Bug Fixes
 
 - For an opened LevelDB folder, **Open Format Info…** opens again and the Properties panel shows the format's platforms and relevance.
+- The macOS app is no longer reported as damaged: Qt's bundled developer tools made its signature invalid. ([@CyberMike81](https://github.com/CyberMike81), [#182](https://github.com/kalink0/crush-forensics/pull/182))
 
 ## v0.24.0 - 2026-10-26
 
