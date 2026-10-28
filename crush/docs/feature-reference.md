@@ -299,6 +299,7 @@ The left panel shows the loaded archive or folder as a tree.
     - **Hex** — force raw hex view
     - **Text** — force text view
     - **Protobuf** — schema-less Protobuf decode (optionally load a `.proto` schema)
+    - **FlatBuffers** — schema-less FlatBuffers decode (optionally load a `.fbs` or `.bfbs` schema)
     - **MMKV** — open a Tencent MMKV key-value store. MMKV has no magic bytes at all, so — unlike every other format — it can never be auto-detected from content; this is the only way to open one
     - **Realm DB (Encrypted)…** — decrypt and open a Realm database given its 64-byte encryption key (as a hex string). This is the only way to open an encrypted `.realm` file — a normal double-click never prompts for a key, since a header that fails to decode is equally consistent with "encrypted" and "corrupt/non-standard" and can't be told apart from content alone
     - **SQLite DB (Encrypted)…** — open a SQLCipher-encrypted SQLite database given its password or raw key, with optional advanced cipher parameters. Same no-auto-prompt rule as Realm above
@@ -498,7 +499,7 @@ Values are displayed as `YYYY-MM-DD HH:MM:SS[.fraction] UTC`. The conversion is 
 **Cell inspection:** right-click any cell for options including:
 - **Inspect Cell…** — preview the raw value, attempt base64/plist/XML decode
 - **Open in Hex** — view cell bytes as hex
-- **Open as new tab** — submenu: **Auto-detect** (best-guess parser, e.g. a plist stored inside a SQLite column), or force **Hex** / **Text** / **Protobuf**. Each cell opens in its own tab — opening several cells from the same column (or from different rows of an ad-hoc SQL query) never collides into one shared tab. The tab tooltip and Properties panel show where the artifact came from: source table or full query text, column, row, and the originating database file
+- **Open as new tab** — submenu: **Auto-detect** (best-guess parser, e.g. a plist stored inside a SQLite column), or force **Hex** / **Text** / **Protobuf** / **FlatBuffers**. Each cell opens in its own tab — opening several cells from the same column (or from different rows of an ad-hoc SQL query) never collides into one shared tab. The tab tooltip and Properties panel show where the artifact came from: source table or full query text, column, row, and the originating database file
 - **Export…** — save the cell value to disk
 - **Copy cell / Copy row / Copy selection**
 
@@ -770,7 +771,7 @@ Apart from **Copy → Shown text**, these take the **bytes after the decode pipe
 - **Copy → Bytes as hex / as Base64 / as Python literal** — the bytes, complete, in that notation.
 - **Export → Bytes…** — writes the bytes unchanged to a file.
 - **Export → Rendered image (PNG)…** — when the Image interpretation shows a decoded image: the image as Crush decoded it (first frame, without the viewer's rotation), as PNG. This is an image Crush made, not bytes from the evidence; the sidecar says so.
-- **Open in new tab → Auto-detect / Hex / Text / Protobuf (schema-less)** — opens the bytes as a new tab, like a table cell's *Open as new tab*: the Properties panel shows where they came from (source file, table/column/row, record, key or field, and what exactly was inspected) and the **Decode pipeline**, each step with its input and output size and what it left undecoded. Not available where no main window is behind the inspector; the button says so.
+- **Open in new tab → Auto-detect / Hex / Text / Protobuf (schema-less) / FlatBuffers (schema-less)** — opens the bytes as a new tab, like a table cell's *Open as new tab*: the Properties panel shows where they came from (source file, table/column/row, record, key or field, and what exactly was inspected) and the **Decode pipeline**, each step with its input and output size and what it left undecoded. Not available where no main window is behind the inspector; the button says so.
 
 Every export writes a **sidecar** next to the file, named after it plus `.crush.json` (e.g. `out.bin.crush.json`). It records:
 
@@ -833,11 +834,15 @@ After the pipeline runs, the resulting bytes are tested against all available in
 | **Image** | ✓ | Recognised by the same signature bytes as an image file — JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC/HEIF, AVIF, JPEG XL, Apple ATX and KTX textures — and shown in the [Image Viewer](#image-viewer) (zoom, rotate, magnifier). Format, decode status and, for animated or multi-page images, that only the first frame is shown, are in a line above, followed by the rest of the image's metadata (EXIF, C2PA …). An image that is recognised but can't be decoded shows the decoder's reason |
 | **Protobuf (schema-less)** | ~ | Wire-format decode. Numeric fields include `# label: value` hints for int64, sint64 (zigzag), bool, Unix/Cocoa/Chrome timestamps, double, and float; a field shown as a nested message also gets a `# raw bytes: ...` hint, since wire type 2 doesn't actually declare whether the bytes are a submessage. A `# Warning:` header appears if the parse was truncated or malformed, and a note above the fields when some were at the nesting limit (depth 100, the protobuf libraries' default) and are therefore shown as string/bytes instead of being tried as nested messages. Shown as **~** because Protobuf's wire format accepts most byte sequences. |
 | **Protobuf (schema: `<type>`)** | ✓ | Only appears once a schema is loaded (see below) — decodes using real field names and types instead of raw wire format. |
+| **FlatBuffers (schema-less)** | ~ | The [FlatBuffers Viewer](#flatbuffers-viewer)'s tree for the bytes: root offset, vtables and stored slots, every structurally consistent reading of each field as a candidate, unreferenced bytes; the notes (root layout, heuristic field widths, ambiguous fields) in a line above. Shown as **~** because field widths and types are inferred, not recorded; fails with the reason when no root layout validates. |
+| **FlatBuffers (schema: `<root type>`)** | ✓ / ~ | Only appears once a FlatBuffers schema is loaded (see below) — decoded with the schema's field names and types. **~** when some fields disagree with the schema (each marked on its field). |
 | **Latin-1 text** | ~ | ISO-8859-1 — always succeeds since every byte is a valid Latin-1 character; useful as a last resort for mixed binary/text data |
 
 **Auto-selection:** when the inspector opens or the pipeline changes, the best ✓-tier interpretation is selected automatically. If the previously selected format still produces output after a pipeline change, the selection is preserved.
 
 **Schema-based Protobuf decode:** select **Protobuf (schema-less)** first to confirm the bytes decode plausibly as Protobuf — a *Load .proto schema…* toolbar then appears above the content view. Load a `.proto` source file or a compiled FileDescriptorSet (`.pb`, `.fds`, `.desc`) and pick a message type from the dropdown; the view switches to a **Protobuf (schema: `<type>`)** entry decoded with real field names via that schema. The toolbar only shows while a Protobuf entry is selected — it stays out of the way for every other format. Uses the same schema loader as the standalone [Protobuf Viewer](#protobuf-viewer); the loaded schema is kept only for this inspector window's lifetime.
+
+**Schema-based FlatBuffers decode:** the same for FlatBuffers — select **FlatBuffers (schema-less)**, and a *Load .fbs / .bfbs schema…* toolbar appears. Load a binary schema (`.bfbs`) or a text schema (`.fbs`, compiled by the bundled `flatc`); the root type list preselects the schema's declared `root_type`, and the view switches to **FlatBuffers (schema: `<root type>`)**. Same schema loader as the [FlatBuffers Viewer](#flatbuffers-viewer). Copy and Export of a FlatBuffers tree write the bytes once as hex, then every row with its value or byte range.
 
 ---
 
@@ -1020,6 +1025,30 @@ In the **Blob Inspector** (Protobuf mode), `uint64` and `uint32` are additionall
 
 **Schema-based decode** — click **Load .proto / descriptor…** to load a `.proto` source file or a compiled FileDescriptorSet (`.pb`, `.fds`, `.desc`). Select the root message type from the dropdown and click **Decode**. Field names and types are then resolved from the schema; the raw wire-format view remains available via **Show Raw Decode**.
 
+### FlatBuffers Viewer
+
+Opens via right-click → **Open as** → **FlatBuffers**, or for a table cell via **Open as new tab** → **FlatBuffers**. FlatBuffers has no reliable magic bytes (the 4-character `file_identifier` at bytes 4–7 is optional), so it is never chosen from a file's content. Files with a known identifier — `TFL3` (TensorFlow Lite models) and `BFBS` (binary schemas) — are named in the Properties panel's `Format (identified)` row, with **Open as → FlatBuffers** as the way to open them.
+
+**Schema-less decode** — what the bytes record for certain is decoded and checked: the root offset (plain and size-prefixed layout are both tried; the Properties panel says which validates and why the other doesn't), each table's vtable (shown as stored: vtable size, table inline size, one row per field slot) and which slots are stored. A field's width and type are not recorded without a schema, so every reading that fits is shown as a candidate below the field, marked as a heuristic:
+
+| Candidate | When it is offered |
+|---|---|
+| `N-byte scalar` | for every width N of 1, 2, 4 and 8 bytes that fits the gap to the next stored slot (or the table's end) and is aligned; with the same interpretations as the Protobuf viewer for 4 and 8 bytes (signed, float/double, timestamps), `bool` for 1 byte |
+| `offset → string` | a 4-byte slot whose value points to a length, the string's bytes and its 0 terminator, all inside the buffer |
+| `offset → vector` | a 4-byte slot pointing to a vector; the vector is read with 1-, 2-, 4- and 8-byte elements, as offsets to strings, as offsets to tables, and a byte vector also as a nested FlatBuffer |
+| `offset → table` | a 4-byte slot pointing to a table whose vtable validates |
+| `64-bit offset → string / vector` | an 8-byte slot read as a FlatBuffers 64-bit offset |
+| `inline struct (N B)` | a gap that is not exactly 1, 2, 4 or 8 bytes |
+
+A slot that isn't stored is listed as *not stored (absent, or equal to its default)*. Offsets are followed as long as they validate, with no depth limit. A table reached a second time is decoded at the first place it is reached; the other place shows a row for it — double-click it to go there. Bytes that no structure and no candidate reading covers are listed under **unreferenced bytes** with their offsets (padding, or remnants of earlier data).
+
+**Schema decode** — click **Load .fbs / .bfbs…**. A binary schema (`.bfbs`, recognised by its `BFBS` identifier, not by the file name) is read directly; a text schema (`.fbs`, with its includes next to it) is compiled by the bundled `flatc`. The **Root type** list preselects the schema's declared `root_type`; click **Decode**. Fields then show their schema names and types; a field equal to its default is shown with the default and marked *not stored*. Every disagreement between the schema and the bytes is shown on the field it concerns (in orange, with an *issue* row): an offset or vtable outside the buffer, a required field not stored, an enum value the schema doesn't declare, a stored slot the schema has no field for (its bytes up to the next slot are shown), bytes 4–7 that aren't the schema's `file_identifier`. **Show Schema-less Decode** returns to the candidates.
+
+The schema label's tooltip says how the schema was obtained: compiled by the bundled flatc (with its version), or read from a `.bfbs`, which doesn't record the flatc version that wrote it. A `.bfbs` written without `flatc --bfbs-builtins` doesn't record which enums are `bit_flags`; a combination of flags then shows as an undeclared value. Content declared as FlexBuffers is not decoded; its bytes are shown with that note.
+
+**Hex provenance** — **Show Hex** opens the hex view; selecting a row highlights its exact bytes: a field's vtable slot together with its value, an offset together with the string, vector or table it points to, the vtable with the table's soffset.
+
+**Value field, Copy and Export** — the value field holds the complete value: a string's original text, every byte of a vector reading or struct as hex, every element of a typed vector. **Export…** (text or JSON) starts with the buffer's bytes once, as hex; every row follows with its value — scalars, strings, headers and vtable entries directly, a vector, struct or unreferenced range by its byte range in that buffer. Large buffers are decoded and exported behind the wait dialog.
 ### Multi-Log Studio
 
 A high-performance log viewer for large files and multi-source correlation. Open it via right-click → **Open in Multi-Log Studio**; add further files at any time with **Add to Multi-Log Studio** or the **+ Add Source** button inside the viewer.
@@ -1225,7 +1254,7 @@ Integrity mode adds hashing and traceability to file access:
 
 - **Large archives:** Crush loads ZIP and plain (uncompressed) TAR indexes almost immediately and reads file content on demand — you do not need to wait for a full extraction before browsing. Compressed archives are slower, because the format has no index: a **`.tar.gz`/`.tar.xz`/`.tar.bz2`** has to be read through once before its tree appears (minutes for tens of GB, at the speed of the disk), and reading any single file from it, like from a solid 7z (multiple files compressed together in one block), means decompressing everything before it. For evidence you choose the format of, prefer ZIP or an uncompressed TAR.
 - **SQLite WAL files:** if a `-wal` or `-shm` companion file is present alongside a `.db`, Crush automatically includes it so you see the most recent state of the database. Use **WAL Frames (generated)** for a full frame inventory with forensic classification (Active / Superseded / Uncommitted / WAL slack), and enable **Show WAL history** in any table view to surface rows from historical frames — potentially recovering data from before the last UPDATE or DELETE.
-- **BLOB chaining:** SQLite cells containing embedded plists, images, or other binary data can be opened directly as a new viewer tab via right-click → **Open as new tab**, forcing a specific format (Hex/Text/Protobuf) if needed. The Properties panel keeps track of exactly which table/query, column, and row each opened cell came from.
+- **BLOB chaining:** SQLite cells containing embedded plists, images, or other binary data can be opened directly as a new viewer tab via right-click → **Open as new tab**, forcing a specific format (Hex/Text/Protobuf/FlatBuffers) if needed. The Properties panel keeps track of exactly which table/query, column, and row each opened cell came from.
 - **Unknown files:** even if Crush cannot parse a file, the Properties panel will show the identified format name and forensic relevance based on magic bytes — so you know what you are looking at before deciding to export and open it externally.
 
 ---

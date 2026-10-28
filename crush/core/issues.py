@@ -1333,6 +1333,259 @@ MESSAGES: dict[str, str] = {
         "as candidates (heuristic), neither as the field's value",
         "protobuf.ambiguous_payloads",
     ),
+    # -- FlatBuffers (schema-less) ----------------------------------------
+    "flatbuffers.no_root": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not read as a FlatBuffer: no root layout validates ({reasons})",
+        "flatbuffers.no_root",
+    ),
+    "flatbuffers.root_layout": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{layout} buffer (the other root layout doesn't validate)",
+        "flatbuffers.root_layout",
+    ),
+    "flatbuffers.root_both_layouts": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Both root layouts validate (plain and size-prefixed); the bytes don't record "
+        "which one was written. Both are shown",
+        "flatbuffers.root_both_layouts",
+    ),
+    "flatbuffers.layout_plain": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "plain",
+        "flatbuffers.layout_plain",
+    ),
+    "flatbuffers.layout_size_prefixed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "size-prefixed",
+        "flatbuffers.layout_size_prefixed",
+    ),
+    "flatbuffers.layout_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{layout}: {reason}",
+        "flatbuffers.layout_failed",
+    ),
+    "flatbuffers.widths_heuristic": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "A field's width and type are not recorded without a schema: each width is "
+        "inferred from the gap to the next stored slot (heuristic; padding makes it "
+        "ambiguous), every width that fits is offered. Vectors are read with 1-, 2-, 4- "
+        "and 8-byte elements and as offsets to strings or tables; elements of other "
+        "sizes (structs) aren't listed as readings",
+        "flatbuffers.widths_heuristic",
+    ),
+    "flatbuffers.ambiguous_fields": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} field(s) or vector(s) have more than one structurally consistent "
+        "reading. All are shown as candidates (heuristic), none as the value",
+        "flatbuffers.ambiguous_fields",
+    ),
+    "flatbuffers.cycles": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} offset(s) lead back into a table or vector that contains them; "
+        "shown as a cycle, not followed again",
+        "flatbuffers.cycles",
+    ),
+    "flatbuffers.unreferenced": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{bytes:,} B in {ranges:,} range(s) not covered by any structure or reading "
+        "(padding, or remnants of earlier data); listed under \"unreferenced bytes\"",
+        "flatbuffers.unreferenced",
+    ),
+    "flatbuffers.too_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{size:,} B is too short for a root offset and a table",
+        "flatbuffers.too_short",
+    ),
+    "flatbuffers.prefix_too_large": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the size prefix ({size:,} B) is larger than the {available:,} B after it",
+        "flatbuffers.prefix_too_large",
+    ),
+    "flatbuffers.root_offset_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "root offset {offset:,} is 0 or negative",
+        "flatbuffers.root_offset_invalid",
+    ),
+    "flatbuffers.root_out_of_bounds": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the root table at {table:#x} lies outside the {size:,}-byte buffer",
+        "flatbuffers.root_out_of_bounds",
+    ),
+    "flatbuffers.table_unaligned": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the table at {table:#x} isn't 4-byte aligned",
+        "flatbuffers.table_unaligned",
+    ),
+    "flatbuffers.table_out_of_bounds": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the table at {table:#x} lies outside the buffer",
+        "flatbuffers.table_out_of_bounds",
+    ),
+    "flatbuffers.vtable_out_of_bounds": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the vtable of the table at {table:#x} ({vtable:#x}) lies outside the buffer",
+        "flatbuffers.vtable_out_of_bounds",
+    ),
+    "flatbuffers.vtable_unaligned": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the vtable of the table at {table:#x} ({vtable:#x}) isn't 2-byte aligned",
+        "flatbuffers.vtable_unaligned",
+    ),
+    "flatbuffers.vtable_size_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the vtable at {vtable:#x} states {size} B (must be even and at least 4)",
+        "flatbuffers.vtable_size_invalid",
+    ),
+    "flatbuffers.table_inline_out_of_bounds": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the table at {table:#x} states {size} B of inline data, which doesn't fit the buffer",
+        "flatbuffers.table_inline_out_of_bounds",
+    ),
+    "flatbuffers.slot_outside_table": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "slot {slot} of the table at {table:#x} points to offset {offset}, outside its "
+        "{size} B of inline data",
+        "flatbuffers.slot_outside_table",
+    ),
+    # -- FlatBuffers schema -------------------------------------------------
+    "flatbuffers.schema.unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The schema file couldn't be read: {detail}",
+        "flatbuffers.schema.unreadable",
+    ),
+    "flatbuffers.schema.not_bfbs": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not a binary schema: bytes 4-7 aren't the BFBS identifier",
+        "flatbuffers.schema.not_bfbs",
+    ),
+    "flatbuffers.schema.bfbs_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The binary schema is damaged or not a reflection schema: {detail}",
+        "flatbuffers.schema.bfbs_invalid",
+    ),
+    "flatbuffers.schema.no_tables": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The schema declares no table that could be a buffer's root",
+        "flatbuffers.schema.no_tables",
+    ),
+    "flatbuffers.schema.flatc_no_platform": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "A .fbs schema needs flatc, and Crush bundles none for {platform}; load a "
+        ".bfbs instead (flatc -b --schema)",
+        "flatbuffers.schema.flatc_no_platform",
+    ),
+    "flatbuffers.schema.flatc_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "A .fbs schema needs the bundled flatc, which isn't there ({path}); when "
+        "running from source, run scripts/download_flatc_binaries.py, or load a .bfbs",
+        "flatbuffers.schema.flatc_missing",
+    ),
+    "flatbuffers.schema.flatc_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "flatc couldn't be started: {detail}",
+        "flatbuffers.schema.flatc_failed",
+    ),
+    "flatbuffers.schema.fbs_compile_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "flatc couldn't compile the schema (exit code {code}): {detail}",
+        "flatbuffers.schema.fbs_compile_failed",
+    ),
+    "flatbuffers.schema.identifier_differs": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "bytes 4-7 are \"{stored}\", not the schema's file_identifier \"{expected}\" "
+        "(the identifier is optional; the bytes may also be other data)",
+        "flatbuffers.schema.identifier_differs",
+    ),
+    "flatbuffers.schema.cycle": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the offset leads back to the table at {offset:#x}, which contains it (cycle); "
+        "not followed again",
+        "flatbuffers.schema.cycle",
+    ),
+    "flatbuffers.schema.slot_not_in_schema": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "slot {slot} is stored (at {offset:#x}) but the schema has no field for it; its "
+        "width isn't known, the {gap} B up to the next stored slot are shown",
+        "flatbuffers.schema.slot_not_in_schema",
+    ),
+    "flatbuffers.schema.required_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{field} is required by the schema but not stored",
+        "flatbuffers.schema.required_missing",
+    ),
+    "flatbuffers.schema.out_of_bounds": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{size} B at {offset:#x} lie outside the buffer",
+        "flatbuffers.schema.out_of_bounds",
+    ),
+    "flatbuffers.schema.offset_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the offset at {offset:#x} is 0, negative or points outside the buffer",
+        "flatbuffers.schema.offset_invalid",
+    ),
+    "flatbuffers.schema.type_unsupported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "type {type} isn't decoded here",
+        "flatbuffers.schema.type_unsupported",
+    ),
+    "flatbuffers.schema.flags_undeclared": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "bits {bits:#x} are set but not declared in {enum}",
+        "flatbuffers.schema.flags_undeclared",
+    ),
+    "flatbuffers.schema.enum_undeclared": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{value} is not a value {enum} declares (if {enum} is a bit_flags enum, a "
+        ".bfbs written without --bfbs-builtins doesn't record that, and a "
+        "combination of flags shows here too)",
+        "flatbuffers.schema.enum_undeclared",
+    ),
+    "flatbuffers.schema.union_member_undeclared": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "union type {value} is not a member {enum} declares",
+        "flatbuffers.schema.union_member_undeclared",
+    ),
+    "flatbuffers.schema.string_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the string at {offset:#x} doesn't fit the buffer or lacks its 0 terminator",
+        "flatbuffers.schema.string_invalid",
+    ),
+    "flatbuffers.schema.string_not_utf8": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the string isn't valid UTF-8 (first invalid byte at {offset:#x}); its bytes are shown",
+        "flatbuffers.schema.string_not_utf8",
+    ),
+    "flatbuffers.schema.vector_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the vector at {offset:#x} doesn't fit the buffer",
+        "flatbuffers.schema.vector_invalid",
+    ),
+    "flatbuffers.schema.flexbuffer_not_decoded": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "declared as FlexBuffers content, which isn't decoded; its bytes are shown",
+        "flatbuffers.schema.flexbuffer_not_decoded",
+    ),
+    "flatbuffers.schema.union_type_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the union's type field ({field}_type) isn't stored, so its member is unknown",
+        "flatbuffers.schema.union_type_missing",
+    ),
+    "flatbuffers.schema.nested_type_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "declared as a nested FlatBuffer of {type}, which the schema doesn't define as a table",
+        "flatbuffers.schema.nested_type_unknown",
+    ),
+    "flatbuffers.schema.nested_no_root": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "declared as a nested FlatBuffer, but no root layout validates ({reasons})",
+        "flatbuffers.schema.nested_no_root",
+    ),
+    "flatbuffers.schema.mismatches": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} field(s) disagree with the schema (marked on each field)",
+        "flatbuffers.schema.mismatches",
+    ),
     # -- Chromium Disk Cache ----------------------------------------------
     "chromium_cache.file_unreadable": QT_TRANSLATE_NOOP(
         "ParseIssue",

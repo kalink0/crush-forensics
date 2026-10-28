@@ -27,6 +27,7 @@
   - [SEGB / Biome Viewer](segb-biome-viewer.md)
   - [Realm Database Viewer](realm-database-viewer.md)
   - [Protobuf Viewer](protobuf-viewer.md)
+  - [FlatBuffers Viewer](flatbuffers-viewer.md)
   - [Multi-Log Studio](multi-log-studio.md)
   - [Run Analyzer](run-analyzer.md)
 - [Parsers & Viewers](parsers-viewers.md)

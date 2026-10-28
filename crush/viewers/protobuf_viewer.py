@@ -397,7 +397,8 @@ def _valid_byte_range(value: object) -> bool:
 def _byte_range_from_item(item: QStandardItem) -> tuple[int, int] | None:
     value = item.data(_BYTE_RANGE_ROLE)
     if isinstance(value, _EntryRef):
-        value = value.entry.get("byte_range")
+        # "range": the node shape of the FlatBuffers tree (subclass below).
+        value = value.entry.get("byte_range", value.entry.get("range"))
     if _valid_byte_range(value):
         return value
     return None
@@ -408,6 +409,9 @@ def _byte_highlight_ranges_from_item(item: QStandardItem) -> list[tuple[int, int
     if not isinstance(value, _EntryRef):
         return [value] if _valid_byte_range(value) else []
     entry = value.entry
+    if "highlight" in entry:
+        # A FlatBuffers node lists its exact ranges itself.
+        return [rng for rng in entry["highlight"] if _valid_byte_range(rng)]
     ranges = [
         entry.get("key_range"),
         entry.get("length_range"),
@@ -426,7 +430,17 @@ class ProtobufTreeWidget(QWidget):
     Each field is a top-level row; its interpretations appear as dimmed child
     rows so analysts can immediately see all candidate type readings.
     Nested messages expand recursively.
+
+    The FlatBuffers tree (flatbuffers_viewer.FlatBuffersTreeWidget) reuses
+    the toolbar, search, hex mapping, value bar and context menu through the
+    hooks below (_make_model, _column_labels, _populate_root,
+    _item_search_text, _item_full_text, _item_raw, _top_entries,
+    _export_content, _write_export).
     """
+
+    # Default export file name stem and the Inspect BLOB tab path prefix.
+    _EXPORT_STEM = "protobuf"
+    _VIRTUAL_PREFIX = "/virtual/protobuf/"
 
     def __init__(
         self,
@@ -478,14 +492,8 @@ class ProtobufTreeWidget(QWidget):
         self._hex_toggle_btn.clicked.connect(self._toggle_hex_view)
         tb_layout.addWidget(self._hex_toggle_btn)
 
-        self._model = QStandardItemModel()
-        self._model.setHorizontalHeaderLabels(
-            [
-                translate("ProtobufTreeWidget", "Field"),
-                translate("ProtobufTreeWidget", "Value"),
-                translate("ProtobufTreeWidget", "Wire type"),
-            ]
-        )
+        self._model = self._make_model()
+        self._model.setHorizontalHeaderLabels(self._column_labels())
 
         self._tree = QTreeView()
         self._tree.setModel(self._model)
@@ -529,8 +537,48 @@ class ProtobufTreeWidget(QWidget):
             else translate("ProtobufTreeWidget", "Show Hex")
         )
 
-        self._populate(decoded.get("entries", []), self._model.invisibleRootItem())
+        self._populate_root()
         self._tree.expandToDepth(1)
+
+    # -- hooks (overridden by the FlatBuffers tree) ---------------------------
+
+    def _make_model(self) -> QStandardItemModel:
+        return QStandardItemModel()
+
+    def _column_labels(self) -> list[str]:
+        return [
+            translate("ProtobufTreeWidget", "Field"),
+            translate("ProtobufTreeWidget", "Value"),
+            translate("ProtobufTreeWidget", "Wire type"),
+        ]
+
+    def _populate_root(self) -> None:
+        self._populate(self._decoded.get("entries", []), self._model.invisibleRootItem())
+
+    def _item_full_text(self, val_item: QStandardItem) -> str:
+        """The complete value of a row (the value bar, Copy value)."""
+        full_text = val_item.data(_FULLTEXT_ROLE)
+        return full_text if full_text is not None else val_item.text()
+
+    def _item_search_text(self, val_item: QStandardItem) -> str:
+        """What the search filter matches a row's value against."""
+        return self._item_full_text(val_item)
+
+    def _item_raw(self, val_item: QStandardItem) -> bytes | None:
+        """The bytes Inspect BLOB opens for a row."""
+        return val_item.data(_RAW_ROLE)
+
+    def _top_entries(self) -> list[dict[str, Any]]:
+        return self._decoded.get("entries", [])
+
+    def _export_content(self, entries: list[dict[str, Any]], fmt: str) -> str:
+        return entries_to_json(entries) if fmt == "json" else entries_to_text(entries)
+
+    def _write_export(self, path: str, entries: list[dict[str, Any]], fmt: str) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self._export_content(entries, fmt))
+
+    # -------------------------------------------------------------------------
 
     def _toggle_hex_view(self) -> None:
         visible = not self._mapped_view.is_hex_visible()
@@ -697,8 +745,7 @@ class ProtobufTreeWidget(QWidget):
             child_visible = self._filter_items(key_item, text)
             # Match against the full (untruncated) value where available, so a search
             # can find text even in a value the tree cell itself shows truncated.
-            full_text = val_item.data(_FULLTEXT_ROLE) if val_item else None
-            val_text = full_text if full_text is not None else (val_item.text() if val_item else "")
+            val_text = self._item_search_text(val_item) if val_item else ""
             key_match = not text or text in key_item.text().lower()
             val_match = text in val_text.lower()
             visible = key_match or val_match or child_visible
@@ -715,26 +762,23 @@ class ProtobufTreeWidget(QWidget):
         export_text = menu.addAction(translate("ProtobufTreeWidget", "Export All as Text…"))
         export_json = menu.addAction(translate("ProtobufTreeWidget", "Export All as JSON…"))
         action = menu.exec(self._export_btn.mapToGlobal(self._export_btn.rect().bottomLeft()))
-        entries = self._decoded.get("entries", [])
+        entries = self._top_entries()
         if action == export_text:
-            self._export_entries(entries, "text", "protobuf.txt")
+            self._export_entries(entries, "text", f"{self._EXPORT_STEM}.txt")
         elif action == export_json:
-            self._export_entries(entries, "json", "protobuf.json")
+            self._export_entries(entries, "json", f"{self._EXPORT_STEM}.json")
 
     def _export_entries(self, entries: list[dict[str, Any]], fmt: str, default_name: str) -> None:
-        if fmt == "json":
-            content = entries_to_json(entries)
-            name_filter = "JSON (*.json)"
-        else:
-            content = entries_to_text(entries)
-            name_filter = "Text (*.txt)"
+        name_filter = "JSON (*.json)" if fmt == "json" else "Text (*.txt)"
         path, _ = QFileDialog.getSaveFileName(
-            self, translate("ProtobufTreeWidget", "Export Protobuf"), default_name, name_filter
+            self, self._export_title(), default_name, name_filter
         )
         if not path:
             return
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+        self._write_export(path, entries, fmt)
+
+    def _export_title(self) -> str:
+        return translate("ProtobufTreeWidget", "Export Protobuf")
 
     def _current_row_items(self) -> tuple[QStandardItem, QStandardItem] | None:
         index = self._tree.currentIndex()
@@ -753,8 +797,7 @@ class ProtobufTreeWidget(QWidget):
             self._value_field.clear()
             return
         _, val_item = items
-        full_text = val_item.data(_FULLTEXT_ROLE)
-        show_value(self._value_field, full_text if full_text is not None else val_item.text())
+        show_value(self._value_field, self._item_full_text(val_item))
 
     def _on_context_menu(self, pos: object) -> None:
         index = self._tree.indexAt(pos)
@@ -768,9 +811,8 @@ class ProtobufTreeWidget(QWidget):
         # Copy and export file names use the English originals of Crush's
         # own words ("field 7", "{ 3 field(s) }").
         key = key_item.data(EXPORT_TEXT_ROLE) or key_item.text()
-        value = val_item.data(EXPORT_TEXT_ROLE) or val_item.data(_FULLTEXT_ROLE)
-        value = value if value is not None else val_item.text()
-        raw_bytes = val_item.data(_RAW_ROLE)
+        value = val_item.data(EXPORT_TEXT_ROLE) or self._item_full_text(val_item)
+        raw_bytes = self._item_raw(val_item)
         subtree_ref = key_item.data(_ENTRY_ROLE)  # None for interpretation hint rows
         subtree_entry = subtree_ref.entry if isinstance(subtree_ref, _EntryRef) else None
 
@@ -792,7 +834,7 @@ class ProtobufTreeWidget(QWidget):
             field_path = _index_path(index)
             BlobInspector(
                 raw_bytes, self,
-                artifact_path="/virtual/protobuf/" + "/".join(field_path),
+                artifact_path=self._VIRTUAL_PREFIX + "/".join(field_path),
                 provenance={
                     "Source field": " / ".join(field_path),
                     "Inspected bytes": translate(

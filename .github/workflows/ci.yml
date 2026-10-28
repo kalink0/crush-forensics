@@ -90,6 +90,13 @@ jobs:
           python -m pip install .[dev]
           python -m pip install python-magic-bin
 
+      # The .fbs schema tests run the bundled flatc. Not on macOS: there the
+      # script builds flatc from source (minutes per run); those tests skip
+      # with their reason, the .bfbs tests run everywhere.
+      - name: Download flatc (Linux/Windows)
+        if: runner.os != 'macOS'
+        run: python scripts/download_flatc_binaries.py
+
       - name: Pytest (Linux/macOS)
         if: runner.os != 'Windows'
         env:

@@ -77,6 +77,7 @@ if TYPE_CHECKING:
 _HEX_VIEW = "Hex view"
 _JSON_UNESCAPED = "JSON (unescaped from a string)"
 _PROTOBUF = "Protobuf (schema-less)"
+_FLATBUFFERS = "FlatBuffers (schema-less)"
 
 # Metadata fields on the first line above the Plist page's tree (what the
 # data is, whether it was resolved); every other field goes on the second.
@@ -89,6 +90,11 @@ _PROTOBUF_SUMMARY_FIRST_LINE = ("Format", "Parse warning")
 # The protobuf parser's notes a copy / export of the decoded text starts
 # with, as the page's summary shows them.
 _PROTOBUF_NOTES = ("Parse warning", "Nesting", "Ambiguous fields")
+# The same for the FlatBuffers parser (schema-less) and a schema decode.
+_FLATBUFFERS_NOTES = (
+    "Parse warning", "Root", "Root layouts not valid", "Field widths", "Ambiguous fields",
+    "Cycles", "Unreferenced bytes", "Schema", "Schema mismatches",
+)
 
 
 def _summary_label() -> QLabel:
@@ -127,6 +133,7 @@ _ENTRY_NAMES = (
     QT_TRANSLATE_NOOP("BlobInspector", "Latin-1 text"),
     QT_TRANSLATE_NOOP("BlobInspector", "JSON (unescaped from a string)"),
     QT_TRANSLATE_NOOP("BlobInspector", "Protobuf (schema-less)"),
+    QT_TRANSLATE_NOOP("BlobInspector", "FlatBuffers (schema-less)"),
     QT_TRANSLATE_NOOP("BlobInspector", "Base64 (decode)"),
     QT_TRANSLATE_NOOP("BlobInspector", "Base64url (decode)"),
     QT_TRANSLATE_NOOP("BlobInspector", "Hex → Bytes"),
@@ -135,6 +142,7 @@ _ENTRY_NAMES = (
     QT_TRANSLATE_NOOP("BlobInspector", "lzfse decompress"),
 )
 _SCHEMA_PREFIX = "Protobuf (schema: "
+_FB_SCHEMA_PREFIX = "FlatBuffers (schema: "
 
 
 def _entry_label(name: str) -> str:
@@ -142,6 +150,10 @@ def _entry_label(name: str) -> str:
     if name.startswith(_SCHEMA_PREFIX) and name.endswith(")"):
         return translate("BlobInspector", "Protobuf (schema: {message})").format(
             message=name[len(_SCHEMA_PREFIX):-1]
+        )
+    if name.startswith(_FB_SCHEMA_PREFIX) and name.endswith(")"):
+        return translate("BlobInspector", "FlatBuffers (schema: {root_type})").format(
+            root_type=name[len(_FB_SCHEMA_PREFIX):-1]
         )
     return translate("BlobInspector", name)  # i18n: keep -- marked in _ENTRY_NAMES
 
@@ -227,14 +239,19 @@ def _try_xml(data: bytes) -> str:
 
 @dataclass
 class _ProtobufReading:
-    """A Protobuf interpretation of the data, kept as decoded data (not as
-    text) for the tree page and for the tree's text / JSON export."""
+    """A Protobuf or FlatBuffers interpretation of the data, kept as decoded
+    data (not as text) for the tree page and for the tree's text / JSON
+    export."""
 
     decoded: dict[str, Any]
-    # The protobuf parser's metadata (schema-less); empty for a schema decode.
+    # The parser's metadata (Protobuf: schema-less only).
     metadata: dict[str, Any] = field(default_factory=dict)
-    # Tree path → byte ranges; set for a schema decode only.
+    # Tree path → byte ranges; set for a Protobuf schema decode only.
     byte_ranges: dict[tuple[str, ...], Any] | None = None
+    # "protobuf" or "flatbuffers"; a FlatBuffers tree reads its values from
+    # the decoded bytes (*raw*).
+    kind: str = "protobuf"
+    raw: bytes = b""
 
     @property
     def schema(self) -> bool:
@@ -245,26 +262,36 @@ class _ProtobufReading:
         not tried as messages, fields with two candidate readings."""
         from crush.core.issues import render_value
 
+        keys = _FLATBUFFERS_NOTES if self.kind == "flatbuffers" else _PROTOBUF_NOTES
         return [
             (key, render_value(self.metadata[key]))
-            for key in _PROTOBUF_NOTES
+            for key in keys
             if self.metadata.get(key)
         ]
 
     def text(self) -> str:
-        """The tree's text export (a schema decode: its JSON), after the
-        parser's notes as ``#`` lines."""
+        """The tree's text export (a Protobuf schema decode: its JSON), after
+        the parser's notes as ``#`` lines."""
         if self.schema:
             return self.json()
-        from crush.viewers.protobuf_viewer import entries_to_text
+        if self.kind == "flatbuffers":
+            from crush.viewers.flatbuffers_viewer import nodes_to_text, top_nodes
 
-        body = entries_to_text(self.decoded.get("entries", []))
+            body = nodes_to_text(top_nodes(self.decoded), self.raw)
+        else:
+            from crush.viewers.protobuf_viewer import entries_to_text
+
+            body = entries_to_text(self.decoded.get("entries", []))
         notes = [f"# {key}: {text}" for key, text in self.notes()]
         return "\n".join(notes) + "\n\n" + body if notes else body
 
     def json(self) -> str:
         if self.schema:
             return _json.dumps(self.decoded, indent=2, ensure_ascii=False)
+        if self.kind == "flatbuffers":
+            from crush.viewers.flatbuffers_viewer import nodes_to_json, top_nodes
+
+            return nodes_to_json(top_nodes(self.decoded), self.raw)
         from crush.viewers.protobuf_viewer import entries_to_json
 
         return entries_to_json(self.decoded.get("entries", []))
@@ -281,6 +308,50 @@ def _protobuf_reading(data: bytes) -> _ProtobufReading:
     vfs = BytesVFS(data, name="blob")
     parsed = ProtobufParser().parse(vfs.root(), vfs)
     return _ProtobufReading(parsed.data["decoded"], dict(parsed.metadata))
+
+
+def _flatbuffers_reading(data: bytes) -> _ProtobufReading:
+    """The FlatBuffers parser's schema-less decode of *data* and its notes,
+    the same the FlatBuffers viewer shows; raises with the reason when no
+    root layout validates."""
+    _no_bytes(data)
+    from crush.core.issues import render_value
+    from crush.parsers.flatbuffers_parser import decode_buffer, schema_less_metadata
+
+    decoded = decode_buffer(data)
+    meta = schema_less_metadata(decoded)
+    if not decoded["buffers"]:
+        raise ValueError(render_value(meta["Parse warning"], localized=True))
+    return _ProtobufReading(decoded, meta, kind="flatbuffers", raw=data)
+
+
+def _flatbuffers_schema_reading(schema: Any, root_type: str, data: bytes) -> _ProtobufReading:
+    """*data* decoded with the loaded FlatBuffers *schema* as *root_type*;
+    raises with the reason when no root layout validates."""
+    _no_bytes(data)
+    from crush.core.issues import ParseIssue, render_value
+    from crush.parsers.flatbuffers_schema import decode_with_schema
+    from crush.viewers.flatbuffers_viewer import schema_note
+
+    decoded = decode_with_schema(schema, root_type, data)
+    if not decoded["buffers"]:
+        raise ValueError(render_value(
+            ParseIssue("flatbuffers.no_root", {"reasons": decoded["root_failures"]}), localized=True
+        ))
+    meta: dict[str, Any] = {
+        "Format": f"FlatBuffers (schema: {root_type})",
+        "Schema": schema_note(schema),
+    }
+    if decoded["issues"]:
+        meta["Schema mismatches"] = ParseIssue(
+            "flatbuffers.schema.mismatches", {"count": decoded["issues"]}
+        )
+    if decoded["unreferenced"]:
+        meta["Unreferenced bytes"] = ParseIssue("flatbuffers.unreferenced", {
+            "bytes": sum(e - s for s, e in decoded["unreferenced"]),
+            "ranges": len(decoded["unreferenced"]),
+        })
+    return _ProtobufReading(decoded, meta, kind="flatbuffers", raw=data)
 
 
 def _try_abx(data: bytes) -> str:
@@ -327,7 +398,7 @@ _AUTO_ORDER: tuple[str, ...] = (
 # Not a confirmation of the format: it (almost) always produces output, or
 # its reading rests on an assumption its output states.
 _PERMISSIVE: frozenset[str] = frozenset(
-    {"Latin-1 text", _PROTOBUF, _JSON_UNESCAPED}
+    {"Latin-1 text", _PROTOBUF, _FLATBUFFERS, _JSON_UNESCAPED}
 )
 
 _INTERMEDIATE_FORMATS: tuple[str, ...] = tuple(_INTERMEDIATE)
@@ -371,6 +442,10 @@ def _is_protobuf_entry(name: str) -> bool:
     return name == "Protobuf (schema-less)" or name.startswith("Protobuf (schema: ")
 
 
+def _is_flatbuffers_entry(name: str) -> bool:
+    return name == _FLATBUFFERS or name.startswith(_FB_SCHEMA_PREFIX)
+
+
 class _BlobViewerEdit(QPlainTextEdit):
     """QPlainTextEdit with a Copy All context-menu entry."""
 
@@ -405,7 +480,7 @@ def _step_labels() -> list[str]:
 
 
 def _interpretation_labels() -> list[str]:
-    names = [_HEX_VIEW, "Image", "Decoded (from table)", *_TERMINAL_TEXT, _PROTOBUF]
+    names = [_HEX_VIEW, "Image", "Decoded (from table)", *_TERMINAL_TEXT, _PROTOBUF, _FLATBUFFERS]
     # "✓  " / "~  " / "    " prefix as the list shows them.
     return [f"✓  {_entry_label(name)}" for name in names]
 
@@ -512,6 +587,9 @@ class _BlobPanel(QWidget):
         self._protobuf_shown: str | None = None
         self._schema_pool = None
         self._schema_message: str | None = None
+        # The loaded FlatBuffers schema and the root type picked from it.
+        self._fb_schema: Any = None
+        self._fb_root: str | None = None
         self._build_panel()
         self._recompute()
 
@@ -533,6 +611,7 @@ class _BlobPanel(QWidget):
         self._protobuf_readings = {}
         self._set_protobuf_shown(None)
         self._schema_toolbar.setVisible(False)
+        self._fb_schema_toolbar.setVisible(False)
 
     def show_unreadable_input(self, reason: str) -> None:
         """The input couldn't be turned into bytes (e.g. pasted text that
@@ -654,6 +733,32 @@ class _BlobPanel(QWidget):
         self._schema_toolbar.setVisible(False)
         content_col.addWidget(self._schema_toolbar)
 
+        # The same for FlatBuffers: a .fbs / .bfbs schema and its root type
+        # (the schema's declared root_type preselected).
+        self._fb_schema_toolbar = QWidget()
+        fb_row = QHBoxLayout(self._fb_schema_toolbar)
+        fb_row.setContentsMargins(0, 0, 0, 0)
+        fb_row.setSpacing(4)
+        self._fb_load_btn = QPushButton(translate("_BlobPanel", "Load .fbs / .bfbs schema…"))
+        self._fb_load_btn.setToolTip(
+            translate("_BlobPanel", "Load a .fbs or .bfbs schema for FlatBuffers decoding")
+        )
+        self._fb_load_btn.clicked.connect(self._on_load_fb_schema)
+        fb_row.addWidget(self._fb_load_btn)
+        self._fb_root_combo = QComboBox()
+        self._fb_root_combo.setPlaceholderText(translate("_BlobPanel", "No schema loaded"))
+        self._fb_root_combo.setEnabled(False)
+        self._fb_root_combo.currentTextChanged.connect(self._on_fb_root_changed)
+        fb_row.addWidget(self._fb_root_combo, stretch=1)
+        self._fb_clear_btn = QPushButton("✕")
+        self._fb_clear_btn.setFixedWidth(22)
+        self._fb_clear_btn.setToolTip(translate("_BlobPanel", "Clear loaded schema"))
+        self._fb_clear_btn.setEnabled(False)
+        self._fb_clear_btn.clicked.connect(self._on_clear_fb_schema)
+        fb_row.addWidget(self._fb_clear_btn)
+        self._fb_schema_toolbar.setVisible(False)
+        content_col.addWidget(self._fb_schema_toolbar)
+
         self._stack = QStackedWidget()
 
         self._viewer = _BlobViewerEdit(self)
@@ -768,6 +873,7 @@ class _BlobPanel(QWidget):
             (QT_TRANSLATE_NOOP("_BlobPanel", "Hex"), "__hex__"),
             (QT_TRANSLATE_NOOP("_BlobPanel", "Text"), "__text__"),
             (QT_TRANSLATE_NOOP("_BlobPanel", "Protobuf (schema-less)"), "Protobuf (schema-less)"),
+            (QT_TRANSLATE_NOOP("_BlobPanel", "FlatBuffers (schema-less)"), _FLATBUFFERS),
         ):
             action = open_menu.addAction(translate("_BlobPanel", label))  # i18n: keep -- marked above
             action.triggered.connect(lambda _checked=False, f=fmt: self._open_in_tab(f))
@@ -834,6 +940,82 @@ class _BlobPanel(QWidget):
         self._recompute()
         if self._schema_message:
             self._select_format(f"Protobuf (schema: {self._schema_message})")
+
+    def _on_load_fb_schema(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            translate("_BlobPanel", "Load FlatBuffers schema"),
+            "",
+            translate("BlobInspector", "FlatBuffers schema")
+            + " (*.fbs *.bfbs);;"  # i18n: keep -- file filter pattern
+            + translate("BlobInspector", "All files")
+            + " (*)",  # i18n: keep -- file filter pattern
+        )
+        if path:
+            self.load_fb_schema(Path(path))
+
+    def load_fb_schema(self, path: Path) -> bool:
+        """Load the FlatBuffers schema at *path*, root types into the
+        combo (the declared root_type preselected), and select its reading.
+        False (and the reason in the content view) when it can't be loaded."""
+        from crush.core.issues import render_value
+        from crush.parsers.flatbuffers_schema import SchemaLoadError, load_schema
+        from crush.ui.busy_dialog import busy_call
+
+        def work() -> Any:
+            # Returned, not raised: busy_call re-raises as a plain RuntimeError.
+            try:
+                return load_schema(path)
+            except SchemaLoadError as exc:
+                return exc
+
+        loaded = busy_call(self, translate("_BlobPanel", "Loading schema…"), work)
+        if isinstance(loaded, SchemaLoadError):
+            self._viewer.setPlainText(
+                translate("BlobInspector", "[schema load failed: {error}]").format(
+                    error=render_value(loaded.issue, localized=True)
+                )
+            )
+            self._stack.setCurrentWidget(self._viewer)
+            return False
+        self._fb_schema = loaded
+        names = loaded.table_names()
+        self._fb_root_combo.blockSignals(True)
+        self._fb_root_combo.clear()
+        self._fb_root_combo.addItems(names)
+        if loaded.root_table in names:
+            self._fb_root_combo.setCurrentText(loaded.root_table)
+        self._fb_root_combo.blockSignals(False)
+        self._fb_root_combo.setEnabled(True)
+        self._fb_clear_btn.setEnabled(True)
+        from crush.viewers.flatbuffers_viewer import schema_note
+
+        self._fb_load_btn.setToolTip(schema_note(loaded))
+        self._fb_root = self._fb_root_combo.currentText() or None
+        self._recompute()
+        if self._fb_root:
+            self._select_format(f"{_FB_SCHEMA_PREFIX}{self._fb_root})")
+        return True
+
+    def _on_clear_fb_schema(self) -> None:
+        self._fb_schema = None
+        self._fb_root = None
+        self._fb_root_combo.blockSignals(True)
+        self._fb_root_combo.clear()
+        self._fb_root_combo.blockSignals(False)
+        self._fb_root_combo.setEnabled(False)
+        self._fb_clear_btn.setEnabled(False)
+        self._fb_load_btn.setToolTip(
+            translate("_BlobPanel", "Load a .fbs or .bfbs schema for FlatBuffers decoding")
+        )
+        self._recompute()
+        self._select_format(_FLATBUFFERS)
+
+    def _on_fb_root_changed(self, name: str) -> None:
+        self._fb_root = name or None
+        self._recompute()
+        if self._fb_root:
+            self._select_format(f"{_FB_SCHEMA_PREFIX}{self._fb_root})")
 
     def _select_format(self, name: str) -> None:
         for i in range(self._format_list.count()):
@@ -968,6 +1150,34 @@ class _BlobPanel(QWidget):
                 )
                 confident.append(label)
 
+        try:
+            self._protobuf_readings[_FLATBUFFERS] = self._busy_if_large(
+                data, lambda: _flatbuffers_reading(data)
+            )
+        except Exception as exc:
+            self._failed_reasons[_FLATBUFFERS] = _reason(exc)
+            failed.append(_FLATBUFFERS)
+        else:
+            uncertain.append(_FLATBUFFERS)
+
+        if self._fb_schema is not None and self._fb_root:
+            label = f"{_FB_SCHEMA_PREFIX}{self._fb_root})"
+            schema, root = self._fb_schema, self._fb_root
+            try:
+                reading = self._busy_if_large(
+                    data, lambda: _flatbuffers_schema_reading(schema, root, data)
+                )
+            except Exception as exc:
+                self._failed_reasons[label] = translate(
+                    "BlobInspector", "schema decode failed: {error}"
+                ).format(error=_reason(exc))
+                failed.append(label)
+            else:
+                self._protobuf_readings[label] = reading
+                # Bytes that disagree with the schema: decoded, but not a
+                # confirmation of the format.
+                (uncertain if reading.metadata.get("Schema mismatches") else confident).append(label)
+
         prev = self._format_list.currentItem()
         prev_name: str | None = prev.data(Qt.ItemDataRole.UserRole) if prev else None
 
@@ -1049,6 +1259,7 @@ class _BlobPanel(QWidget):
             return
 
         self._schema_toolbar.setVisible(_is_protobuf_entry(name))
+        self._fb_schema_toolbar.setVisible(_is_flatbuffers_entry(name))
         self._set_protobuf_shown(name if name in self._protobuf_readings else None)
 
         if name in self._protobuf_readings:
@@ -1144,8 +1355,14 @@ class _BlobPanel(QWidget):
 
             if self._protobuf_view is not None:
                 self._protobuf_view.deleteLater()
-            if reading.byte_ranges is not None:
-                view: QWidget = schema_tree(
+            if reading.kind == "flatbuffers":
+                from crush.viewers.flatbuffers_viewer import FlatBuffersTreeWidget
+
+                view: QWidget = FlatBuffersTreeWidget(
+                    reading.decoded, raw=data, parent=self._protobuf_page
+                )
+            elif reading.byte_ranges is not None:
+                view = schema_tree(
                     reading.decoded, reading.byte_ranges, data, self._protobuf_page
                 )
             else:
@@ -1186,12 +1403,27 @@ class _BlobPanel(QWidget):
             content, kind, suffix = reading.text(), OUTPUT_DECODED_TEXT, ".txt"
         rendering = {
             "interpretation": self._protobuf_shown or "",
-            "renderer": "Crush Protobuf tree export (complete payloads)",
+            "renderer": (
+                "Crush FlatBuffers tree export (complete values; each vector's bytes once)"
+                if reading.kind == "flatbuffers"
+                else "Crush Protobuf tree export (complete payloads)"
+            ),
             "format": "JSON" if fmt == "json" or reading.schema else "text",
         }
         for key, text in reading.notes():
             rendering[key] = text
         self._export(content.encode("utf-8"), kind, rendering, suffix)
+
+    def _busy_if_large(self, data: bytes, work: Callable[[], Any]) -> Any:
+        """*work* (a FlatBuffers decode of *data*) behind the wait dialog
+        when *data* is large enough to freeze the window otherwise."""
+        from crush.viewers.flatbuffers_viewer import FLATBUFFERS_BUSY_BYTES
+
+        if len(data) <= FLATBUFFERS_BUSY_BYTES:
+            return work()
+        from crush.ui.busy_dialog import busy_call
+
+        return busy_call(self, translate("_BlobPanel", "Decoding as FlatBuffers…"), work)
 
     def _update_bytes_actions(self) -> None:
         ok = self._pipeline is not None

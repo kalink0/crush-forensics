@@ -36,6 +36,9 @@ from crush.core.vfs import (
     open_vfs,
 )
 from crush.parsers.abx_parser import AbxParser
+from crush.parsers.flatbuffers_parser import FlatBuffersParser
+from crush.parsers.flatbuffers_schema import decode_with_schema as decode_with_flatbuffers_schema
+from crush.parsers.flatbuffers_schema import load_schema as load_flatbuffers_schema
 from crush.parsers.image_parser import ImageParser
 from crush.parsers.json_parser import JsonParser
 from crush.parsers.media_parser import MediaParser
@@ -3109,3 +3112,210 @@ def test_protobuf_schema_decode_is_reproducible(protobuf_schema_fixture: dict) -
     ranges1 = schema_byte_ranges(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
     ranges2 = schema_byte_ranges(loaded["pool"], "crush.fixtures.BasicWireTypes", pb_bytes)
     assert ranges1 == ranges2
+
+
+# ---------------------------------------------------------------------------
+# 17. FlatBuffers parser (schema-less) and schema decode forensic tests --
+#     the flatc-generated record (generate_flatbuffers_fixtures.py), checked
+#     against flatc's own JSON of the same bytes.
+# ---------------------------------------------------------------------------
+
+_FB_ROOT = "crush.fixtures.Record"
+
+
+def _flatbuffers_node(path: Path) -> tuple[VFSNode, DirectoryVFS]:
+    vfs = DirectoryVFS(path.parent)
+    node = next(c for c in vfs.root().children if c.name == path.name)
+    return node, vfs
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    subject="FlatBuffers",
+    desc="FlatBuffersParser.parse must leave the source file's bytes unchanged",
+)
+def test_flatbuffers_parser_does_not_modify_source(flatbuffers_fixture: dict) -> None:
+    path = flatbuffers_fixture["bin"]
+    digest_before = _sha256_file(path)
+    node, vfs = _flatbuffers_node(path)
+
+    FlatBuffersParser().parse(node, vfs)
+
+    assert _sha256_file(path) == digest_before, "FlatBuffersParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    subject="FlatBuffers",
+    desc="FlatBuffersParser.parse must not change mtime or ctime of the source file",
+)
+def test_flatbuffers_parser_does_not_change_timestamps(flatbuffers_fixture: dict) -> None:
+    path = flatbuffers_fixture["bin"]
+    ts_before = _timestamps(path)
+    node, vfs = _flatbuffers_node(path)
+
+    FlatBuffersParser().parse(node, vfs)
+
+    _assert_timestamps_unchanged(ts_before, _timestamps(path), "FlatBuffersParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    subject="FlatBuffers",
+    desc="FlatBuffersParser.parse must not create any sibling files next to the source",
+)
+def test_flatbuffers_parse_creates_no_sibling_files(flatbuffers_fixture: dict) -> None:
+    path = flatbuffers_fixture["bin"]
+    files_before = set(path.parent.iterdir())
+    node, vfs = _flatbuffers_node(path)
+
+    FlatBuffersParser().parse(node, vfs)
+
+    new_files = set(path.parent.iterdir()) - files_before
+    assert new_files == set(), f"FlatBuffersParser left unexpected files next to the source: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    subject="FlatBuffers",
+    desc="FlatBuffersParser.parse must work when the source file is chmod 0o444",
+)
+def test_flatbuffers_parser_works_on_readonly_media(flatbuffers_fixture: dict) -> None:
+    path = flatbuffers_fixture["bin"]
+    path.chmod(0o444)
+    try:
+        node, vfs = _flatbuffers_node(path)
+        result = FlatBuffersParser().parse(node, vfs)
+        assert result.viewer_type == "flatbuffers"
+        assert result.data["decoded"]["buffers"]
+    finally:
+        path.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="FlatBuffers",
+    desc="Schema-less decode of the flatc-written record: plain root layout, the "
+    "CRSH bytes at 4-7, the title slot offered as an offset to the string 'evidence', "
+    "the field widths stated as a heuristic",
+)
+def test_flatbuffers_fixture_known_output(flatbuffers_fixture: dict) -> None:
+    node, vfs = _flatbuffers_node(flatbuffers_fixture["bin"])
+
+    result = FlatBuffersParser().parse(node, vfs)
+
+    decoded = result.data["decoded"]
+    assert [b["layout"] for b in decoded["buffers"]] == ["plain"]
+    buffer = decoded["buffers"][0]
+    ident = next(c for c in buffer["children"] if c.get("field") == "file_identifier")
+    s, e = ident["value_range"]
+    assert result.data["raw"][s:e] == b"CRSH"
+    table = buffer["children"][-1]
+    title = next(c for c in table["children"] if c["node"] == "field" and c["id"] == 8)
+    strings = [c for c in title["children"] if c["as"] == "string"]
+    assert [c["text"] for c in strings] == ["evidence"]
+    assert len(title["children"]) > 1  # a candidate, not presented as the value
+    assert result.metadata["Field widths"].code == "flatbuffers.widths_heuristic"
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    subject="FlatBuffers",
+    desc="Parsing the same FlatBuffer twice must produce identical results",
+)
+def test_flatbuffers_parse_is_reproducible(flatbuffers_fixture: dict) -> None:
+    node, vfs = _flatbuffers_node(flatbuffers_fixture["bin"])
+    parser = FlatBuffersParser()
+
+    r1 = parser.parse(node, vfs)
+    r2 = parser.parse(node, vfs)
+
+    assert r1.data == r2.data
+    assert r1.metadata == r2.metadata
+    assert r1.viewer_type == r2.viewer_type
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    subject="FlatBuffers with schema",
+    desc="Loading the .bfbs schema and decoding with it must leave the schema and data files unchanged",
+)
+def test_flatbuffers_schema_does_not_modify_source(flatbuffers_fixture: dict) -> None:
+    bfbs, data = flatbuffers_fixture["bfbs"], flatbuffers_fixture["bin"]
+    digests = (_sha256_file(bfbs), _sha256_file(data))
+
+    decode_with_flatbuffers_schema(load_flatbuffers_schema(bfbs), _FB_ROOT, data.read_bytes())
+
+    assert (_sha256_file(bfbs), _sha256_file(data)) == digests
+
+
+@pytest.mark.skipif(
+    not (FIXTURES_DIR.parents[1] / "bin" / "flatc" / "VERSION.txt").exists(),
+    reason="bundled flatc not present (scripts/download_flatc_binaries.py)",
+)
+@pytest.mark.forensic(
+    category="No Side Effects",
+    subject="FlatBuffers with schema",
+    desc="Compiling a .fbs schema with the bundled flatc must not create any files next to "
+    "the schema (its .bfbs output goes to a separate temp directory)",
+)
+def test_flatbuffers_fbs_compile_creates_no_sibling_files(flatbuffers_fixture: dict) -> None:
+    fbs = flatbuffers_fixture["fbs"]
+    files_before = set(fbs.parent.iterdir())
+
+    load_flatbuffers_schema(fbs)
+
+    new_files = set(fbs.parent.iterdir()) - files_before
+    assert new_files == set(), f"flatc left unexpected files next to the schema: {new_files}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    subject="FlatBuffers with schema",
+    desc="The schema decode must work when the .bfbs and the data file are chmod 0o444",
+)
+def test_flatbuffers_schema_works_on_readonly_media(flatbuffers_fixture: dict) -> None:
+    bfbs, data = flatbuffers_fixture["bfbs"], flatbuffers_fixture["bin"]
+    bfbs.chmod(0o444)
+    data.chmod(0o444)
+    try:
+        decoded = decode_with_flatbuffers_schema(
+            load_flatbuffers_schema(bfbs), _FB_ROOT, data.read_bytes()
+        )
+        assert decoded["issues"] == 0
+    finally:
+        bfbs.chmod(0o644)
+        data.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="FlatBuffers with schema",
+    desc="The record decoded with its .bfbs must equal flatc's own JSON of the same bytes "
+    "(flatbuffers_record.expected.json), in the plain and the size-prefixed layout",
+)
+def test_flatbuffers_schema_fixture_known_output(flatbuffers_fixture: dict) -> None:
+    from crush.tests.flatbuffers_helpers import root_table, table_json
+
+    schema = load_flatbuffers_schema(flatbuffers_fixture["bfbs"])
+    for key, layout in (("bin", "plain"), ("sizeprefixed", "size_prefixed")):
+        raw = flatbuffers_fixture[key].read_bytes()
+        decoded = decode_with_flatbuffers_schema(schema, _FB_ROOT, raw)
+        assert decoded["issues"] == 0
+        assert table_json(root_table(decoded, layout), raw) == flatbuffers_fixture["expected"]
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    subject="FlatBuffers with schema",
+    desc="Decoding the same FlatBuffer with the same schema twice must produce identical results",
+)
+def test_flatbuffers_schema_decode_is_reproducible(flatbuffers_fixture: dict) -> None:
+    schema = load_flatbuffers_schema(flatbuffers_fixture["bfbs"])
+    raw = flatbuffers_fixture["bin"].read_bytes()
+
+    assert decode_with_flatbuffers_schema(schema, _FB_ROOT, raw) == decode_with_flatbuffers_schema(
+        schema, _FB_ROOT, raw
+    )

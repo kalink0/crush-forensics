@@ -137,6 +137,8 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "JSON",
         "Protobuf",
         "Protobuf with .proto schema",
+        "FlatBuffers",
+        "FlatBuffers with schema",
         "PDF",
         "Image",
         "Apple ATX",

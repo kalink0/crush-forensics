@@ -12,6 +12,7 @@ The left panel shows the loaded archive or folder as a tree.
     - **Hex** — force raw hex view
     - **Text** — force text view
     - **Protobuf** — schema-less Protobuf decode (optionally load a `.proto` schema)
+    - **FlatBuffers** — schema-less FlatBuffers decode (optionally load a `.fbs` or `.bfbs` schema)
     - **MMKV** — open a Tencent MMKV key-value store. MMKV has no magic bytes at all, so — unlike every other format — it can never be auto-detected from content; this is the only way to open one
     - **Realm DB (Encrypted)…** — decrypt and open a Realm database given its 64-byte encryption key (as a hex string). This is the only way to open an encrypted `.realm` file — a normal double-click never prompts for a key, since a header that fails to decode is equally consistent with "encrypted" and "corrupt/non-standard" and can't be told apart from content alone
     - **SQLite DB (Encrypted)…** — open a SQLCipher-encrypted SQLite database given its password or raw key, with optional advanced cipher parameters. Same no-auto-prompt rule as Realm above

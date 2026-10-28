@@ -1,0 +1,10 @@
+// Included by flatbuffers_record.fbs (tests that includes reach the .bfbs).
+namespace crush.fixtures.common;
+
+struct Point { x: float; y: float; }
+
+struct Cells { values: [ubyte:4]; }
+
+enum Kind : byte { Unknown = 0, Photo = 1, Message = 2 }
+
+table Note { text: string; }

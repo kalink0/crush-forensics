@@ -4639,6 +4639,7 @@ class TableViewer(QWidget):
         open_tab_hex = open_tab_menu.addAction(translate("TableViewer", "Hex"))
         open_tab_text = open_tab_menu.addAction(translate("TableViewer", "Text"))
         open_tab_proto = open_tab_menu.addAction(translate("TableViewer", "Protobuf"))
+        open_tab_flatbuffers = open_tab_menu.addAction(translate("TableViewer", "FlatBuffers"))
         blob_bytes = _coerce_blob(blob)
         display_val = self._table_view.model().data(index, Qt.ItemDataRole.DisplayRole)
         display_str = str(display_val) if display_val is not None else ""
@@ -4686,7 +4687,7 @@ class TableViewer(QWidget):
                 self._export_blob(blob_bytes)
             elif has_display:
                 self._export_blob(str(display_val).encode("utf-8", errors="replace"))
-        elif action in {open_tab_auto, open_tab_hex, open_tab_text, open_tab_proto}:
+        elif action in {open_tab_auto, open_tab_hex, open_tab_text, open_tab_proto, open_tab_flatbuffers}:
             data_to_open = blob_bytes
             if data_to_open is None and has_display:
                 data_to_open = str(display_val).encode("utf-8", errors="replace")
@@ -4710,6 +4711,10 @@ class TableViewer(QWidget):
                 elif action == open_tab_proto:
                     request_open_bytes(
                         self, data_to_open, artifact_path, "Protobuf (schema-less)", artifact_meta
+                    )
+                elif action == open_tab_flatbuffers:
+                    request_open_bytes(
+                        self, data_to_open, artifact_path, "FlatBuffers (schema-less)", artifact_meta
                     )
 
     def _virtual_cell_path_and_metadata(

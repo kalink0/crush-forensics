@@ -1,0 +1,39 @@
+// Synthetic FlatBuffers test schema (generate_flatbuffers_fixtures.py).
+include "flatbuffers_include.fbs";
+
+namespace crush.fixtures;
+
+enum Flags : ubyte (bit_flags) { Read, Starred, Deleted }
+
+table Attachment { name: string; size: ulong; }
+
+union Payload { crush.fixtures.common.Note, Attachment }
+
+table Inner { id: uint; }
+
+table Record {
+  id: ulong (key);
+  created_ms: long;
+  kind: crush.fixtures.common.Kind = Photo;
+  flags: Flags;
+  score: double;
+  ratio: float = 1.5;
+  count: short = 7;
+  maybe: int = null;
+  title: string (required);
+  tags: [string];
+  readings: [int];
+  raw: [ubyte];
+  where: crush.fixtures.common.Point;
+  cells: crush.fixtures.common.Cells;
+  attachments: [Attachment];
+  payload: Payload;
+  old_field: int (deprecated);
+  nested: [ubyte] (nested_flatbuffer: "Inner");
+  big: [ubyte] (vector64);
+  note_added_later: string;
+}
+
+root_type Record;
+file_identifier "CRSH";
+file_extension "crsh";

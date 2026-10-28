@@ -23,6 +23,7 @@ from crush.parsers.pdf_parser import PDFParser
 from crush.parsers.hex_fallback import HexFallbackParser
 from crush.parsers.log_parser import LogParser  # noqa: F401 — explicit-only, not auto-registered
 from crush.parsers.protobuf_parser import ProtobufParser
+from crush.parsers.flatbuffers_parser import FlatBuffersParser
 from crush.parsers.mmkv_parser import MMKVParser
 
 __all__ = ["ParserRegistry"]
@@ -42,5 +43,6 @@ ParserRegistry.register(MediaParser())
 ParserRegistry.register(JsonParser())
 ParserRegistry.register(PDFParser())
 ParserRegistry.register(ProtobufParser())  # explicit-only (can_parse=False), registered for DISPLAY_NAME lookup
+ParserRegistry.register(FlatBuffersParser())  # explicit-only (no reliable magic), as Protobuf
 ParserRegistry.register(MMKVParser())  # explicit-only (can_parse=False, no magic bytes to detect)
 ParserRegistry.register(HexFallbackParser())  # Must be last

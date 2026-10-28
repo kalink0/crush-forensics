@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 import crush
 from crush.core.format_db import FORMAT_REFERENCE_URL
 from crush.core.peach_launcher import get_bundled_peach_version
+from crush.parsers.flatbuffers_schema import get_bundled_flatc_version
 from crush.parsers.unified_log_parser import get_bundled_ul_version
 from crush.ui import open_url as _open_link
 from crush.ui.i18n import translate
@@ -59,6 +60,8 @@ def _ack_body() -> str:
     ul_label = f"unifiedlog_iterator {ul_version}" if ul_version else "unifiedlog_iterator"
     peach_version = get_bundled_peach_version()
     peach_label = f"peach {peach_version}" if peach_version else "peach"
+    flatc_version = get_bundled_flatc_version()
+    flatc_label = f"flatc {flatc_version}" if flatc_version else "flatc"
     h_contributors = translate("AboutDialog", "Contributors")
     h_translations = translate("AboutDialog", "Translations")
     h_bundled = translate("AboutDialog", "Bundled third-party code")
@@ -92,6 +95,10 @@ def _ack_body() -> str:
         'peach': translate(
             "AboutDialog",
             "Sibling forensic multi-log viewer — bundled in portable builds for \"Send to Peach\"; when running from source, place the binary under <code>crush/bin/peach/</code>",
+        ),
+        'flatc': translate(
+            "AboutDialog",
+            "FlatBuffers schema compiler (.fbs → .bfbs) for the FlatBuffers viewer — bundled in portable builds; when running from source, run <code>scripts/download_flatc_binaries.py</code>",
         ),
         'crush-analyze': translate(
             "AboutDialog",
@@ -174,6 +181,12 @@ def _ack_body() -> str:
     <td><a href="https://github.com/kalink0/peach-forensics">kalink0</a></td>
   </tr>
   <tr class="alt">
+    <td><b>{flatc_label}</b></td>
+    <td>{desc['flatc']}</td>
+    <td class="lic">Apache 2.0</td>
+    <td><a href="https://github.com/google/flatbuffers">Google</a></td>
+  </tr>
+  <tr>
     <td><b>crush-analyze</b></td>
     <td>{desc['crush-analyze']}</td>
     <td class="lic">Apache 2.0</td>

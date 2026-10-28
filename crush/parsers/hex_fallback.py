@@ -9,7 +9,9 @@ from crush.parsers.base import AbstractParser, ParseResult
 
 # Parsers that never claim a file from its content, and how to reach them
 # instead ("Open as" menu entry); see _parser_support.
-_OPEN_AS_ONLY = {"ProtobufParser": "Protobuf", "MMKVParser": "MMKV"}
+_OPEN_AS_ONLY = {
+    "ProtobufParser": "Protobuf", "FlatBuffersParser": "FlatBuffers", "MMKVParser": "MMKV",
+}
 
 
 class HexFallbackParser(AbstractParser):

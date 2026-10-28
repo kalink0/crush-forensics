@@ -17,6 +17,7 @@ atx
 avi
 avif
 bdb
+bfbs
 binarycookies
 bitlocker
 bmp
@@ -53,6 +54,7 @@ f2fs
 fat12-16
 fat32
 flac
+flatbuffers
 fsevents
 gif
 gpt
@@ -148,6 +150,7 @@ squashfs
 super
 syslog
 tar
+tflite
 thumbcache
 tiff
 tracev3

@@ -15,6 +15,7 @@ def _register_builtin_viewers() -> None:
     from crush.viewers.image_viewer import ImageViewer
     from crush.viewers.abx_viewer import AbxViewer
     from crush.viewers.protobuf_viewer import ProtobufViewer
+    from crush.viewers.flatbuffers_viewer import FlatBuffersViewer
     from crush.viewers.realm_viewer import RealmViewer
     from crush.viewers.leveldb_viewer import LevelDbViewer
     from crush.viewers.mmkv_viewer import MMKVViewer
@@ -33,6 +34,7 @@ def _register_builtin_viewers() -> None:
     ViewerRegistry.register("image", lambda r, n, v, p: ImageViewer(r.data, p))
     ViewerRegistry.register("abx", lambda r, n, v, p: AbxViewer(r.data, p))
     ViewerRegistry.register("protobuf", lambda r, n, v, p: ProtobufViewer(r.data, p))
+    ViewerRegistry.register("flatbuffers", lambda r, n, v, p: FlatBuffersViewer(r.data, p))
     ViewerRegistry.register("realm", lambda r, n, v, p: RealmViewer(r.data, p))
     ViewerRegistry.register("leveldb", lambda r, n, v, p: LevelDbViewer(r.data, p))
     ViewerRegistry.register("mmkv", lambda r, n, v, p: MMKVViewer(r.data, p))

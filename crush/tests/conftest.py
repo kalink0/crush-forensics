@@ -538,6 +538,33 @@ def protobuf_fixture(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def flatbuffers_fixture(tmp_path: Path) -> dict[str, Any]:
+    """Writable copies of the flatc-generated FlatBuffers fixtures
+    (generate_flatbuffers_fixtures.py): the record buffer (plain and
+    size-prefixed), its schema as .fbs (+ include) and .bfbs, and flatc's
+    own JSON of the record as ground truth."""
+    names = (
+        "flatbuffers_record.bin", "flatbuffers_record_sizeprefixed.bin",
+        "flatbuffers_record_vector64.bin", "flatbuffers_record.fbs",
+        "flatbuffers_include.fbs", "flatbuffers_record.bfbs", "flatbuffers_record_v1.bfbs",
+    )
+    paths = {}
+    for name in names:
+        dst = tmp_path / name
+        dst.write_bytes((FIXTURES_DIR / name).read_bytes())
+        paths[name] = dst
+    return {
+        "bin": paths["flatbuffers_record.bin"],
+        "sizeprefixed": paths["flatbuffers_record_sizeprefixed.bin"],
+        "vector64": paths["flatbuffers_record_vector64.bin"],
+        "fbs": paths["flatbuffers_record.fbs"],
+        "bfbs": paths["flatbuffers_record.bfbs"],
+        "bfbs_v1": paths["flatbuffers_record_v1.bfbs"],
+        "expected": json.loads((FIXTURES_DIR / "flatbuffers_record.expected.json").read_text()),
+    }
+
+
+@pytest.fixture
 def tar_fixture(tmp_path: Path) -> Path:
     """Writable copy of minimal.tar.gz placed in tmp_path."""
     src = FIXTURES_DIR / "minimal.tar.gz"

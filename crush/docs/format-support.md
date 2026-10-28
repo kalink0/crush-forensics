@@ -4,9 +4,9 @@ This page lists what Crush can parse and how each viewer behaves, plus the curre
 
 ## Contents
 
-**Parsers** — [SQLite Database](#sqlite-database) · [Property List (plist)](#property-list-plist) · [XML](#xml) · [JSON](#json) · [Protobuf](#protobuf-explicit-only) · [Android Binary XML (ABX)](#android-binary-xml-abx) · [SEGB (Biome)](#segb-biome) · [LevelDB](#leveldb) · [Chromium Disk Cache](#chromium-disk-cache) · [MMKV](#mmkv-explicit-only) · [Realm Database](#realm-database) · [Images](#images) · [Media (Audio/Video)](#media-audiovideo) · [PDF](#pdf) · [Log Files](#log-files-explicit-only) · [Hex Fallback](#hex-fallback)
+**Parsers** — [SQLite Database](#sqlite-database) · [Property List (plist)](#property-list-plist) · [XML](#xml) · [JSON](#json) · [Protobuf](#protobuf-explicit-only) · [FlatBuffers](#flatbuffers-explicit-only) · [Android Binary XML (ABX)](#android-binary-xml-abx) · [SEGB (Biome)](#segb-biome) · [LevelDB](#leveldb) · [Chromium Disk Cache](#chromium-disk-cache) · [MMKV](#mmkv-explicit-only) · [Realm Database](#realm-database) · [Images](#images) · [Media (Audio/Video)](#media-audiovideo) · [PDF](#pdf) · [Log Files](#log-files-explicit-only) · [Hex Fallback](#hex-fallback)
 
-**Viewers** — [Table](#table-viewer) · [Tree](#tree-viewer) · [Text](#text-viewer) · [Hex](#hex-viewer) · [Image](#image-viewer) · [Media](#media-viewer) · [ABX](#abx-viewer) · [LevelDB](#leveldb-viewer) · [Chromium Disk Cache](#chromium-disk-cache-viewer) · [MMKV](#mmkv-viewer) · [Multi-Log Studio](#multi-log-studio) · [Realm](#realm-viewer) · [Protobuf](#protobuf-viewer)
+**Viewers** — [Table](#table-viewer) · [Tree](#tree-viewer) · [Text](#text-viewer) · [Hex](#hex-viewer) · [Image](#image-viewer) · [Media](#media-viewer) · [ABX](#abx-viewer) · [LevelDB](#leveldb-viewer) · [Chromium Disk Cache](#chromium-disk-cache-viewer) · [MMKV](#mmkv-viewer) · [Multi-Log Studio](#multi-log-studio) · [Realm](#realm-viewer) · [Protobuf](#protobuf-viewer) · [FlatBuffers](#flatbuffers-viewer)
 
 [Known Gaps](#known-gaps-planned)
 
@@ -74,6 +74,19 @@ Limitations
 Limitations
 - Length-delimited fields are tried as nested messages down to a depth of 100 (the default recursion limit of the official protobuf libraries); length-delimited fields at depth 100 are not tried and are shown as string/bytes, and a `Nesting` row says how many fields that affected. There is no entry-count cap.
 - Schema-based decoding requires a `.proto` file or descriptor set.
+
+### FlatBuffers (Explicit Only)
+- Open via context menu: **Open as** → **FlatBuffers**; a table cell via **Open as new tab** → **FlatBuffers**; any bytes via the Blob Inspector. FlatBuffers has no reliable magic bytes; files with the `TFL3` (TensorFlow Lite) or `BFBS` (binary schema) file_identifier are named in the Properties panel's `Format (identified)` row.
+- Schema-less decode: the root offset (plain and size-prefixed layout), each table's vtable and stored slots are decoded and validated against the buffer bounds and alignment (the FlatBuffers Verifier's checks). Every structurally consistent reading of a field is shown as a candidate: scalars of 1, 2, 4 and 8 bytes with their interpretations (timestamps as in the Protobuf viewer), offsets to strings, vectors (read with 1/2/4/8-byte elements, as offsets to strings or tables, a byte vector also as a nested FlatBuffer) and tables, 64-bit offsets, inline structs. Offsets are followed with no depth limit.
+- Bytes covered by no structure and no reading are listed as unreferenced ranges.
+- Schema decode with a `.bfbs` (read directly) or a `.fbs` (compiled by the bundled `flatc`); every disagreement between schema and bytes is reported on its field.
+
+Limitations
+- Without a schema, a field's width and type are inferred from the gap to the next stored slot (heuristic; stated in the Properties panel); vector elements of sizes other than 1, 2, 4 or 8 bytes (structs) aren't listed as readings.
+- A table or vector reached by more than one reading is decoded at the first; the others show a row to double-click to go there.
+- A `.bfbs` written without `flatc --bfbs-builtins` doesn't record `bit_flags`, `nested_flatbuffer` or `flexbuffer` attributes: flag combinations then show as undeclared enum values, nested buffers as bytes. A `.fbs` loaded in Crush is compiled with them.
+- `.fbs` schemas need the bundled `flatc` (portable builds; from source: `scripts/download_flatc_binaries.py`). Linux x86_64 and Windows use the official binaries; macOS and Linux aarch64 build it from source.
+- FlexBuffers content isn't decoded; its bytes are shown with that note, and FlexBuffers data opened as FlatBuffers fails with the reason.
 
 ### Android Binary XML (ABX)
 - Decodes ABX v1/v2 into a structured tree and reconstructed XML (ABX Viewer).
@@ -233,7 +246,7 @@ Limitations
 
 ### Hex Fallback
 - Any file without a matching parser opens in the Hex Viewer.
-- The Properties panel's `Format (identified)` row always says whether the format database recognized the file (or why identification failed). If it did, the panel shows its name, category, platforms, forensic-relevance notes, every reference link, and how Crush supports it: not yet, via **Open as** (MMKV, Protobuf), as a browsable source (Open in New Window), as a LevelDB folder, as a Chromium Blockfile cache folder, in Multi-Log Studio, or — for formats detected from content — that this file's content didn't match the parser.
+- The Properties panel's `Format (identified)` row always says whether the format database recognized the file (or why identification failed). If it did, the panel shows its name, category, platforms, forensic-relevance notes, every reference link, and how Crush supports it: not yet, via **Open as** (MMKV, Protobuf, FlatBuffers), as a browsable source (Open in New Window), as a LevelDB folder, as a Chromium Blockfile cache folder, in Multi-Log Studio, or — for formats detected from content — that this file's content didn't match the parser.
 
 Limitations
 - Raw bytes only; no structured decoding.
@@ -253,7 +266,7 @@ Limitations
 
 ### Tree Viewer
 - Hierarchical view for plist/XML/JSON structures with search and copy.
-- The Value field below the tree shows the whole value, a blob as its bytes in hex (its cell only says `<BLOB n B>`); Copy value copies the same. The Protobuf, MMKV and Analyzer result views' Value fields also hold the whole value.
+- The Value field below the tree shows the whole value, a blob as its bytes in hex (its cell only says `<BLOB n B>`); Copy value copies the same. The Protobuf, FlatBuffers, MMKV and Analyzer result views' Value fields also hold the whole value.
 - Rows below the top level are built the first time their parent is expanded. On opening, the first two levels are expanded as long as that shows at most 1,000 rows (checked a whole level at a time); a larger structure opens collapsed, every row still one click away. The search covers the whole structure, including rows not built yet.
 - A plist, XML or JSON file over 8 MiB is parsed in the background behind a "please wait" dialog.
 
@@ -353,6 +366,15 @@ Limitations
 Limitations
 - Schema-based decoding depends on the `protobuf` Python library and a valid schema. Loading a raw `.proto` file (rather than a pre-compiled `.pb`/`.desc`/`.fds` descriptor set) additionally requires `grpcio-tools` to compile it first.
 
+### FlatBuffers Viewer
+- The Protobuf viewer's tree with Field / Value / Type / Offset columns: buffer, root offset and file_identifier bytes, each table with its vtable as stored, each field with its candidate readings (schema-less) or its schema name and value (schema decode); interpretations as dimmed child rows; a field's disagreement with the schema as an *issue* row.
+- Child rows are built when their parent is opened, by the search or by a hex click; nothing is left out.
+- Show Hex highlights a row's exact bytes, including the vtable slot and the offset field.
+- Export (text / JSON) writes the buffer's bytes once as hex, then each row with its value or its byte range.
+
+Limitations
+- A search with a short text on a large buffer builds every matching row on the UI thread (wait cursor), as in the plist / XML tree.
+
 ## Known Gaps (Planned)
 
 Format/viewer content gaps only — planned parsing or display work, not general app features (those get tracked as issues instead).
@@ -360,4 +382,4 @@ Format/viewer content gaps only — planned parsing or display work, not general
 - Extended EXIF/metadata viewer.
 - General XMP metadata (creation/editing history, software chain, beyond the IPTC Digital Source Type tag — see the Images section above) is not extracted for images or media.
 - ESE database (`.edb`) has no parser or viewer yet.
-- Embedded Show Hex byte-provenance is not yet extended to every viewer — done so far: Protobuf, Plist/XML Tree, SQLite Table (cells, WAL Frames, File Structure), SEGB/Biome, Realm (Tables, File Structure), MMKV, and Chromium Disk Cache (each entry's Structure tabs). Not yet covered: Plist's binary form specifically (an on-disk offset table exists but not for NSKeyedArchiver-wrapped plists, the common real-world case, whose displayed tree comes from a separate resolution pass with no 1:1 relationship to those offsets) and ABX (its decoder builds a flat XML string with no tree at all; the tree shown is from re-parsing that reconstructed text, which has no relationship to the original binary offsets either). Not planned for JSON, XML, or Multi-Log Studio/Log Viewer — their content is already plain readable text, so a byte-offset hex highlight adds nothing a text position wouldn't already show. Also not planned for the Blob Inspector (it only ever shows already-extracted, isolated blob bytes, never the source file's own bytes in context, which is the entire point of this feature) or LevelDB (real-world `.ldb`/`.sst` files are Snappy-compressed by default, and a compressed value's bytes only exist post-decompression, not as a byte range in the file — most records would get no real provenance either way).
+- Embedded Show Hex byte-provenance is not yet extended to every viewer — done so far: Protobuf, FlatBuffers, Plist/XML Tree, SQLite Table (cells, WAL Frames, File Structure), SEGB/Biome, Realm (Tables, File Structure), MMKV, and Chromium Disk Cache (each entry's Structure tabs). Not yet covered: Plist's binary form specifically (an on-disk offset table exists but not for NSKeyedArchiver-wrapped plists, the common real-world case, whose displayed tree comes from a separate resolution pass with no 1:1 relationship to those offsets) and ABX (its decoder builds a flat XML string with no tree at all; the tree shown is from re-parsing that reconstructed text, which has no relationship to the original binary offsets either). Not planned for JSON, XML, or Multi-Log Studio/Log Viewer — their content is already plain readable text, so a byte-offset hex highlight adds nothing a text position wouldn't already show. Also not planned for the Blob Inspector (it only ever shows already-extracted, isolated blob bytes, never the source file's own bytes in context, which is the entire point of this feature) or LevelDB (real-world `.ldb`/`.sst` files are Snappy-compressed by default, and a compressed value's bytes only exist post-decompression, not as a byte range in the file — most records would get no real provenance either way).

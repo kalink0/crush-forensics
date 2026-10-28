@@ -40,6 +40,11 @@ jobs:
       - name: Download unifiedlog_iterator binaries
         run: python scripts/download_unifiedlog_binaries.py
 
+      # macOS builds flatc from the pinned source tarball (the official
+      # macOS binaries require macOS 15.5; this one targets 13.0).
+      - name: Download / build flatc binaries
+        run: python scripts/download_flatc_binaries.py
+
       # Set arch-specific variables for macOS builds
       - name: Set macOS build vars
         if: runner.os == 'macOS'
@@ -144,6 +149,8 @@ jobs:
             --add-data "crush/bin/unifiedlog_iterator/VERSION.txt:crush/bin/unifiedlog_iterator/" \
             --add-data "crush/bin/peach/peach-linux:crush/bin/peach/" \
             --add-data "crush/bin/peach/VERSION.txt:crush/bin/peach/" \
+            --add-data "crush/bin/flatc/flatc-linux-x86_64:crush/bin/flatc/" \
+            --add-data "crush/bin/flatc/VERSION.txt:crush/bin/flatc/" \
             crush/__main__.py
 
       - name: Build (PyInstaller) macOS
@@ -185,6 +192,8 @@ jobs:
             --add-data "crush/bin/unifiedlog_iterator/VERSION.txt:crush/bin/unifiedlog_iterator/" \
             --add-data "crush/bin/peach/peach-macos:crush/bin/peach/" \
             --add-data "crush/bin/peach/VERSION.txt:crush/bin/peach/" \
+            --add-data "crush/bin/flatc/flatc-macos:crush/bin/flatc/" \
+            --add-data "crush/bin/flatc/VERSION.txt:crush/bin/flatc/" \
             crush/__main__.py
 
       - name: Strip unused Qt frameworks (macOS)
@@ -243,6 +252,8 @@ jobs:
             --add-data "crush/bin/unifiedlog_iterator/VERSION.txt;crush/bin/unifiedlog_iterator/" `
             --add-data "crush/bin/peach/peach-windows.exe;crush/bin/peach/" `
             --add-data "crush/bin/peach/VERSION.txt;crush/bin/peach/" `
+            --add-data "crush/bin/flatc/flatc-windows-x86_64.exe;crush/bin/flatc/" `
+            --add-data "crush/bin/flatc/VERSION.txt;crush/bin/flatc/" `
             crush/__main__.py
 
       # Same script as the nightly build: tool versions pinned there only.

@@ -138,5 +138,16 @@
   "raw_decmpfs_apfs.img.gz": "58452067350c6f1aecba1e10824857f05ac2abe69a8ad04449ac23c057923f59",
   "raw_decmpfs_apfs.sha256": "e93885aee82e1a5daea71776d5af60bfa1869e36c67f53a5c908306b30ebccb0",
   "raw_decmpfs_hfsplus.img.gz": "bc13bac4bb019a687e16db2121bd0488d9e574303e1185e5b9e8b0a67144be19",
-  "raw_decmpfs_hfsplus.sha256": "c04f8a3f61010948876921b81a1ce409263ad77c445a5a9e7f269235de059984"
+  "raw_decmpfs_hfsplus.sha256": "c04f8a3f61010948876921b81a1ce409263ad77c445a5a9e7f269235de059984",
+  "flatbuffers_include.fbs": "03e4aacfe23e1c769f6a204dcfe05c53903b4516cff1abc3583be62e30bf56f6",
+  "flatbuffers_record.fbs": "017bc10c0701df1bed14dfddda120aa7d6e82315c07c88a08dbfde6c344f7d52",
+  "flatbuffers_record_v1.fbs": "e7087484faef217d9d5c9cce1c407e92b1a951aef140ea02731592fc55844df6",
+  "flatbuffers_record.data.json": "2984c0c1538df5ac37f2894758c7cba8b1082dead6cba75d0c329d4bdd0149d1",
+  "flatbuffers_record.bfbs": "0fdf22c271fc10728315a26bed49a2e4ce39705b7c8964d47f2b393568161162",
+  "flatbuffers_record_v1.bfbs": "29d88f0ac66c94d42be6b697347643a4a6eeefa142b7369d65afaa6cec6ed0ec",
+  "flatbuffers_record.bin": "48536009631ba624bd4518e1c3c2e9251c8f66f4e91e77c691d81ba897cab27f",
+  "flatbuffers_record_sizeprefixed.bin": "0e3447167e0c6484285eab5a1a5e1e983b513bb78d186dd731a60f3be7eaaec2",
+  "flatbuffers_record_vector64.bin": "36ba48d626e3a7785dff16126017fde40f72456809d4dbdc9a9ac57025401d4a",
+  "flatbuffers_record.expected.json": "9dbb26f22e8641c7444e485d3d23eb9af9553e5893e99c48f48c676e6634d742",
+  "generate_flatbuffers_fixtures.py": "c60a06b89902145bf23339967057ce9a6f663ddb6f040344f2022a59fc33d156"
 }

@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-283 checks in total.
+294 checks in total.
 
 ### Sources
 
@@ -94,6 +94,8 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [JSON](#json) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Protobuf](#protobuf) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Protobuf with .proto schema](#protobuf-with-proto-schema) | 1 | 1 | 1 | 1 | not tested | 1 |
+| [FlatBuffers](#flatbuffers) | 2 | 1 | 1 | 1 | not tested | 1 |
+| [FlatBuffers with schema](#flatbuffers-with-schema) | 1 | 1 | 1 | 1 | not tested | 1 |
 | [PDF](#pdf) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Image](#image) | 2 | 1 | 1 | 1 | 1 | 1 |
 | [Apple ATX](#apple-atx) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -582,6 +584,25 @@ No forensic checks.
 - **Read-only Media** — The schema-based decode pipeline must work when the .proto and .pb source files are chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_protobuf_schema_works_on_readonly_media`)
 - **Known-output Verification** — protobuf_basic_wire_types.pb decoded against its real protoc-compiled schema must match the committed .expected.json ground truth field-for-field ([test_forensic.py](../../crush/tests/test_forensic.py), `test_protobuf_schema_fixture_known_output`)
 - **Reproducibility** — Decoding the same protobuf message against the same schema twice must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_protobuf_schema_decode_is_reproducible`)
+- *Not tested:* Completeness
+
+#### FlatBuffers
+
+- **Source Immutability** — FlatBuffersParser.parse must leave the source file's bytes unchanged ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_parser_does_not_modify_source`)
+- **Source Immutability** — FlatBuffersParser.parse must not change mtime or ctime of the source file ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_parser_does_not_change_timestamps`)
+- **No Side Effects** — FlatBuffersParser.parse must not create any sibling files next to the source ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_parse_creates_no_sibling_files`)
+- **Read-only Media** — FlatBuffersParser.parse must work when the source file is chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_parser_works_on_readonly_media`)
+- **Known-output Verification** — Schema-less decode of the flatc-written record: plain root layout, the CRSH bytes at 4-7, the title slot offered as an offset to the string 'evidence', the field widths stated as a heuristic ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_fixture_known_output`)
+- **Reproducibility** — Parsing the same FlatBuffer twice must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_parse_is_reproducible`)
+- *Not tested:* Completeness
+
+#### FlatBuffers with schema
+
+- **Source Immutability** — Loading the .bfbs schema and decoding with it must leave the schema and data files unchanged ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_schema_does_not_modify_source`)
+- **No Side Effects** — Compiling a .fbs schema with the bundled flatc must not create any files next to the schema (its .bfbs output goes to a separate temp directory) ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_fbs_compile_creates_no_sibling_files`)
+- **Read-only Media** — The schema decode must work when the .bfbs and the data file are chmod 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_schema_works_on_readonly_media`)
+- **Known-output Verification** — The record decoded with its .bfbs must equal flatc's own JSON of the same bytes (flatbuffers_record.expected.json), in the plain and the size-prefixed layout ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_schema_fixture_known_output`)
+- **Reproducibility** — Decoding the same FlatBuffer with the same schema twice must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_flatbuffers_schema_decode_is_reproducible`)
 - *Not tested:* Completeness
 
 #### PDF

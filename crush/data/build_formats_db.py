@@ -3505,6 +3505,146 @@ FORMATS: list[dict[str, Any]] = [
         "last_reviewed": "2026-10-04",
     },
     {
+        "name": "FlatBuffers",
+        "short_name": "FlatBuffers",
+        "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Google's zero-copy binary serialization format. Values are read in place "
+            "through offsets instead of being parsed first. Uses include the object "
+            "store of the ObjectBox database (object values are FlatBuffers), "
+            "TensorFlow Lite models, and the storage format Facebook moved most of its "
+            "Android app to (Meta engineering blog, 2015). "
+            "No reliable magic bytes: a buffer starts with a 32-bit offset to its root "
+            "table; an optional 4-character file_identifier at bytes 4-7 names the "
+            "schema, and a size-prefixed buffer puts a 32-bit length in front. "
+            "Each table points to a vtable that lists which fields are stored and "
+            "where; field types and names are not stored, so without the schema "
+            "(.fbs, or its binary form .bfbs) a field's width and meaning are open. "
+            "Fields equal to their default are usually not written at all. Bytes "
+            "that no table, vector or string references (padding, superseded data) "
+            "can remain inside a buffer.",
+            "FlatBuffers",
+        ),
+        "platforms": ALL_PLATFORMS,
+        "parser_class": "FlatBuffersParser",
+        "magic": [],
+        "extensions": [],
+        "links": [
+            (
+                "FlatBuffers internals: binary format (Google)",
+                "https://flatbuffers.dev/internals/",
+            ),
+            (
+                "FlatBuffers schema language (Google)",
+                "https://flatbuffers.dev/schema/",
+            ),
+            (
+                "reflection.fbs: the binary schema (.bfbs) format (Google)",
+                "https://github.com/google/flatbuffers/blob/master/reflection/reflection.fbs",
+            ),
+            (
+                "Improving Facebook's performance on Android with FlatBuffers (Meta, 2015)",
+                "https://engineering.fb.com/2015/07/31/android/improving-facebook-s-performance-on-android-with-flatbuffers/",
+            ),
+            (
+                "ObjectBox Java: bundled FlatBuffers runtime (ObjectBox)",
+                "https://github.com/objectbox/objectbox-java/tree/main/objectbox-java/src/main/java/io/objectbox/flatbuffers",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-28",
+    },
+    {
+        "name": "TensorFlow Lite Model",
+        "short_name": "TFLite",
+        "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "On-device machine-learning model stored as a FlatBuffer with the "
+            "file_identifier TFL3 (schema root type tflite.Model). Found in Android "
+            "and iOS app data and system components (camera, text recognition, "
+            "keyboard and speech features). The model's description field, its "
+            "metadata entries and its signature names can identify what the model "
+            "is for and which app shipped it; tensors and weights are stored as "
+            "byte buffers. The schema is public, so a model can be decoded exactly.",
+            "TensorFlow Lite Model",
+        ),
+        "platforms": ["iOS", "Android", "Linux", "macOS", "Windows"],
+        "parser_class": "FlatBuffersParser",
+        "magic": [
+            {
+                "offset": 4,
+                "value": b"TFL3",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "FlatBuffers file_identifier TFL3 after the root offset",
+                    "TensorFlow Lite Model",
+                ),
+            },
+        ],
+        "extensions": [".tflite"],
+        "links": [
+            (
+                "TensorFlow Lite FlatBuffers schema, file_identifier TFL3 (TensorFlow)",
+                "https://github.com/tensorflow/tensorflow/blob/master/tensorflow/compiler/mlir/lite/schema/schema.fbs",
+            ),
+            (
+                "FlatBuffers internals: binary format (Google)",
+                "https://flatbuffers.dev/internals/",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-28",
+    },
+    {
+        "name": "FlatBuffers Binary Schema (.bfbs)",
+        "short_name": "BFBS",
+        "category": "serialization",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A FlatBuffers schema compiled to binary form (flatc -b --schema): itself a "
+            "FlatBuffer with the file_identifier BFBS, root type reflection.Schema. It "
+            "lists every table, struct, enum and union with field names, types, ids "
+            "and defaults, and the schema's root type and file_identifier. A .bfbs "
+            "found next to FlatBuffers data is the key to decoding that data exactly. "
+            "It does not record the flatc version that wrote it. Android ships .bfbs "
+            "files for Bluetooth LE Audio configurations.",
+            "FlatBuffers Binary Schema (.bfbs)",
+        ),
+        "platforms": ALL_PLATFORMS,
+        "parser_class": "FlatBuffersParser",
+        "magic": [
+            {
+                "offset": 4,
+                "value": b"BFBS",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "FlatBuffers file_identifier BFBS after the root offset",
+                    "FlatBuffers Binary Schema (.bfbs)",
+                ),
+            },
+        ],
+        "extensions": [".bfbs"],
+        "links": [
+            (
+                "reflection.fbs: the binary schema format, file_identifier BFBS (Google)",
+                "https://github.com/google/flatbuffers/blob/master/reflection/reflection.fbs",
+            ),
+            (
+                "FlatBuffers internals: binary format (Google)",
+                "https://flatbuffers.dev/internals/",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-10-28",
+    },
+    {
         "name": "Windows Registry Hive",
         "short_name": "Registry Hive",
         "category": "database",

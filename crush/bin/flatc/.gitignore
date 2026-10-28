@@ -1,0 +1,4 @@
+# Ignore all binaries — download/build via scripts/download_flatc_binaries.py
+*
+!README.md
+!.gitignore

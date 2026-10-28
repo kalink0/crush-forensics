@@ -1,0 +1,22 @@
+{
+  "id": 4242,
+  "created_ms": 1730106000123,
+  "kind": "Message",
+  "flags": "Read Starred",
+  "score": 98.25,
+  "ratio": 0.5,
+  "title": "evidence",
+  "tags": ["chat", "export"],
+  "readings": [-1, 0, 65536],
+  "raw": [0, 255, 16, 128],
+  "where": {"x": 52.5, "y": 13.25},
+  "cells": {"values": [1, 2, 3, 4]},
+  "attachments": [
+    {"name": "IMG_0001.HEIC", "size": 2048000},
+    {"name": "voice.opus", "size": 31337}
+  ],
+  "payload_type": "crush_fixtures_common_Note",
+  "payload": {"text": "deleted message text"},
+  "nested": {"id": 7},
+  "note_added_later": "v2 only"
+}

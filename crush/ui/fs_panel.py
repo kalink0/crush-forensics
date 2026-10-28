@@ -591,6 +591,7 @@ class FilesystemPanel(QWidget):
         open_hex_action = open_as_menu.addAction(translate("FilesystemPanel", "Hex"))
         open_text_action = open_as_menu.addAction(translate("FilesystemPanel", "Text"))
         open_proto_action = open_as_menu.addAction(translate("FilesystemPanel", "Protobuf"))
+        open_flatbuffers_action = open_as_menu.addAction(translate("FilesystemPanel", "FlatBuffers"))
         open_mmkv_action = open_as_menu.addAction(translate("FilesystemPanel", "MMKV"))
         open_realm_encrypted_action = None
         open_sqlcipher_action = None
@@ -726,6 +727,8 @@ class FilesystemPanel(QWidget):
             self.open_requested.emit(node, vfs, "run_analyzer")
         elif action == open_proto_action:
             self.open_requested.emit(node, vfs, "protobuf")
+        elif action == open_flatbuffers_action:
+            self.open_requested.emit(node, vfs, "flatbuffers")
         elif action == open_mmkv_action:
             self.open_requested.emit(node, vfs, "mmkv")
         elif action == open_mmkv_encrypted_action:

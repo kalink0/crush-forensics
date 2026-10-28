@@ -2098,7 +2098,7 @@ class MainWindow(QMainWindow):
     # Modes that load the whole file into memory. "default" is absent on
     # purpose: it ends in _open_node(), which asks itself.
     _RAM_LOADING_MODES = frozenset(
-        {"hex", "text", "protobuf", "mmkv", "mmkv_encrypted",
+        {"hex", "text", "protobuf", "flatbuffers", "mmkv", "mmkv_encrypted",
          "realm_encrypted", "sqlcipher", "pdf_encrypted"}
     )
     # Modes that read one file's content on the UI thread: its source is
@@ -2290,6 +2290,34 @@ class MainWindow(QMainWindow):
                 )
                 QMessageBox.warning(self, translate("MainWindow", "Protobuf parse error"), i18n.exception_text(exc))
             return
+        if mode == "flatbuffers":
+            self._hash_node_if_integrity(node, vfs)
+            from crush.parsers.flatbuffers_parser import FlatBuffersParser
+            from crush.viewers.flatbuffers_viewer import FLATBUFFERS_BUSY_BYTES
+            fb_parser = FlatBuffersParser()
+            try:
+                if node.size > FLATBUFFERS_BUSY_BYTES:
+                    result = busy_call(
+                        self,
+                        translate("MainWindow", "Loading {name}…").format(name=node.name),
+                        lambda: fb_parser.parse(node, vfs),
+                    )
+                else:
+                    result = fb_parser.parse(node, vfs)
+                result = self._enrich_with_format_info(fb_parser, node, vfs, result)
+                self._show_result(node, result, vfs)
+                self._props_panel.update_properties(node, result.metadata, vfs)
+                self._status.showMessage(
+                    f"{node.path}  [{fb_parser.DISPLAY_NAME}]"  # i18n: keep -- markup/layout only
+                )
+            except Exception as exc:
+                self._status.showMessage(
+                    translate("MainWindow", "FlatBuffers parse error: {exc}").format(exc=exc)
+                )
+                QMessageBox.warning(
+                    self, translate("MainWindow", "FlatBuffers parse error"), i18n.exception_text(exc)
+                )
+            return
         if mode == "mmkv":
             self._hash_node_if_integrity(node, vfs)
             from crush.parsers.mmkv_parser import MMKVParser
@@ -2328,7 +2356,10 @@ class MainWindow(QMainWindow):
 
     # The viewers a tab of a source read again is reopened as by its mode;
     # any other viewer is reopened the way a double-click opens the file.
-    _REOPEN_MODES = {"hex": "hex", "text": "text", "protobuf": "protobuf", "mmkv": "mmkv"}
+    _REOPEN_MODES = {
+        "hex": "hex", "text": "text", "protobuf": "protobuf", "flatbuffers": "flatbuffers",
+        "mmkv": "mmkv",
+    }
 
     def _unlock_volume(self, node: VFSNode, vfs: VFS) -> None:
         """Ask for a secret for a locked volume inside a disk image and read

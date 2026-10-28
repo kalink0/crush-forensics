@@ -19,6 +19,7 @@ ViewerType = Literal[
     "log",
     "multi_log",
     "protobuf",
+    "flatbuffers",
     "realm",
     "leveldb",
     "pdf",

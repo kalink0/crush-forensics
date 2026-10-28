@@ -105,6 +105,7 @@ PARSER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "XmlParser": ("XML",),
     "JsonParser": ("JSON",),
     "ProtobufParser": ("Protobuf", "Protobuf with .proto schema"),
+    "FlatBuffersParser": ("FlatBuffers", "FlatBuffers with schema"),
     "PDFParser": ("PDF",),
     "ImageParser": ("Image", "Apple ATX", "Apple KTX"),
     "MediaParser": ("Audio/video",),
