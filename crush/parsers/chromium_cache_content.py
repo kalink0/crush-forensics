@@ -12,7 +12,6 @@ content/browser/cache_storage/cache_storage.proto and cache_storage_cache.cc.
 """
 from __future__ import annotations
 
-import gzip
 import hashlib
 import re
 import struct
@@ -474,49 +473,154 @@ _DECODERS = ("gzip", "x-gzip", "deflate", "br", "zstd", "identity")
 
 def decode_body(
     raw: bytes, codings: list[str], cache_zstd: bool = False
-) -> tuple[bytes | None, ParseIssue | None]:
+) -> tuple[bytes | None, ParseIssue | None, bool]:
     """*raw* with what was declared undone: first the cache's own zstd
     compression (*cache_zstd*, from the response info's extra flags), then
-    the Content-Encoding codings, last applied first. Or why it can't be: a
-    coding not supported, or data that doesn't decode. (None, None) when
-    nothing was declared."""
+    the Content-Encoding codings, last applied first -- as (derived, note,
+    partial).
+
+    Each step decodes as Chromium's source streams do (net/filter): gzip
+    and deflate one stream, br one stream, zstd one or more frames in a
+    row. A step whose stream ends is complete; bytes after the end are
+    ignored by Chromium -- not in the derived body, kept in RAW, the note
+    says how many and where. A step whose stream doesn't end (the data runs
+    out or breaks off) gives the bytes it decoded up to there: the result
+    is marked partial and the note says why; the steps after it decode
+    that part the same way. No derived body when a coding isn't supported
+    or a step decodes nothing. (None, None, False) when nothing was
+    declared or the body is empty (e.g. a redirect with Content-Encoding:
+    there is nothing to decode, and Chromium decodes nothing either)."""
     pending = [c for c in codings if c != "identity"]
-    if not pending and not cache_zstd:
-        return None, None
+    if (not pending and not cache_zstd) or not raw:
+        return None, None, False
+    steps = [("zstd", True)] if cache_zstd else []
+    steps += [(c, False) for c in reversed(pending)]
     data = raw
-    if cache_zstd:
-        try:
-            data = _decode_one(data, "zstd")
-        except Exception as exc:  # noqa: BLE001 -- the library's own diagnosis is kept
-            return None, ParseIssue("chromium_cache.cache_zstd_failed", detail=str(exc))
-    for coding in reversed(pending):
+    notes: list[ParseIssue] = []
+    partial = False
+    for coding, by_cache in steps:
         if coding not in _DECODERS:
-            return None, ParseIssue("chromium_cache.coding_unsupported", {"coding": coding})
+            return None, ParseIssue("chromium_cache.coding_unsupported", {"coding": coding}), False
+        out, end, error = _stream_decode(data, coding)
+        if end is not None:
+            if end < len(data):
+                notes.append(ParseIssue("chromium_cache.coding_trailing_ignored", {
+                    "coding": coding, "count": len(data) - end, "offset": end,
+                }))
+            data = out
+            continue
+        prefix = "chromium_cache.cache_zstd" if by_cache else "chromium_cache.coding"
+        if not out:
+            if error is None:
+                return None, ParseIssue(f"{prefix}_short", {"coding": coding, "input": len(data)}), False
+            if by_cache:
+                return None, ParseIssue("chromium_cache.cache_zstd_failed", detail=error), False
+            return None, ParseIssue("chromium_cache.coding_failed", {"coding": coding}, detail=error), False
+        params = {"coding": coding, "size": len(out), "input": len(data)}
+        notes.append(
+            ParseIssue(f"{prefix}_partial_short", params) if error is None
+            else ParseIssue(f"{prefix}_partial", params, detail=error)
+        )
+        partial = True
+        data = out
+    if not notes:
+        return data, None, False
+    note = notes[0] if len(notes) == 1 else ParseIssue("common.notes", {"notes": notes})
+    return data, note, partial
+
+
+# Input is fed to a decoder in pieces of this size; a piece the decoder
+# rejects is fed again byte by byte, to find the last byte it accepts and
+# where its stream ended. A step size only -- all input is fed.
+_PIECE = 64 * 1024
+
+
+def _stream_decode(data: bytes, coding: str) -> tuple[bytes, int | None, str | None]:
+    """*coding*'s decoder over *data*: its output, the offset where its
+    stream ended (None when it didn't), and the decoder's error, if any."""
+    dec = _Stream(coding, data[:2])
+    out = bytearray()
+    pos = 0
+    while pos < len(data) and dec.end is None:
+        piece = data[pos:pos + _PIECE]
         try:
-            data = _decode_one(data, coding)
+            out += dec.feed(piece)
         except Exception as exc:  # noqa: BLE001 -- the library's own diagnosis is kept
-            return None, ParseIssue("chromium_cache.coding_failed", {"coding": coding}, detail=str(exc))
-    return data, None
+            error = str(exc) or type(exc).__name__
+            dec = _Stream(coding, data[:2])
+            out = bytearray(dec.feed(data[:pos]))
+            for i in range(pos, pos + len(piece)):
+                if dec.end is not None:
+                    break
+                try:
+                    out += dec.feed(data[i:i + 1])
+                except Exception:  # noqa: BLE001
+                    break
+            return bytes(out), dec.end, None if dec.end is not None else error
+        pos += len(piece)
+    if coding == "zstd" and data and dec.frame_done:
+        dec.end = len(data)
+    return bytes(out), dec.end, None
 
 
-def _decode_one(data: bytes, coding: str) -> bytes:
-    if coding in ("gzip", "x-gzip"):
-        return gzip.decompress(data)
-    if coding == "deflate":
-        # RFC 9110: "deflate" is the zlib format; some servers send raw
-        # DEFLATE, which Chromium's GzipSourceStream also accepts. The zlib
-        # header (RFC 1950: CM 8 and the CMF/FLG check) says which.
-        if len(data) >= 2 and (data[0] & 0x0F) == 8 and ((data[0] << 8) | data[1]) % 31 == 0:
-            return zlib.decompress(data)
-        return zlib.decompress(data, -zlib.MAX_WBITS)
-    if coding == "br":
-        import brotli
+class _Stream:
+    """A coding's decoder as Chromium's source stream reads it: one gzip,
+    deflate or brotli stream (what follows is ignored), or zstd frames in a
+    row (net/filter/{gzip,brotli,zstd}_source_stream.cc). *end* is the
+    offset in the fed input where the stream ended."""
 
-        return bytes(brotli.decompress(data))
-    if coding == "zstd":
+    def __init__(self, coding: str, head: bytes) -> None:
+        self.coding = coding
+        self.head = head
+        self.fed = 0
+        self.end: int | None = None
+        self.cur = self._new()
+
+    def _new(self) -> Any:
+        if self.coding in ("gzip", "x-gzip"):
+            return zlib.decompressobj(16 + zlib.MAX_WBITS)
+        if self.coding == "deflate":
+            # RFC 9110: "deflate" is the zlib format; some servers send raw
+            # DEFLATE, which Chromium's GzipSourceStream also accepts. The
+            # zlib header (RFC 1950: CM 8 and the CMF/FLG check) says which.
+            h = self.head
+            zlib_header = len(h) >= 2 and (h[0] & 0x0F) == 8 and ((h[0] << 8) | h[1]) % 31 == 0
+            return zlib.decompressobj(zlib.MAX_WBITS if zlib_header else -zlib.MAX_WBITS)
+        if self.coding == "br":
+            import brotli
+
+            return brotli.Decompressor()
         try:
             from compression import zstd  # type: ignore[import-not-found]
         except ImportError:
             from backports import zstd
-        return bytes(zstd.decompress(data))
-    return data
+        return zstd.ZstdDecompressor()
+
+    @property
+    def frame_done(self) -> bool:
+        """zstd: the last frame fed so far is complete."""
+        return bool(self.cur.eof)
+
+    def feed(self, piece: bytes) -> bytes:
+        self.fed += len(piece)
+        if self.coding == "br":
+            # The brotli decoder rejects input after its stream's end, so
+            # an end is only seen where a piece finishes it exactly.
+            decoded = bytes(self.cur.process(piece))
+            if self.cur.is_finished():
+                self.end = self.fed
+            return decoded
+        if self.coding == "zstd":
+            # Frames in a row; whether the last one ends is known only at
+            # the end of the input (_stream_decode).
+            frames = bytearray()
+            while piece:
+                if self.cur.eof:
+                    self.cur = self._new()
+                frames += self.cur.decompress(piece)
+                piece = bytes(self.cur.unused_data) if self.cur.eof else b""
+            return bytes(frames)
+        decoded = bytes(self.cur.decompress(piece))
+        if self.cur.eof:
+            self.end = self.fed - len(self.cur.unused_data)
+        return decoded

@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import struct
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -216,6 +217,7 @@ class _DirectoryParse:
         self.index_reading = READ_BOTH
         self.real_index: sfmt.RealIndex | None = None
         self.real_index_node: VFSNode | None = None
+        self.index_unchecked = False
         self.blockfile: bfmt.Cache | None = None
         self.carved: list[dict[str, Any]] = []
         self.versions: set[str] = set()
@@ -309,8 +311,19 @@ class _DirectoryParse:
                 self.real_index = sfmt.read_real_index(data)
                 self.real_index_node = n
                 self.versions.add(f"index version {self.real_index.version}")
+                # Chromium keeps the index in index-dir below the entry
+                # files; one in the opened folder itself (index-dir opened
+                # on its own) has no entry files beside it to check.
+                self.index_unchecked = "/" not in rel
+                rejected = [str(i) for i, r in enumerate(self.real_index.records) if r.size_rejected]
+                if rejected:
+                    self.status.append(ParseIssue(
+                        "chromium_cache.index_entry_size_rejected", {"records": ", ".join(rejected)}
+                    ))
             else:
                 self.status.append(ParseIssue("chromium_cache.second_index", {"name": rel}))
+        if self.index_unchecked:
+            self.status.append(ParseIssue("chromium_cache.index_in_opened_folder"))
 
         self.cs_context, self.cs_note = _cache_storage_context(self.node, self.vfs)
 
@@ -350,17 +363,20 @@ class _DirectoryParse:
             if not doomed and re.fullmatch(r"[0-9a-f]{16}_[01s]", n.name) and int(name_hash, 16) != h:
                 entry.notes.append(ParseIssue("chromium_cache.name_hash_mismatch", {"name": n.name}))
 
-        records = {r.hash: r for r in self.real_index.records} if self.real_index else {}
+        checked = self.real_index is not None and not self.index_unchecked
+        records = {r.hash: r for r in self.real_index.records} if checked and self.real_index else {}
         for entry in self.entries:
             if entry.backend != FORMAT_SIMPLE or entry.simple_hash is None:
                 continue
             rec = records.get(entry.simple_hash)
             if rec is not None:
                 entry.index_record = rec
-            elif self.real_index is not None and entry.state != STATE_DOOMED:
+                if rec.size_rejected:
+                    entry.notes.append(ParseIssue("chromium_cache.index_record_size_rejected"))
+            elif checked and entry.state != STATE_DOOMED:
                 entry.notes.append(ParseIssue("chromium_cache.not_in_index"))
         self._classify_simple()
-        on_disk = {e.simple_hash for e in self.entries if e.simple_hash is not None}
+        on_disk = {e.simple_hash for e in self.entries if e.simple_hash is not None} if checked else set()
         for rec in self.real_index.records if self.real_index else []:
             if rec.hash not in on_disk:
                 self.orphans.append(self._orphan_record(rec))
@@ -422,9 +438,11 @@ class _DirectoryParse:
         last_used: int | None = None
         prefetch: int | None = None
         if e.index_record is not None:
-            if self.index_reading == READ_TIME:
+            # Both readings when the cache type isn't known; the row's note
+            # says so (as for index records in Orphans).
+            if self.index_reading in (READ_TIME, READ_BOTH):
                 last_used = e.index_record.first_field
-            elif self.index_reading == READ_PREFETCH:
+            if self.index_reading in (READ_PREFETCH, READ_BOTH):
                 prefetch = e.index_record.first_field
         elif e.rankings is not None:
             last_used = e.rankings.last_used
@@ -434,7 +452,9 @@ class _DirectoryParse:
         reading = self.index_reading
         row: dict[str, Any] = {
             "id": len(self.orphans),
-            "source": QT_TRANSLATE_NOOP("GeneratedView", "index record without entry file"),
+            "source": _SOURCE_UNCHECKED if self.index_unchecked else QT_TRANSLATE_NOOP(
+                "GeneratedView", "index record without entry file"
+            ),
             "hash": f"0x{rec.hash:016x}",
             "size": rec.size,
             "offset": rec.offset,
@@ -452,7 +472,7 @@ class _DirectoryParse:
             row["last_used_text"] = chrome_time_utc(rec.first_field)
             row["last_used"] = rec.first_field
             row["prefetch"] = rec.first_field
-            row["note"] = ParseIssue("chromium_cache.index_field_both")
+        row["note"] = _record_note(rec, reading)
         row["kind"] = "simple_index"
         return row
 
@@ -578,7 +598,11 @@ class _DirectoryParse:
         overview["Index field read as"] = _reading_text(self.index_reading)
         if self.real_index is not None:
             overview["Index (the-real-index)"] = self.real_index.tree.root
-            overview["Index records without an entry file"] = f"{sum(1 for o in self.orphans if o['kind'] == 'simple_index'):,}"
+            index_rows = sum(1 for o in self.orphans if o["kind"] == "simple_index")
+            if self.index_unchecked:
+                overview["Index records (entry files not checked)"] = f"{index_rows:,}"
+            else:
+                overview["Index records without an entry file"] = f"{index_rows:,}"
         if self.blockfile is not None:
             overview["Blockfile index"] = self.blockfile.index.tree.root
             overview["Recovered from free blocks (heuristic)"] = f"{len(self.carved):,}"
@@ -610,7 +634,10 @@ class _DirectoryParse:
                 "overview": overview,
                 "entries": [e.row for e in self.entries],
                 "orphans": self.orphans,
-                "entries_note": ParseIssue("chromium_cache.no_entries"),
+                "entries_note": ParseIssue(
+                    "chromium_cache.index_in_opened_folder" if self.index_unchecked and not self.entries
+                    else "chromium_cache.no_entries"
+                ),
                 "orphans_note": ParseIssue(
                     "chromium_cache.no_orphans_blockfile" if self.blockfile is not None
                     else "chromium_cache.no_orphans_simple"
@@ -619,6 +646,16 @@ class _DirectoryParse:
             },
             metadata=meta,
         )
+
+
+_SOURCE_UNCHECKED = QT_TRANSLATE_NOOP("GeneratedView", "index record (entry files not checked)")
+
+
+def _record_note(rec: sfmt.IndexRecord, reading: str) -> str | ParseIssue:
+    return join_notes([
+        ParseIssue("chromium_cache.index_field_both") if reading == READ_BOTH else None,
+        ParseIssue("chromium_cache.index_record_size_rejected") if rec.size_rejected else None,
+    ])
 
 
 def _index_reading(cache_storage: bool, kinds: list[str]) -> str:
@@ -848,16 +885,19 @@ def _parse_single_file(node: VFSNode, vfs: VFS) -> ParseResult:
         for rec in index.records:
             orphans.append({
                 "id": len(orphans), "kind": "simple_index",
-                "source": QT_TRANSLATE_NOOP("GeneratedView", "index record (entry files not checked)"),
+                "source": _SOURCE_UNCHECKED,
                 "hash": f"0x{rec.hash:016x}", "size": rec.size, "offset": rec.offset,
                 "key": "", "url": "", "state": "",
                 "last_used": rec.first_field, "last_used_text": chrome_time_utc(rec.first_field),
-                "prefetch": rec.first_field, "note": ParseIssue("chromium_cache.index_field_both"),
+                "prefetch": rec.first_field, "note": _record_note(rec, READ_BOTH),
             })
+        rejected = [str(i) for i, r in enumerate(index.records) if r.size_rejected]
         overview: dict[str, Any] = {
             "Format": "Chromium Disk Cache (Simple)",
             "File": sfmt.ROLE_REAL_INDEX,
-            "Status": [ParseIssue("chromium_cache.index_alone")],
+            "Status": [ParseIssue("chromium_cache.index_alone"), *([ParseIssue(
+                "chromium_cache.index_entry_size_rejected", {"records": ", ".join(rejected)}
+            )] if rejected else [])],
             "Index field read as": ParseIssue("chromium_cache.index_field_both"),
             "Index (the-real-index)": index.tree.root,
         }
@@ -1157,6 +1197,7 @@ class ChromiumCacheStore:
             for der, rng in zip(info.certificates, info.certificate_ranges)
         ]
         out["cache_zstd"] = info.zstd_uncompressed_size is not None
+        out["truncated"] = info.truncated
 
     @staticmethod
     def _from_metadata(view: Any, out: dict[str, Any]) -> None:
@@ -1204,47 +1245,109 @@ class ChromiumCacheStore:
                 out["notes"].append(ParseIssue("chromium_cache.file_missing", {"name": name}))
                 continue
             out["structure"].append({"title": name, "raw": raw, "tree": t.root, "ranges": t.ranges})
-        sparse = self._blockfile_children(e) if store.flags & bfmt.PARENT_ENTRY else []
+        sparse: list[dict[str, Any]] = []
+        if store.flags & bfmt.PARENT_ENTRY:
+            sparse, out["sparse_rejected"] = self._blockfile_children(e)
         self._finish(e, out, streams, sparse)
         return out
 
-    def _blockfile_children(self, parent: _Entry) -> list[dict[str, Any]]:
+    def _blockfile_children(self, parent: _Entry) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """The sparse data of a parent entry: its children (keys
         Range_<key>:<signature>:<child id>), each child's 1 KB blocks that
-        its bitmap marks written (sparse_control.cc)."""
-        out: list[dict[str, Any]] = []
-        prefix = "Range_" + parent.key.text + ":"
+        its bitmap marks written -- and apart from them, the children
+        Chromium wouldn't read for the parent (SparseControl::OpenSparseEntry
+        and OpenChild: parent header, child flag, header size, signature,
+        magic, the parent's child bitmap), each with why and its blocks."""
+        used: list[dict[str, Any]] = []
+        rejected: list[dict[str, Any]] = []
         cache = self._blockfile
-        if cache is None:
-            return out
+        if cache is None or parent.store is None:
+            return used, rejected
+        data_size = bfmt.SPARSE_HEADER_SIZE + 128  # sizeof(SparseData)
+        header, _ = _blockfile_stream(cache, parent.store, bfmt.SPARSE_INDEX_STREAM)
+        header = header or b""
+        parent_reasons: list[ParseIssue] = []
+        if len(header) < data_size:
+            parent_reasons.append(ParseIssue(
+                "chromium_cache.sparse_parent_short", {"size": len(header), "expected": data_size}
+            ))
+        if parent.store.data_size[bfmt.SPARSE_DATA_STREAM]:
+            parent_reasons.append(ParseIssue("chromium_cache.sparse_parent_has_data"))
+        map_len = len(header) - bfmt.SPARSE_HEADER_SIZE
+        if map_len > 8 * 1024 or map_len % 4:
+            parent_reasons.append(ParseIssue("chromium_cache.sparse_parent_map_size", {"size": map_len}))
+        signature = magic = key_len = None
+        if len(header) >= 16:
+            signature, magic, key_len = struct.unpack_from("<qIi", header)
+            if magic != bfmt.INDEX_MAGIC:
+                parent_reasons.append(ParseIssue(
+                    "chromium_cache.sparse_magic",
+                    {"magic": f"0x{magic:08x}", "expected": f"0x{bfmt.INDEX_MAGIC:08x}"},
+                ))
+            if key_len != len(parent.store.key):
+                parent_reasons.append(ParseIssue(
+                    "chromium_cache.sparse_parent_key_len", {"stored": key_len, "actual": len(parent.store.key)}
+                ))
+        children_map = int.from_bytes(header[bfmt.SPARSE_HEADER_SIZE:], "little") if map_len > 0 else 0
+        map_bits = max(map_len, 0) * 8
+        parent_sig = f"{signature & 0xFFFFFFFFFFFFFFFF:x}" if signature is not None else "-"
+
+        prefix = b"Range_" + parent.store.key + b":"
         for child in self._entries:
-            if child.store is None or not child.key.text.startswith(prefix):
+            if child.store is None or not child.store.key.startswith(prefix):
                 continue
+            reasons: list[ParseIssue] = []
+            other: list[ParseIssue] = []
+            key_sig, _, id_text = child.store.key[len(prefix):].decode("ascii", "replace").partition(":")
             try:
-                child_id = int(child.key.text.rsplit(":", 1)[1], 16)
+                child_id: int | None = int(id_text, 16)
+                int(key_sig, 16)
             except ValueError:
-                continue
-            bitmap_data, _ = _blockfile_stream(cache, child.store, bfmt.SPARSE_INDEX_STREAM)
+                child_id = None
+                reasons.append(ParseIssue("chromium_cache.sparse_key_id"))
+            if child_id is not None:
+                if key_sig != parent_sig:
+                    reasons.append(ParseIssue(
+                        "chromium_cache.sparse_key_signature", {"key": key_sig, "parent": parent_sig}
+                    ))
+                if child_id >= map_bits or not children_map >> child_id & 1:
+                    reasons.append(ParseIssue("chromium_cache.sparse_not_in_map", {"child": child_id}))
+            if not child.store.flags & bfmt.CHILD_ENTRY:
+                reasons.append(ParseIssue("chromium_cache.sparse_no_child_flag"))
+            child_header, _ = _blockfile_stream(cache, child.store, bfmt.SPARSE_INDEX_STREAM)
+            child_header = child_header or b""
+            if len(child_header) < data_size:
+                reasons.append(ParseIssue(
+                    "chromium_cache.sparse_child_short", {"size": len(child_header), "expected": data_size}
+                ))
+            if len(child_header) >= 12:
+                child_sig, child_magic = struct.unpack_from("<qI", child_header)
+                if signature is None or child_sig != signature:
+                    reasons.append(ParseIssue("chromium_cache.sparse_signature", {
+                        "child": f"{child_sig & 0xFFFFFFFFFFFFFFFF:x}", "parent": parent_sig,
+                    }))
+                if child_magic != bfmt.INDEX_MAGIC:
+                    reasons.append(ParseIssue(
+                        "chromium_cache.sparse_magic",
+                        {"magic": f"0x{child_magic:08x}", "expected": f"0x{bfmt.INDEX_MAGIC:08x}"},
+                    ))
             data, _ = _blockfile_stream(cache, child.store, bfmt.SPARSE_DATA_STREAM)
-            if bitmap_data is None or len(bitmap_data) < bfmt.SPARSE_HEADER_SIZE + 128 or data is None:
+            if data is None:
+                other.append(ParseIssue("chromium_cache.sparse_no_data"))
+            ranges = _child_ranges(child, child_id, child_header, data)
+            if not reasons and not other and not parent_reasons:
+                used.extend(ranges)
                 continue
-            bitmap = int.from_bytes(bitmap_data[bfmt.SPARSE_HEADER_SIZE:bfmt.SPARSE_HEADER_SIZE + 128], "little")
-            block = 0
-            while block < 1024:
-                if not bitmap >> block & 1:
-                    block += 1
-                    continue
-                start = block
-                while block < 1024 and bitmap >> block & 1:
-                    block += 1
-                lo, hi = start * bfmt.SPARSE_BLOCK, block * bfmt.SPARSE_BLOCK
-                out.append({
-                    "offset": child_id * bfmt.SPARSE_CHILD_SIZE + lo,
-                    "length": max(0, min(hi, len(data)) - lo),
-                    "data": data[lo:hi],
-                    "where": f"#{child.id} stream 1 0x{lo:x}",
-                })
-        return sorted(out, key=lambda r: r["offset"])
+            notes: list[ParseIssue] = []
+            if parent_reasons:
+                notes.append(ParseIssue("chromium_cache.sparse_parent_invalid", {"reasons": parent_reasons}))
+            if reasons:
+                notes.append(ParseIssue("chromium_cache.sparse_child_rejected", {"reasons": reasons}))
+            notes.extend(other)
+            rejected.append({
+                "child": child.id, "key": child.key.text, "reason": join_notes(list(notes)), "ranges": ranges,
+            })
+        return sorted(used, key=lambda r: r["offset"]), rejected
 
     # -- common -----------------------------------------------------------------
 
@@ -1260,7 +1363,9 @@ class ChromiumCacheStore:
         self, e: _Entry, out: dict[str, Any], streams: dict[int, _Stream], sparse: list[dict[str, Any]],
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"raw": None, "where": "", "derived": None, "derived_label": "",
-                                "note": None, "sparse": sparse, "gaps": _gaps(sparse) if sparse else []}
+                                "derived_partial": False, "note": None, "sparse": sparse,
+                                "gaps": _gaps(sparse) if sparse else [],
+                                "sparse_rejected": out.get("sparse_rejected") or []}
         header = e.code_header
         if e.kind == KIND_CODE and header is not None and header.inline_data is not None and 0 in streams:
             s0 = streams[0]
@@ -1269,12 +1374,18 @@ class ChromiumCacheStore:
         elif 1 in streams:
             body["raw"], body["where"] = streams[1].data, streams[1].where
         body["note"] = self._body_note(e, out, body)
+        if out.get("truncated"):
+            body["note"] = join_notes([ParseIssue("chromium_cache.body_truncated_flag"), body["note"]])
         if body["raw"] is None and not sparse:
             unread = out["stream_notes"].get(1)
             if unread is not None:
                 body["note"] = ParseIssue("chromium_cache.body_unreadable", {"reason": unread})
             elif body["note"] is None:
                 body["note"] = ParseIssue("chromium_cache.no_body")
+        if body["sparse_rejected"]:
+            body["note"] = join_notes([body["note"], ParseIssue(
+                "chromium_cache.sparse_children_apart", {"count": len(body["sparse_rejected"])}
+            )])
         return body
 
     @staticmethod
@@ -1295,9 +1406,10 @@ class ChromiumCacheStore:
             if body["raw"] is None:
                 return None
             codings = content_codings(encoding)
-            derived, note = decode_body(body["raw"], codings, bool(out.get("cache_zstd")))
+            derived, note, partial = decode_body(body["raw"], codings, bool(out.get("cache_zstd")))
             if derived is not None:
                 body["derived"] = derived
+                body["derived_partial"] = partial
                 body["derived_label"] = ", ".join(
                     (["zstd (stored by the cache)"] if out.get("cache_zstd") else [])
                     + [c for c in codings if c != "identity"]
@@ -1311,6 +1423,36 @@ class ChromiumCacheStore:
                 return ParseIssue("chromium_cache.cs_body_stored_decoded", {"coding": encoding})
             return None
         return _BODY_NOTE_UNDETERMINED
+
+
+def _child_ranges(
+    child: _Entry, child_id: int | None, header: bytes, data: bytes | None,
+) -> list[dict[str, Any]]:
+    """A sparse child's 1 KB blocks its block bitmap marks written, placed
+    at child id × 1 MB in the parent's data (sparse_control.cc). None
+    without a child id: they have no place in the parent's data (the
+    child's streams are in its own row in Entries)."""
+    if child_id is None or data is None or len(header) < bfmt.SPARSE_HEADER_SIZE + 128:
+        return []
+    bitmap = int.from_bytes(header[bfmt.SPARSE_HEADER_SIZE:bfmt.SPARSE_HEADER_SIZE + 128], "little")
+    base = child_id * bfmt.SPARSE_CHILD_SIZE
+    out: list[dict[str, Any]] = []
+    block = 0
+    while block < 1024:
+        if not bitmap >> block & 1:
+            block += 1
+            continue
+        start = block
+        while block < 1024 and bitmap >> block & 1:
+            block += 1
+        lo, hi = start * bfmt.SPARSE_BLOCK, block * bfmt.SPARSE_BLOCK
+        out.append({
+            "offset": base + lo,
+            "length": max(0, min(hi, len(data)) - lo),
+            "data": data[lo:hi],
+            "where": f"#{child.id} stream 1 0x{lo:x}",
+        })
+    return out
 
 
 def _gaps(ranges: list[dict[str, Any]]) -> list[tuple[int, int]]:

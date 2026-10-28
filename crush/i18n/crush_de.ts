@@ -431,12 +431,20 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Derived (partial): {size:,} B, the part of the RAW body that decodes, with {codings} removed.</source>
+        <translation>Abgeleitet (teilweise): {size:,} B, der dekodierbare Teil des RAW-Bodys, mit {codings} entfernt.</translation>
+    </message>
+    <message>
         <source>Derived: {size:,} B, the RAW body with {codings} removed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Open RAW body in new tab</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open partially decompressed body in new tab</source>
+        <translation>Teilweise entpackten Body in neuem Tab öffnen</translation>
     </message>
     <message>
         <source>Open decompressed body in new tab</source>
@@ -447,6 +455,10 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Decompressed (derived, partial)</source>
+        <translation>Entpackt (abgeleitet, teilweise)</translation>
+    </message>
+    <message>
         <source>Decompressed (derived)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -455,12 +467,24 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Sparse children not in the body ({count})</source>
+        <translation>Sparse-Kinder nicht im Body ({count})</translation>
+    </message>
+    <message>
+        <source>Child entry</source>
+        <translation>Kind-Eintrag</translation>
+    </message>
+    <message>
         <source>Offset in the entry</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Length (B)</source>
         <translation type="unfinished">Länge (B)</translation>
+    </message>
+    <message>
+        <source>Why not in the body</source>
+        <translation>Warum nicht im Body</translation>
     </message>
     <message>
         <source>Stored</source>
@@ -9186,6 +9210,21 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Record(s) {records}: the packed entry size field doesn&apos;t fit in 38 bits -- Chromium rejects the whole index on reading such a record and rebuilds it from the files; all records are shown as stored</source>
+        <comment>chromium_cache.index_entry_size_rejected</comment>
+        <translation>Record(s) {records}: Das gepackte Feld für die Eintragsgröße passt nicht in 38 Bit -- Chromium verwirft beim Lesen eines solchen Records den ganzen Index und baut ihn aus den Dateien neu auf; alle Records werden wie gespeichert angezeigt</translation>
+    </message>
+    <message>
+        <source>The packed entry size field doesn&apos;t fit in 38 bits: Chromium rejects the whole index because of this record</source>
+        <comment>chromium_cache.index_record_size_rejected</comment>
+        <translation>Das gepackte Feld für die Eintragsgröße passt nicht in 38 Bit: Chromium verwirft wegen dieses Records den ganzen Index</translation>
+    </message>
+    <message>
+        <source>The index lies in the opened folder itself, not in its index-dir subfolder, so the entry files aren&apos;t in this folder: its records are listed, the entry files aren&apos;t checked -- open the cache folder (the parent of index-dir) for those</source>
+        <comment>chromium_cache.index_in_opened_folder</comment>
+        <translation>Der Index liegt im geöffneten Ordner selbst, nicht in dessen Unterordner index-dir; die Entry-Dateien liegen also nicht in diesem Ordner: Seine Records werden aufgelistet, die Entry-Dateien nicht geprüft -- dafür den Cache-Ordner öffnen (den übergeordneten Ordner von index-dir)</translation>
+    </message>
+    <message>
         <source>Index version {version}: outside the versions Chromium reads (8 and 9)</source>
         <comment>chromium_cache.index_version</comment>
         <translation type="unfinished"></translation>
@@ -9324,6 +9363,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>The body the cache stored zstd-compressed doesn&apos;t decompress: {detail}</source>
         <comment>chromium_cache.cache_zstd_failed</comment>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The response info marks this entry TRUNCATED: the download didn&apos;t finish, the body holds only the part received</source>
+        <comment>chromium_cache.body_truncated_flag</comment>
+        <translation>Die Response-Info markiert diesen Eintrag als TRUNCATED: Der Download wurde nicht abgeschlossen, der Body enthält nur den empfangenen Teil</translation>
     </message>
     <message>
         <source>The entry has a body that couldn&apos;t be read: {reason}</source>
@@ -9469,6 +9513,86 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>the same block is also reached from the index</source>
         <comment>chromium_cache.carved_also_listed</comment>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Heuristic: block {block} of {file} is free in the allocation bitmap and holds an entry record whose key, stored outside the record at {addr}, has the stored key hash</source>
+        <comment>chromium_cache.carved_long_key</comment>
+        <translation>Heuristik: Block {block} von {file} ist in der Belegungs-Bitmap frei und enthält einen Eintrags-Record, dessen Schlüssel, außerhalb des Records unter {addr} gespeichert, den gespeicherten Schlüssel-Hash hat</translation>
+    </message>
+    <message>
+        <source>Heuristic, weak: block {block} of {file} is free in the allocation bitmap and holds an entry record whose key is stored outside it at {addr}; that key couldn&apos;t be read ({reason}), so the key hash isn&apos;t checked</source>
+        <comment>chromium_cache.carved_long_key_unread</comment>
+        <translation>Heuristik, schwach: Block {block} von {file} ist in der Belegungs-Bitmap frei und enthält einen Eintrags-Record, dessen Schlüssel außerhalb unter {addr} gespeichert ist; dieser Schlüssel ließ sich nicht lesen ({reason}), daher ist der Schlüssel-Hash nicht geprüft</translation>
+    </message>
+    <message>
+        <source>Not part of the parent&apos;s data (Chromium checks a child so before reading it): {reasons}</source>
+        <comment>chromium_cache.sparse_child_rejected</comment>
+        <translation>Nicht Teil der Daten des Parents (Chromium prüft ein Kind so, bevor es dieses liest): {reasons}</translation>
+    </message>
+    <message>
+        <source>The parent&apos;s sparse header isn&apos;t one Chromium opens ({reasons}); no child is used for the body, every child is listed apart</source>
+        <comment>chromium_cache.sparse_parent_invalid</comment>
+        <translation>Der Sparse-Header des Parents ist keiner, den Chromium öffnet ({reasons}); kein Kind wird für den Body verwendet, alle Kinder werden getrennt aufgeführt</translation>
+    </message>
+    <message>
+        <source>{count:,} sparse child entr(ies) not part of the body: listed apart with why</source>
+        <comment>chromium_cache.sparse_children_apart</comment>
+        <translation>{count:,} Sparse-Kind-Einträge nicht Teil des Bodys: getrennt aufgeführt, mit Grund</translation>
+    </message>
+    <message>
+        <source>the signature in its key ({key}) isn&apos;t the parent&apos;s ({parent}), so Chromium never looks it up</source>
+        <comment>chromium_cache.sparse_key_signature</comment>
+        <translation>die Signatur in seinem Schlüssel ({key}) ist nicht die des Parents ({parent}), daher sucht Chromium es nie</translation>
+    </message>
+    <message>
+        <source>the parent&apos;s child bitmap doesn&apos;t mark child {child}</source>
+        <comment>chromium_cache.sparse_not_in_map</comment>
+        <translation>die Kind-Bitmap des Parents markiert Kind {child} nicht</translation>
+    </message>
+    <message>
+        <source>the entry isn&apos;t flagged CHILD_ENTRY</source>
+        <comment>chromium_cache.sparse_no_child_flag</comment>
+        <translation>der Eintrag trägt nicht das Flag CHILD_ENTRY</translation>
+    </message>
+    <message>
+        <source>its stream 2 ({size:,} B) is shorter than the sparse header and block bitmap ({expected:,} B)</source>
+        <comment>chromium_cache.sparse_child_short</comment>
+        <translation>sein Stream 2 ({size:,} B) ist kürzer als Sparse-Header und Block-Bitmap ({expected:,} B)</translation>
+    </message>
+    <message>
+        <source>the signature in its sparse header ({child}) isn&apos;t the parent&apos;s ({parent})</source>
+        <comment>chromium_cache.sparse_signature</comment>
+        <translation>die Signatur in seinem Sparse-Header ({child}) ist nicht die des Parents ({parent})</translation>
+    </message>
+    <message>
+        <source>the magic in its sparse header ({magic}) isn&apos;t {expected}</source>
+        <comment>chromium_cache.sparse_magic</comment>
+        <translation>die Magic in seinem Sparse-Header ({magic}) ist nicht {expected}</translation>
+    </message>
+    <message>
+        <source>its data stream couldn&apos;t be read, so its blocks aren&apos;t known</source>
+        <comment>chromium_cache.sparse_no_data</comment>
+        <translation>sein Daten-Stream ließ sich nicht lesen, seine Blöcke sind daher nicht bekannt</translation>
+    </message>
+    <message>
+        <source>stream 2 ({size:,} B) is shorter than the sparse header and bitmap ({expected:,} B)</source>
+        <comment>chromium_cache.sparse_parent_short</comment>
+        <translation>Stream 2 ({size:,} B) ist kürzer als Sparse-Header und Bitmap ({expected:,} B)</translation>
+    </message>
+    <message>
+        <source>stream 1 isn&apos;t empty</source>
+        <comment>chromium_cache.sparse_parent_has_data</comment>
+        <translation>Stream 1 ist nicht leer</translation>
+    </message>
+    <message>
+        <source>the child bitmap is {size:,} B (at most 8,192 B and a multiple of 4)</source>
+        <comment>chromium_cache.sparse_parent_map_size</comment>
+        <translation>die Kind-Bitmap ist {size:,} B groß (höchstens 8.192 B und ein Vielfaches von 4)</translation>
+    </message>
+    <message>
+        <source>the header&apos;s parent key length ({stored}) isn&apos;t the key&apos;s ({actual})</source>
+        <comment>chromium_cache.sparse_parent_key_len</comment>
+        <translation>die Parent-Schlüssellänge im Header ({stored}) ist nicht die des Schlüssels ({actual})</translation>
     </message>
     <message>
         <source>The record&apos;s streams point to blocks that may have been reused since it was freed</source>
@@ -9819,6 +9943,46 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Not resolved: an object reaches itself through its references (a cycle), so below is the archive&apos;s undecoded object table</source>
         <comment>plist.nska_cycle_text</comment>
         <translation>Nicht aufgelöst: Ein Objekt erreicht über seine Referenzen sich selbst (Zyklus), daher folgt unten die nicht dekodierte Objekttabelle des Archivs</translation>
+    </message>
+    <message>
+        <source>Partial: the body doesn&apos;t decode completely as the declared Content-Encoding {coding} ({detail}); the derived body holds the {size:,} B decoded before that point (input {input:,} B)</source>
+        <comment>chromium_cache.coding_partial</comment>
+        <translation>Teilweise: Der Body lässt sich nicht vollständig mit dem deklarierten Content-Encoding {coding} dekodieren ({detail}); der abgeleitete Body enthält die {size:,} B, die bis zu dieser Stelle dekodiert wurden (Eingabe {input:,} B)</translation>
+    </message>
+    <message>
+        <source>Partial: the body the cache stored zstd-compressed doesn&apos;t decompress completely ({detail}); the derived body holds the {size:,} B decompressed before that point (input {input:,} B)</source>
+        <comment>chromium_cache.cache_zstd_partial</comment>
+        <translation>Teilweise: Der vom Cache zstd-komprimiert gespeicherte Body lässt sich nicht vollständig entpacken ({detail}); der abgeleitete Body enthält die {size:,} B, die bis zu dieser Stelle entpackt wurden (Eingabe {input:,} B)</translation>
+    </message>
+    <message>
+        <source>Partial: the body&apos;s {input:,} B end before the end of the declared Content-Encoding {coding} stream; the derived body holds the {size:,} B decoded from them</source>
+        <comment>chromium_cache.coding_partial_short</comment>
+        <translation>Teilweise: Die {input:,} B des Bodys enden vor dem Ende des {coding}-Streams aus dem deklarierten Content-Encoding; der abgeleitete Body enthält die daraus dekodierten {size:,} B</translation>
+    </message>
+    <message>
+        <source>Partial: the body the cache stored zstd-compressed ({input:,} B) ends before the end of its zstd frame; the derived body holds the {size:,} B decompressed from it</source>
+        <comment>chromium_cache.cache_zstd_partial_short</comment>
+        <translation>Teilweise: Der vom Cache zstd-komprimiert gespeicherte Body ({input:,} B) endet vor dem Ende seines zstd-Frames; der abgeleitete Body enthält die daraus entpackten {size:,} B</translation>
+    </message>
+    <message>
+        <source>The body&apos;s {input:,} B end before the declared Content-Encoding {coding} gives a single decoded byte; no derived body</source>
+        <comment>chromium_cache.coding_short</comment>
+        <translation>Die {input:,} B des Bodys enden, bevor das deklarierte Content-Encoding {coding} ein einziges dekodiertes Byte ergibt; kein abgeleiteter Body</translation>
+    </message>
+    <message>
+        <source>The body the cache stored zstd-compressed ({input:,} B) ends before a single byte decompresses; no derived body</source>
+        <comment>chromium_cache.cache_zstd_short</comment>
+        <translation>Der vom Cache zstd-komprimiert gespeicherte Body ({input:,} B) endet, bevor sich ein einziges Byte entpacken lässt; kein abgeleiteter Body</translation>
+    </message>
+    <message>
+        <source>{count:,} B follow the end of the {coding} stream (from offset {offset:,} of its input): Chromium ignores them, so they aren&apos;t in the derived body; RAW holds them</source>
+        <comment>chromium_cache.coding_trailing_ignored</comment>
+        <translation>Nach dem Ende des {coding}-Streams folgen {count:,} B (ab Offset {offset:,} seiner Eingabe): Chromium ignoriert sie, sie sind daher nicht im abgeleiteten Body; RAW enthält sie</translation>
+    </message>
+    <message>
+        <source>its key doesn&apos;t end in a signature and a child number in hex, each after a colon</source>
+        <comment>chromium_cache.sparse_key_id</comment>
+        <translation>sein Schlüssel endet nicht auf eine Signatur und eine Kindnummer in Hex, jeweils nach einem Doppelpunkt</translation>
     </message>
     <message>
         <source>Payload column: schema-less rendering (heuristic), valid UTF-8 shown as text and 64/32-bit fields as double/float. The selected record&apos;s payload is shown below the table with every candidate reading of each field</source>

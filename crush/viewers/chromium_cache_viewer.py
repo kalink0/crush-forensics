@@ -71,6 +71,7 @@ _ENTRY_COLUMNS: list[tuple[str, str, str]] = [
     (QT_TRANSLATE_NOOP("GeneratedView", "Request time (UTC)"), "request_time_text", "request_time"),
     (QT_TRANSLATE_NOOP("GeneratedView", "Response time (UTC)"), "response_time_text", "response_time"),
     (QT_TRANSLATE_NOOP("GeneratedView", "Last used (UTC)"), "last_used_text", "last_used"),
+    (QT_TRANSLATE_NOOP("GeneratedView", "Trailer prefetch size"), "prefetch", "prefetch"),
     (QT_TRANSLATE_NOOP("GeneratedView", "Entry created (UTC)"), "created_text", "created"),
     (QT_TRANSLATE_NOOP("GeneratedView", "Server"), "server", "server"),
     (QT_TRANSLATE_NOOP("GeneratedView", "Protocol"), "protocol", "protocol"),
@@ -377,11 +378,17 @@ class _DetailPane(QTabWidget):
         layout.setContentsMargins(4, 4, 4, 0)
         raw: bytes | None = body.get("raw")
         derived: bytes | None = body.get("derived")
+        partial = bool(body.get("derived_partial"))
         lines = []
         if raw is not None:
             lines.append(translate("ChromiumCacheViewer", "RAW: {size:,} B as stored ({where}).").format(
                 size=len(raw), where=body.get("where", "")))
-        if derived is not None:
+        if derived is not None and partial:
+            lines.append(translate(
+                "ChromiumCacheViewer",
+                "Derived (partial): {size:,} B, the part of the RAW body that decodes, with {codings} removed.",
+            ).format(size=len(derived), codings=body.get("derived_label", "")))
+        elif derived is not None:
             lines.append(translate(
                 "ChromiumCacheViewer", "Derived: {size:,} B, the RAW body with {codings} removed."
             ).format(size=len(derived), codings=body.get("derived_label", "")))
@@ -394,9 +401,13 @@ class _DetailPane(QTabWidget):
             open_raw.clicked.connect(lambda: self._open(raw, "body", body.get("where", "")))
             buttons.addWidget(open_raw)
         if derived is not None:
-            open_derived = QPushButton(translate("ChromiumCacheViewer", "Open decompressed body in new tab"))
+            open_derived = QPushButton(
+                translate("ChromiumCacheViewer", "Open partially decompressed body in new tab") if partial
+                else translate("ChromiumCacheViewer", "Open decompressed body in new tab")
+            )
             open_derived.clicked.connect(lambda: self._open(
-                derived, "body-decompressed", f"{body.get('derived_label', '')} of {body.get('where', '')}"
+                derived, "body-decompressed-partial" if partial else "body-decompressed",
+                f"{body.get('derived_label', '')} of {body.get('where', '')}" + (" (partial)" if partial else ""),
             ))
             buttons.addWidget(open_derived)
         buttons.addStretch()
@@ -405,13 +416,53 @@ class _DetailPane(QTabWidget):
         if raw is not None:
             views.addTab(HexViewer(raw, views), translate("ChromiumCacheViewer", "RAW"))
         if derived is not None:
-            views.addTab(HexViewer(derived, views), translate("ChromiumCacheViewer", "Decompressed (derived)"))
+            views.addTab(HexViewer(derived, views), (
+                translate("ChromiumCacheViewer", "Decompressed (derived, partial)") if partial
+                else translate("ChromiumCacheViewer", "Decompressed (derived)")
+            ))
         sparse = body.get("sparse") or []
         if sparse:
             views.addTab(self._sparse_table(sparse, body.get("gaps") or []),
                          translate("ChromiumCacheViewer", "Sparse ranges ({count})").format(count=len(sparse)))
+        rejected = body.get("sparse_rejected") or []
+        if rejected:
+            views.addTab(self._rejected_children_table(rejected), translate(
+                "ChromiumCacheViewer", "Sparse children not in the body ({count})"
+            ).format(count=len(rejected)))
         layout.addWidget(views, 1)
         return widget
+
+    def _rejected_children_table(self, children: list[dict[str, Any]]) -> QWidget:
+        """Sparse children that aren't part of the parent's data: one row per
+        stored range (one row for a child without any), each with why."""
+        rows: list[tuple[str, str, str, str, str, bytes | None]] = []
+        for c in children:
+            reason = render_value(c["reason"], localized=True)
+            ranges = c.get("ranges") or []
+            for r in ranges:
+                rows.append((f"#{c['child']}", f"{r['offset']:,}", f"{r['length']:,}", r["where"], reason, r["data"]))
+            if not ranges:
+                rows.append((f"#{c['child']}", "", "", "", reason, None))
+        table = QTableWidget(len(rows), 5)
+        table.setHorizontalHeaderLabels([
+            translate("ChromiumCacheViewer", "Child entry"),
+            translate("ChromiumCacheViewer", "Offset in the entry"),
+            translate("ChromiumCacheViewer", "Length (B)"),
+            translate("ChromiumCacheViewer", "Where"),
+            translate("ChromiumCacheViewer", "Why not in the body"),
+        ])
+        for i, row in enumerate(rows):
+            for col, text in enumerate(row[:5]):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                table.setItem(i, col, item)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.cellDoubleClicked.connect(
+            lambda row, _col: rows[row][5] is not None and self._open(
+                rows[row][5] or b"", f"child-range-{rows[row][1].replace(',', '')}", rows[row][3]
+            )
+        )
+        return table
 
     def _sparse_table(self, ranges: list[dict[str, Any]], gaps: list[tuple[int, int]]) -> QWidget:
         rows: list[tuple[int, int, str, bytes | None]] = [

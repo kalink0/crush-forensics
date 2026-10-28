@@ -546,7 +546,12 @@ class Cache:
             t.put(("Streams", str(i), "Address"), Addr(e.data_addr[i]).text(), base + 56 + 4 * i, base + 60 + 4 * i)
         flag_names = [n for bit, n in ((PARENT_ENTRY, "PARENT_ENTRY"), (CHILD_ENTRY, "CHILD_ENTRY")) if e.flags & bit]
         t.put(("Flags",), f"0x{e.flags:x} ({', '.join(flag_names) or '-'})", base + 72, base + 76)
-        t.put(("Self hash",), f"0x{e.self_hash:08x}" + ("" if e.self_hash_ok else " ≠"), base + 92, base + 96)
+        t.put(("Self hash",), f"0x{e.self_hash:08x}", base + 92, base + 96)
+        t.put(("Self hash check",), (
+            QT_TRANSLATE_NOOP("GeneratedView", "not stored") if not e.self_hash else
+            QT_TRANSLATE_NOOP("GeneratedView", "matches") if e.self_hash_ok else
+            ParseIssue("chromium_cache.entry_self_hash")
+        ))
         if e.key_location and e.key_location[0] == (loc[0] if loc else ""):
             t.put(("Key",), e.key.decode("utf-8", errors="backslashreplace"), e.key_location[1], e.key_location[2])
         elif e.key:
@@ -558,9 +563,12 @@ class Cache:
     def carve(self, known: set[int]) -> list[dict[str, Any]]:
         """Heuristic: EntryStore records in blocks the allocation bitmap of a
         256-byte block file marks free. A candidate is a block whose key
-        length is in range and whose stored key hash is the SuperFastHash of
-        the key read there -- every such block is listed, with what else
-        holds (self hash, state, rankings node pointing back)."""
+        length is positive and whose stored key hash is the SuperFastHash of
+        the key -- read in the record, or for a key stored outside it, at
+        the record's long key address. A record whose long key address is
+        valid but can't be read is listed too, marked weak (its hash isn't
+        checked). Every candidate is listed, with what else holds (self
+        hash, rankings node pointing back)."""
         out: list[dict[str, Any]] = []
         for bf in self.block_files():
             if bf.entry_size != ENTRY_SIZE:
@@ -571,29 +579,51 @@ class Cache:
                     continue
                 start = BLOCK_HEADER_SIZE + block * ENTRY_SIZE
                 key_len = struct.unpack_from("<i", bf.data, start + 32)[0]
-                if key_len <= 0 or key_len > MAX_INTERNAL_KEY:
+                long_key = struct.unpack_from("<I", bf.data, start + 36)[0]
+                if key_len <= 0:
                     continue
-                # The record and up to three following blocks (a long
-                # inline key), as far as the file goes.
-                n_blocks = min(4, (KEY_OFFSET + key_len + 1 + ENTRY_SIZE - 1) // ENTRY_SIZE)
-                raw = bf.data[start:start + n_blocks * ENTRY_SIZE]
-                if len(raw) < KEY_OFFSET + key_len:
-                    continue
-                long_key = struct.unpack_from("<I", raw, 36)[0]
+                stored_hash = struct.unpack_from("<I", bf.data, start)[0]
                 if long_key:
-                    continue
-                key = raw[KEY_OFFSET:KEY_OFFSET + key_len]
-                stored_hash = struct.unpack_from("<I", raw, 0)[0]
-                if super_fast_hash(key) != stored_hash:
-                    continue
+                    # Key outside the record (EntryImpl::CreateEntry: a key
+                    # longer than the record holds): the record is one block.
+                    key_addr = Addr(long_key)
+                    if not key_addr.initialized or not key_addr.sane():
+                        continue
+                    n_blocks = 1
+                    raw = bf.data[start:start + ENTRY_SIZE]
+                    key, _loc, why = self.read(key_addr, key_len)
+                    if key is not None and len(key) == key_len:
+                        if super_fast_hash(key) != stored_hash:
+                            continue
+                        first = ParseIssue("chromium_cache.carved_long_key", {
+                            "file": bf.name, "block": block, "addr": key_addr.text(),
+                        })
+                    else:
+                        first = ParseIssue("chromium_cache.carved_long_key_unread", {
+                            "file": bf.name, "block": block, "addr": key_addr.text(),
+                            "reason": why or ParseIssue("chromium_cache.key_unreadable"),
+                        })
+                else:
+                    if key_len > MAX_INTERNAL_KEY:
+                        continue
+                    # The record and up to three following blocks (a long
+                    # inline key), as far as the file goes.
+                    n_blocks = min(4, (KEY_OFFSET + key_len + 1 + ENTRY_SIZE - 1) // ENTRY_SIZE)
+                    raw = bf.data[start:start + n_blocks * ENTRY_SIZE]
+                    if len(raw) < KEY_OFFSET + key_len:
+                        continue
+                    if super_fast_hash(raw[KEY_OFFSET:KEY_OFFSET + key_len]) != stored_hash:
+                        continue
+                    first = ParseIssue("chromium_cache.carved_key_hash", {"file": bf.name, "block": block})
                 addr_value = 0x80000000 | (BLOCK_256 << 28) | ((n_blocks - 1) << 24) | (bf.this_file << 16) | block
                 entry = self._entry(Addr(addr_value), raw)
                 node = self.rankings(entry.rankings_node)
-                points_back = node is not None and Addr(node.contents).start_block == block and (
-                    Addr(node.contents).file_number == bf.this_file
+                back = Addr(node.contents) if node is not None else None
+                points_back = back is not None and back.initialized and back.file_type == BLOCK_256 and (
+                    back.file_number == bf.this_file and back.start_block == block
                 )
                 reasons = [
-                    ParseIssue("chromium_cache.carved_key_hash", {"file": bf.name, "block": block}),
+                    first,
                     ParseIssue("chromium_cache.carved_self_hash_ok" if entry.self_hash_ok
                                else "chromium_cache.carved_self_hash_bad"),
                     ParseIssue("chromium_cache.carved_rankings_back" if points_back

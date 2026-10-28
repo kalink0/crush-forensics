@@ -308,6 +308,13 @@ class IndexRecord:
     size: int          # entry size, 256-byte chunks rounded up
     in_memory_data: int
     offset: int        # of the record in the file
+    packed: int = 0    # the size field as stored (size chunks and in-memory bits)
+
+    @property
+    def size_rejected(self) -> bool:
+        """EntryMetadata::Deserialize: the packed field must fit in 38
+        bits, else the whole index is rejected."""
+        return bool(self.packed >> 38)
 
 
 @dataclass
@@ -362,9 +369,14 @@ def read_real_index(data: bytes) -> RealIndex:
             first, _, _ = p.int64(f"record {i} time or prefetch size")
             packed, _, re_ = p.uint64(f"record {i} size")
             out.records.append(IndexRecord(
-                hash_value, first, (packed >> 8) << 8, packed & 0x03, rs,
+                hash_value, first, (packed >> 8) << 8, packed & 0x03, rs, packed,
             ))
         t.put(("Records",), f"{len(out.records):,}", start, p.base + p.pos)
+        rejected = [str(i) for i, r in enumerate(out.records) if r.size_rejected]
+        if rejected:
+            t.put(("Entry size check",), ParseIssue(
+                "chromium_cache.index_entry_size_rejected", {"records": ", ".join(rejected)}
+            ))
         modified, s, e = p.int64("cache last modified")
         out.cache_last_modified = modified
         t.put(("Cache directory last modified",), chrome_time(modified), s, e)

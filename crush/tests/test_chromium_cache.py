@@ -156,12 +156,15 @@ def _simple_sparse(key: bytes, ranges: list[tuple[int, bytes]]) -> bytes:
     return out
 
 
-def _real_index(records: list[tuple[int, int, int]], *, modified: int = _T_RESPONSE) -> bytes:
+def _real_index(
+    records: list[tuple[int, int, int]], *, modified: int = _T_RESPONSE, packed: dict[int, int] | None = None,
+) -> bytes:
     """simple_index_file.cc: pickle (payload size, CRC), IndexMetadata,
-    records (hash, time or prefetch size, packed size), last modified."""
+    records (hash, time or prefetch size, packed size), last modified.
+    *packed*: record number -> the packed size field as stored."""
     payload = struct.pack("<QIQQI", sfmt.INDEX_MAGIC, 9, len(records), 4096, 2)
-    for h, first, size in records:
-        payload += struct.pack("<QqQ", h, first, ((size + 255) >> 8) << 8)
+    for i, (h, first, size) in enumerate(records):
+        payload += struct.pack("<QqQ", h, first, (packed or {}).get(i, ((size + 255) >> 8) << 8))
     payload += struct.pack("<q", modified)
     return struct.pack("<II", len(payload), zlib.crc32(payload)) + payload
 
@@ -553,15 +556,124 @@ def test_cache_stored_zstd_body_is_declared() -> None:
 
     info = decode_response_info(_response_info([], cache_zstd=5))
     assert info.zstd_uncompressed_size == 5
-    derived, note = decode_body(zstd.compress(b"hello"), [], cache_zstd=True)
-    assert (derived, note) == (b"hello", None)
+    assert decode_body(zstd.compress(b"hello"), [], cache_zstd=True) == (b"hello", None, False)
 
 
 def test_undecodable_body_says_why() -> None:
-    derived, note = decode_body(b"not gzip", ["gzip"])
-    assert derived is None and note is not None and note.code == "chromium_cache.coding_failed"
-    derived, note = decode_body(b"x", ["compress"])
+    derived, note, partial = decode_body(b"not gzip", ["gzip"])
+    assert derived is None and not partial
+    assert note is not None and note.code == "chromium_cache.coding_failed"
+    derived, note, _ = decode_body(b"x", ["compress"])
     assert note is not None and note.code == "chromium_cache.coding_unsupported"
+
+
+def _compressors() -> dict[str, Any]:
+    import brotli
+
+    try:
+        from compression import zstd  # type: ignore[import-not-found]
+    except ImportError:
+        from backports import zstd
+    return {
+        "gzip": lambda d: gzip.compress(d, mtime=0),
+        "deflate": zlib.compress,
+        "br": brotli.compress,
+        "zstd": zstd.compress,
+    }
+
+
+# Large and varied enough for several compressed blocks (zstd outputs whole
+# blocks of up to 128 KB only).
+_TEXT = b"".join(b"line %06d %s\n" % (i, hashlib.sha256(b"%d" % i).hexdigest().encode()) for i in range(20000))
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="Chromium Disk Cache",
+    desc="A body whose coded data ends early must give the part that decodes, marked partial, never nothing",
+)
+@pytest.mark.parametrize("coding", ["gzip", "deflate", "br", "zstd"])
+def test_cut_off_body_gives_the_decodable_start_marked_partial(coding: str) -> None:
+    encoded = _compressors()[coding](_TEXT)
+    derived, note, partial = decode_body(encoded[:len(encoded) // 2], [coding])
+    assert partial
+    assert derived and _TEXT.startswith(derived) and len(derived) < len(_TEXT)
+    assert note is not None and note.code == "chromium_cache.coding_partial_short"
+    assert note.params["size"] == len(derived)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="Chromium Disk Cache",
+    desc="A complete coded body followed by extra bytes must decode whole, not partial; the extra bytes are named",
+)
+@pytest.mark.parametrize("coding", ["gzip", "deflate", "br"])
+def test_bytes_after_a_complete_stream_are_ignored_like_chromium(coding: str) -> None:
+    """net/filter: gzip, deflate and brotli source streams ignore what follows
+    their stream's end (seen on real data: a br body plus one newline)."""
+    encoded = _compressors()[coding](_TEXT)
+    derived, note, partial = decode_body(encoded + b"\n", [coding])
+    assert derived == _TEXT and not partial
+    assert note == ParseIssue("chromium_cache.coding_trailing_ignored",
+                              {"coding": coding, "count": 1, "offset": len(encoded)})
+
+
+def test_second_gzip_member_is_ignored_like_chromium() -> None:
+    first, second = gzip.compress(b"first", mtime=0), gzip.compress(b"second", mtime=0)
+    derived, note, partial = decode_body(first + second, ["gzip"])
+    assert derived == b"first" and not partial
+    assert note is not None and note.params["count"] == len(second)
+
+
+def test_empty_body_with_a_content_encoding_is_not_a_cut_off_stream() -> None:
+    """Seen on real data: 302 responses with Content-Encoding gzip, 0 B body."""
+    assert decode_body(b"", ["gzip"]) == (None, None, False)
+
+
+def test_zstd_frames_in_a_row_are_all_decoded_like_chromium() -> None:
+    zstd_compress = _compressors()["zstd"]
+    assert decode_body(zstd_compress(b"one") + zstd_compress(b"two"), ["zstd"]) == (b"onetwo", None, False)
+
+
+def test_body_broken_mid_stream_gives_everything_before_the_break() -> None:
+    # Stored blocks (level 0): zlib header (2 B), then per block 1 B type,
+    # LEN, NLEN, data. The second block's NLEN no longer matches its LEN.
+    encoded = bytearray(zlib.compress(_TEXT, 0))
+    first_len = struct.unpack_from("<H", encoded, 3)[0]
+    second = 2 + 5 + first_len
+    encoded[second + 3] ^= 0xFF
+    derived, note, partial = decode_body(bytes(encoded), ["deflate"])
+    assert partial and derived == _TEXT[:first_len]
+    assert note is not None and note.code == "chromium_cache.coding_partial"
+    assert "invalid stored block lengths" in note.detail
+    # Byte by byte up to the break: everything the decoder outputs before it
+    # stops is kept.
+    whole = zlib.decompressobj()
+    ok = bytearray()
+    for i in range(len(encoded)):
+        try:
+            ok += whole.decompress(bytes(encoded[i:i + 1]))
+        except zlib.error:
+            break
+    assert derived == bytes(ok)
+
+
+def test_complete_body_is_not_marked_partial() -> None:
+    for coding, compress in _compressors().items():
+        assert decode_body(compress(_TEXT), [coding]) == (_TEXT, None, False)
+
+
+def test_partial_body_in_the_entry_detail(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    folder.mkdir()
+    (folder / "index").write_bytes(_fake_index())
+    encoded = gzip.compress(_TEXT, mtime=0)
+    _write_simple(folder, _HTTP_KEY, _response_info([("Content-Encoding", "gzip")]), encoded[:4000])
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    body = result.data["__store"].detail(0)["body"]
+    assert body["raw"] == encoded[:4000]
+    assert body["derived_partial"] and _TEXT.startswith(body["derived"])
+    assert body["note"].code == "chromium_cache.coding_partial_short"
 
 
 # -- single files ------------------------------------------------------------------
@@ -581,6 +693,59 @@ def test_index_alone_lists_records_with_both_readings(tmp_path: Path) -> None:
     result = ChromiumCacheParser().parse(_dir_node(vfs, "the-real-index"), vfs)
     assert [o["hash"] for o in result.data["orphans"]] == ["0x0000000000000001", "0x0000000000000002"]
     assert all(o["note"] == ParseIssue("chromium_cache.index_field_both") for o in result.data["orphans"])
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="Chromium Disk Cache",
+    desc="index-dir opened on its own must not report its records as entries without entry files",
+)
+def test_index_dir_opened_alone_does_not_claim_missing_entry_files(tmp_path: Path) -> None:
+    _http_cache(tmp_path / "Cache")
+    vfs = DirectoryVFS(tmp_path)
+    node = _dir_node(vfs, "Cache", "index-dir")
+    assert ChromiumCacheParser().can_parse_dir(node, vfs)
+    result = ChromiumCacheParser().parse(node, vfs)
+    sources = {o["source"] for o in result.data["orphans"]}
+    assert sources == {"index record (entry files not checked)"}
+    assert len(result.data["orphans"]) == 2  # the live entry's record and the orphan's
+    assert ParseIssue("chromium_cache.index_in_opened_folder") in result.data["overview"]["Status"]
+    assert "Index records without an entry file" not in result.data["overview"]
+    assert result.data["entries_note"].code == "chromium_cache.index_in_opened_folder"
+    # The cache folder itself still checks them.
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    assert [o["source"] for o in result.data["orphans"]] == ["index record without entry file"]
+
+
+def test_index_record_chromium_rejects_marks_the_whole_index(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    (folder / "index-dir").mkdir(parents=True)
+    (folder / "index-dir" / "the-real-index").write_bytes(
+        _real_index([(1, _T_REQUEST, 256), (2, _T_REQUEST, 512)], packed={1: 1 << 40})
+    )
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    status = ParseIssue("chromium_cache.index_entry_size_rejected", {"records": "1"})
+    assert status in result.data["overview"]["Status"]
+    assert len(result.data["orphans"]) == 2  # all records still shown
+    notes = [render_value(o["note"]) for o in result.data["orphans"]]
+    assert "38 bits" not in notes[0] and "38 bits" in notes[1]
+    (tmp_path / "alone").write_bytes((folder / "index-dir" / "the-real-index").read_bytes())
+    vfs = DirectoryVFS(tmp_path)
+    alone = ChromiumCacheParser().parse(_dir_node(vfs, "alone"), vfs)
+    assert status in alone.data["overview"]["Status"]
+
+
+def test_entries_show_both_index_readings_when_the_cache_type_is_unknown(tmp_path: Path) -> None:
+    folder = tmp_path / "ScriptCache"
+    folder.mkdir()
+    (folder / "index").write_bytes(_fake_index())
+    _write_simple(folder, b"17", b"", b"var a=1;")
+    (folder / "index-dir").mkdir()
+    (folder / "index-dir" / "the-real-index").write_bytes(_real_index([(sfmt.entry_hash(b"17"), 4242, 256)]))
+    result, _vfs, _node = _parse_dir(tmp_path, "ScriptCache")
+    row = result.data["entries"][0]
+    assert row["last_used"] == 4242 and row["prefetch"] == 4242
+    assert "shown both ways" in render_value(row["note"])
 
 
 def test_marker_alone(tmp_path: Path) -> None:
@@ -610,13 +775,18 @@ def _block_file(number: int, entry_size: int, blocks: dict[int, bytes], used: se
     return head + bytes(bitmap) + bytes(body)
 
 
-def _entry_store(key: bytes, *, rankings: int, state: int, sizes: list[int], addrs: list[int]) -> bytes:
+def _entry_store(
+    key: bytes, *, rankings: int, state: int, sizes: list[int], addrs: list[int],
+    flags: int = 0, long_key: int = 0,
+) -> bytes:
+    """An EntryStore; with *long_key* the key is stored there, not inline."""
     head = struct.pack(
         "<IIIiiiQiI4i4II4i", bfmt.super_fast_hash(key), 0, rankings, 1, 0, state, _T_REQUEST,
-        len(key), 0, *sizes, *addrs, 0, 0, 0, 0, 0,
+        len(key), long_key, *sizes, *addrs, flags, 0, 0, 0, 0,
     )
     head += struct.pack("<I", bfmt.super_fast_hash(head[:92]))
-    return head + key + b"\0" * (160 - len(key))
+    inline = b"" if long_key else key
+    return head + inline + b"\0" * (160 - len(inline))
 
 
 def _rankings(contents: int, last_used: int) -> bytes:
@@ -716,6 +886,155 @@ def test_zeroed_free_blocks_are_not_carved(tmp_path: Path) -> None:
     result, _vfs, _node = _parse_dir(tmp_path, "Cache")
     assert result.data["orphans"] == []
     assert result.data["orphans_note"].code == "chromium_cache.no_orphans_blockfile"
+
+
+def test_carving_reads_a_key_stored_outside_the_record(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    _blockfile_cache(folder)
+    long_key = b"https://long.test/" + b"p" * 1000
+    key_addr = _addr(bfmt.BLOCK_1K, 2, 20, 2)
+    missing_addr = 0x80000000 | 9  # f_000009, not there
+    raw = bytearray((folder / "data_1").read_bytes())
+    for block, addr in ((6, key_addr), (7, missing_addr)):
+        record = _entry_store(long_key, rankings=_addr(bfmt.RANKINGS, 0, 0), state=0,
+                              sizes=[0, 0, 0, 0], addrs=[0, 0, 0, 0], long_key=addr)
+        start = bfmt.BLOCK_HEADER_SIZE + block * 256
+        raw[start:start + 256] = record
+    (folder / "data_1").write_bytes(bytes(raw))
+    data2 = bytearray((folder / "data_2").read_bytes())
+    start = bfmt.BLOCK_HEADER_SIZE + 20 * 1024
+    data2[start:start + len(long_key) + 1] = long_key + b"\0"
+    (folder / "data_2").write_bytes(bytes(data2))
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    carved = {o["offset"]: o for o in result.data["orphans"] if o["kind"] == "carved"}
+    read = carved[bfmt.BLOCK_HEADER_SIZE + 6 * 256]
+    assert read["key"] == long_key.decode()
+    codes = {n.code for n in read["note"].params["notes"]}
+    assert "chromium_cache.carved_long_key" in codes
+    # The rankings node points to entry block 0, not to this one.
+    assert "chromium_cache.carved_rankings_not_back" in codes
+    unread = carved[bfmt.BLOCK_HEADER_SIZE + 7 * 256]
+    assert "chromium_cache.carved_long_key_unread" in {n.code for n in unread["note"].params["notes"]}
+
+
+def test_rankings_node_of_another_file_type_does_not_point_back(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    _blockfile_cache(folder)
+    # Rankings node 2 names block 5 of file 1 -- but as a 1 KB block address.
+    raw = bytearray((folder / "data_0").read_bytes())
+    start = bfmt.BLOCK_HEADER_SIZE + 2 * 36
+    raw[start:start + 36] = _rankings(_addr(bfmt.BLOCK_1K, 1, 5), _T_RESPONSE)
+    (folder / "data_0").write_bytes(bytes(raw))
+    data1 = bytearray((folder / "data_1").read_bytes())
+    start = bfmt.BLOCK_HEADER_SIZE + 5 * 256
+    data1[start:start + 256] = _entry_store(b"https://gone.test/secret.json", rankings=_addr(bfmt.RANKINGS, 0, 2),
+                                            state=0, sizes=[0, 0, 0, 0], addrs=[0, 0, 0, 0])
+    (folder / "data_1").write_bytes(bytes(data1))
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    carved = next(o for o in result.data["orphans"] if o["kind"] == "carved")
+    assert "chromium_cache.carved_rankings_not_back" in {n.code for n in carved["note"].params["notes"]}
+    assert carved["last_used"] is None
+
+
+_SPARSE_SIG = 0x0123456789ABCDEF
+
+
+def _sparse_header(signature: int, key_len: int, bitmap: int, map_bytes: int = 128) -> bytes:
+    """SparseData: SparseHeader (signature, magic, parent key length, last
+    block, last block length, padding) and the bitmap."""
+    head = struct.pack("<qIiii", signature, bfmt.INDEX_MAGIC, key_len, 0, 0) + b"\0" * 40
+    return head + bitmap.to_bytes(map_bytes, "little")
+
+
+def _sparse_cache(folder: Path) -> dict[str, Any]:
+    """A parent (PARENT_ENTRY) with three children: 0 valid, 1 with another
+    signature in its header, 2 not marked in the parent's child bitmap."""
+    folder.mkdir(parents=True)
+    key = b"https://media.test/video.mp4"
+    entries, rankings, data2 = {}, {}, {}
+    table = [0] * 0x400
+    parent_header = _sparse_header(_SPARSE_SIG, len(key), 0b011)
+    data2[0] = parent_header
+    specs: list[tuple[bytes, int, bytes]] = [(key, bfmt.PARENT_ENTRY, b"")]
+    contents = {0: b"A" * 1024, 1: b"B" * 1024, 2: b"C" * 1024}
+    for child_id, data in contents.items():
+        child_key = b"Range_" + key + b":%x:%x" % (_SPARSE_SIG, child_id)
+        sig = _SPARSE_SIG if child_id != 1 else _SPARSE_SIG + 1
+        data2[1 + 2 * child_id] = _sparse_header(sig, len(key), 0b1)
+        data2[2 + 2 * child_id] = data
+        specs.append((child_key, bfmt.CHILD_ENTRY, data))
+    for i, (k, flags, data) in enumerate(specs):
+        if i == 0:
+            sizes, addrs = [0, 0, len(parent_header), 0], [0, 0, _addr(bfmt.BLOCK_1K, 2, 0), 0]
+        else:
+            n = i - 1
+            sizes = [0, len(data), 192, 0]
+            addrs = [0, _addr(bfmt.BLOCK_1K, 2, 2 + 2 * n), _addr(bfmt.BLOCK_1K, 2, 1 + 2 * n), 0]
+        entries[i] = _entry_store(k, rankings=_addr(bfmt.RANKINGS, 0, i), state=0, sizes=sizes,
+                                  addrs=addrs, flags=flags)
+        rankings[i] = _rankings(_addr(bfmt.BLOCK_256, 1, i), _T_RESPONSE)
+        table[10 + i] = _addr(bfmt.BLOCK_256, 1, i)
+    (folder / "data_0").write_bytes(_block_file(0, 36, rankings, set(rankings)))
+    (folder / "data_1").write_bytes(_block_file(1, 256, entries, set(entries)))
+    (folder / "data_2").write_bytes(_block_file(2, 1024, data2, set(data2)))
+    header = struct.pack(
+        "<IIiiiiIiiiQqi", bfmt.INDEX_MAGIC, 0x30000, len(entries), 0, 1, 7, 0, len(table), 0, 0, _T_REQUEST, 0, 0,
+    )
+    header += b"\0" * (256 - len(header))
+    header += struct.pack("<2ii5i5I5IIii7i", 0, 0, 0, *[0] * 5, *[0] * 5, *[0] * 5, 0, 0, 0, *[0] * 7)
+    (folder / "index").write_bytes(header + struct.pack(f"<{len(table)}I", *table))
+    return {"key": key, "contents": contents}
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="Chromium Disk Cache",
+    desc="Sparse children Chromium wouldn't read for the parent must not be mixed into its body; listed apart with why",
+)
+def test_sparse_children_checked_like_chromium(tmp_path: Path) -> None:
+    built = _sparse_cache(tmp_path / "Cache")
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    parent = next(r for r in result.data["entries"] if r["key"] == built["key"].decode())
+    detail = result.data["__store"].detail(parent["id"])
+    body = detail["body"]
+    assert [(r["offset"], r["data"]) for r in body["sparse"]] == [(0, built["contents"][0])]
+    rejected = {render_value(c["reason"]) for c in body["sparse_rejected"]}
+    assert len(body["sparse_rejected"]) == 2
+    assert any("signature in its sparse header" in r for r in rejected)
+    assert any("child bitmap doesn't mark child 2" in r for r in rejected)
+    by_child = {c["key"].rsplit(":", 1)[1]: c for c in body["sparse_rejected"]}
+    assert by_child["1"]["ranges"][0]["data"] == built["contents"][1]
+    assert by_child["1"]["ranges"][0]["offset"] == bfmt.SPARSE_CHILD_SIZE
+    assert "2 sparse child" in render_value(body["note"])
+
+
+def test_entry_structure_self_hash_check_is_text(tmp_path: Path) -> None:
+    _blockfile_cache(tmp_path / "Cache")
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    detail = result.data["__store"].detail(0)
+    tree = detail["structure"][0]["tree"]
+    assert tree["Self hash check"] == "matches"
+    assert "≠" not in str(tree["Self hash"])
+
+
+def test_viewer_lists_rejected_sparse_children_and_partial_body(qapp, widgets, tmp_path: Path) -> None:
+    from PySide6.QtWidgets import QTabWidget
+
+    from crush.viewers.chromium_cache_viewer import _ENTRY_COLUMNS, ChromiumCacheViewer, _RowsWidget
+
+    _sparse_cache(tmp_path / "Cache")
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    viewer = widgets(ChromiumCacheViewer(result.data))
+    rows = next(w for w in viewer.findChildren(_RowsWidget) if w._model.columns is _ENTRY_COLUMNS)
+    rows._table.setCurrentIndex(rows._proxy.index(0, 0))
+    body = result.data["__store"].detail(0)["body"]
+    tab = widgets(rows._pane._body_tab(body))
+    names = [t.tabText(i) for t in tab.findChildren(QTabWidget) for i in range(t.count())]
+    assert "Sparse children not in the body (2)" in names
+    partial = dict(body, raw=b"x", derived=b"start", derived_partial=True, derived_label="gzip")
+    tab = widgets(rows._pane._body_tab(partial))
+    names = [t.tabText(i) for t in tab.findChildren(QTabWidget) for i in range(t.count())]
+    assert "Decompressed (derived, partial)" in names
 
 
 def test_blockfile_missing_external_file_is_named(tmp_path: Path) -> None:

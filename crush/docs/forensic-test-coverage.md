@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-278 checks in total.
+282 checks in total.
 
 ### Sources
 
@@ -85,7 +85,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
 | [Realm database](#realm-database) | 2 | 1 | 1 | 7 | 1 | 1 |
 | [LevelDB](#leveldb) | 2 | 1 | 1 | 4 | 4 | 1 |
-| [Chromium Disk Cache](#chromium-disk-cache) | 2 | 1 | 1 | 3 | 5 | 1 |
+| [Chromium Disk Cache](#chromium-disk-cache) | 2 | 1 | 1 | 6 | 6 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Property list (plist)](#property-list-plist) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Android Binary XML (ABX)](#android-binary-xml-abx) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -492,11 +492,15 @@ No forensic checks.
 - **Read-only Media** — The parser must succeed when the cache folder and files are read-only (0o555/0o444) ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_read_only_media`)
 - **Known-output Verification** — A Simple HTTP cache entry must give its key parts, times, headers, server, protocol and certificate ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_simple_http_entry_facts`)
 - **Known-output Verification** — A CacheStorage cache named by index.txt must decode stream 0 as CacheMetadata and the index field as prefetch size ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_cache_storage_with_index_txt`)
+- **Known-output Verification** — A complete coded body followed by extra bytes must decode whole, not partial; the extra bytes are named ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_bytes_after_a_complete_stream_are_ignored_like_chromium`)
+- **Known-output Verification** — index-dir opened on its own must not report its records as entries without entry files ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_index_dir_opened_alone_does_not_claim_missing_entry_files`)
 - **Known-output Verification** — A Blockfile cache must give every entry the index reaches, with state, times and its external body ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_blockfile_entries`)
+- **Known-output Verification** — Sparse children Chromium wouldn't read for the parent must not be mixed into its body; listed apart with why ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_sparse_children_checked_like_chromium`)
 - **Completeness** — A cache folder must be recognised by its files' bytes even when every file is renamed ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_folder_detected_by_content_not_names`)
 - **Completeness** — The body must stay RAW as stored; the declared Content-Encoding gives a separate derived body ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_body_raw_untouched_and_derived_separate`)
 - **Completeness** — Index records whose entry file is gone must be listed with hash, last-used time and size ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_index_record_without_file_is_listed`)
 - **Completeness** — Without index.txt, CacheStorage entries must show every valid reading of stream 0 and both readings of the index field, marked as heuristic ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_cache_storage_without_index_txt_shows_readings`)
+- **Completeness** — A body whose coded data ends early must give the part that decodes, marked partial, never nothing ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_cut_off_body_gives_the_decodable_start_marked_partial`)
 - **Completeness** — An entry record in a free block whose key hash matches its key must be listed as a heuristic recovery with its reason ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_blockfile_free_block_is_carved_as_heuristic`)
 - **Reproducibility** — Parsing the same cache twice must produce identical results ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_parse_is_reproducible`)
 
