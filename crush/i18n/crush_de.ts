@@ -369,6 +369,189 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
 </context>
 <context>
+    <name>ChromiumCacheViewer</name>
+    <message>
+        <source>Select an entry.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Summary</source>
+        <translation type="unfinished">Zusammenfassung</translation>
+    </message>
+    <message>
+        <source>Structure: {file}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Headers</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Certificates ({count})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Body</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Streams</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(status line)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(request headers)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation type="unfinished">Name</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation type="unfinished">Wert</translation>
+    </message>
+    <message>
+        <source>Certificate {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open certificate {n} (DER)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>RAW: {size:,} B as stored ({where}).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Derived: {size:,} B, the RAW body with {codings} removed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open RAW body in new tab</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open decompressed body in new tab</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>RAW</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Decompressed (derived)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sparse ranges ({count})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Offset in the entry</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Length (B)</source>
+        <translation type="unfinished">Länge (B)</translation>
+    </message>
+    <message>
+        <source>Stored</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>yes</source>
+        <translation type="unfinished">ja</translation>
+    </message>
+    <message>
+        <source>gap — not stored</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stream {index}: {size:,} B ({where})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open in new tab</source>
+        <translation type="unfinished">In neuem Tab öffnen</translation>
+    </message>
+    <message>
+        <source>Stream {index}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>  Show: </source>
+        <translation type="unfinished">  Anzeigen: </translation>
+    </message>
+    <message>
+        <source>All ({count:,})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>  Search: </source>
+        <translation type="unfinished">  Suche: </translation>
+    </message>
+    <message>
+        <source>Filter rows…</source>
+        <translation type="unfinished">Zeilen filtern...</translation>
+    </message>
+    <message>
+        <source>Export CSV…</source>
+        <translation type="unfinished">Als CSV exportieren...</translation>
+    </message>
+    <message>
+        <source>Reading entry {id} ({size:,} B)…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The entry&apos;s details couldn&apos;t be read: {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export CSV</source>
+        <translation type="unfinished">Als CSV exportieren</translation>
+    </message>
+    <message>
+        <source>Exporting {count:,} rows…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The CSV file couldn&apos;t be written: {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Overview</source>
+        <translation type="unfinished">Übersicht</translation>
+    </message>
+    <message>
+        <source>Entries ({count:,})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entries (0)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Orphans / Recovered ({count:,})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Orphans / Recovered (0)</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>DefineFormatDialog</name>
     <message>
         <source>Define Log Format — Multi-Log Studio</source>
@@ -3449,10 +3632,10 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Eine einzelne E-Mail-Nachricht als Text: Header-Felder (From, To, Date, Subject, Message-ID) und die Received-Kette, die jeden Server festhält, der die Nachricht verarbeitet hat, mit Zeit und Adressen (neueste oben; zuverlässig sind nur Einträge vertrauenswürdiger Server, tiefere Einträge können gefälscht sein), gefolgt vom MIME-Body und den Anhängen. Authentifizierungsergebnisse (SPF, DKIM, DMARC) in den Headern helfen zu beurteilen, ob eine Nachricht echt ist. Keine Signatur; erkannt an ihren Header-Zeilen.</translation>
     </message>
     <message>
-        <source>The HTTP cache of Chrome, Edge and other Chromium browsers and Electron apps. The blockfile backend (default on Windows) uses an index file and data_0..3 block files; the simple backend (default on all other platforms) stores one file per entry. Entries hold the URL, response headers with server dates and the cached content (pages, images, scripts), also for sites no longer in history. With cache partitioning, keys are prefixed with &apos;_dk_&apos; and the site that loaded the resource, revealing the context in which it was requested. Content is stored as transferred, so it may be gzip-, Brotli- or Zstandard-encoded.</source>
+        <source>Chromium&apos;s disk cache, used by Chrome, Edge and other Chromium browsers, Android WebView, Cronet and Electron apps: the HTTP cache, and also Service Worker CacheStorage and script caches, the JavaScript/WebAssembly Code Cache and GPU/shader caches. Two backends: the blockfile backend (an index file, data_0..3 block files and f_###### files for large data; on Windows, and for Chrome and Cronet on iOS) and the simple backend (one file per entry, a backend marker named index and index-dir/the-real-index; on Android, Linux and macOS). An HTTP cache entry holds the URL (with cache partitioning prefixed with &apos;_dk_&apos; and the sites that loaded it), request and response times, every response header, the server&apos;s IP address and port, the protocol, the TLS certificate chain and the content as transferred, so it may be gzip-, Brotli- or Zstandard-encoded -- also for sites no longer in history. CacheStorage entries hold request and response as a Protobuf message and the content as the page received it. The simple index records each entry&apos;s last-used time (for CacheStorage and script caches the size to prefetch instead); blockfile records carry creation and last-used times and an entry state (normal, evicted, doomed). Index records can outlive their entry files.</source>
         <comment>Chromium Disk Cache</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation>Der HTTP-Cache von Chrome, Edge und anderen Chromium-Browsern sowie Electron-Apps. Das Blockfile-Backend (Standard unter Windows) verwendet eine Indexdatei und die Blockdateien data_0..3; das Simple-Backend (Standard auf allen anderen Plattformen) speichert eine Datei pro Eintrag. Einträge enthalten die URL, Response-Header mit Serverdatum und den zwischengespeicherten Inhalt (Seiten, Bilder, Skripte), auch für Websites, die nicht mehr im Verlauf stehen. Mit Cache-Partitionierung erhalten Keys das Präfix &apos;_dk_&apos; und die Website, die die Ressource geladen hat; das zeigt den Kontext, in dem sie angefordert wurde. Inhalte werden so gespeichert, wie sie übertragen wurden, und können daher gzip-, Brotli- oder Zstandard-kodiert sein.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Blockfile index magic 0xC103CAC3</source>
@@ -3471,6 +3654,12 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <comment>Chromium Disk Cache</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
         <translation>Magic eines Simple-Cache-Eintrags 0xFCFB6D1BA7725C30</translation>
+    </message>
+    <message>
+        <source>Simple cache index (the-real-index) magic 0x656E74657220796F after the 8-byte pickle header</source>
+        <comment>Chromium Disk Cache</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Simple cache end-of-stream magic 0xF4FA6F45970D41D8 (EOF records within entry files)</source>
@@ -4040,8 +4229,72 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Seq</translation>
     </message>
     <message>
+        <source>#</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>State</source>
         <translation>Stand</translation>
+    </message>
+    <message>
+        <source>URL</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Top-frame site</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>HTTP status</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Content type</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Content encoding</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Body size (B)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Request time (UTC)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Response time (UTC)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last used (UTC)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entry created (UTC)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Protocol</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hash</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stored in</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Trailer prefetch size</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>File</source>
@@ -4050,6 +4303,10 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>Offset</source>
         <translation>Offset</translation>
+    </message>
+    <message>
+        <source>Reason / note</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>User Key (text)</source>
@@ -4074,6 +4331,30 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>not checked</source>
         <translation>nicht geprüft</translation>
+    </message>
+    <message>
+        <source>entry file, streams 0 and 1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>entry file, stream 2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>sparse data file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>backend marker (fake index)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index (the-real-index)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not stored</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>matches</source>
@@ -4994,6 +5275,138 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>&lt;BLOB {size:,} B&gt;</source>
         <translation>&lt;BLOB {size:,} B&gt;</translation>
+    </message>
+    <message>
+        <source>normal</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>evicted</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>doomed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>hash table</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>HTTP cache</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Code Cache</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Code Cache (data keyed by its SHA-256)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>CacheStorage</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not determined from the key</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>yes (prefix s_)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>yes (prefix cn_)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>0 (request without credentials)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>1 (credentials allowed)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>HTTP cache key (credentials/upload id/…)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>HTTP cache key, double-keyed, without credential/upload prefix</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Code Cache key (_key&lt;URL&gt; \n&lt;context&gt;)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no Chromium key grammar</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>code in stream 0 after the header</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>code in stream 1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>code in the entry keyed by its SHA-256</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index.txt names this directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>key grammar</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>SHA-256 key in a Code Cache directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index record without entry file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Blockfile index</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>sparse child entry (Range_ key)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Blockfile block file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Blockfile external data file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>free block (heuristic)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>last-used time (cache type known from the keys)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>trailer prefetch size (CacheStorage, net::APP_CACHE)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index record (entry files not checked)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not set (0)</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -6757,6 +7170,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>C2PA</source>
         <translation>C2PA</translation>
+    </message>
+    <message>
+        <source>Cache kind</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Carved</source>
@@ -8624,6 +9041,441 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>{count:,} längenbegrenzte(s) Feld(er) lassen sich sowohl als verschachtelte Nachricht als auch als UTF-8-Text dekodieren; Wire-Type 2 legt nicht fest, welches davon vorliegt. Beide Lesarten werden als Kandidaten angezeigt (Heuristik), keine als Wert des Feldes</translation>
     </message>
     <message>
+        <source>Could not be read: {detail}</source>
+        <comment>chromium_cache.file_unreadable</comment>
+        <translation type="unfinished">Konnte nicht gelesen werden: {detail}</translation>
+    </message>
+    <message>
+        <source>{count:,} file(s) couldn&apos;t be read; see Read problems in the Overview</source>
+        <comment>chromium_cache.files_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not a file of the cache&apos;s format (no Simple or Blockfile magic, not addressed by an entry)</source>
+        <comment>chromium_cache.file_not_recognised</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{name} is addressed by the cache but not in the folder</source>
+        <comment>chromium_cache.file_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>File too short for its header ({size:,} B)</source>
+        <comment>chromium_cache.file_too_short</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The folder holds files of both cache formats (Simple and Blockfile); both are read</source>
+        <comment>chromium_cache.both_formats</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>A further index file ({name}) wasn&apos;t used: one index is read per format</source>
+        <comment>chromium_cache.second_index</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No entries: the folder holds no entry file, and the index reaches no entry record</source>
+        <comment>chromium_cache.no_entries</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>None found: every hash the index lists has an entry file here (or there is no index)</source>
+        <comment>chromium_cache.no_orphans_simple</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>None found: no block the allocation bitmaps mark free holds an entry record whose stored key hash matches its key</source>
+        <comment>chromium_cache.no_orphans_blockfile</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entry file opened on its own: the cache&apos;s other files of this entry, its index record and the cache kind from the folder aren&apos;t read -- open the cache folder for those</source>
+        <comment>chromium_cache.entry_alone</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Index opened on its own: its records are listed, the entry files aren&apos;t checked -- open the cache folder for those</source>
+        <comment>chromium_cache.index_alone</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Backend marker of a Simple cache (holds only magic and version) -- open the cache folder</source>
+        <comment>chromium_cache.marker_alone</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Version {version}, Chromium writes version {expected}; read with that version&apos;s layout</source>
+        <comment>chromium_cache.version_unexpected</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Backend marker version {version}: outside the versions Chromium opens (8 and 9)</source>
+        <comment>chromium_cache.fake_index_version</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Key length {length:,} reaches past the file&apos;s end ({size:,} B); the entry isn&apos;t read</source>
+        <comment>chromium_cache.key_past_end</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The file holds only the header and the key (version {version}): no EOF record, no streams</source>
+        <comment>chromium_cache.header_and_key_only</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No EOF record at the file&apos;s end: the streams&apos; sizes aren&apos;t known, the streams aren&apos;t read</source>
+        <comment>chromium_cache.eof_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Final magic doesn&apos;t match</source>
+        <comment>chromium_cache.eof_magic_wrong</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No EOF record for stream 1 where stream 0&apos;s size ({stream0:,} B) puts it; the streams aren&apos;t read</source>
+        <comment>chromium_cache.stream1_eof_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The stored SHA-256 of the key doesn&apos;t match the key in the header</source>
+        <comment>chromium_cache.key_sha256_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>doesn&apos;t match (stored {stored})</source>
+        <comment>chromium_cache.crc_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sparse range at offset {offset:,} is cut off by the file&apos;s end</source>
+        <comment>chromium_cache.sparse_cut_off</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No sparse range header at offset {offset:,}; reading the ranges stopped there</source>
+        <comment>chromium_cache.sparse_magic_wrong</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>File name {name} doesn&apos;t carry the hash of the key the file holds</source>
+        <comment>chromium_cache.name_hash_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{name} holds the same key and the same kind of file as another file of this entry; it is listed in the Overview, not read into the entry</source>
+        <comment>chromium_cache.duplicate_role</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Doomed: Chromium renamed the file to todelete_… to delete it</source>
+        <comment>chromium_cache.doomed_simple_file</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not listed in the index (index written before the entry, or the entry not yet flushed)</source>
+        <comment>chromium_cache.not_in_index</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>doesn&apos;t match: Chromium discards such an index and rebuilds it from the files; its records are shown as stored</source>
+        <comment>chromium_cache.index_crc_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Index version {version}: outside the versions Chromium reads (8 and 9)</source>
+        <comment>chromium_cache.index_version</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Heuristic: the cache type isn&apos;t known from the entries (no HTTP or Code Cache key, no CacheStorage index.txt), so the index&apos;s first record field is shown both ways -- as the last-used time (most cache types) and as the trailer prefetch size (net::APP_CACHE: CacheStorage, Service Worker scripts)</source>
+        <comment>chromium_cache.index_field_both</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Too short for a pickle header ({size} B)</source>
+        <comment>chromium_cache.pickle_short</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading {what} ({size:,} B at offset {offset:,}) runs past the pickle&apos;s end; read up to there</source>
+        <comment>chromium_cache.pickle_past_end</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Negative length for {what} at offset {offset:,}; read up to there</source>
+        <comment>chromium_cache.pickle_negative_length</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The pickle&apos;s stored payload size ({payload:,} B) isn&apos;t the stream&apos;s ({size:,} B)</source>
+        <comment>chromium_cache.pickle_size_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Response info version {version}; Chromium reads version {supported} only</source>
+        <comment>chromium_cache.response_info_version</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The stored status line doesn&apos;t start with HTTP/</source>
+        <comment>chromium_cache.status_line_not_http</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count} signed certificate timestamp(s) in an earlier layout that isn&apos;t decoded; the fields after them aren&apos;t read</source>
+        <comment>chromium_cache.scts_not_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Earlier layout: the 16-byte MD5 digest without a hash type</source>
+        <comment>chromium_cache.vary_earlier_layout</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The cache stored the body zstd-compressed itself (independent of Content-Encoding)</source>
+        <comment>chromium_cache.body_zstd_by_cache</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stream 0 ({size} B) is shorter than the Code Cache header (12 B)</source>
+        <comment>chromium_cache.code_header_short</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stream 0 is {size:,} B, the header&apos;s code size calls for {expected:,} B (Chromium treats such an entry as invalid)</source>
+        <comment>chromium_cache.code_header_size</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The key isn&apos;t the SHA-256 of the entry&apos;s data</source>
+        <comment>chromium_cache.sha_key_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not decodable as {message}: {detail}</source>
+        <comment>chromium_cache.proto_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Required fields missing: {fields}</source>
+        <comment>chromium_cache.proto_missing_required</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Fields the schema doesn&apos;t define: {numbers}</source>
+        <comment>chromium_cache.proto_unknown_fields</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index.txt in the parent folder couldn&apos;t be read: {detail}</source>
+        <comment>chromium_cache.cs_index_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index.txt in the parent folder isn&apos;t a CacheStorage index: {detail}</source>
+        <comment>chromium_cache.cs_index_not_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>index.txt in the parent folder is a CacheStorage index but doesn&apos;t name this folder ({name})</source>
+        <comment>chromium_cache.cs_index_other_dir</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Heuristic: the key shows no cache kind; stream 0 is read as {readings} because it is a complete, valid record of that type</source>
+        <comment>chromium_cache.heuristic_reading</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Content not decoded: the cache kind isn&apos;t determined from the key (e.g. GPU/shader caches); streams shown as stored</source>
+        <comment>chromium_cache.content_kind_undetermined</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>V8 bytecode – not decoded</source>
+        <comment>chromium_cache.body_v8_not_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Body as the page received it: the network stack removes the transfer encoding before fetch() hands the response over, CacheStorage keeps the response&apos;s headers -- the Content-Encoding header ({coding}) doesn&apos;t describe these bytes; not decompressed</source>
+        <comment>chromium_cache.cs_body_stored_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not decompressed: the HTTP cache stores bodies as transferred, other caches holding a response info (Service Worker scripts) store them decoded -- which kind this is isn&apos;t known, so the Content-Encoding header ({coding}) may not describe these bytes</source>
+        <comment>chromium_cache.heuristic_body_not_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Content-Encoding {coding} isn&apos;t supported; the body is shown as stored only</source>
+        <comment>chromium_cache.coding_unsupported</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The body doesn&apos;t decode as the declared Content-Encoding {coding}: {detail}</source>
+        <comment>chromium_cache.coding_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The body the cache stored zstd-compressed doesn&apos;t decompress: {detail}</source>
+        <comment>chromium_cache.cache_zstd_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The entry has a body that couldn&apos;t be read: {reason}</source>
+        <comment>chromium_cache.body_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No body stored for this entry</source>
+        <comment>chromium_cache.no_body</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Certificate not decodable: {detail}</source>
+        <comment>chromium_cache.certificate_not_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Blockfile version {version} isn&apos;t one Chromium writes (2.0, 2.1, 3.0); read with the 3.0 layout</source>
+        <comment>chromium_cache.blockfile_version</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The hash table has {length:,} buckets, the file holds {available:,}; those are read</source>
+        <comment>chromium_cache.index_table_short</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The header says block file {stored}, the file is named {name}</source>
+        <comment>chromium_cache.block_file_number</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Block file not named data_&lt;number&gt;: the cache&apos;s addresses can&apos;t point into it</source>
+        <comment>chromium_cache.block_file_not_addressed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Address not initialized</source>
+        <comment>chromium_cache.addr_not_initialized</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Invalid address {addr}</source>
+        <comment>chromium_cache.addr_invalid</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Only {size:,} of {expected:,} B are in the file</source>
+        <comment>chromium_cache.data_short</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stored size {size:,} B is larger than the address&apos;s blocks ({capacity:,} B); the blocks are shown</source>
+        <comment>chromium_cache.data_exceeds_blocks</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The entry record&apos;s self hash doesn&apos;t match its bytes</source>
+        <comment>chromium_cache.entry_self_hash</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The rankings node&apos;s self hash doesn&apos;t match its bytes</source>
+        <comment>chromium_cache.rankings_self_hash</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Key length {length} isn&apos;t valid; no key read</source>
+        <comment>chromium_cache.key_length_invalid</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Key length {length:,} is longer than the entry&apos;s blocks hold ({span:,} B); the key is cut there</source>
+        <comment>chromium_cache.key_past_blocks</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The key stored outside the entry couldn&apos;t be read</source>
+        <comment>chromium_cache.key_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The stored key hash isn&apos;t the hash of the key</source>
+        <comment>chromium_cache.key_hash_mismatch</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entry state {state} isn&apos;t one Chromium defines</source>
+        <comment>chromium_cache.state_invalid</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Marked dirty by run {dirty} (the index&apos;s current run is {current}): the entry wasn&apos;t closed properly and Chromium would discard it</source>
+        <comment>chromium_cache.entry_dirty</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hash bucket {bucket}: the entry chain loops; followed up to the repeat</source>
+        <comment>chromium_cache.chain_loop</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hash bucket {bucket}: address {addr} doesn&apos;t point to an entry record; the chain ends there</source>
+        <comment>chromium_cache.chain_bad_addr</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>LRU list {list} loops; followed up to the repeat</source>
+        <comment>chromium_cache.list_loop</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>LRU list {list}: address {addr} doesn&apos;t point to a rankings node; the list ends there</source>
+        <comment>chromium_cache.list_bad_addr</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Heuristic: block {block} of {file} is free in the allocation bitmap and holds an entry record whose stored key hash is the hash of the key read there</source>
+        <comment>chromium_cache.carved_key_hash</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>record self hash matches</source>
+        <comment>chromium_cache.carved_self_hash_ok</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>record self hash doesn&apos;t match</source>
+        <comment>chromium_cache.carved_self_hash_bad</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>its rankings node points back to it</source>
+        <comment>chromium_cache.carved_rankings_back</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no rankings node points back to it (no last-used time)</source>
+        <comment>chromium_cache.carved_rankings_not_back</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>the same block is also reached from the index</source>
+        <comment>chromium_cache.carved_also_listed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The record&apos;s streams point to blocks that may have been reused since it was freed</source>
+        <comment>chromium_cache.carved_blocks_reused</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>{count:,} of {total:,} data files could not be read whole; Overview → Read problems says why</source>
         <comment>leveldb.data_files_not_read</comment>
         <translation>{count:,} von {total:,} Datendateien konnten nicht vollständig gelesen werden; den Grund nennt Übersicht → Leseprobleme</translation>
@@ -9067,6 +9919,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Supported for the whole LevelDB folder — select the folder, not a single file</source>
         <comment>hexfallback.parser_folder</comment>
         <translation>Für den gesamten LevelDB-Ordner unterstützt — den Ordner auswählen, nicht eine einzelne Datei</translation>
+    </message>
+    <message>
+        <source>Part of a Chromium Blockfile cache — open the folder holding index and data_ files, not a single file</source>
+        <comment>hexfallback.parser_folder_chromium_cache</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Supported in Multi-Log Studio — right-click → Open in Multi-Log Studio</source>

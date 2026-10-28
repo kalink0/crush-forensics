@@ -48,6 +48,10 @@ dependencies = [
     "pyzipper>=0.3.6",
     "sqlcipher3>=0.6.2",
     "pgdumplib>=4.0",
+    # Chromium Disk Cache: bodies declared Brotli- or zstd-encoded, and
+    # bodies the cache stored zstd-compressed itself.
+    "brotli>=1.2.0",
+    "backports.zstd>=1.0.0; python_version < '3.14'",
 ]
 
 [project.optional-dependencies]
@@ -116,6 +120,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["google.protobuf", "google.protobuf.*", "grpc_tools", "grpc_tools.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["brotli"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

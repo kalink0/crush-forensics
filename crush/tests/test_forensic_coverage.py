@@ -97,6 +97,7 @@ PARSER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "SQLiteJournalParser": ("SQLite rollback journal",),
     "RealmParser": ("Realm database",),
     "LeveldbParser": ("LevelDB",),
+    "ChromiumCacheParser": ("Chromium Disk Cache",),
     "MMKVParser": ("MMKV",),
     "PlistParser": ("Property list (plist)",),
     "AbxParser": ("Android Binary XML (ABX)",),

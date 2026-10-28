@@ -233,7 +233,11 @@ def test_only_plain_data_parsers_run_off_the_ui_thread() -> None:
     from crush.core.registry import ParserRegistry
 
     off_thread = {type(p).__name__ for p in ParserRegistry._parsers if p.PARSE_OFF_UI_THREAD}
-    assert off_thread == {"HexFallbackParser", "JsonParser", "XmlParser", "PlistParser"}
+    # ChromiumCacheParser's result keeps the VFS to read an entry's details
+    # later; a VFS is already read from several threads (the type prescan).
+    assert off_thread == {
+        "HexFallbackParser", "JsonParser", "XmlParser", "PlistParser", "ChromiumCacheParser",
+    }
 
 
 @pytest.mark.parametrize(

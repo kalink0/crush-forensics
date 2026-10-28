@@ -128,6 +128,7 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "SQLite rollback journal",
         "Realm database",
         "LevelDB",
+        "Chromium Disk Cache",
         "MMKV",
         "Property list (plist)",
         "Android Binary XML (ABX)",

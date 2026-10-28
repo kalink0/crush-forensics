@@ -9314,18 +9314,26 @@ FORMATS: list[dict[str, Any]] = [
         #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
         "forensic_relevance": QT_TRANSLATE_NOOP(
             "FormatKnowledge",
-            "The HTTP cache of Chrome, Edge and other Chromium browsers and Electron apps. "
-            "The blockfile backend (default on Windows) uses an index file and data_0..3 block "
-            "files; the simple backend (default on all other platforms) stores one file per "
-            "entry. Entries hold the URL, response headers with server dates and the cached "
-            "content (pages, images, scripts), also for sites no longer in history. With cache "
-            "partitioning, keys are prefixed with '_dk_' and the site that loaded the resource, "
-            "revealing the context in which it was requested. Content is stored as transferred, "
-            "so it may be gzip-, Brotli- or Zstandard-encoded.",
+            "Chromium's disk cache, used by Chrome, Edge and other Chromium browsers, Android "
+            "WebView, Cronet and Electron apps: the HTTP cache, and also Service Worker "
+            "CacheStorage and script caches, the JavaScript/WebAssembly Code Cache and GPU/shader "
+            "caches. Two backends: the blockfile backend (an index file, data_0..3 block files and "
+            "f_###### files for large data; on Windows, and for Chrome and Cronet on iOS) and the "
+            "simple backend (one file per entry, a backend marker named index and "
+            "index-dir/the-real-index; on Android, Linux and macOS). An HTTP cache entry holds "
+            "the URL (with cache partitioning prefixed with '_dk_' and the sites that loaded "
+            "it), request and response times, every response header, the server's IP address "
+            "and port, the protocol, the TLS certificate chain and the content as transferred, "
+            "so it may be gzip-, Brotli- or Zstandard-encoded -- also for sites no longer in "
+            "history. CacheStorage entries hold request and response as a Protobuf message and "
+            "the content as the page received it. The simple index records each entry's "
+            "last-used time (for CacheStorage and script caches the size to prefetch instead); "
+            "blockfile records carry creation and last-used times and an entry state (normal, "
+            "evicted, doomed). Index records can outlive their entry files.",
             "Chromium Disk Cache",
         ),
-        "platforms": ["Windows", "macOS", "Linux", "Android"],
-        "parser_class": None,
+        "platforms": ["Windows", "macOS", "Linux", "iOS", "Android"],
+        "parser_class": "ChromiumCacheParser",
         "magic": [
             {
                 "offset": 0,
@@ -9358,6 +9366,16 @@ FORMATS: list[dict[str, Any]] = [
                 ),
             },
             {
+                "offset": 8,
+                "value": b"oy retne",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Simple cache index (the-real-index) magic 0x656E74657220796F after the 8-byte pickle header",
+                    "Chromium Disk Cache",
+                ),
+            },
+            {
                 "offset": None,
                 "value": b"\xd8\x41\x0d\x97\x45\x6f\xfa\xf4",
                 #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
@@ -9382,9 +9400,17 @@ FORMATS: list[dict[str, Any]] = [
                 "Very Simple Backend (Chromium design documents)",
                 "https://www.chromium.org/developers/design-documents/network-stack/disk-cache/very-simple-backend/",
             ),
+            (
+                "net/disk_cache (Chromium source)",
+                "https://github.com/chromium/chromium/tree/main/net/disk_cache",
+            ),
+            (
+                "cache_storage.proto (Chromium source)",
+                "https://github.com/chromium/chromium/blob/main/content/browser/cache_storage/cache_storage.proto",
+            ),
         ],
         "status": "reviewed",
-        "last_reviewed": "2026-10-05",
+        "last_reviewed": "2026-10-28",
     },
     {
         "name": "Microsoft Access Database (MDB / ACCDB)",

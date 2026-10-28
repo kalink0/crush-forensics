@@ -17,10 +17,12 @@ class ParserRegistry:
     @classmethod
     def candidates(cls, node: "VFSNode", vfs: "VFS") -> list["AbstractParser"]:
         if node.is_dir:
+            # A folder format is recognised by its files: can_parse_dir gets
+            # the VFS to read their bytes.
             parsers: list["AbstractParser"] = []
             for p in cls._parsers:
                 can_dir = getattr(p, "can_parse_dir", None)
-                if callable(can_dir) and can_dir(node):
+                if callable(can_dir) and can_dir(node, vfs):
                     parsers.append(p)
             return parsers
         peek = vfs.peek(node, 256)

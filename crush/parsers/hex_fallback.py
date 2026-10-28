@@ -68,12 +68,17 @@ class HexFallbackParser(AbstractParser):
                 meta["Forensic relevance"] = fmt.relevance_text()
             if fmt.links:
                 meta["Reference"] = "\n".join(url for _label, url in fmt.links)
-            meta["Parser support"] = _parser_support(fmt.parser_class)
+            meta["Parser support"] = _parser_support(fmt.parser_class, raw[:4])
 
         return ParseResult(viewer_type="hex", data=raw, metadata=meta)
 
 
-def _parser_support(parser_class: str | None) -> ParseIssue:
+# Chromium Blockfile index and block file magics (disk_format.h,
+# disk_format_base.h): files read only as part of their cache folder.
+_BLOCKFILE_MAGICS = (b"\xc3\xca\x03\xc1", b"\xc3\xca\x04\xc1")
+
+
+def _parser_support(parser_class: str | None, head: bytes = b"") -> ParseIssue:
     """What "supported" means for a file that ended up here anyway: a
     content-detected parser didn't match it, or the format is reached
     another way (Open as, as a source, as a folder, in Multi-Log Studio)."""
@@ -85,6 +90,8 @@ def _parser_support(parser_class: str | None) -> ParseIssue:
         return ParseIssue("hexfallback.parser_source")
     if parser_class == "LeveldbParser":
         return ParseIssue("hexfallback.parser_folder")
+    if parser_class == "ChromiumCacheParser" and head in _BLOCKFILE_MAGICS:
+        return ParseIssue("hexfallback.parser_folder_chromium_cache")
     if parser_class == "UnifiedLogConverter":
         return ParseIssue("hexfallback.parser_logs")
     return ParseIssue("hexfallback.parser_mismatch")

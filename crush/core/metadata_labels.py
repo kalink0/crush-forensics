@@ -29,6 +29,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Block order"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Byte order"),
     QT_TRANSLATE_NOOP("MetadataLabel", "C2PA"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Cache kind"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Carved"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Category"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Category (Tag)"),

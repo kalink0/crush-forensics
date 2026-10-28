@@ -2045,7 +2045,9 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            if parser.PARSE_OFF_UI_THREAD and node.size > _BUSY_BYTES:
+            # A folder's own size is 0: what the parser reads is its files.
+            load_size = vfs.total_size(node) if node.is_dir else node.size
+            if parser.PARSE_OFF_UI_THREAD and load_size > _BUSY_BYTES:
                 # Bytes in, plain data out: safe off the UI thread. Other
                 # parsers hand back thread-bound state (sqlite handles, Qt
                 # objects) and stay on the UI thread.
@@ -3976,6 +3978,7 @@ class MainWindow(QMainWindow):
             return render_value(result.metadata["Format"], localized=True)
         labels = {
             "abx": "Android Binary XML (ABX)",
+            "chromium_cache": "Chromium Disk Cache",
             "image": translate("MainWindow", "Image"),
             "leveldb": "LevelDB",
             "log": translate("MainWindow", "Log"),

@@ -18,6 +18,7 @@ def _register_builtin_viewers() -> None:
     from crush.viewers.realm_viewer import RealmViewer
     from crush.viewers.leveldb_viewer import LevelDbViewer
     from crush.viewers.mmkv_viewer import MMKVViewer
+    from crush.viewers.chromium_cache_viewer import ChromiumCacheViewer
 
     ViewerRegistry.register(
         "table",
@@ -35,6 +36,7 @@ def _register_builtin_viewers() -> None:
     ViewerRegistry.register("realm", lambda r, n, v, p: RealmViewer(r.data, p))
     ViewerRegistry.register("leveldb", lambda r, n, v, p: LevelDbViewer(r.data, p))
     ViewerRegistry.register("mmkv", lambda r, n, v, p: MMKVViewer(r.data, p))
+    ViewerRegistry.register("chromium_cache", lambda r, n, v, p: ChromiumCacheViewer(r.data, p))
 
     from crush.viewers.multi_log_viewer import MultiLogViewer
     # p is always the owning MainWindow (see viewer_factory.make_viewer's one

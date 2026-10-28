@@ -20,6 +20,7 @@
   - [XML Viewer](xml-viewer.md)
   - [PDF Viewer](pdf-viewer.md)
   - [LevelDB Viewer](leveldb-viewer.md)
+  - [Chromium Disk Cache Viewer](chromium-cache-viewer.md)
   - [MMKV Viewer](mmkv-viewer.md)
   - [BLOB Inspector](blob-inspector.md)
   - [ABX Viewer](abx-viewer.md)

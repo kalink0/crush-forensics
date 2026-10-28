@@ -7,6 +7,7 @@ All notable changes to Crush will be documented in this file.
 ### New Features
 
 - Added to translations -> Support for offering a language under View → Language from 90 % of its app texts, with format knowledge texts optional and marked as such in Qt Linguist; `scripts/i18n.py check` and `release` show app, format knowledge and website texts separately.
+- Added to parsers and viewers -> Support for Chromium Disk Cache folders (Simple and Blockfile): HTTP, WebView, Cronet, CacheStorage, Code Cache and GPU caches with headers, times, certificates, bodies and index records without entry files.
 
 ## v0.24.0 - 2026-10-26
 

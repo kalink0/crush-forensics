@@ -183,13 +183,18 @@ implement `can_parse_dir` instead:
 def can_parse(self, path: str, peek_bytes: bytes) -> bool:
     return False                         # never matches files
 
-def can_parse_dir(self, node: VFSNode) -> bool:
-    names = {c.name for c in node.children}
-    return "CURRENT" in names or any(n.startswith("MANIFEST-") for n in names)
+def can_parse_dir(self, node: VFSNode, vfs: VFS | None = None) -> bool:
+    # Recognise the folder by its files' bytes; names are hints at most.
+    if vfs is None:
+        return False
+    return any(
+        not child.is_dir and vfs.peek(child, len(MY_MAGIC)) == MY_MAGIC
+        for child in node.children
+    )
 ```
 
-`ParserRegistry.candidates` checks for a `can_parse_dir` attribute and calls it when the node
-is a directory.
+`ParserRegistry.candidates` checks for a `can_parse_dir` attribute and calls it with the node
+and its VFS when the node is a directory (see `crush/parsers/chromium_cache_parser.py`).
 
 ---
 
@@ -530,4 +535,5 @@ in `NOT_APPLICABLE`, with the reason.
 | `crush/ui/viewer_factory.py` | `make_viewer()` — wires `ParseResult` to a viewer widget |
 | `crush/parsers/json_parser.py` | simplest real parser example |
 | `crush/parsers/leveldb_parser.py` | directory-based parser example |
+| `crush/parsers/chromium_cache_parser.py` | directory-based parser recognised by content; details read on selection |
 | `crush/viewers/tree_viewer.py` | generic tree viewer (good UI pattern to follow) |

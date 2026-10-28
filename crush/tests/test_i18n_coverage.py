@@ -48,6 +48,7 @@ CONVERTED: list[str] = [
     "viewers/analyzer_result_viewer.py",
     "viewers/blob_inspector.py",
     "viewers/byte_mapped_tree_hex.py",
+    "viewers/chromium_cache_viewer.py",
     "viewers/generated_text.py",
     "viewers/hex_viewer.py",
     "viewers/image_viewer.py",

@@ -23,6 +23,7 @@ ViewerType = Literal[
     "leveldb",
     "pdf",
     "mmkv",
+    "chromium_cache",
 ]
 
 

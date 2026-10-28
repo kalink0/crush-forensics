@@ -184,7 +184,7 @@ class LeveldbParser(AbstractParser):
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:  # noqa: ARG002
         return False
 
-    def can_parse_dir(self, node: VFSNode) -> bool:
+    def can_parse_dir(self, node: VFSNode, vfs: VFS | None = None) -> bool:  # noqa: ARG002
         for child in node.children:
             if _DATA_FILE_RE.match(child.name):
                 return True
