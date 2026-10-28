@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-294 checks in total.
+295 checks in total.
 
 ### Sources
 
@@ -85,7 +85,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
 | [Realm database](#realm-database) | 2 | 1 | 1 | 7 | 1 | 1 |
 | [LevelDB](#leveldb) | 2 | 1 | 1 | 4 | 4 | 1 |
-| [Chromium Disk Cache](#chromium-disk-cache) | 2 | 1 | 1 | 6 | 7 | 1 |
+| [Chromium Disk Cache](#chromium-disk-cache) | 2 | 1 | 1 | 6 | 8 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Property list (plist)](#property-list-plist) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Android Binary XML (ABX)](#android-binary-xml-abx) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -502,6 +502,7 @@ No forensic checks.
 - **Completeness** — The body must stay RAW as stored; the declared Content-Encoding gives a separate derived body ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_body_raw_untouched_and_derived_separate`)
 - **Completeness** — Index records whose entry file is gone must be listed with hash, last-used time and size ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_index_record_without_file_is_listed`)
 - **Completeness** — Without index.txt, CacheStorage entries must show every valid reading of stream 0 and both readings of the index field, marked as heuristic ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_cache_storage_without_index_txt_shows_readings`)
+- **Completeness** — A key that is a URL alone must fill the URL, mark the kind as heuristic with its candidates and offer the decoded body only as a candidate ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_url_key_without_index_txt_gives_url_and_candidate_body`)
 - **Completeness** — A body whose coded data ends early must give the part that decodes, marked partial, never nothing ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_cut_off_body_gives_the_decodable_start_marked_partial`)
 - **Completeness** — An entry record in a free block whose key hash matches its key must be listed as a heuristic recovery with its reason ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_blockfile_free_block_is_carved_as_heuristic`)
 - **Completeness** — A sparse child's partly written last block (kept in its header) must be part of the data, not a gap ([test_chromium_cache.py](../../crush/tests/test_chromium_cache.py), `test_sparse_child_partly_written_last_block_is_data`)

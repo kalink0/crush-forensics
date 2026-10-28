@@ -9,6 +9,10 @@ net/http/http_cache.cc (GenerateCacheKey), net/base/network_isolation_key.cc,
 content/browser/code_cache/generated_code_cache.cc,
 third_party/blink/common/loader/code_cache_util.cc,
 content/browser/cache_storage/cache_storage.proto and cache_storage_cache.cc.
+The HTTP cache key before Chromium 95 from GenerateCacheKey at tag
+90.0.4430.91 and 94.0.4606.81; commit 54013f2a5d6c ("Split cache per
+request's includeCredentials", main@{#918101}, first in 95.0.4638.0) put the
+credential and upload id parts in front.
 """
 from __future__ import annotations
 
@@ -28,13 +32,20 @@ KIND_CODE = QT_TRANSLATE_NOOP("GeneratedView", "Code Cache")
 KIND_CODE_DATA = QT_TRANSLATE_NOOP("GeneratedView", "Code Cache (data keyed by its SHA-256)")
 KIND_CACHE_STORAGE = QT_TRANSLATE_NOOP("GeneratedView", "CacheStorage")
 KIND_UNDETERMINED = QT_TRANSLATE_NOOP("GeneratedView", "not determined from the key")
+# A key that is a URL alone: two kinds write such keys (see split_key).
+KIND_URL_KEY = QT_TRANSLATE_NOOP("GeneratedView", "HTTP cache or CacheStorage (heuristic: the key is a URL)")
 
 # net/http/http_cache.cc
 _DOUBLE_KEY_PREFIX = "_dk_"
 _SUBFRAME_PREFIX = "s_"
 _CROSS_SITE_PREFIX = "cn_"
-# credential_key/upload_data_identifier/ -- current keys always start so.
+# credential_key/upload_data_identifier/ -- keys since Chromium 95 always start so.
 _HTTP_KEY_RE = re.compile(r"^([01])/(\d+)/")
+# Before Chromium 95: [<upload_data_identifier>/][_dk_…]<url>, the identifier
+# only for a request with an upload ("No valid URL can begin with numerals").
+# A URL here is what GURL::spec() writes: scheme "://" …
+_URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
+_LEGACY_UPLOAD_RE = re.compile(r"^(\d+)/(?=_dk_|[A-Za-z][A-Za-z0-9+.\-]*://)")
 # blink::kCodeCacheKeyPrefix and GeneratedCodeCache's separator.
 _CODE_KEY_PREFIX = "_key"
 _CODE_SEPARATOR = " \n"
@@ -66,9 +77,15 @@ class KeyParts:
     subframe_document: bool = False
     cross_site_navigation: bool = False
     context: str = ""
+    # A heuristic kind: each cache kind that writes such a key -> why.
+    candidates: dict[str, str] = field(default_factory=dict)
+    # Why the key gives its kind, where "key grammar" alone doesn't say it.
+    basis: str = ""
 
     def tree(self) -> dict[str, Any]:
         out: dict[str, Any] = {"Key form": self.form}
+        if self.candidates:
+            out["Candidates (heuristic)"] = dict(self.candidates)
         for label, value in (
             ("URL", self.url),
             ("Credentials", self.credential),
@@ -99,9 +116,16 @@ def _credential_text(flag: str) -> str:
     return QT_TRANSLATE_NOOP("GeneratedView", "1 (credentials allowed)")
 
 
-def split_key(raw: bytes) -> KeyParts:
+def split_key(raw: bytes, *, blockfile: bool = False) -> KeyParts:
     """Split *raw* by the key grammars Chromium defines; KIND_UNDETERMINED
-    when none matches (the key is then shown whole)."""
+    when none matches (the key is then shown whole).
+
+    A key that is a URL alone is written by two kinds: the HTTP cache
+    before Chromium 95 (a request without upload and without split cache)
+    and CacheStorage (its request URL). The key doesn't tell them apart:
+    KIND_URL_KEY with both candidates -- except in a Blockfile cache
+    (*blockfile*), as CacheStorage only creates Simple caches
+    (cache_storage_cache.cc: CACHE_BACKEND_SIMPLE)."""
     text = raw.decode("utf-8", errors="backslashreplace")
     match = _HTTP_KEY_RE.match(text)
     if match:
@@ -112,15 +136,48 @@ def split_key(raw: bytes) -> KeyParts:
         )
         _split_isolation(text[match.end():], parts)
         return parts
-    if text.startswith(_DOUBLE_KEY_PREFIX):
-        # Earlier Chromium wrote the double key without the credential and
-        # upload id parts in front.
+    match = _LEGACY_UPLOAD_RE.match(text)
+    if match:
         parts = KeyParts(
             raw, text, KIND_HTTP,
-            QT_TRANSLATE_NOOP("GeneratedView", "HTTP cache key, double-keyed, without credential/upload prefix"),
+            QT_TRANSLATE_NOOP("GeneratedView", "HTTP cache key before Chromium 95 (upload id/…, no credential part)"),
+            upload_id=match.group(1),
+        )
+        _split_isolation(text[match.end():], parts)
+        return parts
+    if text.startswith(_DOUBLE_KEY_PREFIX):
+        parts = KeyParts(
+            raw, text, KIND_HTTP,
+            QT_TRANSLATE_NOOP("GeneratedView", "HTTP cache key before Chromium 95, double-keyed (no credential/upload part)"),
         )
         _split_isolation(text, parts)
         return parts
+    if _URL_RE.match(text):
+        if blockfile:
+            return KeyParts(
+                raw, text, KIND_HTTP,
+                QT_TRANSLATE_NOOP("GeneratedView", "HTTP cache key before Chromium 95 (the URL alone)"),
+                url=text, basis=QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "key grammar: a URL alone in a Blockfile cache (CacheStorage creates Simple caches only)",
+                ),
+            )
+        return KeyParts(
+            raw, text, KIND_URL_KEY,
+            QT_TRANSLATE_NOOP("GeneratedView", "the URL alone (heuristic: two cache kinds write such keys)"),
+            url=text, candidates={
+                KIND_HTTP: QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "before Chromium 95 the HTTP cache keyed a request without upload and without "
+                    "split cache by its URL alone",
+                ),
+                KIND_CACHE_STORAGE: QT_TRANSLATE_NOOP(
+                    "GeneratedView",
+                    "CacheStorage keys an entry by its request URL; known for sure only from an "
+                    "index.txt in the parent folder naming the cache's folder",
+                ),
+            },
+        )
     if text.startswith(_CODE_KEY_PREFIX):
         rest = text[len(_CODE_KEY_PREFIX):]
         url, sep, context = rest.partition(_CODE_SEPARATOR)

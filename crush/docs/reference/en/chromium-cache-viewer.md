@@ -10,7 +10,7 @@ Opens a Chromium disk cache folder — browser HTTP caches, app WebView caches, 
 |---|---|
 | # | Entry number in this view |
 | State | *normal*, *evicted* or *doomed* |
-| Kind | HTTP cache, Code Cache, Code Cache data, CacheStorage, or *not determined from the key* |
+| Kind | HTTP cache, Code Cache, Code Cache data, CacheStorage, *HTTP cache or CacheStorage (heuristic: the key is a URL)*, or *not determined from the key* |
 | URL / Top-frame site | The key's URL and, for a partitioned key, the site that loaded it |
 | HTTP status / Content type / Content encoding | From the response headers |
 | Body size (B) | Bytes stored for the body (stream 1, or the sparse ranges' total) |
@@ -30,9 +30,9 @@ Selecting a row reads that entry and fills the tabbed pane below:
 
 | Tab | Content |
 |---|---|
-| **Summary** | Kind and what determined it, the key's parts, every note |
+| **Summary** | Kind and what determined it, the key's parts (for a heuristic kind the candidate kinds, each with why), every note |
 | **Structure: \<file\>** | One per file the entry is stored in: its decoded fields as a tree next to the file's hex; selecting a field highlights its bytes (header, key, streams, EOF records with their CRC check, stream 0 decoded, index record, rankings node) |
 | **Headers** | Status line and every response header in stored order; CacheStorage also the request headers |
 | **Certificates** | Each certificate's subject, issuer, serial number, validity, fingerprints and SANs; **Open certificate n (DER)** opens it in a new tab |
-| **Body** | RAW as stored, the derived (decompressed) body where the declared Content-Encoding applies, sparse ranges with their gaps; **Open … in new tab** hands the bytes to whichever viewer their content calls for |
+| **Body** | RAW as stored, the derived (decompressed) body where the declared Content-Encoding applies (labelled *candidate* where it holds only under one reading of a heuristic kind), sparse ranges with their gaps; **Open … in new tab** hands the bytes to whichever viewer their content calls for |
 | **Streams** | Each stream's RAW bytes with where they are stored; **Open in new tab** |

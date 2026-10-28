@@ -38,6 +38,7 @@ from crush.parsers.chromium_cache_content import (
     KIND_CODE_DATA,
     KIND_HTTP,
     KIND_UNDETERMINED,
+    KIND_URL_KEY,
     KeyParts,
     cache_metadata_view,
     content_codings,
@@ -79,6 +80,16 @@ _CACHE_STORAGE_INDEX = "index.txt"
 
 _BODY_NOTE_CODE = ParseIssue("chromium_cache.body_v8_not_decoded")
 _BODY_NOTE_UNDETERMINED = ParseIssue("chromium_cache.content_kind_undetermined")
+_NOTE_URL_KEY_NO_READING = ParseIssue("chromium_cache.url_key_no_reading")
+
+
+def _key_basis(key: KeyParts) -> str:
+    """Why an entry has the kind its key gives ("" for none)."""
+    if key.kind == KIND_UNDETERMINED:
+        return ""
+    if key.kind == KIND_URL_KEY:
+        return QT_TRANSLATE_NOOP("GeneratedView", "the key is a URL alone (heuristic)")
+    return key.basis or QT_TRANSLATE_NOOP("GeneratedView", "key grammar")
 
 
 def _peek(vfs: VFS, node: VFSNode, n: int = 16) -> bytes:
@@ -390,8 +401,7 @@ class _DirectoryParse:
         else:
             for e in self.entries:
                 e.kind = e.key.kind
-                if e.kind != KIND_UNDETERMINED:
-                    e.kind_basis = QT_TRANSLATE_NOOP("GeneratedView", "key grammar")
+                e.kind_basis = _key_basis(e.key)
             if any(e.kind == KIND_CODE for e in self.entries):
                 for e in self.entries:
                     if e.kind == KIND_UNDETERMINED and is_sha_key(e.key.text):
@@ -504,7 +514,7 @@ class _DirectoryParse:
         known = {e.addr.value for e, _ in found}
         children: list[_Entry] = []
         for store, how in found:
-            entry = _Entry(id=len(self.entries), backend=FORMAT_BLOCKFILE, key=split_key(store.key))
+            entry = _Entry(id=len(self.entries), backend=FORMAT_BLOCKFILE, key=split_key(store.key, blockfile=True))
             entry.store = store
             entry.reached_via = how
             entry.state = bfmt.STATE_NAMES.get(store.state, str(store.state))
@@ -522,8 +532,7 @@ class _DirectoryParse:
             if e.backend != FORMAT_BLOCKFILE:
                 continue
             e.kind = e.key.kind
-            if e.kind != KIND_UNDETERMINED:
-                e.kind_basis = QT_TRANSLATE_NOOP("GeneratedView", "key grammar")
+            e.kind_basis = _key_basis(e.key)
             if e.store is not None and e.store.flags & bfmt.CHILD_ENTRY:
                 e.kind_basis = QT_TRANSLATE_NOOP("GeneratedView", "sparse child entry (Range_ key)")
         kinds = [e.kind for e in self.entries if e.backend == FORMAT_BLOCKFILE and not (
@@ -558,7 +567,7 @@ class _DirectoryParse:
         self.carved = cache.carve(known)
         for carved_index, c in enumerate(self.carved):
             entry = c["entry"]
-            key = split_key(entry.key)
+            key = split_key(entry.key, blockfile=True)
             rankings = c["rankings"]
             self.orphans.append({
                 "id": len(self.orphans),
@@ -730,6 +739,8 @@ def _decode_stream0(e: _Entry, data: bytes | None, base: int) -> None:
     """Read stream 0 as the entry's kind says -- or, where it doesn't,
     every reading that is strictly valid, as a heuristic."""
     if data is None:
+        if e.kind == KIND_URL_KEY:
+            e.notes.append(_NOTE_URL_KEY_NO_READING)
         return
     if e.kind == KIND_CACHE_STORAGE:
         decoded = decode_proto("CacheMetadata", data, base, with_ranges=False)
@@ -751,6 +762,8 @@ def _decode_stream0(e: _Entry, data: bytes | None, base: int) -> None:
     if not data:
         if e.kind == KIND_UNDETERMINED:
             e.notes.append(_BODY_NOTE_UNDETERMINED)
+        elif e.kind == KIND_URL_KEY:
+            e.notes.append(_NOTE_URL_KEY_NO_READING)
         return
     info = decode_response_info(data, base, with_tree=False)
     proto = decode_proto("CacheMetadata", data, base, with_ranges=False)
@@ -763,9 +776,16 @@ def _decode_stream0(e: _Entry, data: bytes | None, base: int) -> None:
     elif e.readings == ["CacheMetadata"]:
         e.metadata_view = cache_metadata_view(proto.decoded)
     if e.readings:
-        e.notes.append(ParseIssue("chromium_cache.heuristic_reading", {"readings": ", ".join(e.readings)}))
+        e.notes.append(_reading_note(e, ", ".join(e.readings)))
     else:
-        e.notes.append(_BODY_NOTE_UNDETERMINED)
+        e.notes.append(_NOTE_URL_KEY_NO_READING if e.kind == KIND_URL_KEY else _BODY_NOTE_UNDETERMINED)
+
+
+def _reading_note(e: _Entry, readings: str) -> ParseIssue:
+    """Why stream 0 is read as *readings* where the key doesn't settle it."""
+    if e.kind == KIND_URL_KEY:
+        return ParseIssue("chromium_cache.url_key_reading", {"readings": readings})
+    return ParseIssue("chromium_cache.heuristic_reading", {"readings": readings})
 
 
 def _row(e: _Entry, last_used: int | None, prefetch: int | None, reading: str | None) -> dict[str, Any]:
@@ -941,8 +961,7 @@ def _parse_single_file(node: VFSNode, vfs: VFS) -> ParseResult:
     entry.simple_hash = sfmt.entry_hash(layout.key) if layout.key else None
     entry.simple_files[layout.role] = (node, layout)
     entry.kind = entry.key.kind
-    if entry.kind != KIND_UNDETERMINED:
-        entry.kind_basis = QT_TRANSLATE_NOOP("GeneratedView", "key grammar")
+    entry.kind_basis = _key_basis(entry.key)
     if layout.unreadable is not None:
         entry.notes.append(layout.unreadable)
     entry.notes.extend(layout.notes)
@@ -1060,9 +1079,10 @@ class ChromiumCacheStore:
         row = self._orphans[orphan_id]
         if row.get("kind") == "carved" and self._blockfile is not None:
             c = self._carved[row["carved_index"]]
-            e = _Entry(id=-1, backend=FORMAT_BLOCKFILE, key=split_key(c["entry"].key))
+            e = _Entry(id=-1, backend=FORMAT_BLOCKFILE, key=split_key(c["entry"].key, blockfile=True))
             e.store = c["entry"]
             e.kind = e.key.kind
+            e.kind_basis = _key_basis(e.key)
             e.rankings = c["rankings"]
             detail = self._blockfile_detail(e)
             detail["notes"] = [c["reason"], ParseIssue("chromium_cache.carved_blocks_reused"), *e.store.notes]
@@ -1169,9 +1189,7 @@ class ChromiumCacheStore:
             return
         info = decode_response_info(data, base)
         if strictly_valid(info):
-            info.tree.put(("Reading",), ParseIssue(
-                "chromium_cache.heuristic_reading", {"readings": "HttpResponseInfo"}
-            ))
+            info.tree.put(("Reading",), _reading_note(e, "HttpResponseInfo"))
             tree.graft(("Stream 0 reading: HttpResponseInfo (heuristic)",), info.tree)
             if e.readings == ["HttpResponseInfo"]:
                 self._from_response(info, out)
@@ -1368,8 +1386,11 @@ class ChromiumCacheStore:
     def _body(
         self, e: _Entry, out: dict[str, Any], streams: dict[int, _Stream], sparse: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        # derived_candidate: the derived body holds only under one candidate
+        # reading of a heuristic kind (the note says which).
         body: dict[str, Any] = {"raw": None, "where": "", "derived": None, "derived_label": "",
-                                "derived_partial": False, "note": None, "sparse": sparse,
+                                "derived_partial": False, "derived_candidate": False,
+                                "note": None, "sparse": sparse,
                                 "gaps": _gaps(sparse) if sparse else [],
                                 "sparse_rejected": out.get("sparse_rejected") or []}
         header = e.code_header
@@ -1395,12 +1416,28 @@ class ChromiumCacheStore:
         return body
 
     @staticmethod
-    def _body_note(e: _Entry, out: dict[str, Any], body: dict[str, Any]) -> ParseIssue | None:
+    def _body_note(e: _Entry, out: dict[str, Any], body: dict[str, Any]) -> str | ParseIssue | None:
         """What the analyst must know about the body; fills the derived body
-        where the declared Content-Encoding applies (HTTP cache only)."""
+        where the declared Content-Encoding applies (HTTP cache only -- as a
+        candidate where the HTTP cache is one of the kinds a URL key allows)."""
         if e.kind in (KIND_CODE, KIND_CODE_DATA):
             return _BODY_NOTE_CODE
         encoding = _headers_value(out["headers"], "content-encoding")
+        if e.kind == KIND_URL_KEY and e.readings == ["HttpResponseInfo"]:
+            if body["raw"] is None:
+                return None
+            note = ChromiumCacheStore._derive(out, body, encoding)
+            if not encoding and body["derived"] is None:
+                return note
+            body["derived_candidate"] = body["derived"] is not None
+            candidate = ParseIssue(
+                "chromium_cache.url_key_body_candidate" if body["derived_candidate"]
+                else "chromium_cache.url_key_body_no_candidate",
+                {"coding": body["derived_label"] or encoding},
+            )
+            return join_notes([candidate, note])
+        if e.kind == KIND_URL_KEY and e.readings != ["CacheMetadata"]:
+            return _NOTE_URL_KEY_NO_READING
         if e.readings == ["HttpResponseInfo"]:
             # Only the HTTP cache stores bodies as transferred; other caches
             # that keep an HttpResponseInfo (Service Worker scripts) store
@@ -1411,16 +1448,7 @@ class ChromiumCacheStore:
         if e.kind == KIND_HTTP:
             if body["raw"] is None:
                 return None
-            codings = content_codings(encoding)
-            derived, note, partial = decode_body(body["raw"], codings, bool(out.get("cache_zstd")))
-            if derived is not None:
-                body["derived"] = derived
-                body["derived_partial"] = partial
-                body["derived_label"] = ", ".join(
-                    (["zstd (stored by the cache)"] if out.get("cache_zstd") else [])
-                    + [c for c in codings if c != "identity"]
-                )
-            return note
+            return ChromiumCacheStore._derive(out, body, encoding)
         if e.kind == KIND_CACHE_STORAGE or e.readings == ["CacheMetadata"]:
             if encoding:
                 # The network stack decodes before the page's fetch() gets
@@ -1429,6 +1457,21 @@ class ChromiumCacheStore:
                 return ParseIssue("chromium_cache.cs_body_stored_decoded", {"coding": encoding})
             return None
         return _BODY_NOTE_UNDETERMINED
+
+    @staticmethod
+    def _derive(out: dict[str, Any], body: dict[str, Any], encoding: str) -> ParseIssue | None:
+        """The RAW body with the declared codings undone, into the body's
+        derived fields; the decoder's note."""
+        codings = content_codings(encoding)
+        derived, note, partial = decode_body(body["raw"], codings, bool(out.get("cache_zstd")))
+        if derived is not None:
+            body["derived"] = derived
+            body["derived_partial"] = partial
+            body["derived_label"] = ", ".join(
+                (["zstd (stored by the cache)"] if out.get("cache_zstd") else [])
+                + [c for c in codings if c != "identity"]
+            )
+        return note
 
 
 def _child_ranges(

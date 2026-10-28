@@ -1902,6 +1902,35 @@ MESSAGES: dict[str, str] = {
         "known, so the Content-Encoding header ({coding}) may not describe these bytes",
         "chromium_cache.heuristic_body_not_decoded",
     ),
+    "chromium_cache.url_key_reading": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Heuristic: stream 0 is read as {readings} because it is a complete, valid record of that "
+        "type; the key, a URL alone, is written both by the HTTP cache before Chromium 95 and by "
+        "CacheStorage",
+        "chromium_cache.url_key_reading",
+    ),
+    "chromium_cache.url_key_no_reading": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Heuristic: the key, a URL alone, is written both by the HTTP cache before Chromium 95 and "
+        "by CacheStorage; no reading of stream 0 tells which (none stored, or none valid) -- the "
+        "content is shown as stored",
+        "chromium_cache.url_key_no_reading",
+    ),
+    "chromium_cache.url_key_body_candidate": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Heuristic: the derived body is a candidate that holds under the HTTP cache reading of the "
+        "key (the HTTP cache stores bodies as transferred, {coding} applied); under the CacheStorage "
+        "reading the body was stored decoded and the Content-Encoding header doesn't describe these "
+        "bytes",
+        "chromium_cache.url_key_body_candidate",
+    ),
+    "chromium_cache.url_key_body_no_candidate": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Heuristic: under the HTTP cache reading of the key the body is stored as transferred "
+        "({coding} applied), under the CacheStorage reading it was stored decoded; no derived body "
+        "could be made",
+        "chromium_cache.url_key_body_no_candidate",
+    ),
     "chromium_cache.coding_unsupported": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Content-Encoding {coding} isn't supported; the body is shown as stored only",

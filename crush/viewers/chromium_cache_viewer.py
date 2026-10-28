@@ -379,6 +379,9 @@ class _DetailPane(QTabWidget):
         raw: bytes | None = body.get("raw")
         derived: bytes | None = body.get("derived")
         partial = bool(body.get("derived_partial"))
+        # A derived body that holds only under one reading of a heuristic
+        # cache kind; the body's note says which.
+        candidate = bool(body.get("derived_candidate"))
         lines = []
         if raw is not None:
             lines.append(translate("ChromiumCacheViewer", "RAW: {size:,} B as stored ({where}).").format(
@@ -392,6 +395,10 @@ class _DetailPane(QTabWidget):
             lines.append(translate(
                 "ChromiumCacheViewer", "Derived: {size:,} B, the RAW body with {codings} removed."
             ).format(size=len(derived), codings=body.get("derived_label", "")))
+        if derived is not None and candidate:
+            lines.append(translate(
+                "ChromiumCacheViewer", "The derived body is a candidate (heuristic), see the note below."
+            ))
         if body.get("note"):
             lines.append(render_value(body["note"], localized=True))
         layout.addWidget(_label("\n".join(lines)))
@@ -401,13 +408,18 @@ class _DetailPane(QTabWidget):
             open_raw.clicked.connect(lambda: self._open(raw, "body", body.get("where", "")))
             buttons.addWidget(open_raw)
         if derived is not None:
-            open_derived = QPushButton(
+            open_text = (
                 translate("ChromiumCacheViewer", "Open partially decompressed body in new tab") if partial
                 else translate("ChromiumCacheViewer", "Open decompressed body in new tab")
             )
+            if candidate:
+                open_text = translate("ChromiumCacheViewer", "{action} (candidate)").format(action=open_text)
+            open_derived = QPushButton(open_text)
+            what = "body-decompressed-partial" if partial else "body-decompressed"
             open_derived.clicked.connect(lambda: self._open(
-                derived, "body-decompressed-partial" if partial else "body-decompressed",
-                f"{body.get('derived_label', '')} of {body.get('where', '')}" + (" (partial)" if partial else ""),
+                derived, f"{what}-candidate" if candidate else what,
+                f"{body.get('derived_label', '')} of {body.get('where', '')}"
+                + (" (partial)" if partial else "") + (" (candidate, heuristic)" if candidate else ""),
             ))
             buttons.addWidget(open_derived)
         buttons.addStretch()
@@ -416,10 +428,13 @@ class _DetailPane(QTabWidget):
         if raw is not None:
             views.addTab(HexViewer(raw, views), translate("ChromiumCacheViewer", "RAW"))
         if derived is not None:
-            views.addTab(HexViewer(derived, views), (
+            title = (
                 translate("ChromiumCacheViewer", "Decompressed (derived, partial)") if partial
                 else translate("ChromiumCacheViewer", "Decompressed (derived)")
-            ))
+            )
+            if candidate:
+                title = translate("ChromiumCacheViewer", "{title} – candidate").format(title=title)
+            views.addTab(HexViewer(derived, views), title)
         sparse = body.get("sparse") or []
         if sparse:
             views.addTab(self._sparse_table(sparse, body.get("gaps") or []),

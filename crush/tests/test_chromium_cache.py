@@ -27,6 +27,7 @@ from crush.parsers.chromium_cache_content import (
     KIND_CODE_DATA,
     KIND_HTTP,
     KIND_UNDETERMINED,
+    KIND_URL_KEY,
     _schema_pool,
     decode_body,
     split_key,
@@ -467,9 +468,11 @@ def test_cache_storage_without_index_txt_shows_readings(tmp_path: Path) -> None:
     _cache_storage(tmp_path, with_index_txt=False)
     result, _vfs, _node = _parse_dir(tmp_path, "CacheStorage", "0f00ba11", "1b2c3d4e-uuid")
     row = result.data["entries"][0]
-    assert row["kind"] == KIND_UNDETERMINED
+    assert row["kind"] == KIND_URL_KEY
+    assert row["url"] == "https://app.test/offline.html"
     note = render_value(row["note"])
     assert "Heuristic" in note and "CacheMetadata" in note
+    assert result.data["__store"].detail(0)["body"]["note"].code == "chromium_cache.cs_body_stored_decoded"
     assert result.data["overview"]["Index field read as"].code == "chromium_cache.index_field_both"
     tree = result.data["__store"].detail(0)["structure"][0]["tree"]
     assert "Stream 0 reading: CacheMetadata (heuristic)" in tree
@@ -534,7 +537,102 @@ def test_key_grammars() -> None:
     assert parts.subframe_document and parts.cross_site_navigation
     assert parts.top_frame_site == "https://a.test" and parts.frame_site == "https://b.test"
     assert split_key(b"1/0/https://plain.test/").url == "https://plain.test/"
-    assert split_key(b"https://bare.test/").kind == KIND_UNDETERMINED
+    assert split_key(b"Chrome/141.0-GPU:AAAA").kind == KIND_UNDETERMINED
+    assert split_key(b"17").kind == KIND_UNDETERMINED  # Service Worker script cache: a resource id
+
+
+def test_key_grammars_before_chromium_95() -> None:
+    """GenerateCacheKey before 54013f2a5d6c: [<upload id>/][_dk_…]<url>."""
+    post = split_key(b"1/https://form.test/send")  # upload id 1, not the "1/0/" form
+    assert (post.kind, post.upload_id, post.credential, post.url) == (KIND_HTTP, "1", "", "https://form.test/send")
+    split = split_key(b"42/_dk_s_https://a.test https://b.test https://c.test/x")
+    assert (split.kind, split.upload_id, split.url) == (KIND_HTTP, "42", "https://c.test/x")
+    assert split.subframe_document
+    assert (split.top_frame_site, split.frame_site) == ("https://a.test", "https://b.test")
+    double = split_key(b"_dk_https://a.test https://a.test https://a.test/y")
+    assert (double.kind, double.upload_id, double.url) == (KIND_HTTP, "", "https://a.test/y")
+    current = split_key(b"0/7/https://now.test/")
+    assert (current.upload_id, current.credential) == ("7", "0 (request without credentials)")
+    assert split_key(b"12/not-a-url").kind == KIND_UNDETERMINED
+
+
+def test_url_alone_is_a_heuristic_with_both_candidates() -> None:
+    parts = split_key(b"https://v.test/DASH_96.mp4")
+    assert (parts.kind, parts.url) == (KIND_URL_KEY, "https://v.test/DASH_96.mp4")
+    assert set(parts.tree()["Candidates (heuristic)"]) == {KIND_HTTP, KIND_CACHE_STORAGE}
+    # CacheStorage creates Simple caches only: in a Blockfile cache it's the HTTP cache.
+    block = split_key(b"https://v.test/DASH_96.mp4", blockfile=True)
+    assert (block.kind, block.url, block.candidates) == (KIND_HTTP, "https://v.test/DASH_96.mp4", {})
+
+
+_LEGACY_KEY = b"https://api.test/feed.json"
+_JSON = b'{"posts": ["evidence"]}' * 30
+
+
+@pytest.mark.forensic(
+    category="Completeness",
+    subject="Chromium Disk Cache",
+    desc="A key that is a URL alone must fill the URL, mark the kind as heuristic with its candidates and offer the decoded body only as a candidate",
+)
+def test_url_key_without_index_txt_gives_url_and_candidate_body(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    folder.mkdir()
+    (folder / "index").write_bytes(_fake_index())
+    encoded = gzip.compress(_JSON, mtime=0)
+    stream0 = _response_info([("Content-Type", "application/json"), ("Content-Encoding", "gzip")])
+    _write_simple(folder, _LEGACY_KEY, stream0, encoded)
+    (folder / "index-dir").mkdir()
+    (folder / "index-dir" / "the-real-index").write_bytes(
+        _real_index([(sfmt.entry_hash(_LEGACY_KEY), 4242, len(encoded))]))
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    row = result.data["entries"][0]
+    assert row["kind"] == KIND_URL_KEY
+    assert row["url"] == _LEGACY_KEY.decode()
+    assert row["content_encoding"] == "gzip"
+    assert row["last_used"] == 4242 and row["prefetch"] == 4242  # HTTP is a candidate only
+    assert "Heuristic" in render_value(row["note"])
+    detail = result.data["__store"].detail(0)
+    assert set(detail["key"]["Candidates (heuristic)"]) == {KIND_HTTP, KIND_CACHE_STORAGE}
+    body = detail["body"]
+    assert body["raw"] == encoded
+    assert body["derived"] == _JSON and body["derived_candidate"]
+    assert body["note"].code == "chromium_cache.url_key_body_candidate"
+
+
+def test_url_key_entry_with_only_sparse_data_says_why_it_is_not_read(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    folder.mkdir()
+    (folder / "index").write_bytes(_fake_index())
+    key = b"https://v.test/DASH_96.mp4"
+    (folder / f"{sfmt.entry_hash(key):016x}_s").write_bytes(_simple_sparse(key, [(0, b"\0\0\0\x18ftyp")]))
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    row = result.data["entries"][0]
+    assert (row["kind"], row["url"]) == (KIND_URL_KEY, key.decode())
+    assert row["note"].code == "chromium_cache.url_key_no_reading"
+    body = result.data["__store"].detail(0)["body"]
+    assert body["sparse"][0]["data"] == b"\0\0\0\x18ftyp"
+    assert body["note"].code == "chromium_cache.url_key_no_reading"
+
+
+def test_url_key_in_a_cache_storage_folder_stays_cache_storage(tmp_path: Path) -> None:
+    _cache_storage(tmp_path, with_index_txt=True)
+    result, _vfs, _node = _parse_dir(tmp_path, "CacheStorage", "0f00ba11", "1b2c3d4e-uuid")
+    assert [r["kind"] for r in result.data["entries"]] == [KIND_CACHE_STORAGE]
+
+
+def test_legacy_upload_key_entry_is_http(tmp_path: Path) -> None:
+    folder = tmp_path / "Cache"
+    folder.mkdir()
+    (folder / "index").write_bytes(_fake_index())
+    key = b"7/_dk_https://site.test https://frame.test https://api.test/submit"
+    _write_simple(folder, key, _response_info([("Content-Encoding", "gzip")]), gzip.compress(_JSON, mtime=0))
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    row = result.data["entries"][0]
+    assert (row["kind"], row["url"], row["top_frame_site"]) == (KIND_HTTP, "https://api.test/submit", "https://site.test")
+    detail = result.data["__store"].detail(0)
+    assert detail["key"]["Upload data identifier"] == "7" and "Credentials" not in detail["key"]
+    assert detail["body"]["derived"] == _JSON and not detail["body"]["derived_candidate"]
+    assert result.data["overview"]["Index field read as"] != ParseIssue("chromium_cache.index_field_both")
 
 
 # -- response info details ---------------------------------------------------------
@@ -793,9 +891,11 @@ def _rankings(contents: int, last_used: int) -> bytes:
     return struct.pack("<QQIIIiI", last_used, _T_REQUEST, 0, 0, contents, 0, 0)
 
 
-def _blockfile_cache(folder: Path, *, with_external: bool = True) -> dict[str, Any]:
+def _blockfile_cache(
+    folder: Path, *, with_external: bool = True, keys: list[bytes] | None = None,
+) -> dict[str, Any]:
     folder.mkdir(parents=True)
-    keys = [b"1/0/https://one.test/a.png", b"1/0/https://two.test/b.css"]
+    keys = keys or [b"1/0/https://one.test/a.png", b"1/0/https://two.test/b.css"]
     entries, rankings, data2 = {}, {}, {}
     table_entries: list[int] = []
     body_big = b"\x89PNG" + b"\0" * 30000
@@ -874,6 +974,24 @@ def test_blockfile_free_block_is_carved_as_heuristic(tmp_path: Path) -> None:
     detail = result.data["__store"].orphan_detail(carved[0]["id"])
     codes = {n.code for n in detail["notes"] if isinstance(n, ParseIssue)}
     assert "chromium_cache.carved_blocks_reused" in codes
+
+
+def test_blockfile_keys_before_chromium_95_are_http(tmp_path: Path) -> None:
+    """A URL alone in a Blockfile cache: CacheStorage creates Simple caches
+    only, so the key is an HTTP cache key -- live and carved entries alike."""
+    keys = [b"https://one.test/a.png", b"3/https://two.test/form"]
+    built = _blockfile_cache(tmp_path / "Cache", keys=keys)
+    result, _vfs, _node = _parse_dir(tmp_path, "Cache")
+    rows = {r["key"]: r for r in result.data["entries"]}
+    assert {k: (r["kind"], r["url"]) for k, r in rows.items()} == {
+        "https://one.test/a.png": (KIND_HTTP, "https://one.test/a.png"),
+        "3/https://two.test/form": (KIND_HTTP, "https://two.test/form"),
+    }
+    detail = result.data["__store"].detail(rows["https://one.test/a.png"]["id"])
+    assert "Blockfile" in detail["kind_basis"]
+    carved = next(o for o in result.data["orphans"] if o["kind"] == "carved")
+    assert carved["url"] == built["deleted"].decode()
+    assert result.data["__store"].orphan_detail(carved["id"])["kind"] == KIND_HTTP
 
 
 def test_zeroed_free_blocks_are_not_carved(tmp_path: Path) -> None:
@@ -1113,6 +1231,10 @@ def test_viewer_lists_rejected_sparse_children_and_partial_body(qapp, widgets, t
     tab = widgets(rows._pane._body_tab(partial))
     names = [t.tabText(i) for t in tab.findChildren(QTabWidget) for i in range(t.count())]
     assert "Decompressed (derived, partial)" in names
+    candidate = dict(partial, derived_partial=False, derived_candidate=True)
+    tab = widgets(rows._pane._body_tab(candidate))
+    names = [t.tabText(i) for t in tab.findChildren(QTabWidget) for i in range(t.count())]
+    assert "Decompressed (derived) – candidate" in names
 
 
 def test_blockfile_missing_external_file_is_named(tmp_path: Path) -> None:
