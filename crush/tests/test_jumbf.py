@@ -28,6 +28,15 @@ def build_superbox(uuid: bytes, label: str, children: bytes = b"") -> bytes:
     return build_box(b"jumb", build_jumd(uuid, label) + children)
 
 
+def stores(result: jumbf.ScanResult) -> list[bytes]:
+    return [hit.data for hit in result.stores]
+
+
+def clean(result: jumbf.ScanResult) -> bool:
+    """Read to its end with nothing left unevaluated."""
+    return not result.notes and not result.merkle_offsets and result.stopped_at is None
+
+
 def test_read_box_header_basic() -> None:
     data = build_box(b"test", b"hello")
     box = jumbf.read_box_header(data, 0)
@@ -119,12 +128,15 @@ def test_extract_from_jpeg_reassembles_multi_segment_app11() -> None:
     )
 
     result = jumbf.extract_from_jpeg(jpeg)
-    assert result == manifest_store
+    assert stores(result) == [manifest_store]
+    assert result.stores[0].offset == 2
+    assert clean(result)
 
 
 def test_extract_from_jpeg_returns_none_without_app11() -> None:
     jpeg = b"\xFF\xD8\xFF\xDA\x00\x02\x00"
-    assert jumbf.extract_from_jpeg(jpeg) is None
+    result = jumbf.extract_from_jpeg(jpeg)
+    assert stores(result) == [] and clean(result)
 
 
 def test_extract_from_png_reads_cabx_chunk() -> None:
@@ -138,7 +150,7 @@ def test_extract_from_png_reads_cabx_chunk() -> None:
         )
 
     png = b"\x89PNG\r\n\x1a\n" + chunk(b"caBX", manifest_store) + chunk(b"IEND", b"")
-    assert jumbf.extract_from_png(png) == manifest_store
+    assert stores(jumbf.extract_from_png(png)) == [manifest_store]
 
 
 def test_extract_from_png_returns_none_without_cabx() -> None:
@@ -150,7 +162,8 @@ def test_extract_from_png_returns_none_without_cabx() -> None:
         )
 
     png = b"\x89PNG\r\n\x1a\n" + chunk(b"IEND", b"")
-    assert jumbf.extract_from_png(png) is None
+    result = jumbf.extract_from_png(png)
+    assert stores(result) == [] and clean(result)
 
 
 def test_extract_from_riff_reads_c2pa_chunk() -> None:
@@ -163,13 +176,14 @@ def test_extract_from_riff_reads_c2pa_chunk() -> None:
     body = b"WEBP" + riff_chunk(b"C2PA", manifest_store)
     webp = b"RIFF" + struct.pack("<I", len(body)) + body
 
-    assert jumbf.extract_from_riff(webp) == manifest_store
+    assert stores(jumbf.extract_from_riff(webp)) == [manifest_store]
 
 
 def test_extract_from_riff_returns_none_without_c2pa_chunk() -> None:
     body = b"WEBP" + b"VP8 " + struct.pack("<I", 4) + b"\x00\x00\x00\x00"
     webp = b"RIFF" + struct.pack("<I", len(body)) + body
-    assert jumbf.extract_from_riff(webp) is None
+    result = jumbf.extract_from_riff(webp)
+    assert stores(result) == [] and clean(result)
 
 
 def _gif_subblocks(data: bytes) -> bytes:
@@ -187,7 +201,7 @@ def test_extract_from_gif_reads_application_extension() -> None:
     )
     gif = b"GIF89a" + struct.pack("<HH", 1, 1) + bytes([0, 0, 0]) + app_ext + b"\x3B"
 
-    assert jumbf.extract_from_gif(gif) == manifest_store
+    assert stores(jumbf.extract_from_gif(gif)) == [manifest_store]
 
 
 def test_extract_from_gif_skips_unrelated_extensions_and_image_data() -> None:
@@ -203,12 +217,13 @@ def test_extract_from_gif_skips_unrelated_extensions_and_image_data() -> None:
         + comment_ext + image_desc + app_ext + b"\x3B"
     )
 
-    assert jumbf.extract_from_gif(gif) == manifest_store
+    assert stores(jumbf.extract_from_gif(gif)) == [manifest_store]
 
 
 def test_extract_from_gif_returns_none_without_c2pa_extension() -> None:
     gif = b"GIF89a" + struct.pack("<HH", 1, 1) + bytes([0, 0, 0]) + b"\x3B"
-    assert jumbf.extract_from_gif(gif) is None
+    result = jumbf.extract_from_gif(gif)
+    assert stores(result) == [] and clean(result)
 
 
 def _build_tiff_with_c2pa_tag(manifest_store: bytes) -> bytes:
@@ -227,13 +242,14 @@ def _build_tiff_with_c2pa_tag(manifest_store: bytes) -> bytes:
 def test_extract_from_tiff_reads_c2pa_tag() -> None:
     manifest_store = build_superbox(_MANIFEST_STORE_UUID, "c2pa")
     tiff = _build_tiff_with_c2pa_tag(manifest_store)
-    assert jumbf.extract_from_tiff(tiff) == manifest_store
+    assert stores(jumbf.extract_from_tiff(tiff)) == [manifest_store]
 
 
 def test_extract_from_tiff_returns_none_without_c2pa_tag() -> None:
     header = b"II" + struct.pack("<H", 42) + struct.pack("<I", 8)
     ifd = struct.pack("<H", 0) + struct.pack("<I", 0)  # zero entries
-    assert jumbf.extract_from_tiff(header + ifd) is None
+    result = jumbf.extract_from_tiff(header + ifd)
+    assert stores(result) == [] and clean(result)
 
 
 def _build_bmff_with_c2pa_uuid_box(manifest_store: bytes) -> bytes:
@@ -252,7 +268,7 @@ def _build_bmff_with_c2pa_uuid_box(manifest_store: bytes) -> bytes:
 def test_extract_from_bmff_reads_c2pa_uuid_box() -> None:
     manifest_store = build_superbox(_MANIFEST_STORE_UUID, "c2pa")
     heic = _build_bmff_with_c2pa_uuid_box(manifest_store)
-    assert jumbf.extract_from_bmff(heic) == manifest_store
+    assert stores(jumbf.extract_from_bmff(heic)) == [manifest_store]
 
 
 def test_extract_from_bmff_ignores_unrelated_uuid_boxes() -> None:
@@ -261,16 +277,17 @@ def test_extract_from_bmff_ignores_unrelated_uuid_boxes() -> None:
 
     ftyp = box(b"ftyp", b"heic" + b"\x00" * 4 + b"heic" + b"mif1")
     other_uuid = box(b"uuid", b"\x00" * 16 + b"unrelated data")
-    assert jumbf.extract_from_bmff(ftyp + other_uuid) is None
+    result = jumbf.extract_from_bmff(ftyp + other_uuid)
+    assert stores(result) == [] and clean(result)
 
 
 def test_extract_from_jpeg_xl_reads_top_level_jumb_box() -> None:
     manifest_store = build_superbox(_MANIFEST_STORE_UUID, "c2pa")
     sig = bytes.fromhex("0000000c4a584c200d0a870a")
     jxl = sig + manifest_store
-    assert jumbf.extract_from_jpeg_xl(jxl) == manifest_store
+    assert stores(jumbf.extract_from_jpeg_xl(jxl)) == [manifest_store]
 
 
 def test_extract_from_jpeg_xl_returns_none_for_bare_codestream() -> None:
     codestream = b"\xFF\x0A" + b"\x00" * 20
-    assert jumbf.extract_from_jpeg_xl(codestream) is None
+    assert stores(jumbf.extract_from_jpeg_xl(codestream)) == []

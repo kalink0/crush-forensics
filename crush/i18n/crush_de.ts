@@ -8870,11 +8870,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Von der C2PA-Spezifikation für dieses Format nicht definiert</translation>
     </message>
     <message>
-        <source>Not checked (detection only implemented for common image containers so far)</source>
-        <comment>c2pa.not_checked</comment>
-        <translation>Nicht geprüft (Erkennung bisher nur für gängige Bild-Container umgesetzt)</translation>
-    </message>
-    <message>
         <source>Manifest found, but could not be parsed</source>
         <comment>c2pa.unparseable</comment>
         <translation>Manifest gefunden, konnte aber nicht geparst werden</translation>
@@ -9288,6 +9283,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Could not be read: {detail}</source>
         <comment>media.metadata_failed</comment>
         <translation>Konnte nicht gelesen werden: {detail}</translation>
+    </message>
+    <message>
+        <source>Detection failed: {detail}</source>
+        <comment>media.c2pa_detection_failed</comment>
+        <translation>Erkennung fehlgeschlagen: {detail}</translation>
     </message>
     <message>
         <source>{detail}</source>
@@ -10588,6 +10588,126 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Before frame 1: the WAL header is not valid, so SQLite reads no frame</source>
         <comment>sqlite_wal.log_end_header</comment>
         <translation>Vor Frame 1: Der WAL-Header ist nicht gültig, daher liest SQLite keinen Frame</translation>
+    </message>
+    <message>
+        <source>Not checked: the container is not identified by its content</source>
+        <comment>c2pa.not_checked</comment>
+        <translation>Nicht geprüft: der Container wird nicht an seinem Inhalt erkannt</translation>
+    </message>
+    <message>
+        <source>No Manifest Store found before offset {offset:,}; the structure is truncated there</source>
+        <comment>c2pa.not_found_truncated</comment>
+        <translation>Kein Manifest Store vor Offset {offset:,} gefunden; die Struktur ist dort abgeschnitten</translation>
+    </message>
+    <message>
+        <source>No Manifest Store found before offset {offset:,}; the structure is not valid there</source>
+        <comment>c2pa.not_found_invalid</comment>
+        <translation>Kein Manifest Store vor Offset {offset:,} gefunden; die Struktur ist dort ungültig</translation>
+    </message>
+    <message>
+        <source>No Manifest Store evaluated; {count} findings under C2PA scan notes</source>
+        <comment>c2pa.not_found_see_notes</comment>
+        <translation>Kein Manifest Store ausgewertet; {count} Befunde unter C2PA scan notes</translation>
+    </message>
+    <message>
+        <source>Structure truncated at offset {offset:,}; not scanned past it</source>
+        <comment>c2pa.scan_truncated</comment>
+        <translation>Struktur bei Offset {offset:,} abgeschnitten; dahinter nicht durchsucht</translation>
+    </message>
+    <message>
+        <source>Structure not valid at offset {offset:,}; not scanned past it</source>
+        <comment>c2pa.scan_invalid</comment>
+        <translation>Struktur bei Offset {offset:,} ungültig; dahinter nicht durchsucht</translation>
+    </message>
+    <message>
+        <source>{item} at offset {offset:,} does not start with a JUMBF superbox; not evaluated</source>
+        <comment>c2pa.item_not_jumbf</comment>
+        <translation>{item} bei Offset {offset:,} beginnt nicht mit einer JUMBF-Superbox; nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>{item} at offset {offset:,}: the JUMBF superbox in it is longer than the data it holds; not evaluated</source>
+        <comment>c2pa.store_exceeds_item</comment>
+        <translation>{item} bei Offset {offset:,}: die JUMBF-Superbox darin ist länger als die enthaltenen Daten; nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>{item} at offset {offset:,}: its data runs past the end of the file; not evaluated</source>
+        <comment>c2pa.item_truncated</comment>
+        <translation>{item} bei Offset {offset:,}: die Daten reichen über das Dateiende hinaus; nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>{item} at offset {offset:,} is compressed; not checked for a C2PA Manifest Store</source>
+        <comment>c2pa.item_compressed</comment>
+        <translation>{item} bei Offset {offset:,} ist komprimiert; nicht auf einen C2PA Manifest Store geprüft</translation>
+    </message>
+    <message>
+        <source>{item} at offset {offset:,} is encrypted; not checked for a C2PA Manifest Store</source>
+        <comment>c2pa.item_encrypted</comment>
+        <translation>{item} bei Offset {offset:,} ist verschlüsselt; nicht auf einen C2PA Manifest Store geprüft</translation>
+    </message>
+    <message>
+        <source>JUMBF APP11 segments from offset {offset:,} have missing or repeated sequence numbers; not reassembled, not checked for a C2PA Manifest Store</source>
+        <comment>c2pa.jpeg_sequence_gap</comment>
+        <translation>JUMBF-APP11-Segmente ab Offset {offset:,} haben fehlende oder doppelte Sequenznummern; nicht zusammengesetzt, nicht auf einen C2PA Manifest Store geprüft</translation>
+    </message>
+    <message>
+        <source>GIF C2PA Application Extension at offset {offset:,} has block version {version}; the spec defines 1.0; not evaluated</source>
+        <comment>c2pa.gif_block_version</comment>
+        <translation>GIF-C2PA-Application-Extension bei Offset {offset:,} hat Blockversion {version}; die Spezifikation definiert 1.0; nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>TIFF tag 0xCD41 at offset {offset:,} has field type {type}; the spec defines type 7 (UNDEFINED); not evaluated</source>
+        <comment>c2pa.tiff_tag_type</comment>
+        <translation>TIFF-Tag 0xCD41 bei Offset {offset:,} hat Feldtyp {type}; die Spezifikation definiert Typ 7 (UNDEFINED); nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>BMFF C2PA &apos;uuid&apos; box at offset {offset:,} has no terminated box_purpose; not evaluated</source>
+        <comment>c2pa.bmff_no_purpose</comment>
+        <translation>BMFF-C2PA-&apos;uuid&apos;-Box bei Offset {offset:,} hat keinen abgeschlossenen box_purpose; nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>BMFF C2PA &apos;uuid&apos; box at offset {offset:,} has box_purpose &apos;{purpose}&apos;, which the spec does not define; not evaluated</source>
+        <comment>c2pa.bmff_unknown_purpose</comment>
+        <translation>BMFF-C2PA-&apos;uuid&apos;-Box bei Offset {offset:,} hat box_purpose &apos;{purpose}&apos;, den die Spezifikation nicht definiert; nicht ausgewertet</translation>
+    </message>
+    <message>
+        <source>BMFF C2PA &apos;uuid&apos; box with box_purpose &apos;merkle&apos; at offset {offset:,}: Merkle tree hash data, not a Manifest Store</source>
+        <comment>c2pa.bmff_merkle</comment>
+        <translation>BMFF-C2PA-&apos;uuid&apos;-Box mit box_purpose &apos;merkle&apos; bei Offset {offset:,}: Hash-Daten eines Merkle-Baums, kein Manifest Store</translation>
+    </message>
+    <message>
+        <source>{count:,} BMFF C2PA &apos;uuid&apos; boxes with box_purpose &apos;merkle&apos; at offsets {first:,} to {last:,}: Merkle tree hash data, not Manifest Stores</source>
+        <comment>c2pa.bmff_merkle_boxes</comment>
+        <translation>{count:,} BMFF-C2PA-&apos;uuid&apos;-Boxen mit box_purpose &apos;merkle&apos; bei Offset {first:,} bis {last:,}: Hash-Daten von Merkle-Bäumen, keine Manifest Stores</translation>
+    </message>
+    <message>
+        <source>Manifest Store with box_purpose &apos;{purpose}&apos; at offset {offset:,}; the spec pairs it with a box with box_purpose &apos;{missing}&apos;, none found</source>
+        <comment>c2pa.bmff_unpaired</comment>
+        <translation>Manifest Store mit box_purpose &apos;{purpose}&apos; bei Offset {offset:,}; die Spezifikation stellt ihm eine Box mit box_purpose &apos;{missing}&apos; zur Seite, keine gefunden</translation>
+    </message>
+    <message>
+        <source>ID3v2.{version} tag; ID3v2.2 to 2.4 are read; not checked</source>
+        <comment>c2pa.id3_version_unsupported</comment>
+        <translation>ID3v2.{version}-Tag; gelesen werden ID3v2.2 bis 2.4; nicht geprüft</translation>
+    </message>
+    <message>
+        <source>ID3v2.2 tag with the compression flag set (ID3v2.2 defines no compression scheme); not checked</source>
+        <comment>c2pa.id3_tag_compressed</comment>
+        <translation>ID3v2.2-Tag mit gesetztem Kompressions-Flag (ID3v2.2 definiert kein Kompressionsverfahren); nicht geprüft</translation>
+    </message>
+    <message>
+        <source>{item} at offset {offset:,}: text encoding or field terminators not valid; not checked for a C2PA Manifest Store</source>
+        <comment>c2pa.id3_geob_malformed</comment>
+        <translation>{item} bei Offset {offset:,}: Textkodierung oder Feldabschlüsse ungültig; nicht auf einen C2PA Manifest Store geprüft</translation>
+    </message>
+    <message>
+        <source>{count} C2PA Manifest Stores found (offsets {offsets}); the spec allows one</source>
+        <comment>c2pa.stores_multiple</comment>
+        <translation>{count} C2PA Manifest Stores gefunden (Offsets {offsets}); die Spezifikation erlaubt einen</translation>
+    </message>
+    <message>
+        <source>Original Manifest Store (#{original}, offset {original_offset:,}) and update Manifest Store (#{update}, offset {update_offset:,})</source>
+        <comment>c2pa.stores_original_update</comment>
+        <translation>Original-Manifest-Store (#{original}, Offset {original_offset:,}) und Update-Manifest-Store (#{update}, Offset {update_offset:,})</translation>
     </message>
     <message>
         <source>XML (NSKeyedArchiver — deserialization failed)</source>

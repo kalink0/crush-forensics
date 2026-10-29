@@ -10,6 +10,12 @@ All notable changes to Crush will be documented in this file.
 - Added to parsers and viewers -> Support for Chromium Disk Cache folders (Simple and Blockfile): HTTP, WebView, Cronet, CacheStorage and Code Cache with headers, times, certificates, bodies and index records without entry files; GPU/shader caches open with their content not decoded.
 - Added to the Chromium Disk Cache parser -> Support for HTTP cache keys from before Chromium 95; a key that is only a URL shows its URL and is marked as HTTP cache or CacheStorage (heuristic).
 - Added to parsers, viewers and the BLOB Inspector -> Support for FlatBuffers, schema-less with every reading marked as a heuristic, or decoded with a `.fbs` or `.bfbs` schema.
+- Added to the Media Viewer -> Support for C2PA Content Credentials and the XMP Digital Source Type in MP4/MOV/M4A/3GP, WAV/AVI, MP3 and FLAC with an ID3v2 tag, and Ogg.
+- Added to the Image Viewer's C2PA detection -> Support for BigTIFF and a C2PA tag in any IFD of a TIFF's main chain.
+
+### Changed
+
+- The `C2PA` row says "Not present" only for a structure read to its end; otherwise it names the offset where the scan stopped, C2PA data found but not evaluated is listed under `C2PA scan notes`, and a file with several Manifest Stores shows each one, numbered.
 
 ### Bug Fixes
 

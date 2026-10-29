@@ -2,14 +2,19 @@
 # Copyright 2026 - now Marco Neumann (kalink0)
 """C2PA (Content Credentials) manifest detection and summary.
 
-Reads the C2PA Manifest Store embedded in every image container Crush's
-ImageViewer opens that the C2PA spec actually defines an embedding for:
-JPEG (APP11), PNG (caBX chunk), GIF (Application Extension), WebP (RIFF
-'C2PA' chunk), TIFF (tag 0xCD41), HEIC/HEIF/AVIF (BMFF 'uuid' box), and
-box-form JPEG XL (top-level JUMBF superbox) -- matching the same format
-breadth as EXIF extraction (crush/parsers/exif_reader.py). BMP and bare
-JPEG XL codestreams have no embedding defined by the spec at all; ATX/KTX
-texture archives are Apple/Khronos-specific and outside the spec's scope.
+Reads the C2PA Manifest Store from every image, audio and video container
+the C2PA spec (2.4, Annex A) defines an embedding for, recognised by
+content: JPEG (APP11), PNG (caBX chunk), GIF (Application Extension), RIFF
+-- WebP, WAV, AVI and other RIFF forms -- ('C2PA' chunk), TIFF and BigTIFF
+(tag 0xCD41), every BMFF file with an 'ftyp' box -- HEIC/HEIF/AVIF, MP4,
+MOV, M4A, 3GP ... -- ('uuid' box), box-form JPEG XL (top-level JUMBF
+superbox), an ID3v2 tag at the start of the file -- MP3, FLAC with a
+prepended tag -- (GEOB frame), and Ogg (dedicated logical bitstream).
+
+The spec defines no embedding for BMP, bare JPEG XL codestreams, native
+FLAC, Matroska/WebM, ASF (WMA/WMV) or AMR; ATX/KTX texture archives are
+Apple/Khronos-specific and outside its scope. Anything else is reported as
+not checked, never as "Not present".
 
 Structure only: manifest generator, actions (including each action's
 softwareAgent and any IPTC digitalSourceType -- the actual "was this
@@ -29,16 +34,17 @@ guessed from the box shape -- see crush/parsers/jumbf.py.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from crush.core.issues import ParseIssue
+from crush.core.magic import ASF_HEADER_GUID
 from crush.parsers import jumbf
 from crush.parsers.apple_atx import AAPL_MAGIC
 from crush.parsers.apple_ktx import KTX11_MAGIC
 from crush.parsers.cbor_lite import cbor_decode
 from crush.parsers.xmp_provenance import classify_digital_source_type
 
-_MANIFEST_STORE_LABEL = "c2pa"
 _ASSERTIONS_LABEL = "c2pa.assertions"
 _CLAIM_LABELS = ("c2pa.claim.v2", "c2pa.claim")
 _SIGNATURE_LABEL = "c2pa.signature"
@@ -64,86 +70,149 @@ _COSE_ALGORITHMS = {
 def summarize_c2pa(raw: bytes) -> dict[str, Any]:
     """Return Properties-panel-ready fields. Always includes a "C2PA" status
     field, explicit even when nothing was found or the format isn't checked
-    yet -- never silently omitted (a missing row is indistinguishable from
-    "not looked for")."""
-    store = _extract_manifest_store(raw)
-    if store is None:
-        return {"C2PA": _not_found_status(raw)}
+    -- never silently omitted (a missing row is indistinguishable from
+    "not looked for").
+
+    One Manifest Store: its rows are "C2PA ...". More than one: the "C2PA"
+    row names them by offset and each store's rows are numbered in file
+    order ("C2PA #1 Actions", "C2PA #2 Actions"). C2PA data that was found
+    but not evaluated, and a structure that ends early, are listed under
+    "C2PA scan notes"; with no store found, a single such note is the
+    "C2PA" status itself, so "Not present" only ever means the whole
+    structure was read and holds no C2PA data."""
+    extract = _extractor(raw)
+    if extract is None:
+        return {"C2PA": _not_defined_or_not_checked(raw)}
+    scan = extract(raw)
+    notes = _scan_notes(scan)
 
     out: dict[str, Any] = {}
-    try:
-        _summarize_store(store, out)
-    except Exception as exc:
-        out.setdefault("C2PA", ParseIssue("c2pa.parse_failed", detail=str(exc)))
+    if not scan.stores:
+        if len(notes) == 1 and scan.stopped_at is not None:
+            code = "c2pa.not_found_truncated" if scan.truncated else "c2pa.not_found_invalid"
+            out["C2PA"] = ParseIssue(code, {"offset": scan.stopped_at})
+        elif len(notes) == 1:
+            out["C2PA"] = notes[0]
+        elif notes:
+            out["C2PA"] = ParseIssue("c2pa.not_found_see_notes", {"count": len(notes)})
+            out["C2PA scan notes"] = notes
+        else:
+            out["C2PA"] = ParseIssue("c2pa.not_present")
+        return out
+
+    if len(scan.stores) == 1:
+        _summarize_into(scan.stores[0].data, out, "C2PA")
+    else:
+        out["C2PA"] = _stores_status(scan.stores)
+        for number, hit in enumerate(scan.stores, 1):
+            _summarize_into(hit.data, out, f"C2PA #{number}")
+    if notes:
+        out["C2PA scan notes"] = notes
     return out
 
 
-# ISOBMFF brands the C2PA spec's BMFF 'uuid'-box embedding (Annex A.5) covers
-# and that Crush's ImageViewer actually opens -- same set image_parser.py and
-# exif_reader.py sniff for HEIC/HEIF/AVIF.
-_BMFF_IMAGE_BRANDS = frozenset({
-    b"heic", b"heix", b"hevc", b"hevx",
-    b"heim", b"heis", b"hevm", b"hevs",
-    b"mif1", b"msf1",
-    b"avif", b"avis",
-})
+def _summarize_into(store: bytes, out: dict[str, Any], prefix: str) -> None:
+    """One store's rows, their "C2PA" prefix replaced by *prefix*."""
+    rows: dict[str, Any] = {}
+    try:
+        _summarize_store(store, rows)
+    except Exception as exc:
+        rows.setdefault("C2PA", ParseIssue("c2pa.parse_failed", detail=str(exc)))
+    for key, value in rows.items():
+        out[prefix + key[len("C2PA"):]] = value
+
+
+def _stores_status(stores: list[jumbf.StoreHit]) -> ParseIssue:
+    purposes = [hit.purpose for hit in stores]
+    if sorted(purposes) == ["original", "update"]:
+        # C2PA spec A.5.3: an update manifest chain keeps the previous store
+        # as "original" and adds the update store as the file's last box.
+        original = purposes.index("original")
+        update = purposes.index("update")
+        return ParseIssue("c2pa.stores_original_update", {
+            "original": original + 1, "original_offset": stores[original].offset,
+            "update": update + 1, "update_offset": stores[update].offset,
+        })
+    return ParseIssue("c2pa.stores_multiple", {
+        "count": len(stores),
+        "offsets": ", ".join(f"{hit.offset:,}" for hit in stores),
+    })
+
+
+def _scan_notes(scan: jumbf.ScanResult) -> list[ParseIssue]:
+    notes = list(scan.notes)
+    if len(scan.merkle_offsets) == 1:
+        notes.append(ParseIssue("c2pa.bmff_merkle", {"offset": scan.merkle_offsets[0]}))
+    elif scan.merkle_offsets:
+        notes.append(ParseIssue("c2pa.bmff_merkle_boxes", {
+            "count": len(scan.merkle_offsets),
+            "first": scan.merkle_offsets[0], "last": scan.merkle_offsets[-1],
+        }))
+    purposes = {hit.purpose for hit in scan.stores}
+    for hit in scan.stores:
+        missing = {"original": "update", "update": "original"}.get(hit.purpose)
+        if missing is not None and missing not in purposes:
+            notes.append(ParseIssue("c2pa.bmff_unpaired", {
+                "purpose": hit.purpose, "missing": missing, "offset": hit.offset,
+            }))
+    if scan.stopped_at is not None:
+        code = "c2pa.scan_truncated" if scan.truncated else "c2pa.scan_invalid"
+        notes.append(ParseIssue(code, {"offset": scan.stopped_at}))
+    return notes
+
 
 _JXL_BOX_CONTAINER_SIG = bytes.fromhex("0000000c4a584c200d0a870a")  # ISO/IEC 18181-2
+_TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")  # TIFF, BigTIFF
 
 
-def _is_bmff_image(raw: bytes) -> bool:
-    return len(raw) >= 12 and raw[4:8] == b"ftyp" and raw[8:12] in _BMFF_IMAGE_BRANDS
+def _extractor(raw: bytes) -> Callable[[bytes], jumbf.ScanResult] | None:
+    """The container's C2PA extractor, chosen by the file's first bytes."""
+    if raw[:2] == b"\xFF\xD8":
+        return jumbf.extract_from_jpeg
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return jumbf.extract_from_png
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return jumbf.extract_from_gif
+    if raw[:4] == b"RIFF":
+        return jumbf.extract_from_riff
+    if raw[:4] in _TIFF_SIGNATURES:
+        return jumbf.extract_from_tiff
+    if raw[4:8] == b"ftyp":  # ISO/IEC 14496-12, any brand
+        return jumbf.extract_from_bmff
+    if raw[:12] == _JXL_BOX_CONTAINER_SIG:
+        return jumbf.extract_from_jpeg_xl
+    if raw[:3] == b"ID3":
+        return jumbf.extract_from_id3
+    if raw[:4] == b"OggS":
+        return jumbf.extract_from_ogg
+    return None
 
 
-def _is_webp(raw: bytes) -> bool:
-    return len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
-
-
-def _not_found_status(raw: bytes) -> ParseIssue:
-    if (
-        raw[:2] == b"\xFF\xD8"
-        or raw[:8] == b"\x89PNG\r\n\x1a\n"
-        or raw[:6] in (b"GIF87a", b"GIF89a")
-        or raw[:2] in (b"II", b"MM")
-        or _is_bmff_image(raw)
-        or _is_webp(raw)
-        or raw[:12] == _JXL_BOX_CONTAINER_SIG
-    ):
-        return ParseIssue("c2pa.not_present")
+def _not_defined_or_not_checked(raw: bytes) -> ParseIssue:
     if (
         raw[:2] == b"BM"
         or raw[:len(AAPL_MAGIC)] == AAPL_MAGIC
         or raw[:len(KTX11_MAGIC)] == KTX11_MAGIC
         or raw[:2] == b"\xFF\x0A"  # bare JPEG XL codestream -- structurally cannot carry a manifest
+        or raw[:4] == b"fLaC"
+        or raw[:4] == b"\x1a\x45\xdf\xa3"
+        or raw[:16] == ASF_HEADER_GUID
+        or raw[:5] == b"#!AMR"
     ):
-        # BMP: no embedding defined anywhere in the C2PA spec.
+        # BMP, Matroska/WebM (EBML), ASF (WMA/WMV), AMR: no embedding
+        # defined anywhere in the C2PA spec.
         # ATX/KTX: Apple/Khronos texture-archive formats, outside the C2PA
         # spec's scope entirely -- not an image format it addresses at all.
         # Bare JPEG XL codestream: the spec explicitly says only the box-form
         # container can carry a manifest, so this isn't "checked and found
         # none" -- no bare-codestream JXL file could ever have one.
+        # FLAC starting with its own "fLaC" marker: the spec embeds into
+        # FLAC only through a prepended ID3v2 tag (A.3.4); native FLAC is
+        # listed as "being considered" (A.1).
         # Not a gap in this reader: the spec (Annex A) defines no
         # embedding mechanism for these formats at all.
         return ParseIssue("c2pa.not_defined")
     return ParseIssue("c2pa.not_checked")
-
-
-def _extract_manifest_store(raw: bytes) -> bytes | None:
-    if raw[:2] == b"\xFF\xD8":
-        return jumbf.extract_from_jpeg(raw)
-    if raw[:8] == b"\x89PNG\r\n\x1a\n":
-        return jumbf.extract_from_png(raw)
-    if raw[:6] in (b"GIF87a", b"GIF89a"):
-        return jumbf.extract_from_gif(raw)
-    if _is_webp(raw):
-        return jumbf.extract_from_riff(raw)
-    if raw[:2] in (b"II", b"MM"):
-        return jumbf.extract_from_tiff(raw)
-    if _is_bmff_image(raw):
-        return jumbf.extract_from_bmff(raw)
-    if raw[:12] == _JXL_BOX_CONTAINER_SIG:
-        return jumbf.extract_from_jpeg_xl(raw)
-    return None
 
 
 def _summarize_store(store: bytes, out: dict[str, Any]) -> None:

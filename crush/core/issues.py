@@ -697,8 +697,134 @@ MESSAGES: dict[str, str] = {
     ),
     "c2pa.not_checked": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Not checked (detection only implemented for common image containers so far)",
+        "Not checked: the container is not identified by its content",
         "c2pa.not_checked",
+    ),
+    "c2pa.not_found_truncated": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No Manifest Store found before offset {offset:,}; the structure is truncated there",
+        "c2pa.not_found_truncated",
+    ),
+    "c2pa.not_found_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No Manifest Store found before offset {offset:,}; the structure is not valid there",
+        "c2pa.not_found_invalid",
+    ),
+    "c2pa.not_found_see_notes": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No Manifest Store evaluated; {count} findings under C2PA scan notes",
+        "c2pa.not_found_see_notes",
+    ),
+    "c2pa.scan_truncated": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Structure truncated at offset {offset:,}; not scanned past it",
+        "c2pa.scan_truncated",
+    ),
+    "c2pa.scan_invalid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Structure not valid at offset {offset:,}; not scanned past it",
+        "c2pa.scan_invalid",
+    ),
+    "c2pa.item_not_jumbf": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{item} at offset {offset:,} does not start with a JUMBF superbox; not evaluated",
+        "c2pa.item_not_jumbf",
+    ),
+    "c2pa.store_exceeds_item": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{item} at offset {offset:,}: the JUMBF superbox in it is longer than the data it holds; "
+        "not evaluated",
+        "c2pa.store_exceeds_item",
+    ),
+    "c2pa.item_truncated": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{item} at offset {offset:,}: its data runs past the end of the file; not evaluated",
+        "c2pa.item_truncated",
+    ),
+    "c2pa.item_compressed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{item} at offset {offset:,} is compressed; not checked for a C2PA Manifest Store",
+        "c2pa.item_compressed",
+    ),
+    "c2pa.item_encrypted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{item} at offset {offset:,} is encrypted; not checked for a C2PA Manifest Store",
+        "c2pa.item_encrypted",
+    ),
+    "c2pa.jpeg_sequence_gap": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "JUMBF APP11 segments from offset {offset:,} have missing or repeated sequence numbers; "
+        "not reassembled, not checked for a C2PA Manifest Store",
+        "c2pa.jpeg_sequence_gap",
+    ),
+    "c2pa.gif_block_version": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "GIF C2PA Application Extension at offset {offset:,} has block version {version}; "
+        "the spec defines 1.0; not evaluated",
+        "c2pa.gif_block_version",
+    ),
+    "c2pa.tiff_tag_type": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "TIFF tag 0xCD41 at offset {offset:,} has field type {type}; the spec defines type 7 "
+        "(UNDEFINED); not evaluated",
+        "c2pa.tiff_tag_type",
+    ),
+    "c2pa.bmff_no_purpose": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "BMFF C2PA 'uuid' box at offset {offset:,} has no terminated box_purpose; not evaluated",
+        "c2pa.bmff_no_purpose",
+    ),
+    "c2pa.bmff_unknown_purpose": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "BMFF C2PA 'uuid' box at offset {offset:,} has box_purpose '{purpose}', which the spec "
+        "does not define; not evaluated",
+        "c2pa.bmff_unknown_purpose",
+    ),
+    "c2pa.bmff_merkle": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "BMFF C2PA 'uuid' box with box_purpose 'merkle' at offset {offset:,}: Merkle tree hash "
+        "data, not a Manifest Store",
+        "c2pa.bmff_merkle",
+    ),
+    "c2pa.bmff_merkle_boxes": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} BMFF C2PA 'uuid' boxes with box_purpose 'merkle' at offsets {first:,} to "
+        "{last:,}: Merkle tree hash data, not Manifest Stores",
+        "c2pa.bmff_merkle_boxes",
+    ),
+    "c2pa.bmff_unpaired": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Manifest Store with box_purpose '{purpose}' at offset {offset:,}; the spec pairs it with "
+        "a box with box_purpose '{missing}', none found",
+        "c2pa.bmff_unpaired",
+    ),
+    "c2pa.id3_version_unsupported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ID3v2.{version} tag; ID3v2.2 to 2.4 are read; not checked",
+        "c2pa.id3_version_unsupported",
+    ),
+    "c2pa.id3_tag_compressed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ID3v2.2 tag with the compression flag set (ID3v2.2 defines no compression scheme); "
+        "not checked",
+        "c2pa.id3_tag_compressed",
+    ),
+    "c2pa.id3_geob_malformed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{item} at offset {offset:,}: text encoding or field terminators not valid; not checked "
+        "for a C2PA Manifest Store",
+        "c2pa.id3_geob_malformed",
+    ),
+    "c2pa.stores_multiple": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} C2PA Manifest Stores found (offsets {offsets}); the spec allows one",
+        "c2pa.stores_multiple",
+    ),
+    "c2pa.stores_original_update": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Original Manifest Store (#{original}, offset {original_offset:,}) and update Manifest "
+        "Store (#{update}, offset {update_offset:,})",
+        "c2pa.stores_original_update",
     ),
     "c2pa.unparseable": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -1072,6 +1198,11 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "Could not be read: {detail}",
         "media.metadata_failed",
+    ),
+    "media.c2pa_detection_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Detection failed: {detail}",
+        "media.c2pa_detection_failed",
     ),
     # -- plist ------------------------------------------------------------
     "plist.parse_failed": QT_TRANSLATE_NOOP("ParseIssue", "{detail}", "plist.parse_failed"),

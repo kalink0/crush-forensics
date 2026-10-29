@@ -39,7 +39,7 @@ _VORBIS_HEAD: Final = b"\x01vorbis"  # Vorbis I spec §5.2.1
 _AMR_MAGIC: Final = b"#!AMR"
 # ASF header object GUID 75B22630-668E-11CF-A6D9-00AA0062CE6C (WMA, WMV),
 # as stored (little-endian fields).
-_ASF_HEADER_GUID: Final = bytes.fromhex("3026B2758E66CF11A6D900AA0062CE6C")
+ASF_HEADER_GUID: Final = bytes.fromhex("3026B2758E66CF11A6D900AA0062CE6C")
 _ISOBMFF_IMAGE_BRANDS: Final = _ISOBMFF_HEIC_BRANDS | _ISOBMFF_HEIF_BRANDS | _ISOBMFF_AVIF_BRANDS
 
 
@@ -61,7 +61,7 @@ def looks_like_media(peek: bytes) -> bool:
         return True
     if peek[:4] in (b"fLaC", b"\x1a\x45\xdf\xa3"):  # FLAC stream marker, EBML (RFC 8794)
         return True
-    if peek[:16] == _ASF_HEADER_GUID:
+    if peek[:16] == ASF_HEADER_GUID:
         return True
     # ID3v2 tag (id3v2.4.0-structure 3.1): "ID3", two version bytes below
     # 0xFF, flags, and a size of four bytes below 0x80 each.

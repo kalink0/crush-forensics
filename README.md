@@ -47,7 +47,7 @@ Not a full disk-forensics suite: no carving, no journal analysis, no snapshots, 
 | Browser & app caches | Chromium Disk Cache (Simple, Blockfile) — HTTP, WebView, Cronet, CacheStorage, Code Cache |
 | Structured data | JSON, XML, Plist/BPlist, ABX, SEGB, Protobuf and FlatBuffers (schema-less or with schema) |
 | Raw & text | Hex, Text |
-| Media & documents | Image (incl. C2PA / AI-provenance metadata, no signature validation), Audio/Video, PDF (incl. revision history) |
+| Media & documents | Image and Audio/Video (incl. C2PA / AI-provenance metadata, no signature validation), PDF (incl. revision history) |
 | Logs | Multi-Log Studio; **Send to Peach** hands sources to the bundled [peach-forensics](https://github.com/kalink0/peach-forensics) log viewer |
 
 ¹ Key must be supplied by the user; Crush does not recover keys.

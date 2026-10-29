@@ -78,6 +78,9 @@ class MediaParser(AbstractParser):
         ".mp4", ".m4v", ".mov", ".mkv", ".avi", ".webm", ".3gp", ".3g2",
     ]
     DISPLAY_NAME = "Media (Audio/Video)"
+    # Bytes in, bytes and plain metadata out; reading a large video and
+    # searching it for C2PA/XMP runs behind the wait dialog.
+    PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         ext = Path(path).suffix.lower()
@@ -97,4 +100,13 @@ class MediaParser(AbstractParser):
             meta.update(_extract_audio_metadata(raw))
         else:
             meta["Metadata"] = ParseIssue("media.metadata_not_checked")
+
+        from crush.parsers.c2pa_reader import summarize_c2pa
+        from crush.parsers.xmp_provenance import extract_xmp_provenance
+
+        try:
+            meta.update(summarize_c2pa(raw))
+        except Exception as exc:
+            meta["C2PA"] = ParseIssue("media.c2pa_detection_failed", detail=str(exc))
+        meta.update(extract_xmp_provenance(raw))
         return ParseResult(viewer_type="media", data=raw, metadata=meta)

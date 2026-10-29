@@ -237,7 +237,7 @@ def test_only_plain_data_parsers_run_off_the_ui_thread() -> None:
     # later; a VFS is already read from several threads (the type prescan).
     assert off_thread == {
         "HexFallbackParser", "JsonParser", "XmlParser", "PlistParser", "ChromiumCacheParser",
-        "FlatBuffersParser",
+        "FlatBuffersParser", "MediaParser",
     }
 
 
