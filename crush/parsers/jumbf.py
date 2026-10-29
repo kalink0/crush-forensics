@@ -272,7 +272,8 @@ def extract_from_riff(raw: bytes) -> ScanResult:
     if len(raw) < 12 or raw[:4] != b"RIFF":
         result.stop(0, len(raw) < 12)
         return result
-    riff_end = 8 + int.from_bytes(raw[4:8], "little")
+    riff_size = int.from_bytes(raw[4:8], "little")
+    riff_end = 8 + riff_size
     if riff_end < 12:
         result.stop(0, False)
         return result
@@ -295,6 +296,14 @@ def extract_from_riff(raw: bytes) -> ScanResult:
         if chunk_id == b"C2PA":
             result.accept(raw[pos + 8:pos + 8 + size], pos, "RIFF 'C2PA' chunk")
         pos += 8 + size + (size & 1)  # chunks are padded to an even length
+    # Bytes after the first RIFF chunk (OpenDML 'AVIX' chunks of an AVI over
+    # 1 GB, appended data) are outside where the spec places the C2PA chunk;
+    # they are not scanned, and that is said.
+    data_end = riff_end + (riff_size & 1)
+    if result.stopped_at is None and len(raw) > data_end:
+        result.notes.append(ParseIssue(
+            "c2pa.riff_trailing_data", {"count": len(raw) - data_end, "offset": data_end},
+        ))
     return result
 
 
@@ -379,7 +388,7 @@ def extract_from_gif(raw: bytes) -> ScanResult:
 
 
 _TIFF_C2PA_TAG = 0xCD41  # decimal 52545, C2PA spec Annex A.3.6
-_TIFF_BYTE, _TIFF_UNDEFINED = 1, 7  # one-byte field types
+_TIFF_UNDEFINED = 7  # the field type A.3.6 prescribes; any other is reported, not read
 
 
 def extract_from_tiff(raw: bytes) -> ScanResult:
@@ -434,7 +443,7 @@ def _tiff_c2pa_entry(
     result: ScanResult,
 ) -> None:
     item = "TIFF tag 0xCD41"
-    if dtype not in (_TIFF_UNDEFINED, _TIFF_BYTE):
+    if dtype != _TIFF_UNDEFINED:
         result.notes.append(ParseIssue("c2pa.tiff_tag_type", {"type": dtype, "offset": pos}))
         return
     off_size = struct.calcsize(off_fmt)

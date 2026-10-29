@@ -8870,6 +8870,16 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Von der C2PA-Spezifikation für dieses Format nicht definiert</translation>
     </message>
     <message>
+        <source>Not checked: no C2PA embedding is read for this container</source>
+        <comment>c2pa.not_checked</comment>
+        <translation>Nicht geprüft: für diesen Container wird keine C2PA-Einbettung gelesen</translation>
+    </message>
+    <message>
+        <source>{count:,} bytes after the first RIFF chunk (from offset {offset:,}) not scanned; the spec places the C2PA chunk in the first RIFF chunk</source>
+        <comment>c2pa.riff_trailing_data</comment>
+        <translation>{count:,} Bytes nach dem ersten RIFF-Chunk (ab Offset {offset:,}) nicht durchsucht; die Spezifikation legt den C2PA-Chunk in den ersten RIFF-Chunk</translation>
+    </message>
+    <message>
         <source>Manifest found, but could not be parsed</source>
         <comment>c2pa.unparseable</comment>
         <translation>Manifest gefunden, konnte aber nicht geparst werden</translation>
@@ -10588,11 +10598,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Before frame 1: the WAL header is not valid, so SQLite reads no frame</source>
         <comment>sqlite_wal.log_end_header</comment>
         <translation>Vor Frame 1: Der WAL-Header ist nicht gültig, daher liest SQLite keinen Frame</translation>
-    </message>
-    <message>
-        <source>Not checked: the container is not identified by its content</source>
-        <comment>c2pa.not_checked</comment>
-        <translation>Nicht geprüft: der Container wird nicht an seinem Inhalt erkannt</translation>
     </message>
     <message>
         <source>No Manifest Store found before offset {offset:,}; the structure is truncated there</source>

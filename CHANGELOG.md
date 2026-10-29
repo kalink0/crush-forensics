@@ -15,7 +15,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Changed
 
-- The `C2PA` row says "Not present" only for a structure read to its end; otherwise it names the offset where the scan stopped, C2PA data found but not evaluated is listed under `C2PA scan notes`, and a file with several Manifest Stores shows each one, numbered.
+- The `C2PA` row names where a scan stopped and lists unevaluated C2PA data under `C2PA scan notes`; several Manifest Stores are shown numbered.
 
 ### Bug Fixes
 

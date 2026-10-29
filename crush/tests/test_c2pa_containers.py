@@ -286,6 +286,19 @@ def test_riff_declaring_more_than_the_file_holds_is_truncated() -> None:
     assert summarize_c2pa(cut) == {"C2PA": ParseIssue("c2pa.not_found_truncated", {"offset": len(cut)})}
 
 
+def test_data_after_the_first_riff_chunk_is_named_as_not_scanned() -> None:
+    avi = _riff(b"AVI ", _chunk(b"LIST", b"hdrl"))
+    avix = b"RIFF" + struct.pack("<I", 12) + b"AVIX" + _chunk(b"LIST", b"movi")
+    assert summarize_c2pa(avi + avix) == {"C2PA": ParseIssue(
+        "c2pa.riff_trailing_data", {"count": len(avix), "offset": len(avi)},
+    )}
+
+
+def test_pad_byte_of_an_odd_sized_riff_chunk_is_not_trailing_data() -> None:
+    wav = b"RIFF" + struct.pack("<I", 4 + 9) + b"WAVE" + b"abcd" + struct.pack("<I", 1) + b"x" + b"\x00"
+    assert summarize_c2pa(wav) == {"C2PA": ParseIssue("c2pa.not_present")}
+
+
 def test_two_riff_c2pa_chunks_are_numbered() -> None:
     first = _chunk(b"C2PA", _store("one/1"))
     wav = _riff(b"WAVE", first, _chunk(b"C2PA", _store("two/2")))
@@ -617,9 +630,10 @@ def test_tiff_ifd_offset_past_the_end_is_truncated() -> None:
     assert summarize_c2pa(tiff) == {"C2PA": ParseIssue("c2pa.not_found_truncated", {"offset": 5000})}
 
 
-def test_tiff_c2pa_tag_with_other_field_type_is_reported() -> None:
-    tiff = _tiff([[(0xCD41, 4, _store())]])
-    assert summarize_c2pa(tiff) == {"C2PA": ParseIssue("c2pa.tiff_tag_type", {"type": 4, "offset": 10})}
+@pytest.mark.parametrize("dtype", [1, 4])  # BYTE, LONG
+def test_tiff_c2pa_tag_with_other_field_type_is_reported(dtype: int) -> None:
+    tiff = _tiff([[(0xCD41, dtype, _store())]])
+    assert summarize_c2pa(tiff) == {"C2PA": ParseIssue("c2pa.tiff_tag_type", {"type": dtype, "offset": 10})}
 
 
 def test_tiff_more_than_512_entries_are_all_read() -> None:

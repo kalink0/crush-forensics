@@ -697,7 +697,7 @@ MESSAGES: dict[str, str] = {
     ),
     "c2pa.not_checked": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "Not checked: the container is not identified by its content",
+        "Not checked: no C2PA embedding is read for this container",
         "c2pa.not_checked",
     ),
     "c2pa.not_found_truncated": QT_TRANSLATE_NOOP(
@@ -724,6 +724,12 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "Structure not valid at offset {offset:,}; not scanned past it",
         "c2pa.scan_invalid",
+    ),
+    "c2pa.riff_trailing_data": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} bytes after the first RIFF chunk (from offset {offset:,}) not scanned; the spec "
+        "places the C2PA chunk in the first RIFF chunk",
+        "c2pa.riff_trailing_data",
     ),
     "c2pa.item_not_jumbf": QT_TRANSLATE_NOOP(
         "ParseIssue",
