@@ -3,14 +3,21 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from crush.core import sqlite_journal, tempdir
 from crush.core.issues import ParseIssue
-from crush.core.vfs import VFS, VFSNode, find_sibling
+from crush.core.vfs import VFS, DirectoryVFS, VFSNode, find_node, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.coredata_store import (
+    SupportFile,
+    SupportFolder,
+    load_store,
+    support_folder_name,
+)
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 _ROW_LIMIT = 10_000
@@ -172,6 +179,81 @@ def _connect_sqlcipher(
     issue = ParseIssue("sqlite.password_rejected", detail=str(last_exc))
     _logger.info("%s (SQLCipher: %s)", issue, issue.detail)
     raise WrongPasswordError(issue)
+
+
+def _coredata_connector(
+    open_path: str,
+    tmp_path: str,
+    password: str | None,
+    raw_key: bool,
+    cipher_params: SQLCipherParams | None,
+) -> Callable[[], Any]:
+    """Opens a new read-only connection to the database state the table
+    grid shows: the rollback-recovered image when there is one, the working
+    copy (with its -wal) otherwise, SQLCipher with the key it was opened with."""
+
+    def connect() -> Any:
+        if password is not None:
+            return _connect_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+        conn = sqlite3.connect(f"file:{open_path}?mode=ro", uri=True, check_same_thread=False)
+        conn.text_factory = _lenient_text_factory
+        return conn
+
+    return connect
+
+
+def _support_files(root: VFSNode, base: str) -> tuple[list[SupportFile], dict[str, VFSNode]]:
+    """Every file below *root* (recursively, no limit), path relative to it."""
+    files: list[SupportFile] = []
+    nodes: dict[str, VFSNode] = {}
+    pending = [(root, "")]
+    while pending:
+        current, prefix = pending.pop()
+        for child in sorted(current.children, key=lambda n: n.name):
+            rel = f"{prefix}{child.name}"
+            if child.is_dir:
+                pending.append((child, rel + "/"))
+                continue
+            files.append(SupportFile(rel, child.size, child.status or None))
+            nodes[rel] = child
+    files.sort(key=lambda f: f.rel_path)
+    return files, nodes
+
+
+def _support_folder(node: VFSNode, vfs: VFS) -> SupportFolder:
+    """The store's .<name>_SUPPORT folder next to it: in the VFS first, then
+    on the filesystem (the same two places the -wal lookup tries)."""
+    folder_name = support_folder_name(node.name)
+    node_path = node.path.replace("\\", "/")
+    parent_path = node_path.rsplit("/", 1)[0] if "/" in node_path else ""
+    target = f"{parent_path.rstrip('/')}/{folder_name}"
+    folder = find_node(vfs, target)
+    if folder is not None and folder.is_dir:
+        files, nodes = _support_files(folder, target)
+        return SupportFolder(
+            "found", target, files,
+            reader=lambda rel: vfs.read(nodes[rel]),
+            head_reader=lambda rel: vfs.peek(nodes[rel], 512),
+        )
+    on_disk = Path(node.path)
+    fs_folder = on_disk.parent / folder_name
+    if on_disk.is_file() and fs_folder.is_dir():
+        disk = DirectoryVFS(fs_folder)
+        files, nodes = _support_files(disk.root(), str(fs_folder))
+        return SupportFolder(
+            "found", str(fs_folder), files,
+            reader=lambda rel: disk.read(nodes[rel]),
+            head_reader=lambda rel: disk.peek(nodes[rel], 512),
+        )
+    parent = find_node(vfs, parent_path) if parent_path else None
+    if parent is not None and parent.is_dir:
+        return SupportFolder("not_found", target)
+    if on_disk.is_file():
+        return SupportFolder(
+            "unavailable", str(fs_folder),
+            note=ParseIssue("coredata.support_not_on_disk", {"path": str(fs_folder)}),
+        )
+    return SupportFolder("unavailable", target, note=ParseIssue("coredata.support_no_parent"))
 
 
 def _journal_mode_fact(pragma_value: str | None) -> str | ParseIssue:
@@ -465,6 +547,29 @@ class SQLiteParser(AbstractParser):
                         "truncated": False,
                     }
 
+            # Core Data: detected by its tables, whatever the file is called.
+            # Its views read through their own connections to the same
+            # database state the grid shows (see _coredata_connector). A
+            # failure here never stops the SQLite view itself.
+            coredata_status: Any = None
+            try:
+                store, coredata_status = load_store(
+                    conn,
+                    _coredata_connector(
+                        recovered_db_path or tmp_path, tmp_path, password, raw_key, cipher_params,
+                    ),
+                    support=lambda: _support_folder(node, vfs),
+                )
+            except Exception as exc:  # noqa: BLE001 -- never fail the SQLite view
+                _logger.warning("Core Data read failed for %s: %s", node.path, exc)
+                store, coredata_status = None, ParseIssue("coredata.failed", detail=str(exc))
+            if store is not None:
+                data["__coredata"] = store
+                coredata_status = ParseIssue("coredata.detected", {
+                    "entities": len(store.entities),
+                    "model": store.model_status or ParseIssue("coredata.model_cache_missing"),
+                })
+
             pragma_issue: ParseIssue | None = None
             try:
                 pragma_rows = cursor.execute("PRAGMA page_size").fetchone()
@@ -484,6 +589,8 @@ class SQLiteParser(AbstractParser):
             }
             if pragma_issue is not None:
                 meta["Header values"] = pragma_issue
+            if coredata_status is not None:
+                meta["Core Data"] = coredata_status
             if companions:
                 meta["Companion files"] = ", ".join(companions)
             if companion_failures:

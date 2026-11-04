@@ -604,6 +604,65 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
 </context>
 <context>
+    <name>CoreDataView</name>
+    <message>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Return to the record shown before following a relationship</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entities (rows)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select a record to show its properties and relationships.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Record {entity} · table {table} · Z_PK {pk}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Double-click to inspect the bytes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>objects</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>join {table}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>order {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select a row to show every key its objects store.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{class_name} {name} (#{index})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{class_name} (#{index})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Filter rows…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>candidates: {names}</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>DefineFormatDialog</name>
     <message>
         <source>Define Log Format — Multi-Log Studio</source>
@@ -4581,8 +4640,152 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>nein</translation>
     </message>
     <message>
+        <source>name match</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ambiguous</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no column found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>resolved</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>unresolved</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>to-one column</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>inverse column</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>join table</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>destination column</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>attribute</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>derived attribute</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>composite attribute</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>relationship</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>fetched property</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>expression</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>column</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>insert</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>delete</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>reference</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>unrecognised</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>entity</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>exists</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no such row</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>true</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>false</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>entity [derived]</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entity</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_ENT</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Property</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Type</source>
         <translation>Typ</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Column</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Properties</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Relationships</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Class</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Level</source>
@@ -5317,6 +5520,30 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Zeichenketten (generiert)</translation>
     </message>
     <message>
+        <source>Core Data Entities (generated)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data Store (generated)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data Model (generated)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data History (generated)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data Keys (generated)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data External Data (generated)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Structure</source>
         <translation>Struktur</translation>
     </message>
@@ -5523,6 +5750,30 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>Error</source>
         <translation>Fehler</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Format</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detected by</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Persistent history</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>External data folder</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Setting (generated)</source>
@@ -7672,6 +7923,26 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Gelesene Kopie</translation>
     </message>
     <message>
+        <source>Core Data</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data entity</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data model</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data model issues</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data store</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Decode pipeline</source>
         <translation>Dekodier-Pipeline</translation>
     </message>
@@ -7740,6 +8011,14 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Dateiendung</translation>
     </message>
     <message>
+        <source>External file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>External value reference</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Extraction files (Cellebrite count)</source>
         <translation>Extraktionsdateien (Anzahl laut Cellebrite)</translation>
     </message>
@@ -7798,6 +8077,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Header mnemonic</source>
         <translation>Header-Mnemonic</translation>
+    </message>
+    <message>
+        <source>Grid column</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Header values</source>
@@ -7914,6 +8197,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Objects</source>
         <translation>Objekte</translation>
+    </message>
+    <message>
+        <source>Opened bytes</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Original folder</source>
@@ -8613,6 +8900,416 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>At the last full frame: every frame&apos;s salts and checksum match</source>
         <comment>sqlite_wal.log_end_file</comment>
         <translation>Beim letzten vollständigen Frame: Salts und Prüfsumme aller Frames stimmen</translation>
+    </message>
+    <message>
+        <source>Core Data store: {entities:,} entities in Z_PRIMARYKEY; model: {model}. See the Core Data views in the table list</source>
+        <comment>coredata.detected</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Only part of the Core Data store tables is present (present: {present}; missing: {missing}) -- no Core Data views offered, tables shown as stored</source>
+        <comment>coredata.detection_incomplete</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data views not available: reading the store failed ({detail}). The tables are shown as stored</source>
+        <comment>coredata.failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apple does not document this storage layout. Crush interprets it from observed stores; the statuses say where a link rests on a naming convention or an observed order</source>
+        <comment>coredata.undocumented</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Table {table} could not be read: {detail}</source>
+        <comment>coredata.table_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_METADATA could not be read: {detail}</source>
+        <comment>coredata.metadata_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_PRIMARYKEY could not be read: {detail}</source>
+        <comment>coredata.primarykey_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_PLIST is not a readable plist: {detail}. Its bytes are in the Z_METADATA table</source>
+        <comment>coredata.plist_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_PLIST is NULL</source>
+        <comment>coredata.plist_null</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_PLIST is stored as {type}, not as a BLOB; shown as stored</source>
+        <comment>coredata.plist_not_blob</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>read from Z_MODELCACHE ({entities:,} entities, {properties:,} properties)</source>
+        <comment>coredata.model_read</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no Z_MODELCACHE table -- no model: column names and declared types only</source>
+        <comment>coredata.model_cache_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE holds no model ({rows:,} rows, none with content) -- column names and declared types only</source>
+        <comment>coredata.model_cache_empty</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE could not be read: {detail}</source>
+        <comment>coredata.model_cache_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE.Z_CONTENT is stored as {type}, not as a BLOB -- no model</source>
+        <comment>coredata.model_cache_not_blob</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE has {rows:,} rows with content; the model is read from the first</source>
+        <comment>coredata.model_cache_rows</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE.Z_CONTENT ({size:,} B, starts {head}) does not decompress as raw deflate: {detail} -- no model</source>
+        <comment>coredata.model_not_decompressible</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The model is not a readable plist: {detail}</source>
+        <comment>coredata.model_plist_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The model plist is not an NSKeyedArchiver archive</source>
+        <comment>coredata.model_not_keyed_archive</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The archive&apos;s root object is {found}, not NSManagedObjectModel; entities read where found</source>
+        <comment>coredata.model_root_class</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} entity descriptions in the archive are not in the model&apos;s entity list; they are shown too</source>
+        <comment>coredata.model_entities_unlisted</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entity name {name} occurs more than once in the model; later ones get their archive index</source>
+        <comment>coredata.model_duplicate_entity</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity}.{property}: class {class_name} is not one Crush reads; shown with its class name and every stored key</source>
+        <comment>coredata.model_unknown_class</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity}.{property}: NSAttributeType {type} is not in Apple&apos;s enum; values shown as stored</source>
+        <comment>coredata.unknown_attribute_type</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Root entity {entity} has no table (looked for {tables})</source>
+        <comment>coredata.no_table</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Root entity {entity}: more than one candidate table ({tables}); none chosen</source>
+        <comment>coredata.table_ambiguous</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entity {entity} is in Z_PRIMARYKEY but not in the model: column names and declared types only, no property names or model types</source>
+        <comment>coredata.entity_not_in_model</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_ENT {ent} is no entity in Z_PRIMARYKEY</source>
+        <comment>coredata.ent_unknown</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Property-to-column links come from the naming convention Z + uppercase property name (heuristic). &quot;name match&quot;: one such column and no numbered sibling; &quot;ambiguous&quot;: all candidates listed, none chosen, nothing decoded; &quot;no column found&quot;. Values are decoded by model type only on a name match</source>
+        <comment>coredata.mapping_heuristic</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ambiguous: candidate columns {columns}; none chosen, nothing decoded</source>
+        <comment>coredata.mapping_ambiguous</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no column found (looked for {column})</source>
+        <comment>coredata.mapping_no_column</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>column no property of this entity names; shown as stored</source>
+        <comment>coredata.column_unassigned</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The row&apos;s concrete entity: Z_PRIMARYKEY.Z_NAME for its stored Z_ENT</source>
+        <comment>coredata.grid_entity_column</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{column} read as {kind}; the stored value is in the next column</source>
+        <comment>coredata.grid_decoded_column</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{column} as stored; linked to property {property} by name match (heuristic)</source>
+        <comment>coredata.grid_name_match</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{column} as stored; a candidate for {properties} (ambiguous, none chosen)</source>
+        <comment>coredata.grid_candidate</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Current rows only. Deleted data can be in the Core Data History view (tombstones) and in the WAL Frames, Freelist Recovery, Freeblocks and Unallocated Space views</source>
+        <comment>coredata.entities_current_state</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>stored as {type}, not a number of Cocoa seconds -- shown as stored</source>
+        <comment>coredata.value_not_date</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>stored value 0: the Cocoa reference date itself</source>
+        <comment>coredata.date_zero</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{value} is neither 0 nor 1 -- shown as stored</source>
+        <comment>coredata.value_not_boolean</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>BLOB of {length:,} B, not 16 -- shown as stored</source>
+        <comment>coredata.value_not_uuid</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Relationships are followed only where a rule established on observed stores applies: to-one column Z + name (Z&lt;n&gt;_ + name: the target&apos;s Z_ENT), the inverse to-one column, join table Z_&lt;entity number&gt;&lt;NAME&gt;, destination column Z&lt;entity number&gt;&lt;NAME&gt;; ordered by its Z_FOK_ column. Otherwise the stored values and candidates are shown, without a link</source>
+        <comment>coredata.rel_rules</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: no model</source>
+        <comment>coredata.rel_no_model</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: no table for {destination}</source>
+        <comment>coredata.rel_no_table</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: {found} of the join table names {tables} exist</source>
+        <comment>coredata.rel_join_table</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: the columns of join table {table} don&apos;t match the rule</source>
+        <comment>coredata.rel_join_columns</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: join table {table} has a REFLEXIVE column; which column holds which side was not established on observed stores</source>
+        <comment>coredata.rel_reflexive</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: no single column {column} in {table}</source>
+        <comment>coredata.rel_destination_column</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>reading the related rows failed: {detail}</source>
+        <comment>coredata.rel_query_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} target row(s) don&apos;t exist in the current database state</source>
+        <comment>coredata.rel_target_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>persistent history: {count:,} changes in {table}</source>
+        <comment>coredata.history_present</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no persistent history tables. History can be turned off or purged, so this doesn&apos;t mean nothing changed</source>
+        <comment>coredata.history_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>persistent history table {table} is empty. Transactions can be purged, so this doesn&apos;t mean nothing changed</source>
+        <comment>coredata.history_empty</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>persistent history could not be read: {detail}</source>
+        <comment>coredata.history_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{table} has no column {column}; that part is empty in every row</source>
+        <comment>coredata.history_column_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no transaction table: no times, authors or processes for the changes</source>
+        <comment>coredata.history_no_transactions</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity} Z_PK {pk} exists in the current database state -- shown in Core Data Entities</source>
+        <comment>coredata.history_object_exists</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity} Z_PK {pk}: no such row in the current database state</source>
+        <comment>coredata.history_object_gone</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Tombstone slots (ZTOMBSTONE0, 1, ...) are assigned to the entity&apos;s attributes flagged for tombstones (NSFlagsKey 16, inherited ones included) in alphabetical order of their names -- an order interpreted from observed stores, not documented. A slot whose value doesn&apos;t fit the attribute&apos;s type, or that lies beyond the list, stays unassigned</source>
+        <comment>coredata.tombstones_interpreted</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>slot {slot} unassigned: the entity has {count} attributes flagged for tombstones</source>
+        <comment>coredata.tombstone_beyond</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>slot {slot} unassigned: {stored} doesn&apos;t fit {attribute} ({type})</source>
+        <comment>coredata.tombstone_type</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>unassigned: the entity is not in the model</source>
+        <comment>coredata.tombstone_no_model</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ZCOLUMNS is shown as stored (hex) with its set bit numbers (byte × 8 + bit, least significant bit first -- an assumed order). Which property a bit stands for is not determined</source>
+        <comment>coredata.zcolumns_undetermined</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Facts from Z_PRIMARYKEY.Z_MAX and the Z_PK values present in each root entity&apos;s table. Missing keys and a Z_MAX above the highest key don&apos;t say why by themselves; what caused them is not determined by these numbers</source>
+        <comment>coredata.keys_description</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>A cell counts as a reference to an externally stored value only with the exact observed shape: 38 bytes, 0x02 + a 36-character UUID + 0x00, in any column (interpreted from observed stores). The model flag is shown next to it, not required. Every row of every table was scanned</source>
+        <comment>coredata.external_interpreted</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>reference to external file {name} -- see Core Data External Data</source>
+        <comment>coredata.external_reference</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>unrecognised shape in an external-storage column: {length:,} B starting {head}; not treated as a reference</source>
+        <comment>coredata.external_unrecognised</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>found ({size:,} B)</source>
+        <comment>coredata.external_file_found</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not found: no file {name} in {path}/_EXTERNAL_DATA</source>
+        <comment>coredata.external_file_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>file {name} not readable: {reason}</source>
+        <comment>coredata.external_file_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no reference in the current database state</source>
+        <comment>coredata.external_unreferenced</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>in the _SUPPORT folder, outside _EXTERNAL_DATA; content not interpreted</source>
+        <comment>coredata.support_other_file</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>_SUPPORT folder {path}: {count:,} files</source>
+        <comment>coredata.support_found</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no folder {path} next to the store in this source</source>
+        <comment>coredata.support_not_found</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>_SUPPORT folder not available in this source ({reason}) -- this says nothing about whether externally stored files exist</source>
+        <comment>coredata.support_unavailable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>the store was opened without the folder it sits in</source>
+        <comment>coredata.support_no_parent</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>the store file was opened on its own; {path} is not next to it on disk</source>
+        <comment>coredata.support_not_on_disk</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>the column&apos;s property is ambiguous: candidate for {properties}</source>
+        <comment>coredata.inline_ambiguous</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>the cell&apos;s bytes without their first byte (0x01) -- removed by Crush, the cell itself is unchanged</source>
+        <comment>coredata.inline_provenance</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Compiled Core Data model (NSKeyedArchiver, root class NSManagedObjectModel): {entities:,} entities -- see Core Data Model</source>
+        <comment>coredata.mom_model</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data model archive read in part: {issues}</source>
+        <comment>coredata.mom_incomplete</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Optimized Core Data model (starts with &quot;momv2$sr&quot;): not decoded -- shown as hex</source>
+        <comment>coredata.omo_not_decoded</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Yes (AES-256, key supplied)</source>
@@ -12890,6 +13587,66 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
         <translation>Ein Strukturelement auswählen, um seine Bytes hervorzuheben; ein Klick in die Hex-Ansicht wählt den am tiefsten verschachtelten passenden Header-, Page-, Zellen-, Freeblock- oder Unallocated-Eintrag aus. Pages laden ihre Zellen-/Spaltendetails beim ersten Aufklappen. Um bestimmte Inhalte zu finden, die Tabelle selbst abfragen (SQL) und „In Hex anzeigen“ verwenden oder in der Hex-Ansicht suchen.</translation>
     </message>
     <message>
+        <source>Preparing the search…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Counting Core Data rows…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading Core Data records…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity} · table {table} · Z_ENT {ent} {rows}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity} Z_PK {pk}: no such row in the current database state</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading Core Data history…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Double-click a change to show its object in Core Data Entities.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading Core Data keys…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Scanning every table for externally stored values…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Double-click a row with a file to open it in a new tab.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading external file…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open external file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open without the 0x01 prefix</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open without the 0x01 prefix ({note})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data entity: {name}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>({_PRAGMA_CATALOG_count} settings)</source>
         <translation>({_PRAGMA_CATALOG_count} Einstellungen)</translation>
     </message>
@@ -13238,6 +13995,10 @@ Gesamt: {total:.2f} s</translation>
 </context>
 <context>
     <name>TreeTextViewer</name>
+    <message>
+        <source>Core Data Model</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
         <source>Decoded</source>
         <translation>Entschlüsselt</translation>

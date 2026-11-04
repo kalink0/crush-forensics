@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-295 checks in total.
+303 checks in total.
 
 ### Sources
 
@@ -80,7 +80,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 | | Source Immutability | No Side Effects | Read-only Media | Known-output Verification | Completeness | Reproducibility |
 |---|---|---|---|---|---|---|
-| [SQLite database](#sqlite-database) | 1 | 2 | 1 | 1 | not tested | 1 |
+| [SQLite database](#sqlite-database) | 2 | 3 | 1 | 1 | not tested | 2 |
 | [SQLite WAL](#sqlite-wal) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
 | [Realm database](#realm-database) | 2 | 1 | 1 | 7 | 1 | 1 |
@@ -88,6 +88,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [Chromium Disk Cache](#chromium-disk-cache) | 2 | 1 | 1 | 6 | 8 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [Property list (plist)](#property-list-plist) | 2 | 1 | 1 | 1 | not tested | 1 |
+| [Core Data optimized model (.omo)](#core-data-optimized-model-omo) | 1 | 1 | 1 | 1 | not tested | 1 |
 | [Android Binary XML (ABX)](#android-binary-xml-abx) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [SEGB](#segb) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [XML](#xml) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -437,11 +438,14 @@ No forensic checks.
 
 #### SQLite database
 
+- **Source Immutability** — Reading a Core Data store and its _SUPPORT folder (every view's data, external files) leaves every file byte-identical with unchanged mtimes ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_coredata_reads_leave_evidence_unchanged`)
 - **Source Immutability** — SQLiteParser must not change mtime or ctime of source files ([test_forensic.py](../../crush/tests/test_forensic.py), `test_sqlite_parser_does_not_change_timestamps`)
+- **No Side Effects** — Core Data views create no file next to the store or in its _SUPPORT folder (no -wal, -shm or -journal) ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_coredata_reads_create_no_files`)
 - **No Side Effects** — SQLiteParser must preserve the WAL companion intact — parsing must not checkpoint or truncate it ([test_forensic.py](../../crush/tests/test_forensic.py), `test_sqlite_parser_preserves_wal_companion`)
 - **No Side Effects** — SQLiteParser must not create -wal, -journal, or any sibling file next to the evidence ([test_forensic.py](../../crush/tests/test_forensic.py), `test_sqlite_parse_creates_no_sibling_files`)
 - **Read-only Media** — SQLiteParser must succeed when the evidence directory is 0o555 and file is 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_sqlite_parser_works_on_readonly_media`)
 - **Known-output Verification** — minimal.sqlite must parse to exactly: table 'evidence', columns [id, note], row (1, 'test_entry') ([test_forensic.py](../../crush/tests/test_forensic.py), `test_sqlite_fixture_known_output`)
+- **Reproducibility** — Reading the same Core Data store twice gives the same records, history, keys and external-data rows ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_coredata_reads_reproducible`)
 - **Reproducibility** — Parsing the same SQLite file twice must produce structurally identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_sqlite_parse_is_reproducible`)
 - *Not tested:* Completeness
 
@@ -526,6 +530,15 @@ No forensic checks.
 - **Read-only Media** — PlistParser must succeed when evidence directory is 0o555 and file is 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_plist_parser_works_on_readonly_media`)
 - **Known-output Verification** — minimal_binary.plist must parse to exactly: {application, version=1, verified=True}, format=binary ([test_forensic.py](../../crush/tests/test_forensic.py), `test_plist_fixture_known_output`)
 - **Reproducibility** — Parsing the same binary plist twice must produce identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_plist_parse_is_reproducible`)
+- *Not tested:* Completeness
+
+#### Core Data optimized model (.omo)
+
+- **Source Immutability** — Parsing an .omo file leaves it byte-identical with an unchanged mtime ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_omo_parse_leaves_file_unchanged`)
+- **No Side Effects** — Parsing an .omo file creates no file next to it ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_omo_parse_creates_no_files`)
+- **Read-only Media** — An .omo file on read-only media (0o444, folder 0o555) is read and shown ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_omo_read_only`)
+- **Known-output Verification** — An .omo file is shown as its exact bytes in the hex view with a 'not decoded' status ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_omo_known_output`)
+- **Reproducibility** — Parsing the same .omo file twice gives identical results ([test_coredata_store.py](../../crush/tests/test_coredata_store.py), `test_omo_reproducible`)
 - *Not tested:* Completeness
 
 #### Android Binary XML (ABX)

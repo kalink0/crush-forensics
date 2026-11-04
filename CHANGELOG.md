@@ -12,6 +12,8 @@ All notable changes to Crush will be documented in this file.
 - Added to parsers, viewers and the BLOB Inspector -> Support for FlatBuffers, schema-less with every reading marked as a heuristic, or decoded with a `.fbs` or `.bfbs` schema.
 - Added to the Media Viewer -> Support for C2PA Content Credentials and the XMP Digital Source Type in MP4/MOV/M4A/3GP, WAV/AVI, MP3 and FLAC with an ID3v2 tag, and Ogg.
 - Added to the Image Viewer's C2PA detection -> Support for BigTIFF and a C2PA tag in any IFD of a TIFF's main chain.
+- Added to the SQLite viewer -> Support for Core Data stores (entities, relationships, model, persistent history, primary keys, external data).
+- Added to plists -> Support for compiled Core Data models (`.mom`); optimized models (`.omo`) are recognised and marked as not decoded.
 
 ### Changed
 

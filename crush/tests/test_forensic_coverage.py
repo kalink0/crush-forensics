@@ -100,6 +100,7 @@ PARSER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "ChromiumCacheParser": ("Chromium Disk Cache",),
     "MMKVParser": ("MMKV",),
     "PlistParser": ("Property list (plist)",),
+    "CoreDataOmoParser": ("Core Data optimized model (.omo)",),
     "AbxParser": ("Android Binary XML (ABX)",),
     "SegbParser": ("SEGB",),
     "XmlParser": ("XML",),

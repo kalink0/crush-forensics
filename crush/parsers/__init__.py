@@ -25,6 +25,7 @@ from crush.parsers.log_parser import LogParser  # noqa: F401 — explicit-only, 
 from crush.parsers.protobuf_parser import ProtobufParser
 from crush.parsers.flatbuffers_parser import FlatBuffersParser
 from crush.parsers.mmkv_parser import MMKVParser
+from crush.parsers.coredata_omo_parser import CoreDataOmoParser
 
 __all__ = ["ParserRegistry"]
 
@@ -42,6 +43,7 @@ ParserRegistry.register(ImageParser())
 ParserRegistry.register(MediaParser())
 ParserRegistry.register(JsonParser())
 ParserRegistry.register(PDFParser())
+ParserRegistry.register(CoreDataOmoParser())
 ParserRegistry.register(ProtobufParser())  # explicit-only (can_parse=False), registered for DISPLAY_NAME lookup
 ParserRegistry.register(FlatBuffersParser())  # explicit-only (no reliable magic), as Protobuf
 ParserRegistry.register(MMKVParser())  # explicit-only (can_parse=False, no magic bytes to detect)
