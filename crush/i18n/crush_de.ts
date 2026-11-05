@@ -626,15 +626,7 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Double-click to inspect the bytes</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>objects</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>join {table}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -655,6 +647,14 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
     </message>
     <message>
         <source>Filter rows…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;BLOB {size:,} B&gt; {head} … (preview, double-click for all)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>[{slot}] = {value} (unassigned)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2349,6 +2349,42 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <comment>FlatBuffers Binary Schema (.bfbs)</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
         <translation>FlatBuffers-file_identifier BFBS nach dem Root-Offset</translation>
+    </message>
+    <message>
+        <source>Apple&apos;s Core Data framework keeps an app&apos;s objects in an SQLite database; many iOS and macOS app and system databases are such stores. A store is recognised by its tables, not by its first bytes (those are SQLite&apos;s): Z_PRIMARYKEY lists every entity (Z_ENT, Z_NAME, Z_SUPER, Z_MAX) and Z_METADATA holds the store&apos;s UUID and a metadata plist (Z_PLIST, also with keys the app sets). An entity&apos;s rows are in the table Z + uppercase name of its root entity, shared with its subentities; Z_ENT in a row names its entity. Core Data&apos;s own entities -- the persistent history (CHANGE, TRANSACTION, TRANSACTIONSTRING) and CloudKit mirroring (NSCK*) -- are in A + name tables. Z_MODELCACHE holds the managed object model (property names and types). Apple does not document this layout: which column holds a property, how a relationship is stored, which file in .&lt;store name&gt;_SUPPORT/_EXTERNAL_DATA/ a reference names and which tombstone slot holds which attribute follow naming conventions and orders seen in real stores, so they are heuristics, not stored facts. Deleted objects can leave traces in the persistent history (delete changes, with tombstone values of flagged attributes, for example a deleted photo&apos;s UUID) and, as in any SQLite file, in the WAL, freelist pages, freeblocks and unallocated space; an empty history doesn&apos;t mean nothing changed, since history can be purged. Dates are seconds since 2001-01-01 UTC. A store is an SQLite database, so everything about SQLite applies too.</source>
+        <comment>Core Data Store</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>SQLite magic string at offset 0, shared with every SQLite database; a store is recognised by its Z_PRIMARYKEY and Z_METADATA tables</source>
+        <comment>Core Data Store</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>A compiled Core Data managed object model (.mom, often inside a .momd folder in an app bundle or framework): a binary NSKeyedArchiver archive whose root object is an NSManagedObjectModel, recognised by that root class rather than its name. It lists every entity with its attributes and their types (NSAttributeType), relationships with destination, inverse and delete rule, fetch indexes and version hashes. A Core Data store keeps a copy in its Z_MODELCACHE table, so the model that names a store&apos;s columns can be read from either. The archive&apos;s object graph is cyclic (entities and properties refer to each other). An optimized model (.omo) next to it is a different, undocumented format.</source>
+        <comment>Core Data Model</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>binary plist magic, shared with every binary plist; a model is recognised by its archive&apos;s root class NSManagedObjectModel</source>
+        <comment>Core Data Model</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>An optimized form of a compiled Core Data model (.omo), stored next to the .mom files in a .momd folder. It starts with the bytes &apos;momv2$sr&apos;; its layout is not documented. The .mom files in the same folder hold the model as an NSKeyedArchiver archive.</source>
+        <comment>Core Data Optimized Model</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&apos;momv2$sr&apos; at offset 0 (seen in every observed .omo file)</source>
+        <comment>Core Data Optimized Model</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Write-Ahead Log companion file for SQLite databases in WAL journal mode. Contains committed page versions not yet checkpointed into the database file, frames of a transaction still open when the file was captured, and, after checkpoint, WAL slack — old page versions that persist until overwritten from the start of the file. Must be analysed alongside the parent database file using the same schema. CRITICAL: opening the parent database with a standard SQLite driver triggers a checkpoint, committing and clearing the WAL — use read-only forensic tools only. Without the companion database, frames can still be decoded, but column names are only available from the schema. See SQLite Database entry for full forensic context.</source>
@@ -4748,7 +4784,47 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>folder</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>byte pattern</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>folder name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>read as date</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>table name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>heuristic: {what}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{value} (heuristic)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>entity [derived]</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{name} [derived, heuristic]</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{name} [heuristic]</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5753,10 +5829,6 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     </message>
     <message>
         <source>Item</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Format</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7847,6 +7919,14 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Anhänge</translation>
     </message>
     <message>
+        <source>Base format</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Base format relevance</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Block order</source>
         <translation>Block-Reihenfolge</translation>
     </message>
@@ -8063,6 +8143,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Format (erkannt)</translation>
     </message>
     <message>
+        <source>Format (specific)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Format candidates</source>
         <translation>Format-Kandidaten</translation>
     </message>
@@ -8200,6 +8284,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     </message>
     <message>
         <source>Opened bytes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Recognised by</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -8902,26 +8990,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Beim letzten vollständigen Frame: Salts und Prüfsumme aller Frames stimmen</translation>
     </message>
     <message>
-        <source>Core Data store: {entities:,} entities in Z_PRIMARYKEY; model: {model}. See the Core Data views in the table list</source>
-        <comment>coredata.detected</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Only part of the Core Data store tables is present (present: {present}; missing: {missing}) -- no Core Data views offered, tables shown as stored</source>
-        <comment>coredata.detection_incomplete</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Core Data views not available: reading the store failed ({detail}). The tables are shown as stored</source>
-        <comment>coredata.failed</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Apple does not document this storage layout. Crush interprets it from observed stores; the statuses say where a link rests on a naming convention or an observed order</source>
-        <comment>coredata.undocumented</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Table {table} could not be read: {detail}</source>
         <comment>coredata.table_unreadable</comment>
         <translation type="unfinished"></translation>
@@ -8937,18 +9005,8 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Z_PLIST is not a readable plist: {detail}. Its bytes are in the Z_METADATA table</source>
-        <comment>coredata.plist_unreadable</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Z_PLIST is NULL</source>
         <comment>coredata.plist_null</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Z_PLIST is stored as {type}, not as a BLOB; shown as stored</source>
-        <comment>coredata.plist_not_blob</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -8957,33 +9015,13 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>no Z_MODELCACHE table -- no model: column names and declared types only</source>
-        <comment>coredata.model_cache_missing</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Z_MODELCACHE holds no model ({rows:,} rows, none with content) -- column names and declared types only</source>
-        <comment>coredata.model_cache_empty</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Z_MODELCACHE could not be read: {detail}</source>
         <comment>coredata.model_cache_unreadable</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Z_MODELCACHE.Z_CONTENT is stored as {type}, not as a BLOB -- no model</source>
-        <comment>coredata.model_cache_not_blob</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Z_MODELCACHE has {rows:,} rows with content; the model is read from the first</source>
         <comment>coredata.model_cache_rows</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Z_MODELCACHE.Z_CONTENT ({size:,} B, starts {head}) does not decompress as raw deflate: {detail} -- no model</source>
-        <comment>coredata.model_not_decompressible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -8997,118 +9035,8 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>The archive&apos;s root object is {found}, not NSManagedObjectModel; entities read where found</source>
-        <comment>coredata.model_root_class</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{count:,} entity descriptions in the archive are not in the model&apos;s entity list; they are shown too</source>
-        <comment>coredata.model_entities_unlisted</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Entity name {name} occurs more than once in the model; later ones get their archive index</source>
-        <comment>coredata.model_duplicate_entity</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{entity}.{property}: class {class_name} is not one Crush reads; shown with its class name and every stored key</source>
-        <comment>coredata.model_unknown_class</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{entity}.{property}: NSAttributeType {type} is not in Apple&apos;s enum; values shown as stored</source>
-        <comment>coredata.unknown_attribute_type</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Root entity {entity} has no table (looked for {tables})</source>
-        <comment>coredata.no_table</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Root entity {entity}: more than one candidate table ({tables}); none chosen</source>
-        <comment>coredata.table_ambiguous</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Entity {entity} is in Z_PRIMARYKEY but not in the model: column names and declared types only, no property names or model types</source>
-        <comment>coredata.entity_not_in_model</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Z_ENT {ent} is no entity in Z_PRIMARYKEY</source>
         <comment>coredata.ent_unknown</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Property-to-column links come from the naming convention Z + uppercase property name (heuristic). &quot;name match&quot;: one such column and no numbered sibling; &quot;ambiguous&quot;: all candidates listed, none chosen, nothing decoded; &quot;no column found&quot;. Values are decoded by model type only on a name match</source>
-        <comment>coredata.mapping_heuristic</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>ambiguous: candidate columns {columns}; none chosen, nothing decoded</source>
-        <comment>coredata.mapping_ambiguous</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no column found (looked for {column})</source>
-        <comment>coredata.mapping_no_column</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>column no property of this entity names; shown as stored</source>
-        <comment>coredata.column_unassigned</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The row&apos;s concrete entity: Z_PRIMARYKEY.Z_NAME for its stored Z_ENT</source>
-        <comment>coredata.grid_entity_column</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{column} read as {kind}; the stored value is in the next column</source>
-        <comment>coredata.grid_decoded_column</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{column} as stored; linked to property {property} by name match (heuristic)</source>
-        <comment>coredata.grid_name_match</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{column} as stored; a candidate for {properties} (ambiguous, none chosen)</source>
-        <comment>coredata.grid_candidate</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Current rows only. Deleted data can be in the Core Data History view (tombstones) and in the WAL Frames, Freelist Recovery, Freeblocks and Unallocated Space views</source>
-        <comment>coredata.entities_current_state</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>stored as {type}, not a number of Cocoa seconds -- shown as stored</source>
-        <comment>coredata.value_not_date</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>stored value 0: the Cocoa reference date itself</source>
-        <comment>coredata.date_zero</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{value} is neither 0 nor 1 -- shown as stored</source>
-        <comment>coredata.value_not_boolean</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>BLOB of {length:,} B, not 16 -- shown as stored</source>
-        <comment>coredata.value_not_uuid</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Relationships are followed only where a rule established on observed stores applies: to-one column Z + name (Z&lt;n&gt;_ + name: the target&apos;s Z_ENT), the inverse to-one column, join table Z_&lt;entity number&gt;&lt;NAME&gt;, destination column Z&lt;entity number&gt;&lt;NAME&gt;; ordered by its Z_FOK_ column. Otherwise the stored values and candidates are shown, without a link</source>
-        <comment>coredata.rel_rules</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -9122,21 +9050,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>not resolved: {found} of the join table names {tables} exist</source>
-        <comment>coredata.rel_join_table</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>not resolved: the columns of join table {table} don&apos;t match the rule</source>
-        <comment>coredata.rel_join_columns</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>not resolved: join table {table} has a REFLEXIVE column; which column holds which side was not established on observed stores</source>
-        <comment>coredata.rel_reflexive</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>not resolved: no single column {column} in {table}</source>
         <comment>coredata.rel_destination_column</comment>
         <translation type="unfinished"></translation>
@@ -9147,58 +9060,13 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>{count:,} target row(s) don&apos;t exist in the current database state</source>
-        <comment>coredata.rel_target_missing</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>persistent history: {count:,} changes in {table}</source>
-        <comment>coredata.history_present</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no persistent history tables. History can be turned off or purged, so this doesn&apos;t mean nothing changed</source>
-        <comment>coredata.history_missing</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>persistent history table {table} is empty. Transactions can be purged, so this doesn&apos;t mean nothing changed</source>
-        <comment>coredata.history_empty</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>persistent history could not be read: {detail}</source>
         <comment>coredata.history_unreadable</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>{table} has no column {column}; that part is empty in every row</source>
-        <comment>coredata.history_column_missing</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no transaction table: no times, authors or processes for the changes</source>
-        <comment>coredata.history_no_transactions</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{entity} Z_PK {pk} exists in the current database state -- shown in Core Data Entities</source>
-        <comment>coredata.history_object_exists</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>{entity} Z_PK {pk}: no such row in the current database state</source>
         <comment>coredata.history_object_gone</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Tombstone slots (ZTOMBSTONE0, 1, ...) are assigned to the entity&apos;s attributes flagged for tombstones (NSFlagsKey 16, inherited ones included) in alphabetical order of their names -- an order interpreted from observed stores, not documented. A slot whose value doesn&apos;t fit the attribute&apos;s type, or that lies beyond the list, stays unassigned</source>
-        <comment>coredata.tombstones_interpreted</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>slot {slot} unassigned: the entity has {count} attributes flagged for tombstones</source>
-        <comment>coredata.tombstone_beyond</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -9209,31 +9077,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>unassigned: the entity is not in the model</source>
         <comment>coredata.tombstone_no_model</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>ZCOLUMNS is shown as stored (hex) with its set bit numbers (byte × 8 + bit, least significant bit first -- an assumed order). Which property a bit stands for is not determined</source>
-        <comment>coredata.zcolumns_undetermined</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Facts from Z_PRIMARYKEY.Z_MAX and the Z_PK values present in each root entity&apos;s table. Missing keys and a Z_MAX above the highest key don&apos;t say why by themselves; what caused them is not determined by these numbers</source>
-        <comment>coredata.keys_description</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>A cell counts as a reference to an externally stored value only with the exact observed shape: 38 bytes, 0x02 + a 36-character UUID + 0x00, in any column (interpreted from observed stores). The model flag is shown next to it, not required. Every row of every table was scanned</source>
-        <comment>coredata.external_interpreted</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>reference to external file {name} -- see Core Data External Data</source>
-        <comment>coredata.external_reference</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>unrecognised shape in an external-storage column: {length:,} B starting {head}; not treated as a reference</source>
-        <comment>coredata.external_unrecognised</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -9257,23 +9100,8 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>in the _SUPPORT folder, outside _EXTERNAL_DATA; content not interpreted</source>
-        <comment>coredata.support_other_file</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>_SUPPORT folder {path}: {count:,} files</source>
-        <comment>coredata.support_found</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>no folder {path} next to the store in this source</source>
         <comment>coredata.support_not_found</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>_SUPPORT folder not available in this source ({reason}) -- this says nothing about whether externally stored files exist</source>
-        <comment>coredata.support_unavailable</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -9284,31 +9112,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>the store file was opened on its own; {path} is not next to it on disk</source>
         <comment>coredata.support_not_on_disk</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>the column&apos;s property is ambiguous: candidate for {properties}</source>
-        <comment>coredata.inline_ambiguous</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>the cell&apos;s bytes without their first byte (0x01) -- removed by Crush, the cell itself is unchanged</source>
-        <comment>coredata.inline_provenance</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Compiled Core Data model (NSKeyedArchiver, root class NSManagedObjectModel): {entities:,} entities -- see Core Data Model</source>
-        <comment>coredata.mom_model</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Core Data model archive read in part: {issues}</source>
-        <comment>coredata.mom_incomplete</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Optimized Core Data model (starts with &quot;momv2$sr&quot;): not decoded -- shown as hex</source>
-        <comment>coredata.omo_not_decoded</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -11297,6 +11100,246 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Vor Frame 1: Der WAL-Header ist nicht gültig, daher liest SQLite keinen Frame</translation>
     </message>
     <message>
+        <source>Core Data store, {entities:,} entities; model: {model}</source>
+        <comment>coredata.detected</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Only part of the Core Data tables is present (missing: {missing}); shown as plain SQLite</source>
+        <comment>coredata.detection_incomplete</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data views not available: {detail}</source>
+        <comment>coredata.failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_PLIST is not a readable plist: {detail}</source>
+        <comment>coredata.plist_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_PLIST is stored as {type}, not as a BLOB</source>
+        <comment>coredata.plist_not_blob</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no model in the file (no Z_MODELCACHE table): column names only</source>
+        <comment>coredata.model_cache_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no model in the file (Z_MODELCACHE has no content, {rows:,} rows): column names only</source>
+        <comment>coredata.model_cache_empty</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE.Z_CONTENT is stored as {type}, not as a BLOB: no model</source>
+        <comment>coredata.model_cache_not_blob</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_MODELCACHE.Z_CONTENT ({size:,} B, starts {head}) could not be decompressed: {detail}</source>
+        <comment>coredata.model_not_decompressible</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The archive&apos;s root object is {found}, not NSManagedObjectModel</source>
+        <comment>coredata.model_root_class</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} entity descriptions are not in the model&apos;s entity list; shown too</source>
+        <comment>coredata.model_entities_unlisted</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entity name {name} occurs more than once in the model</source>
+        <comment>coredata.model_duplicate_entity</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity}.{property}: unknown class {class_name}</source>
+        <comment>coredata.model_unknown_class</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity}.{property}: unknown NSAttributeType {type}; shown as stored</source>
+        <comment>coredata.unknown_attribute_type</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no table {tables}: no rows shown</source>
+        <comment>coredata.no_table</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not in the model: column names only</source>
+        <comment>coredata.entity_not_in_model</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ambiguous: {columns}</source>
+        <comment>coredata.mapping_ambiguous</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no column found ({column})</source>
+        <comment>coredata.mapping_no_column</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no property linked</source>
+        <comment>coredata.column_unassigned</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>stored as {type}: not decoded</source>
+        <comment>coredata.value_not_date</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>stored value 0, the reference date itself</source>
+        <comment>coredata.date_zero</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{value} is neither 0 nor 1: not decoded</source>
+        <comment>coredata.value_not_boolean</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>BLOB of {length:,} B, not 16: not decoded</source>
+        <comment>coredata.value_not_uuid</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: {found} of the join tables {tables} exist</source>
+        <comment>coredata.rel_join_table</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: unexpected columns in join table {table}</source>
+        <comment>coredata.rel_join_columns</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not resolved: reflexive join table {table}</source>
+        <comment>coredata.rel_reflexive</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} target row(s) not in the current database state</source>
+        <comment>coredata.rel_target_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} changes in {table}</source>
+        <comment>coredata.history_present</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no persistent history in this store; changes may still have happened</source>
+        <comment>coredata.history_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>persistent history {table} is empty; changes may still have happened</source>
+        <comment>coredata.history_empty</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{table} has no column {column}</source>
+        <comment>coredata.history_column_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no transaction table: no times, authors or processes</source>
+        <comment>coredata.history_no_transactions</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity} Z_PK {pk} exists in the current database state</source>
+        <comment>coredata.history_object_exists</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{entity} Z_PK {pk}: whether the row exists is unknown ({reason})</source>
+        <comment>coredata.history_object_unknown</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>slot {slot} unassigned: only {count} attributes flagged for tombstones</source>
+        <comment>coredata.tombstone_beyond</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>external file {name} (heuristic: byte pattern)</source>
+        <comment>coredata.external_reference</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>unrecognised shape ({length:,} B): not a reference</source>
+        <comment>coredata.external_unrecognised</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>unknown whether file {name} exists: the folder could not be listed ({reason})</source>
+        <comment>coredata.external_file_unknown</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>outside _EXTERNAL_DATA; content not interpreted</source>
+        <comment>coredata.support_other_file</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>folder {path}: {count:,} files</source>
+        <comment>coredata.support_found</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>folder not available in this source ({reason}); the files may still exist</source>
+        <comment>coredata.support_unavailable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>folder could not be listed: {reason}</source>
+        <comment>coredata.support_folder_unlisted</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>column ambiguous: {properties}</source>
+        <comment>coredata.inline_ambiguous</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>the cell&apos;s bytes without their first byte 0x01, removed by Crush (heuristic: byte pattern); the cell itself is unchanged</source>
+        <comment>coredata.inline_provenance</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{count:,} rows have a Z_PK that is not an integer; counted as rows, not as keys</source>
+        <comment>coredata.keys_non_integer</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data model, {entities:,} entities</source>
+        <comment>coredata.mom_model</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Core Data model read in part: {issues}</source>
+        <comment>coredata.mom_incomplete</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Optimized Core Data model (starts with &quot;momv2$sr&quot;): not decoded, shown as hex</source>
+        <comment>coredata.omo_not_decoded</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>No Manifest Store found before offset {offset:,}; the structure is truncated there</source>
         <comment>c2pa.not_found_truncated</comment>
         <translation>Kein Manifest Store vor Offset {offset:,} gefunden; die Struktur ist dort abgeschnitten</translation>
@@ -12425,6 +12468,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Not determined — the signature bytes don&apos;t single out one of: {candidates}; no format knowledge shown</source>
         <comment>entry.format_not_singled_out</comment>
         <translation>Nicht bestimmt — die Signatur-Bytes lassen keine eindeutige Wahl zwischen: {candidates}; kein Formatwissen angezeigt</translation>
+    </message>
+    <message>
+        <source>The parser found the format {name}, which has no entry in the format database; shown with the general format&apos;s knowledge</source>
+        <comment>entry.format_entry_missing</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>(not recorded)</source>
@@ -13591,6 +13639,10 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Current rows only. Deleted data may be in other views.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Counting Core Data rows…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13603,15 +13655,19 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Search cleared to show {entity} Z_PK {pk}.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>{entity} Z_PK {pk}: no such row in the current database state</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Reading Core Data history…</source>
+        <source>Some links in these views are heuristic, not stored in the file. Rows marked &quot;heuristic&quot; show where; check the raw values for important findings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Double-click a change to show its object in Core Data Entities.</source>
+        <source>Reading Core Data history…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13623,23 +13679,7 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Double-click a row with a file to open it in a new tab.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Reading external file…</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open external file</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open without the 0x01 prefix</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open without the 0x01 prefix ({note})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13825,6 +13865,26 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>the cell&apos;s bytes</source>
         <translation>die Bytes der Zelle</translation>
+    </message>
+    <message>
+        <source>What the ZCOLUMNS bits stand for is unknown.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>These numbers don&apos;t show why keys are missing.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open external file (heuristic: byte pattern)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open without the 0x01 prefix (heuristic: byte pattern)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open without the 0x01 prefix (heuristic: byte pattern; {note})</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Row {row_num}  ·  {col_name}</source>

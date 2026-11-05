@@ -770,3 +770,182 @@ def test_omo_status(tmp_path: Path) -> None:
     result = parser.parse(vfs.root(), vfs)
     assert result.viewer_type == "hex"
     assert result.metadata["Status"].code == "coredata.omo_not_decoded"
+
+
+# -- review fixes ------------------------------------------------------------------
+
+
+def _zip_at_host_path(tmp_path: Path, host_store: Path) -> ZipVFS:
+    """A ZIP whose store sits at the same path inside it as *host_store* on
+    this machine (an image of a macOS or Linux disk can look like that)."""
+    zpath = tmp_path / "evidence.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr(str(host_store).lstrip("/"), host_store.read_bytes())
+    return ZipVFS(zpath)
+
+
+@pytest.mark.skipif(not str(Path("/x").resolve()).startswith("/"), reason="POSIX paths only")
+def test_host_files_never_read_for_an_archive_source(tmp_path: Path) -> None:
+    host = tmp_path / "host"
+    host.mkdir()
+    host_store = build_store(host / "Store.sqlite")
+    (host / "Store.sqlite-wal").write_bytes(b"host wal, not evidence")
+    (host / "Store.sqlite-journal").write_bytes(b"host journal, not evidence")
+    (host / ".Store_SUPPORT" / "_EXTERNAL_DATA").mkdir(parents=True)
+    (host / ".Store_SUPPORT" / "_EXTERNAL_DATA" / EXTERNAL_NAME).write_bytes(b"host file")
+    vfs = _zip_at_host_path(tmp_path, host_store)
+    node = find_node(vfs, str(host_store))
+    assert node is not None and node.path == str(host_store)
+    result = SQLiteParser().parse(node, vfs)
+    assert "Companion files" not in result.metadata
+    assert "__journal_path" not in result.data
+    store = result.data["__coredata"]
+    assert store.support.state != "found"
+    ref = next(r for r in store.scan_external().rows if r.kind == "reference")
+    assert ref.file is None
+    store.close()
+    # The same store opened as a single file still finds them next to it.
+    single = _store(host_store)
+    assert single.support.state == "found"
+    single.close()
+    assert "Store.sqlite-wal" in str(_parse(host_store).metadata.get("Companion files", ""))
+
+
+def test_app_entity_named_change_and_history_both_work(tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO Z_PRIMARYKEY VALUES (7, 'Change', 0, 1)")
+    conn.execute("CREATE TABLE ZCHANGE (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, ZNOTE VARCHAR)")
+    conn.execute("INSERT INTO ZCHANGE VALUES (1, 7, 1, 'app row')")
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    assert store.entity("Change").table == "ZCHANGE"
+    assert store.entity("CHANGE").table == "ACHANGE"
+    assert store.history_status().code == "coredata.history_present"
+    assert len(store.load_history().rows) == 4
+    assert [r[0] for r in store.load_records("Change").rows] == [1]
+    store.close()
+
+
+def test_store_at_the_source_root_has_its_folder_checked(tmp_path: Path) -> None:
+    store_path = build_store(tmp_path / "s.sqlite")
+    zpath = tmp_path / "root.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("s.sqlite", store_path.read_bytes())
+    vfs = ZipVFS(zpath)
+    store = SQLiteParser().parse(find_node(vfs, "/s.sqlite"), vfs).data["__coredata"]
+    assert store.support.state == "not_found"
+    assert store.support.status().code == "coredata.support_not_found"
+    store.close()
+
+
+def test_huge_key_returns_promptly_with_exact_gaps(tmp_path: Path) -> None:
+    import time
+
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO ZASSET (Z_PK, Z_ENT, Z_OPT) VALUES (?, 4, 1)", (2**40,))
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    started = time.perf_counter()
+    asset = next(f for f in store.load_keys() if f.entity == "Asset")
+    assert time.perf_counter() - started < 5
+    # keys 1, 2, 3, 6, 2**40: missing 4-5 and 7 .. 2**40 - 1
+    assert asset.missing_ranges == f"4–5, 7–{2**40 - 1}"
+    assert asset.missing_count == 2 + (2**40 - 1 - 7 + 1)
+    assert asset.rows == 5 and asset.max_pk == 2**40
+    store.close()
+
+
+def test_missing_key_ranges_walk_the_gaps() -> None:
+    assert cds.missing_key_ranges([1, 2, 5, 9]) == [(3, 4), (6, 8)]
+    assert cds.missing_key_ranges([3]) == [(1, 2)]
+    assert cds.missing_key_ranges([]) == []
+    assert cds.missing_key_ranges([0, 1, 1, 2]) == []
+
+
+class _FailingConn:
+    """A connection whose read of one table's keys fails."""
+
+    def __init__(self, conn, table: str) -> None:
+        self._conn = conn
+        self._fail = f'SELECT Z_PK FROM "{table}"'
+
+    def execute(self, sql, *args):
+        if sql == self._fail:
+            raise sqlite3.DatabaseError("simulated read failure")
+        return self._conn.execute(sql, *args)
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def test_unreadable_table_makes_existence_unknown_not_gone(store) -> None:
+    conn = _FailingConn(store.open(), "ZASSET")
+    result = store.load_history(conn)
+    asset_rows = [r for r in result.rows if r.entity_name == "Asset"]
+    assert asset_rows
+    assert all(r.target_exists is None for r in asset_rows)
+    assert all(r.target_status.code == "coredata.table_unreadable" for r in asset_rows)
+    assert any(i.code == "coredata.table_unreadable" for i in result.issues)
+    conn.close()
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "geteuid") or __import__("os").geteuid() == 0,
+                    reason="needs a non-root POSIX user to make a folder unlistable")
+def test_unlistable_folder_makes_reference_unknown(tmp_path: Path) -> None:
+    import os
+
+    root = tmp_path / "src"
+    root.mkdir()
+    _with_support(root)
+    external = root / ".Store_SUPPORT" / "_EXTERNAL_DATA"
+    os.chmod(external, 0)
+    try:
+        vfs = DirectoryVFS(root)
+        store = SQLiteParser().parse(find_node(vfs, str(root / "Store.sqlite")), vfs).data["__coredata"]
+        scan = store.scan_external()
+        ref = next(r for r in scan.rows if r.kind == "reference" and r.name == EXTERNAL_NAME
+                   and r.column == "ZIMAGEDATA")
+        assert ref.status.code == "coredata.external_file_unknown"
+        assert any(r.kind == "folder" and r.status.code == "coredata.support_folder_unlisted" for r in scan.rows)
+        store.close()
+    finally:
+        os.chmod(external, 0o700)
+
+
+def test_heuristics_are_named_on_the_values(store) -> None:
+    assets = store.load_records("Asset")
+    values = {v.name: v for v in store.property_values(assets, assets.rows[0])}
+    assert values["uuid"].heuristic == cds.HEURISTIC_NAME_MATCH
+    assert values["uuid"].raw == ASSET_UUID.bytes
+    assert values["ZEXTRA"].heuristic is None  # stored as is, no link
+    grid = {g.header: g for g in assets.grid}
+    assert grid["uuid"].heuristic and grid["uuid (ZUUID)"].heuristic
+    assert not grid["ZEXTRA"].heuristic
+    rows = [r for r in store.scan_external().rows if r.kind == "reference"]
+    assert all(cds.HEURISTIC_BYTE_PATTERN in r.heuristics and r.raw for r in rows)
+    history = store.load_history()
+    assert history.timestamp_heuristic  # ATRANSACTION.ZTIMESTAMP is declared FLOAT
+    slot = next(s for r in history.rows for s in r.tombstones if s.attribute == "uuid")
+    assert slot.raw == DELETED_UUID.bytes
+
+
+def test_parsers_report_the_specific_format(tmp_path: Path) -> None:
+    assert _parse(build_store(tmp_path / "odd.name")).format_short_name == cds.CORE_DATA_STORE_FORMAT
+    plain = tmp_path / "plain.db"
+    conn = sqlite3.connect(plain)
+    conn.execute("CREATE TABLE t (a)")
+    conn.commit()
+    conn.close()
+    assert _parse(plain).format_short_name is None
+    mom = tmp_path / "blob"
+    mom.write_bytes(model_archive())
+    vfs = FileVFS(mom)
+    assert PlistParser().parse(vfs.root(), vfs).format_short_name == cds.CORE_DATA_MODEL_FORMAT
+    other = tmp_path / "plain.plist"
+    other.write_bytes(plistlib.dumps({"a": 1}, fmt=plistlib.FMT_BINARY))
+    vfs = FileVFS(other)
+    assert PlistParser().parse(vfs.root(), vfs).format_short_name is None

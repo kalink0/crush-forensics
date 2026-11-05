@@ -10,9 +10,10 @@ from typing import Any
 
 from crush.core import sqlite_journal, tempdir
 from crush.core.issues import ParseIssue
-from crush.core.vfs import VFS, DirectoryVFS, VFSNode, find_node, find_sibling
+from crush.core.vfs import VFS, DirectoryVFS, FileVFS, VFSNode, find_node, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
 from crush.parsers.coredata_store import (
+    CORE_DATA_STORE_FORMAT,
     SupportFile,
     SupportFolder,
     load_store,
@@ -202,13 +203,26 @@ def _coredata_connector(
     return connect
 
 
-def _support_files(root: VFSNode, base: str) -> tuple[list[SupportFile], dict[str, VFSNode]]:
-    """Every file below *root* (recursively, no limit), path relative to it."""
+def _host_path(node: VFSNode, vfs: VFS) -> Path | None:
+    """The store's own path on the examiner's filesystem -- only when the
+    source is that single file (FileVFS). For every other source node.path is
+    a path inside the source, and the same path on this machine is not evidence."""
+    return Path(node.path) if isinstance(vfs, FileVFS) else None
+
+
+def _support_files(
+    root: VFSNode,
+) -> tuple[list[SupportFile], dict[str, VFSNode], list[tuple[str, ParseIssue]]]:
+    """Every file below *root* (recursively, no limit), path relative to it,
+    and every folder below it (itself included, as "") that could not be listed."""
     files: list[SupportFile] = []
     nodes: dict[str, VFSNode] = {}
+    unlisted: list[tuple[str, ParseIssue]] = []
     pending = [(root, "")]
     while pending:
         current, prefix = pending.pop()
+        if isinstance(current.status, ParseIssue) and current.status.code == "entry.folder_unlisted":
+            unlisted.append((prefix.rstrip("/"), current.status))
         for child in sorted(current.children, key=lambda n: n.name):
             rel = f"{prefix}{child.name}"
             if child.is_dir:
@@ -217,42 +231,47 @@ def _support_files(root: VFSNode, base: str) -> tuple[list[SupportFile], dict[st
             files.append(SupportFile(rel, child.size, child.status or None))
             nodes[rel] = child
     files.sort(key=lambda f: f.rel_path)
-    return files, nodes
+    unlisted.sort()
+    return files, nodes, unlisted
 
 
 def _support_folder(node: VFSNode, vfs: VFS) -> SupportFolder:
     """The store's .<name>_SUPPORT folder next to it: in the VFS first, then
-    on the filesystem (the same two places the -wal lookup tries)."""
+    -- for a single file opened on its own -- next to it on disk (the same two
+    places the -wal lookup tries)."""
     folder_name = support_folder_name(node.name)
     node_path = node.path.replace("\\", "/")
-    parent_path = node_path.rsplit("/", 1)[0] if "/" in node_path else ""
+    # A store at the source's root has the root ("/") as its folder.
+    parent_path = (node_path.rsplit("/", 1)[0] or "/") if "/" in node_path else ""
     target = f"{parent_path.rstrip('/')}/{folder_name}"
     folder = find_node(vfs, target)
     if folder is not None and folder.is_dir:
-        files, nodes = _support_files(folder, target)
+        files, nodes, unlisted = _support_files(folder)
         return SupportFolder(
             "found", target, files,
             reader=lambda rel: vfs.read(nodes[rel]),
             head_reader=lambda rel: vfs.peek(nodes[rel], 512),
+            unlisted=unlisted,
         )
-    on_disk = Path(node.path)
-    fs_folder = on_disk.parent / folder_name
-    if on_disk.is_file() and fs_folder.is_dir():
-        disk = DirectoryVFS(fs_folder)
-        files, nodes = _support_files(disk.root(), str(fs_folder))
-        return SupportFolder(
-            "found", str(fs_folder), files,
-            reader=lambda rel: disk.read(nodes[rel]),
-            head_reader=lambda rel: disk.peek(nodes[rel], 512),
-        )
-    parent = find_node(vfs, parent_path) if parent_path else None
-    if parent is not None and parent.is_dir:
-        return SupportFolder("not_found", target)
-    if on_disk.is_file():
+    host = _host_path(node, vfs)
+    if host is not None:
+        fs_folder = host.parent / folder_name
+        if fs_folder.is_dir():
+            disk = DirectoryVFS(fs_folder)
+            files, nodes, unlisted = _support_files(disk.root())
+            return SupportFolder(
+                "found", str(fs_folder), files,
+                reader=lambda rel: disk.read(nodes[rel]),
+                head_reader=lambda rel: disk.peek(nodes[rel], 512),
+                unlisted=unlisted,
+            )
         return SupportFolder(
             "unavailable", str(fs_folder),
             note=ParseIssue("coredata.support_not_on_disk", {"path": str(fs_folder)}),
         )
+    parent = find_node(vfs, parent_path) if parent_path else None
+    if parent is not None and parent.is_dir:
+        return SupportFolder("not_found", target)
     return SupportFolder("unavailable", target, note=ParseIssue("coredata.support_no_parent"))
 
 
@@ -337,10 +356,13 @@ class SQLiteParser(AbstractParser):
                     _wal_diag_lines.append(
                         ParseIssue("sqlite.companion_not_in_vfs", {"path": repr(node.path)})
                     )
-                # FileVFS: node.path is an absolute filesystem path — check for the
-                # companion directly on disk (find_sibling only searches the VFS tree)
-                fs_companion = Path(node.path + suffix)
-                if fs_companion.is_file():
+                # A single file opened on its own (FileVFS): its companion is
+                # next to it on disk, outside the VFS tree. For any other
+                # source node.path is a path inside it, and a same-named file
+                # on the examiner's own disk must never be read in as evidence.
+                host = _host_path(node, vfs)
+                fs_companion = Path(str(host) + suffix) if host is not None else None
+                if fs_companion is not None and fs_companion.is_file():
                     try:
                         sib_path = tmp_path + suffix
                         fs_bytes = fs_companion.read_bytes()
@@ -389,8 +411,9 @@ class SQLiteParser(AbstractParser):
                 _logger.warning("%s", issue)
                 companion_failures.append(issue)
         else:
-            fs_journal = Path(node.path + "-journal")
-            if fs_journal.is_file():
+            host = _host_path(node, vfs)
+            fs_journal = Path(str(host) + "-journal") if host is not None else None
+            if fs_journal is not None and fs_journal.is_file():
                 try:
                     journal_bytes = fs_journal.read_bytes()
                     journal_name = fs_journal.name
@@ -647,4 +670,7 @@ class SQLiteParser(AbstractParser):
             data=data,
             metadata=meta,
             text_index=" ".join(text_parts[:2000]),
+            # A detected Core Data store: its own format knowledge applies
+            # (an SQLite file too -- the SQLite entry stays the base format).
+            format_short_name=CORE_DATA_STORE_FORMAT if "__coredata" in data else None,
         )

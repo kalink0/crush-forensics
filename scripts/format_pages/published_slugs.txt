@@ -33,6 +33,9 @@ cbor
 cfb
 chrome-cache
 class
+core-data-model
+core-data-omo
+core-data-store
 dav
 dex
 dmg

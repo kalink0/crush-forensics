@@ -83,6 +83,10 @@ _DESCRIPTION_CLASSES = frozenset({
     "NSManagedObjectModel", "NSEntityDescription", *_PROPERTY_KINDS,
 })
 
+# formats.db short_names of the Core Data formats (ParseResult.format_short_name).
+CORE_DATA_STORE_FORMAT = "Core Data Store"
+CORE_DATA_MODEL_FORMAT = "Core Data Model"
+
 METADATA_TABLE = "Z_METADATA"
 PRIMARYKEY_TABLE = "Z_PRIMARYKEY"
 MODELCACHE_TABLE = "Z_MODELCACHE"
@@ -834,6 +838,7 @@ class SupportFolder:
         reader: Callable[[str], bytes] | None = None,
         head_reader: Callable[[str], bytes] | None = None,
         note: ParseIssue | None = None,
+        unlisted: list[tuple[str, ParseIssue]] | None = None,
     ) -> None:
         self.state = state
         self.location = location
@@ -841,6 +846,10 @@ class SupportFolder:
         self._reader = reader
         self._head_reader = head_reader
         self.note = note
+        # Folders (relative path, "" = the folder itself) that couldn't be
+        # listed: a file missing from the list may be in one of them.
+        self.unlisted = unlisted or []
+        self._by_path = {f.rel_path: f for f in self.files}
 
     def status(self) -> ParseIssue:
         if self.state == "found":
@@ -864,14 +873,28 @@ class SupportFolder:
         return self.read(rel_path)[:512]
 
     def external_file(self, name: str) -> SupportFile | None:
-        wanted = f"{EXTERNAL_DATA_FOLDER}/{name}"
-        return next((f for f in self.files if f.rel_path == wanted), None)
+        return self._by_path.get(f"{EXTERNAL_DATA_FOLDER}/{name}")
+
+    def listing_incomplete_for(self, name: str) -> ParseIssue | None:
+        """Why *name* may exist although it isn't listed: the folder it
+        would be in (or one above it) couldn't be listed."""
+        for rel, status in self.unlisted:
+            if rel in ("", EXTERNAL_DATA_FOLDER):
+                return status
+        return None
 
 
 # -- The store ----------------------------------------------------------------
 
 CHANGE_TYPES = {0: "insert", 1: "update", 2: "delete"}
 HISTORY_ENTITIES = ("CHANGE", "TRANSACTION", "TRANSACTIONSTRING")
+
+
+def is_internal_entity(name: str) -> bool:
+    """Core Data's own entities, by their exact Z_NAME (observed): the
+    persistent history's CHANGE, TRANSACTION, TRANSACTIONSTRING and the
+    CloudKit mirroring's NSCK* entities. Their rows are in A<NAME>."""
+    return name in HISTORY_ENTITIES or name.startswith("NSCK")
 _HISTORY_STRING_REFS = (
     ("author", "ZAUTHORTS", "ZAUTHOR"),
     ("bundle", "ZBUNDLEIDTS", "ZBUNDLEID"),
@@ -918,18 +941,30 @@ class RelationshipRule:
     def resolved(self) -> bool:
         return self.status == "resolved"
 
+    def link_text(self) -> str:
+        """Where the link is stored: the to-one key column, the join table,
+        or the destination table's column that holds this object's key."""
+        if self.kind == "to-one column":
+            return self.key_column or ""
+        if self.kind == "join table":
+            return self.table or ""
+        return f"{self.table}.{self.source_column}" if self.table and self.source_column else (self.table or "")
+
 
 @dataclass(frozen=True)
 class GridColumn:
     """One column of the Entities grid. *source* is the index of the
     table column whose stored value it shows (None for the derived entity
-    name); *decode* a DECODE_* kind for a derived, decoded column."""
+    name); *decode* a DECODE_* kind for a derived, decoded column.
+    *heuristic*: what the column shows rests on a heuristic (a link by name,
+    a value read by an observed rule) -- the stored column is next to it."""
 
     header: str
     source: int | None
     decode: str | None = None
     derived: bool = False
     tooltip: Any = None
+    heuristic: bool = False
 
     @property
     def is_entity_name(self) -> bool:
@@ -958,9 +993,19 @@ class PropertyValue:
     kind: str
     type_text: str
     value: str
-    raw: Any
+    raw: Any  # the stored value; for an ambiguous link one per candidate column (a tuple)
     columns: tuple[str, ...]
     status: Any
+    # The heuristic the value rests on ("name match": the column is linked
+    # to the property by its name); None for a stored fact.
+    heuristic: str | None = None
+
+
+HEURISTIC_NAME_MATCH = "name match"
+HEURISTIC_BYTE_PATTERN = "byte pattern"
+HEURISTIC_FOLDER_NAME = "folder name"
+HEURISTIC_COCOA_DATE = "read as date"
+HEURISTIC_TABLE_NAME = "table name"
 
 
 @dataclass(frozen=True)
@@ -1009,8 +1054,9 @@ class HistoryRow:
     columns_raw: Any
     columns_bits: tuple[int, ...] | None
     tombstones: list[TombstoneSlot]
-    target_exists: bool | None
+    target_exists: bool | None  # None: unknown (see target_status) or no entity
     raw: dict[str, Any]
+    target_status: ParseIssue | None = None
 
 
 @dataclass
@@ -1018,6 +1064,8 @@ class HistoryResult:
     rows: list[HistoryRow]
     issues: list[ParseIssue]
     tombstone_columns: list[str]
+    # The transaction time is read from a column not declared TIMESTAMP.
+    timestamp_heuristic: bool = False
 
 
 @dataclass(frozen=True)
@@ -1051,6 +1099,10 @@ class ExternalRow:
     model_flag: str
     file: SupportFile | None
     status: Any
+    raw: bytes | None = None  # the cell as stored
+    # What the row rests on: a reference recognised by its byte pattern, a
+    # file matched through the folder-name rule.
+    heuristics: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1087,20 +1139,21 @@ def _set_bits(value: Any) -> tuple[int, ...] | None:
     return tuple(i * 8 + b for i, byte in enumerate(data) for b in range(8) if byte >> b & 1)
 
 
-def _ranges(missing: list[int]) -> str:
-    parts: list[str] = []
-    start = prev = None
-    for n in missing:
-        if start is None:
-            start = prev = n
-        elif n == prev + 1:  # type: ignore[operator]
-            prev = n
-        else:
-            parts.append(str(start) if start == prev else f"{start}–{prev}")
-            start = prev = n
-    if start is not None:
-        parts.append(str(start) if start == prev else f"{start}–{prev}")
-    return ", ".join(parts)
+def missing_key_ranges(keys: list[int]) -> list[tuple[int, int]]:
+    """The values from 1 up to the highest key that no key has, as
+    (first, last) ranges -- walked between the sorted keys, so a single huge
+    key costs nothing extra."""
+    ranges: list[tuple[int, int]] = []
+    prev = 0
+    for key in keys:
+        if key > prev + 1:
+            ranges.append((prev + 1, key - 1))
+        prev = max(prev, key)
+    return ranges
+
+
+def _ranges(ranges: list[tuple[int, int]]) -> str:
+    return ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in ranges)
 
 
 class CoreDataStore:
@@ -1122,6 +1175,8 @@ class CoreDataStore:
         self.issues: list[ParseIssue] = []
         self.tables: dict[str, list[tuple[str, str]]] = {}
         self._ui_conn: Any = None
+        self._roles_cache: dict[str, dict[str, list[tuple[str, ModelProperty, str]]]] = {}
+        self._tomb_cache: dict[str, list[ModelProperty]] = {}
         for table in schema_tables(conn):
             try:
                 self.tables[table] = table_columns(conn, table)
@@ -1288,19 +1343,16 @@ class CoreDataStore:
         return infos
 
     def _root_table(self, root_name: str) -> tuple[str | None, ParseIssue | None]:
-        """Z + uppercase name; A + uppercase name for Core Data's own
-        entities (history, CloudKit mirroring)."""
-        z_table = self.table("Z" + root_name.upper())
-        a_table = self.table("A" + root_name.upper())
-        if z_table and a_table:
-            return None, ParseIssue("coredata.table_ambiguous", {
-                "entity": root_name, "tables": f"{z_table}, {a_table}",
-            })
-        if z_table or a_table:
-            return z_table or a_table, None
-        return None, ParseIssue("coredata.no_table", {
-            "entity": root_name, "tables": f"Z{root_name.upper()}, A{root_name.upper()}",
-        })
+        """A + uppercase name for Core Data's own entities -- by their exact
+        Z_NAME: CHANGE, TRANSACTION, TRANSACTIONSTRING and NSCK* -- and Z +
+        uppercase name for every other entity, so an app entity "Change"
+        (ZCHANGE) and the history's CHANGE (ACHANGE) each keep their table."""
+        prefix = "A" if is_internal_entity(root_name) else "Z"
+        wanted = prefix + root_name.upper()
+        table = self.table(wanted)
+        if table is not None:
+            return table, None
+        return None, ParseIssue("coredata.no_table", {"entity": root_name, "tables": wanted})
 
     def entity(self, name: str) -> EntityInfo | None:
         return self._by_name.get(name)
@@ -1357,8 +1409,13 @@ class CoreDataStore:
 
     def column_roles(self, table: str) -> dict[str, list[tuple[str, ModelProperty, str]]]:
         """Column (uppercase) -> [(entity, property, mapping status)] for
-        every attribute and to-one relationship that names it as a candidate."""
+        every attribute and to-one relationship that names it as a candidate
+        (built once per table)."""
+        cached = self._roles_cache.get(table)
+        if cached is not None:
+            return cached
         roles: dict[str, list[tuple[str, ModelProperty, str]]] = {}
+        self._roles_cache[table] = roles
         seen: set[tuple[str, str]] = set()
         for entity, prop in self.table_properties(table):
             if not (prop.is_attribute or (prop.is_relationship and not prop.to_many)):
@@ -1398,43 +1455,32 @@ class CoreDataStore:
             matches = [(e, p) for e, p, s in linked if s == MAP_NAME_MATCH]
             if column.upper() == "Z_ENT":
                 grid.append(GridColumn(column, index))
-                grid.append(GridColumn(
-                    "entity", None, decode="entity", derived=True,
-                    tooltip=ParseIssue("coredata.grid_entity_column"),
-                ))
+                grid.append(GridColumn("entity", None, decode="entity", derived=True))
                 continue
             if len(matches) == 1:
                 _ent, prop = matches[0]
                 kind = self.decode_kind(info.table, column, prop, MAP_NAME_MATCH)
                 if kind is not None:
-                    grid.append(GridColumn(
-                        prop.name, index, decode=kind, derived=True,
-                        tooltip=ParseIssue("coredata.grid_decoded_column", {
-                            "kind": kind, "column": column,
-                        }),
-                    ))
-                grid.append(GridColumn(
-                    f"{prop.name} ({column})", index,
-                    tooltip=ParseIssue("coredata.grid_name_match", {
-                        "property": prop.name, "column": column,
-                    }),
-                ))
+                    grid.append(GridColumn(prop.name, index, decode=kind, derived=True, heuristic=True))
+                grid.append(GridColumn(f"{prop.name} ({column})", index, heuristic=True))
                 continue
             kind = self.decode_kind(info.table, column, None, None)
             if kind is not None:
                 grid.append(GridColumn(
                     f"{column} [{kind}]", index, decode=kind, derived=True,
-                    tooltip=ParseIssue("coredata.grid_decoded_column", {"kind": kind, "column": column}),
+                    heuristic=self.timestamp_is_heuristic(info.table, column),
                 ))
             if linked:
                 names = ", ".join(sorted({f"{e}.{p.name}" for e, p, _s in linked}))
-                grid.append(GridColumn(
-                    f"{column} (candidate: {names})", index,
-                    tooltip=ParseIssue("coredata.grid_candidate", {"column": column, "properties": names}),
-                ))
+                grid.append(GridColumn(f"{column} (candidate: {names})", index))
             else:
                 grid.append(GridColumn(column, index))
         return grid
+
+    def timestamp_is_heuristic(self, table: str, column: str) -> bool:
+        """A date read from a column not declared TIMESTAMP
+        (ATRANSACTION.ZTIMESTAMP, declared FLOAT): by observed values."""
+        return not self.declared_type(table, column).strip().upper().startswith("TIMESTAMP")
 
     # -- records ---------------------------------------------------------------
 
@@ -1553,6 +1599,7 @@ class CoreDataStore:
                 out.append(PropertyValue(
                     prop.name, prop.kind, type_text,
                     text if text is not None else value_text(raw), raw, (column,), status,
+                    heuristic=HEURISTIC_NAME_MATCH,
                 ))
             elif link.status == MAP_AMBIGUOUS:
                 raws = tuple(row[index_of[c.upper()]] for c in link.candidates)
@@ -1579,9 +1626,13 @@ class CoreDataStore:
             raw = row[i]
             kind = self.decode_kind(records.table, column, None, None)
             text, status = decode_value(kind, raw) if kind else (None, None)
+            heuristic = (
+                HEURISTIC_COCOA_DATE
+                if kind == DECODE_DATE and self.timestamp_is_heuristic(records.table, column) else None
+            )
             out.append(PropertyValue(
                 column, "column", declared, text if text is not None else value_text(raw), raw,
-                (column,), status or ParseIssue("coredata.column_unassigned"),
+                (column,), status or ParseIssue("coredata.column_unassigned"), heuristic=heuristic,
             ))
         return out
 
@@ -1797,8 +1848,12 @@ class CoreDataStore:
         matched the tombstone slots in the observed stores."""
         if self.model is None or not self.in_model(entity):
             return []
-        attrs = [p for p in self.model.all_properties(entity) if p.is_attribute and p.has_flag(FLAG_TOMBSTONE)]
-        return sorted(attrs, key=lambda p: p.name)
+        cached = self._tomb_cache.get(entity)
+        if cached is None:
+            attrs = [p for p in self.model.all_properties(entity) if p.is_attribute and p.has_flag(FLAG_TOMBSTONE)]
+            cached = sorted(attrs, key=lambda p: p.name)
+            self._tomb_cache[entity] = cached
+        return cached
 
     def load_history(self, conn: Any | None = None) -> HistoryResult:
         """One row per ACHANGE row, no limit."""
@@ -1847,8 +1902,9 @@ class CoreDataStore:
             strings = dict(conn.execute(
                 f"SELECT Z_PK, ZNAME FROM {quote_ident(str_table)}"  # noqa: S608
             ).fetchall())
-        # Which entity rows still exist, per table (for "jump to object").
-        existing: dict[str, set[Any]] = {}
+        # Which entity rows still exist, per table (for "jump to object");
+        # a table that can't be read: existence unknown, never "no such row".
+        existing: dict[str, set[Any] | ParseIssue] = {}
         out: list[HistoryRow] = []
         for r in rows:
             rec = {c.upper(): v for c, v in zip(cols, tuple(r))}
@@ -1864,6 +1920,7 @@ class CoreDataStore:
             entity_name = info.name if info else None
             ctype = rec.get("ZCHANGETYPE")
             target_exists: bool | None = None
+            target_status: ParseIssue | None = None
             entity_pk = rec.get("ZENTITYPK")
             if info is not None and info.table:
                 if info.table not in existing:
@@ -1873,9 +1930,17 @@ class CoreDataStore:
                                 f"SELECT Z_PK FROM {quote_ident(info.table)}"  # noqa: S608
                             ).fetchall()
                         }
-                    except Exception:  # noqa: BLE001
-                        existing[info.table] = set()
-                target_exists = entity_pk in existing[info.table]
+                    except Exception as exc:  # noqa: BLE001
+                        failure = ParseIssue("coredata.table_unreadable", {"table": info.table}, str(exc))
+                        existing[info.table] = failure
+                        issues.append(failure)
+                known = existing[info.table]
+                if isinstance(known, ParseIssue):
+                    target_status = known
+                else:
+                    target_exists = entity_pk in known
+            elif ent_raw is not None:
+                target_status = ParseIssue("coredata.ent_unknown", {"ent": ent_raw})
             slots = self._tombstones(entity_name, rec, tomb_cols)
             out.append(HistoryRow(
                 change_pk=rec.get("Z_PK"),
@@ -1894,8 +1959,10 @@ class CoreDataStore:
                 tombstones=slots,
                 target_exists=target_exists,
                 raw=rec,
+                target_status=target_status,
             ))
-        return HistoryResult(out, issues, tomb_cols)
+        heuristic = bool(tx_table) and self.timestamp_is_heuristic(tx_table or "", "ZTIMESTAMP")
+        return HistoryResult(out, issues, tomb_cols, timestamp_heuristic=heuristic)
 
     def _tombstones(self, entity: str | None, rec: dict[str, Any], tomb_cols: list[str]) -> list[TombstoneSlot]:
         attrs = self.tombstone_attributes(entity) if entity else []
@@ -1936,26 +2003,29 @@ class CoreDataStore:
                                         info.table_status))
                     continue
                 try:
-                    pks = sorted(
-                        r[0] for r in conn.execute(
-                            f"SELECT Z_PK FROM {quote_ident(info.table)}"  # noqa: S608
-                        ).fetchall() if isinstance(r[0], int)
-                    )
+                    stored = [r[0] for r in conn.execute(
+                        f"SELECT Z_PK FROM {quote_ident(info.table)}"  # noqa: S608
+                    ).fetchall()]
                 except Exception as exc:  # noqa: BLE001
                     out.append(KeyFacts(info.name, info.ent, info.table, info.max_pk, None, None, None, None, "",
                                         None, ParseIssue("coredata.table_unreadable", {"table": info.table}, str(exc))))
                     continue
-                count = len(pks)
-                if not pks:
+                count = len(stored)
+                # A Z_PK that isn't an integer is counted as a row, not as a key.
+                keys = sorted(k for k in stored if isinstance(k, int) and not isinstance(k, bool))
+                if not stored:
                     out.append(KeyFacts(info.name, info.ent, info.table, info.max_pk, 0, None, None, None, "",
                                         None, None))
                     continue
-                present = set(pks)
-                missing = [n for n in range(1, pks[-1]) if n not in present]
-                gap = info.max_pk - pks[-1] if isinstance(info.max_pk, int) else None
+                missing = missing_key_ranges(keys)
+                gap = info.max_pk - keys[-1] if isinstance(info.max_pk, int) and keys else None
+                status = None
+                if count != len(keys):
+                    status = ParseIssue("coredata.keys_non_integer", {"count": count - len(keys)})
                 out.append(KeyFacts(
-                    info.name, info.ent, info.table, info.max_pk, count, pks[0], pks[-1], len(missing),
-                    _ranges(missing), gap, None,
+                    info.name, info.ent, info.table, info.max_pk, count,
+                    keys[0] if keys else None, keys[-1] if keys else None,
+                    sum(b - a + 1 for a, b in missing), _ranges(missing), gap, status,
                 ))
             return out
         finally:
@@ -2043,18 +2113,25 @@ class CoreDataStore:
                         if name is not None:
                             referenced.add(name)
                             file = self.support.external_file(name) if self.support else None
+                            found_folder = self.support is not None and self.support.state == "found"
                             rows.append(ExternalRow(
                                 "reference", table, column, rowid, pk, ent, name, flag, file,
-                                self.file_status(name, file),
+                                self.file_status(name, file), raw=value,
+                                heuristics=(HEURISTIC_BYTE_PATTERN,)
+                                + ((HEURISTIC_FOLDER_NAME,) if found_folder else ()),
                             ))
                         elif column.upper() in ext_cols:
                             rows.append(ExternalRow(
                                 "unrecognised", table, column, rowid, pk, ent, None, flag, None,
-                                ParseIssue("coredata.external_unrecognised", {
-                                    "length": len(value), "head": value[:8].hex(" "),
-                                }),
+                                ParseIssue("coredata.external_unrecognised", {"length": len(value)}),
+                                raw=value,
                             ))
             if self.support is not None and self.support.state == "found":
+                for rel, status in self.support.unlisted:
+                    rows.append(ExternalRow(
+                        "folder", None, None, None, None, None, rel or ".", "", None,
+                        ParseIssue("coredata.support_folder_unlisted", {"reason": status}),
+                    ))
                 for file in self.support.files:
                     name = file.rel_path.rsplit("/", 1)[-1]
                     in_external = file.rel_path.startswith(EXTERNAL_DATA_FOLDER + "/")
@@ -2064,6 +2141,7 @@ class CoreDataStore:
                         "file", None, None, None, None, None, file.rel_path, "", file,
                         ParseIssue("coredata.external_unreferenced") if in_external
                         else ParseIssue("coredata.support_other_file"),
+                        heuristics=(HEURISTIC_FOLDER_NAME,),
                     ))
         finally:
             if own:
@@ -2083,6 +2161,9 @@ class CoreDataStore:
                 "path": "", "reason": ParseIssue("coredata.support_no_parent"),
             })
         if file is None:
+            incomplete = self.support.listing_incomplete_for(name)
+            if incomplete is not None:
+                return ParseIssue("coredata.external_file_unknown", {"name": name, "reason": incomplete})
             return ParseIssue("coredata.external_file_missing", {"name": name, "path": self.support.location})
         if file.status is not None:
             return ParseIssue("coredata.external_file_unreadable", {"name": name, "reason": file.status})
@@ -2143,6 +2224,11 @@ class ModelRow:
     rule: RelationshipRule | None
     entity_index: int | None = None
     model_index: int | None = None
+
+    @property
+    def name_matched(self) -> bool:
+        """Linked to a column by the naming convention (a heuristic)."""
+        return self.mapping == MAP_NAME_MATCH
 
 
 def model_rows(model: CoreDataModel, store: CoreDataStore | None) -> list[ModelRow]:

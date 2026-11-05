@@ -4209,8 +4209,8 @@ class TableViewer(QWidget):
 
         return work
 
-    def _cd_base_status(self) -> list[Any]:
-        return [ParseIssue("coredata.undocumented")]
+    def _cd_entities_note(self) -> str:
+        return translate("TableViewer", "Current rows only. Deleted data may be in other views.")
 
     def _load_cd_entities(self) -> None:
         store = self._coredata
@@ -4228,7 +4228,7 @@ class TableViewer(QWidget):
             name = first.data(_cdv.ENTITY_ROLE) if first is not None else None
         if name is None:
             self._reset_source_model()
-            self._set_source_status(self._cd_base_status() + [ParseIssue("coredata.entities_current_state")])
+            self._set_source_status([self._cd_entities_note()])
             return
         if self._cd_entity_panel.current() != name:
             # Emits entitySelected -> _show_cd_entity, which takes a pending
@@ -4268,10 +4268,9 @@ class TableViewer(QWidget):
                 rows=_rows_label(len(records.rows)),
             )
         )
-        statuses = self._cd_base_status() + [ParseIssue("coredata.entities_current_state")]
-        statuses.append(ParseIssue("coredata.mapping_heuristic") if store.model is not None else store.model_status)
+        statuses: list[Any] = [self._cd_entities_note()]
         entity_status = store.entity_status(name)
-        if entity_status is not None and entity_status is not store.model_status:
+        if entity_status is not None:
             statuses.append(entity_status)
         self._set_source_status(statuses)
         if select_pk is not None:
@@ -4282,6 +4281,19 @@ class TableViewer(QWidget):
         if model is None:
             return False
         row = model.row_of_pk(pk)
+        if row is None and model.has_pk(pk):
+            # The record exists but the search filter hides it: never report
+            # it as missing -- clear the filter and show it.
+            self._search.blockSignals(True)
+            self._search.setText("")
+            self._search.blockSignals(False)
+            self._apply_filter("")
+            row = model.row_of_pk(pk)
+            self._sql_status.setText(
+                translate("TableViewer", "Search cleared to show {entity} Z_PK {pk}.").format(
+                    entity=self._cd_current_entity, pk=pk,
+                )
+            )
         if row is None:
             self._sql_status.setText(
                 translate("TableViewer", "{entity} Z_PK {pk}: no such row in the current database state").format(
@@ -4374,10 +4386,12 @@ class TableViewer(QWidget):
             meta["Core Data entity"] = self._cd_current_entity
         return path, meta
 
-    def _on_cd_open_value(self, data: bytes, prop_name: str) -> None:
+    def _on_cd_open_value(self, data: bytes, column: str) -> None:
+        """Inspect a value from the record detail: *column* is the SQL column
+        it is stored in (provenance names the column, not the property)."""
         record = self._cd_current_record()
         table = record[0].table if record else ""
-        path, meta = self._cd_provenance(table, prop_name, record[2] if record else "?")
+        path, meta = self._cd_provenance(table, column, record[2] if record else "?")
         meta["Inspected bytes"] = translate("TableViewer", "the cell's bytes")
         BlobInspector(data, self, artifact_path=path, provenance=meta).show()
 
@@ -4397,8 +4411,6 @@ class TableViewer(QWidget):
                 note_cell.export = render_value(note)
             rows.append([_cdv.Cell(item), _cdv.Cell(value, raw), note_cell])
 
-        add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Format")), "Core Data store (SQLite)",
-            ParseIssue("coredata.undocumented"))
         add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Detected by")),
             ", ".join(store.detection.present))
         for n, meta in enumerate(store.metadata, start=1):
@@ -4418,14 +4430,23 @@ class TableViewer(QWidget):
         add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Persistent history")),
             render_value(store.history_status(), localized=True))
         if store.support is not None:
-            add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "External data folder")),
-                render_value(store.support.status(), localized=True))
+            folder = _cdv.Cell(render_value(store.support.status(), localized=True))
+            folder.export = render_value(store.support.status())
+            # Found through the folder-name rule .<store>_SUPPORT: a heuristic.
+            rows.append([
+                _cdv.Cell(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "External data folder"))), folder,
+                _cdv.Cell(_cdv.heuristic("folder name"), None, None, QColor("#cc8800")),
+            ])
         for issue in store.issues:
             add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Note")), "", issue)
         _cdv.fill_standard_model(self._source_model, headers, rows)
         self._resize_and_cap()
         self._row_count_label.setText(_rows_label(len(rows)))
-        self._set_source_status(self._cd_base_status())
+        self._set_source_status([translate(
+            "TableViewer",
+            "Some links in these views are heuristic, not stored in the file. Rows marked "
+            "\"heuristic\" show where; check the raw values for important findings.",
+        )])
 
     def _load_cd_model(self) -> None:
         store = self._coredata
@@ -4435,12 +4456,7 @@ class TableViewer(QWidget):
         _cdv.fill_standard_model(self._source_model, headers, cells)
         self._resize_and_cap()
         self._row_count_label.setText(_rows_label(len(cells)))
-        status = self._cd_base_status()
-        if store.model is None:
-            status.append(store.model_status)
-        else:
-            status.append(ParseIssue("coredata.mapping_heuristic"))
-            status.append(ParseIssue("coredata.rel_rules"))
+        status: list[Any] = [store.model_status] if store.model is None else []
         self._set_source_status(status + list(store.model_issues))
 
     def _update_cd_object_detail(self, row: int) -> None:
@@ -4465,12 +4481,11 @@ class TableViewer(QWidget):
         self._activate_cd_model(model)
         self._resize_and_cap()
         self._row_count_label.setText(_rows_label(len(result.rows)))
-        status = self._cd_base_status() + [store.history_status()]
-        status += [ParseIssue("coredata.tombstones_interpreted"), ParseIssue("coredata.zcolumns_undetermined")]
+        status: list[Any] = [translate("TableViewer", "What the ZCOLUMNS bits stand for is unknown.")]
+        state = store.history_status()
+        if not result.rows:  # empty or unreadable: say so here too
+            status.append(state)
         self._set_source_status(status + list(result.issues))
-        self._sql_status.setText(
-            translate("TableViewer", "Double-click a change to show its object in Core Data Entities.")
-        )
 
     def _cd_history_row(self, proxy_index: QModelIndex) -> Any:
         model = self._cd_rows_model
@@ -4484,7 +4499,13 @@ class TableViewer(QWidget):
             return
         info = self._coredata.entity(change.entity_name)
         table = info.table if info else "?"
-        if change.target_exists:
+        if change.target_status is not None or change.target_exists is None:
+            # Existence not known (the table couldn't be read): never "gone".
+            self._sql_status.setText(render_value(ParseIssue("coredata.history_object_unknown", {
+                "entity": change.entity_name, "pk": change.entity_pk,
+                "reason": change.target_status or ParseIssue("coredata.no_table", {"tables": table}),
+            }), localized=True))
+        elif change.target_exists:
             self._sql_status.setText(render_value(ParseIssue("coredata.history_object_exists", {
                 "entity": change.entity_name, "pk": change.entity_pk,
             }), localized=True))
@@ -4518,7 +4539,9 @@ class TableViewer(QWidget):
             _cdv.Header(_Gen(g("GeneratedView", "Status"))),
         ]
         rows = [[
-            _cdv.Cell(f.entity), _cdv.stored_cell(f.ent), _cdv.Cell(f.table or ""), _cdv.stored_cell(f.z_max),
+            _cdv.Cell(f.entity), _cdv.stored_cell(f.ent),
+            _cdv.Cell(_cdv.heuristic_value(f.table), None, None, QColor("#cc8800")) if f.table else _cdv.Cell(""),
+            _cdv.stored_cell(f.z_max),
             _cdv.stored_cell(f.rows), _cdv.stored_cell(f.min_pk), _cdv.stored_cell(f.max_pk),
             _cdv.stored_cell(f.missing_count), _cdv.Cell(f.missing_ranges), _cdv.stored_cell(f.max_gap),
             _cdv.Cell(render_value(f.status, localized=True) if f.status is not None else ""),
@@ -4526,7 +4549,7 @@ class TableViewer(QWidget):
         _cdv.fill_standard_model(self._source_model, headers, rows)
         self._resize_and_cap()
         self._row_count_label.setText(_rows_label(len(rows)))
-        self._set_source_status(self._cd_base_status() + [ParseIssue("coredata.keys_description")])
+        self._set_source_status([translate("TableViewer", "These numbers don't show why keys are missing.")])
 
     def _load_cd_external(self) -> None:
         store = self._coredata
@@ -4562,6 +4585,8 @@ class TableViewer(QWidget):
             _cdv.Header(_Gen(g("GeneratedView", "Column"))), _cdv.Header("rowid"), _cdv.Header("Z_PK"),
             _cdv.Header("Z_ENT"), _cdv.Header(_Gen(g("GeneratedView", "UUID / file"))),
             _cdv.Header(_Gen(g("GeneratedView", "Model flag"))),
+            _cdv.Header(_Gen(g("GeneratedView", "Recognised by"))),
+            _cdv.Header(_Gen(g("GeneratedView", "Raw"))),
             _cdv.Header(_Gen(g("GeneratedView", "File status"))),
             _cdv.Header(_Gen(g("GeneratedView", "Path"))), _cdv.Header(_Gen(g("GeneratedView", "Size"))),
             _cdv.Header(_Gen(g("GeneratedView", "Content (by its bytes)"))),
@@ -4572,10 +4597,15 @@ class TableViewer(QWidget):
             status_cell = _cdv.Cell(render_value(r.status, localized=True) if r.status is not None else "")
             if r.status is not None and (r.file is None or r.kind != "reference"):
                 status_cell.color = QColor("#cc8800")
+            marks = "; ".join(_cdv.heuristic_text(h) for h in r.heuristics)  # i18n: keep -- joins translated parts
+            raw_cell = (
+                _cdv.Cell(r.raw.hex(" "), r.raw) if r.raw is not None else _cdv.Cell("")
+            )  # the cell as stored, complete
             rows.append([
                 _cdv.Cell(_cdv.word(r.kind)), _cdv.Cell(r.table or ""), _cdv.Cell(r.column or ""),
                 _cdv.stored_cell(r.rowid), _cdv.stored_cell(r.pk), _cdv.stored_cell(r.ent),
-                _cdv.Cell(r.name or ""), _cdv.Cell(r.model_flag), status_cell,
+                _cdv.Cell(r.name or ""), _cdv.Cell(r.model_flag),
+                _cdv.Cell(marks, None, None, QColor("#cc8800") if marks else None), raw_cell, status_cell,
                 _cdv.Cell(f"{location}/{r.file.rel_path}" if r.file is not None else ""),
                 _cdv.stored_cell(r.file.size if r.file is not None else None),
                 _cdv.Cell(labels.get(r.file.rel_path, "") if r.file is not None else ""),
@@ -4584,11 +4614,8 @@ class TableViewer(QWidget):
         _cdv.fill_standard_model(self._source_model, headers, rows)
         self._resize_and_cap()
         self._row_count_label.setText(_rows_label(len(rows)))
-        self._set_source_status(
-            self._cd_base_status() + [ParseIssue("coredata.external_interpreted"), scan.folder_status]
-            + list(scan.issues)
-        )
-        self._sql_status.setText(translate("TableViewer", "Double-click a row with a file to open it in a new tab."))
+        folder: list[Any] = [] if scan.folder_status.code == "coredata.support_found" else [scan.folder_status]
+        self._set_source_status(folder + list(scan.issues))
 
     def _open_cd_external_row(self, proxy_index: QModelIndex) -> None:
         rows = getattr(self, "_cd_external_rows", [])
@@ -4602,6 +4629,10 @@ class TableViewer(QWidget):
                          "Source row": f"Z_PK {r.pk}" if r.pk is not None else f"rowid {r.rowid}"})
         if r.name:
             meta["External value reference"] = r.name
+        if r.heuristics:
+            meta["Recognised by"] = "; ".join(  # i18n: keep -- provenance stays English
+                _cdv.heuristic(h).pair()[0] for h in r.heuristics
+            )
         self._open_cd_file(r.file, meta, r.status)
 
     def _open_cd_file(self, file: Any, meta: dict[str, str], status: Any) -> None:
@@ -4661,10 +4692,11 @@ class TableViewer(QWidget):
         actions: dict[object, Callable[[], None]] = {}
         name = store.reference_name(raw)
         if name is not None:
-            act = menu.addAction(translate("TableViewer", "Open external file"))
+            act = menu.addAction(translate("TableViewer", "Open external file (heuristic: byte pattern)"))
             file = store.support.external_file(name) if store.support is not None else None
             meta = {"Core Data store": self._source_name, "Source table": table, "Source column": column,
-                    "Source row": f"Z_PK {pk}", "External value reference": name}
+                    "Source row": f"Z_PK {pk}", "External value reference": name,
+                    "Recognised by": "heuristic: byte pattern; heuristic: folder name"}  # i18n: keep -- provenance
             status = store.file_status(name, file)
             if file is None:
                 act.setToolTip(render_value(status, localized=True) if status is not None else "")
@@ -4672,11 +4704,11 @@ class TableViewer(QWidget):
         if store.is_inline_value(raw):
             offered, note = store.inline_action(table, column)
             if offered:
-                label = translate("TableViewer", "Open without the 0x01 prefix")
+                label = translate("TableViewer", "Open without the 0x01 prefix (heuristic: byte pattern)")
                 if note is not None:
-                    label = translate("TableViewer", "Open without the 0x01 prefix ({note})").format(
-                        note=render_value(note, localized=True)
-                    )
+                    label = translate(
+                        "TableViewer", "Open without the 0x01 prefix (heuristic: byte pattern; {note})"
+                    ).format(note=render_value(note, localized=True))
                 act = menu.addAction(label)
                 data = bytes(raw)[1:]
 

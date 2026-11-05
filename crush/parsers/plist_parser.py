@@ -13,6 +13,7 @@ from crush.core.issues import ParseIssue
 from crush.core.magic import BPLIST_MAGIC, looks_like_plist_xml, xml_plist_body
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.coredata_store import CORE_DATA_MODEL_FORMAT
 from crush.parsers.nska_archive import (
     Resolution,
     archive_stats,
@@ -88,12 +89,15 @@ class PlistParser(AbstractParser):
                 hints["archive"] = reading.loaded
                 hints["resolved"] = resolved
                 _add_coredata_model(raw, reading.loaded, meta, hints)
+            is_model = reading.keyed and root_class(reading.loaded) == "NSManagedObjectModel"
             return ParseResult(
                 viewer_type="tree_text",
                 data=data,
                 metadata=meta,
                 text_index=text_index if text_index is not None else _flatten_text(data),
                 viewer_hints=hints,
+                # A compiled Core Data model: its own format knowledge applies.
+                format_short_name=CORE_DATA_MODEL_FORMAT if is_model else None,
             )
         except Exception as exc:
             logging.getLogger(__name__).warning("Plist parse error for %s: %s", node.path, exc)

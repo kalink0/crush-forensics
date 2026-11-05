@@ -37,7 +37,6 @@ from crush.viewers.generated_text import (
     EXPORT_TEXT_ROLE,
     Gen,
     gen_item,
-    gen_text,
     gens,
     set_headers,
 )
@@ -46,6 +45,7 @@ ROWID_ROLE = Qt.ItemDataRole.UserRole + 1  # same role as the table viewer's row
 TARGET_ROLE = Qt.ItemDataRole.UserRole + 40
 BYTES_ROLE = Qt.ItemDataRole.UserRole + 41
 ENTITY_ROLE = Qt.ItemDataRole.UserRole + 42
+COLUMN_ROLE = Qt.ItemDataRole.UserRole + 43
 _STATUS_COLOR = QColor("#cc8800")
 
 # Values a Core Data view gets from the store at runtime (its English
@@ -78,8 +78,17 @@ GENERATED_VALUES = (
     QT_TRANSLATE_NOOP("GeneratedView", "no such row"),
     QT_TRANSLATE_NOOP("GeneratedView", "true"),
     QT_TRANSLATE_NOOP("GeneratedView", "false"),
+    QT_TRANSLATE_NOOP("GeneratedView", "unknown"),
+    QT_TRANSLATE_NOOP("GeneratedView", "folder"),
+    # What a heuristic rests on (the store's words, see heuristic()).
+    QT_TRANSLATE_NOOP("GeneratedView", "byte pattern"),
+    QT_TRANSLATE_NOOP("GeneratedView", "folder name"),
+    QT_TRANSLATE_NOOP("GeneratedView", "read as date"),
+    QT_TRANSLATE_NOOP("GeneratedView", "table name"),
 )
 _GENERATED_SET = frozenset(GENERATED_VALUES)
+_HEURISTIC = QT_TRANSLATE_NOOP("GeneratedView", "heuristic: {what}")
+_VALUE_HEURISTIC = QT_TRANSLATE_NOOP("GeneratedView", "{value} (heuristic)")
 
 
 def word(english: str | None) -> Gen | str:
@@ -88,6 +97,31 @@ def word(english: str | None) -> Gen | str:
     if english is None:
         return ""
     return Gen(english) if english in _GENERATED_SET else english
+
+
+def heuristic(what: Any) -> Gen:
+    """The row marker for a heuristic: "heuristic: <what it rests on>"."""
+    return Gen(_HEURISTIC, what=word(what) if isinstance(what, str) else what)
+
+
+def heuristic_value(value: str) -> Gen:
+    """A value that rests on a heuristic: "<value> (heuristic)"."""
+    return Gen(_VALUE_HEURISTIC, value=value)
+
+
+def heuristic_text(what: Any) -> str:
+    return heuristic(what).pair()[1]
+
+
+def table_cell(table: str | None) -> QStandardItem:
+    """An entity's table, found by the naming rule Z/A + uppercase name:
+    marked as a heuristic in the cell."""
+    if not table:
+        return QStandardItem("")
+    item = gen_item(heuristic_value(table))
+    item.setForeground(_STATUS_COLOR)
+    item.setEditable(False)
+    return item
 
 
 class Cell:
@@ -126,11 +160,15 @@ def stored_cell(value: Any, tooltip: Any = None) -> Cell:
 
 
 class Header:
-    __slots__ = ("label", "tooltip")
+    """A column header; *heuristic*: the column's values rest on a
+    heuristic (the label says so, shown in the status colour)."""
 
-    def __init__(self, label: str | Gen, tooltip: Any = None) -> None:
+    __slots__ = ("label", "tooltip", "heuristic")
+
+    def __init__(self, label: str | Gen, tooltip: Any = None, heuristic: bool = False) -> None:
         self.label = label
         self.tooltip = tooltip
+        self.heuristic = heuristic
 
     def pair(self) -> tuple[str, str]:
         return self.label.pair() if isinstance(self.label, Gen) else (self.label, self.label)
@@ -277,6 +315,8 @@ class RowsModel(_SelfSortingModel):
             return english if english != display else None
         if role == Qt.ItemDataRole.ToolTipRole and header.tooltip is not None:
             return render_value(header.tooltip, localized=True)
+        if role == Qt.ItemDataRole.ForegroundRole and header.heuristic:
+            return _STATUS_COLOR
         return None
 
     def cell(self, row: int, col: int) -> Cell:
@@ -358,13 +398,20 @@ class RecordModel(_SelfSortingModel):
         except ValueError:
             return None
 
-    def row_of_pk(self, pk: Any) -> int | None:
-        """The shown row of the record with *pk* (None: no such record, or
-        filtered out)."""
+    def _index_of_pk(self, pk: Any) -> int | None:
         col = next((i for i, (c, _t) in enumerate(self.records.columns) if c.upper() == "Z_PK"), None)
         if col is None:
             return None
-        index = next((r for r, row in enumerate(self.records.rows) if row[col] == pk), None)
+        return next((r for r, row in enumerate(self.records.rows) if row[col] == pk), None)
+
+    def has_pk(self, pk: Any) -> bool:
+        """Whether a record with *pk* is loaded, shown or filtered out."""
+        return self._index_of_pk(pk) is not None
+
+    def row_of_pk(self, pk: Any) -> int | None:
+        """The shown row of the record with *pk* (None: no such record, or
+        filtered out -- has_pk() tells the two apart)."""
+        index = self._index_of_pk(pk)
         return self.shown_row(index) if index is not None else None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -379,14 +426,23 @@ class RecordModel(_SelfSortingModel):
                 return None
             if grid.is_entity_name:
                 english, display = Gen(QT_TRANSLATE_NOOP("GeneratedView", "entity [derived]")).pair()
+            elif grid.derived and grid.heuristic:
+                english, display = Gen(
+                    QT_TRANSLATE_NOOP("GeneratedView", "{name} [derived, heuristic]"), name=grid.header
+                ).pair()
             elif grid.derived:
-                english = f"{grid.header} [derived]"
-                display = Gen(
+                english, display = Gen(
                     QT_TRANSLATE_NOOP("GeneratedView", "{name} [derived]"), name=grid.header
-                ).pair()[1]
+                ).pair()
+            elif grid.heuristic:
+                english, display = Gen(
+                    QT_TRANSLATE_NOOP("GeneratedView", "{name} [heuristic]"), name=grid.header
+                ).pair()
             else:
                 english = display = grid.header
             tooltip = grid.tooltip
+            if role == Qt.ItemDataRole.ForegroundRole and grid.heuristic:
+                return _STATUS_COLOR
         if role == Qt.ItemDataRole.DisplayRole:
             return display
         if role == EXPORT_TEXT_ROLE:
@@ -488,6 +544,7 @@ class EntityTreePanel(QWidget):
             QT_TRANSLATE_NOOP("GeneratedView", "Entity"),
             QT_TRANSLATE_NOOP("GeneratedView", "Rows"),
             QT_TRANSLATE_NOOP("GeneratedView", "Z_ENT"),
+            QT_TRANSLATE_NOOP("GeneratedView", "Table"),
             QT_TRANSLATE_NOOP("GeneratedView", "Status"),
         ))
 
@@ -512,7 +569,8 @@ class EntityTreePanel(QWidget):
                 count_item.setData(count, Qt.ItemDataRole.UserRole)
             ent_item = QStandardItem(str(info.ent))
             ent_item.setEditable(False)
-            parent.appendRow([name_item, count_item, ent_item, status_item])
+            table_item = table_cell(info.table)
+            parent.appendRow([name_item, count_item, ent_item, table_item, status_item])
             self._items[info.name] = name_item
             for child in sorted(store.children(info.ent), key=lambda e: e.name.lower()):
                 if child.ent not in seen:
@@ -555,6 +613,7 @@ class RecordDetailPanel(QWidget):
     openBytesRequested(bytes, label) for a binary value."""
 
     navigateRequested = Signal(str, object)
+    # (bytes, the SQL column they are stored in)
     openBytesRequested = Signal(bytes, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -606,26 +665,41 @@ class RecordDetailPanel(QWidget):
         root.appendRow([attrs] + [QStandardItem("") for _ in range(6)])
         for value in values:
             raw = value.raw
-            raw_text = (
-                "; ".join(_raw_text(v) for v in raw) if isinstance(raw, tuple) else _raw_text(raw)
-            )
+            candidates = isinstance(raw, tuple)
+            parts = []
+            if value.heuristic is not None:
+                parts.append(heuristic_text(value.heuristic))
+            if value.status is not None:
+                parts.append(render_value(value.status, localized=True))
             items = [
                 QStandardItem(value.name),
                 _item(word(value.kind)),
                 QStandardItem(value.type_text),
-                QStandardItem(value.value),
-                QStandardItem(raw_text),
+                QStandardItem("" if candidates else value.value),
+                QStandardItem("" if candidates else _raw_text(raw)),
                 QStandardItem(", ".join(value.columns)),
-                QStandardItem(render_value(value.status, localized=True) if value.status is not None else ""),
+                QStandardItem("; ".join(parts)),  # i18n: keep -- joins translated parts
             ]
-            if isinstance(raw, (bytes, bytearray, memoryview)):
-                items[0].setData(bytes(raw), BYTES_ROLE)
-                items[4].setToolTip(translate("CoreDataView", "Double-click to inspect the bytes"))
-            if value.status is not None:
+            if not candidates:
+                _set_raw(items[0], items[4], raw, value.columns[0] if value.columns else "")
+            if parts:
                 items[6].setForeground(_STATUS_COLOR)
             for it in items:
                 it.setEditable(False)
             attrs.appendRow(items)
+            if candidates:
+                # An ambiguous link: every candidate column with its own
+                # complete stored value, none chosen.
+                for column, candidate in zip(value.columns, raw):
+                    child = [
+                        QStandardItem(column), QStandardItem(""), QStandardItem(""),
+                        QStandardItem(""), QStandardItem(_raw_text(candidate)),
+                        QStandardItem(column), QStandardItem(""),
+                    ]
+                    _set_raw(child[0], child[4], candidate, column)
+                    for it in child:
+                        it.setEditable(False)
+                    items[0].appendRow(child)
         if relationships is not None:
             rels = gen_item(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Relationships")))
             rels.setEditable(False)
@@ -646,24 +720,28 @@ class RecordDetailPanel(QWidget):
             )
         else:
             summary = "; ".join(f"{c} = {_raw_text(v)}" for c, v in (rel.stored or ())) or "—"
-        where = rule.table or ""
-        if rule.kind == "join table" and rule.table:
-            where = translate("CoreDataView", "join {table}").format(table=rule.table)
         columns = ", ".join(c for c in (rule.key_column, rule.source_column, rule.ent_column, rule.order_column) if c)
-        status = rel.status if rel.status is not None else rule.reason
+        parts = []
+        if rule.resolved:
+            # Resolved by a rule established on observed stores: heuristic,
+            # with where the link is stored.
+            parts.append(heuristic_text(rule.link_text()))
+        if rel.status is not None:
+            parts.append(render_value(rel.status, localized=True))
+        elif rule.reason is not None:
+            parts.append(render_value(rule.reason, localized=True))
         items = [
             QStandardItem(rel.name),
             _item(word("relationship")),
             QStandardItem(("→ " if not rel.to_many else "↠ ") + (rel.destination or "?")),
             QStandardItem(summary),
-            QStandardItem(_raw_text(rel.stored) if not isinstance(rel.stored, tuple) else ""),
-            QStandardItem(f"{where} {columns}".strip() if rule.resolved else ", ".join(rule.candidates)),
-            _item(word(rule.status)) if status is None else QStandardItem(
-                f"{gen_text(rule.status)}: {render_value(status, localized=True)}"  # i18n: keep -- layout
+            QStandardItem(_raw_text(rel.stored) if rel.stored is not None and not isinstance(rel.stored, tuple) else ""),
+            QStandardItem(
+                f"{rule.table or ''} {columns}".strip() if rule.resolved else ", ".join(rule.candidates)
             ),
+            QStandardItem("; ".join(parts)),  # i18n: keep -- joins translated parts
         ]
-        if status is not None:
-            items[6].setForeground(_STATUS_COLOR)
+        items[6].setForeground(_STATUS_COLOR)
         for it in items:
             it.setEditable(False)
         if rule.resolved and not rel.to_many and rel.targets:
@@ -688,9 +766,6 @@ class RecordDetailPanel(QWidget):
                 for it in child:
                     it.setEditable(False)
                 items[0].appendRow(child)
-        elif rel.targets and not rel.targets[0].exists:
-            items[6].setText(render_value(rel.status, localized=True) if rel.status else items[6].text())
-
     def _on_double_clicked(self, index: QModelIndex) -> None:
         item = self.model.itemFromIndex(index.siblingAtColumn(0))
         if item is None:
@@ -701,7 +776,7 @@ class RecordDetailPanel(QWidget):
             return
         data = item.data(BYTES_ROLE)
         if isinstance(data, bytes):
-            self.openBytesRequested.emit(data, item.text())
+            self.openBytesRequested.emit(data, item.data(COLUMN_ROLE) or "")
 
 
 class ObjectDetailPanel(QWidget):
@@ -834,14 +909,29 @@ def _item(text: Gen | str) -> QStandardItem:
     return QStandardItem(text)
 
 
+_RAW_PREVIEW_BYTES = 16
+
+
 def _raw_text(value: Any) -> str:
+    """A stored value as text: complete, except a BLOB longer than
+    _RAW_PREVIEW_BYTES, which is labelled a preview (its row opens all of it)."""
     if value is None:
         return "NULL"
     if isinstance(value, (bytes, bytearray, memoryview)):
         data = bytes(value)
-        head = data[:16].hex(" ")
-        return f"<BLOB {len(data):,} B> {head}" + (" …" if len(data) > 16 else "")
+        if len(data) <= _RAW_PREVIEW_BYTES:
+            return f"<BLOB {len(data):,} B> {data.hex(' ')}".rstrip()  # i18n: keep -- value layout
+        return translate("CoreDataView", "<BLOB {size:,} B> {head} … (preview, double-click for all)").format(
+            size=len(data), head=data[:_RAW_PREVIEW_BYTES].hex(" "),
+        )
     return repr(value) if isinstance(value, str) else str(value)
+
+
+def _set_raw(name_item: QStandardItem, raw_item: QStandardItem, raw: Any, column: str) -> None:
+    """Make a row's complete stored bytes reachable: double-click opens them."""
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        name_item.setData(bytes(raw), BYTES_ROLE)
+        name_item.setData(column, COLUMN_ROLE)
 
 
 def status_lines(*issues: Any) -> list[Any]:
@@ -868,13 +958,17 @@ class HistoryTable:
 def history_table(result: Any) -> HistoryTable:
     """The Core Data History view: one row per ACHANGE row, the stored
     references next to what they resolve to, tombstones as attribute =
-    value (interpreted) and every raw slot. Plain Python: safe off the UI
-    thread."""
+    value (marked heuristic) and every raw slot. Plain Python: safe off the
+    UI thread."""
     g = QT_TRANSLATE_NOOP
+    time_header = (
+        g("GeneratedView", "Time (UTC) [derived, heuristic]") if result.timestamp_heuristic
+        else g("GeneratedView", "Time (UTC) [derived]")
+    )
     headers = [
         Header("Z_PK"),
         Header("ZTRANSACTIONID"),
-        Header(Gen(g("GeneratedView", "Time (UTC) [derived]"))),
+        Header(Gen(time_header)),
         Header("ZTIMESTAMP"),
         Header(Gen(g("GeneratedView", "Author"))), Header("ZAUTHORTS"), Header("ZAUTHOR"),
         Header(Gen(g("GeneratedView", "Bundle ID"))), Header("ZBUNDLEIDTS"), Header("ZBUNDLEID"),
@@ -887,9 +981,13 @@ def history_table(result: Any) -> HistoryTable:
         Header("ZENTITYPK"),
         Header(Gen(g("GeneratedView", "Object now [derived]"))),
         Header("ZCOLUMNS"),
-        Header(Gen(g("GeneratedView", "ZCOLUMNS set bits [derived]")), ParseIssue("coredata.zcolumns_undetermined")),
-        Header(Gen(g("GeneratedView", "Tombstones [interpreted]")), ParseIssue("coredata.tombstones_interpreted")),
+        # Bit numbering byte × 8 + bit, least significant first: an assumed order.
+        Header(Gen(g("GeneratedView", "ZCOLUMNS set bits [derived, heuristic]"))),
+        Header(Gen(g("GeneratedView", "Tombstones [derived]"))),
     ] + [Header(c) for c in result.tombstone_columns]
+    for index in (2, 23):
+        if index != 2 or result.timestamp_heuristic:
+            headers[index].heuristic = True
     rows: list[list[Cell]] = []
     for r in result.rows:
         cells = [stored_cell(r.change_pk), stored_cell(r.transaction)]
@@ -906,7 +1004,9 @@ def history_table(result: Any) -> HistoryTable:
         cells.append(stored_cell(r.entity_raw))
         cells.append(Cell(r.entity_name or ""))
         cells.append(stored_cell(r.entity_pk))
-        if r.target_exists is None:
+        if r.target_status is not None:
+            cells.append(Cell(word("unknown"), None, r.target_status, _STATUS_COLOR))
+        elif r.target_exists is None:
             cells.append(Cell(""))
         else:
             cells.append(Cell(word("exists" if r.target_exists else "no such row")))
@@ -916,22 +1016,23 @@ def history_table(result: Any) -> HistoryTable:
         else:
             cells.append(stored_cell(columns_raw))
         bits = r.columns_bits
-        cells.append(Cell(", ".join(str(b) for b in bits) if bits else "", None,
-                          ParseIssue("coredata.zcolumns_undetermined") if bits else None))
+        cells.append(Cell(", ".join(str(b) for b in bits) if bits else ""))
         tomb_parts = []
         tomb_tip = []
         for slot in r.tombstones:
             if slot.attribute is not None:
-                tomb_parts.append(f"{slot.attribute}={_tomb_text(slot.raw)}")
+                tomb_parts.append(heuristic_value(f"{slot.attribute} = {_tomb_text(slot.raw)}").pair()[1])
             else:
-                tomb_parts.append(f"[{slot.slot}]={_tomb_text(slot.raw)} ⚠")  # i18n: keep -- layout
+                tomb_parts.append(translate("CoreDataView", "[{slot}] = {value} (unassigned)").format(
+                    slot=slot.slot, value=_tomb_text(slot.raw),
+                ))
                 tomb_tip.append(
                     render_value(slot.status, localized=True) + " — "
                     + translate("CoreDataView", "candidates: {names}").format(names=", ".join(slot.candidates) or "—")
                 )
-        cells.append(Cell("; ".join(tomb_parts), None,
+        cells.append(Cell("; ".join(tomb_parts), None,  # i18n: keep -- joins translated parts
                           "\n".join(tomb_tip) if tomb_tip else None,
-                          _STATUS_COLOR if tomb_tip else None))
+                          _STATUS_COLOR if tomb_parts else None))
         for column in result.tombstone_columns:
             cells.append(stored_cell(r.raw.get(column.upper())))
         rows.append(cells)
@@ -972,9 +1073,9 @@ def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header],
     ]
     if with_columns:
         headers += [
-            Header(Gen(g("GeneratedView", "Column candidates")), ParseIssue("coredata.mapping_heuristic")),
+            Header(Gen(g("GeneratedView", "Column candidates"))),
             Header(Gen(g("GeneratedView", "Declared SQL type"))),
-            Header(Gen(g("GeneratedView", "Mapping status")), ParseIssue("coredata.mapping_heuristic")),
+            Header(Gen(g("GeneratedView", "Mapping status"))),
         ]
     headers += [
         Header(Gen(g("GeneratedView", "Destination"))),
@@ -985,7 +1086,7 @@ def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header],
     ]
     if with_columns:
         headers += [
-            Header(Gen(g("GeneratedView", "Relationship rule")), ParseIssue("coredata.rel_rules")),
+            Header(Gen(g("GeneratedView", "Relationship rule"))),
             Header(Gen(g("GeneratedView", "Rule status"))),
         ]
     out: list[list[Cell]] = []
@@ -996,7 +1097,9 @@ def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header],
             type_text = f"{prop.type_name() or 'unknown'} ({prop.attribute_type})"
         cells = [Cell(row.entity), stored_cell(row.ent), Cell(row.superentity or "")]
         if with_columns:
-            cells.append(Cell(row.table or ""))
+            cells.append(
+                Cell(heuristic_value(row.table), None, None, _STATUS_COLOR) if row.table else Cell("")
+            )
         cls = prop.class_name + (f" (via {prop.via_class})" if prop.via_class else "")
         unknown_class = None if prop.known_class else ParseIssue("coredata.model_unknown_class", {
             "entity": row.entity, "property": prop.name, "class_name": prop.class_name,
@@ -1017,9 +1120,9 @@ def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header],
             cells += [
                 Cell(", ".join(c for c, _t in row.candidates)),
                 Cell(", ".join(t or "—" for _c, t in row.candidates)),
-                Cell(word(row.mapping)),
+                Cell(heuristic(row.mapping) if row.name_matched else word(row.mapping)),
             ]
-            if row.mapping and row.mapping != "name match":
+            if row.mapping:
                 cells[-1].color = _STATUS_COLOR
         delete_rule = prop.delete_rule_text()
         cells += [
@@ -1036,9 +1139,11 @@ def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header],
                                               rule.ent_column, rule.order_column) if c)
                 cells += [
                     Cell(word(rule.kind), None, where or None),
-                    Cell(word(rule.status), None, rule.reason,
-                         _STATUS_COLOR if not rule.resolved else None),
+                    Cell(heuristic(rule.link_text()) if rule.resolved else render_value(rule.reason, localized=True)
+                         if rule.reason is not None else word(rule.status), None, None, _STATUS_COLOR),
                 ]
+                if rule.reason is not None and not rule.resolved:
+                    cells[-1].export = render_value(rule.reason)
         out.append(cells)
     return headers, out
 
@@ -1050,10 +1155,13 @@ def fill_standard_model(model: QStandardItemModel, headers: list[Header], rows: 
     labels += [h.label for h in headers]
     set_headers(model, labels)
     for col, header in enumerate(headers, start=1):
+        item = model.horizontalHeaderItem(col)
+        if item is None:
+            continue
         if header.tooltip is not None:
-            item = model.horizontalHeaderItem(col)
-            if item is not None:
-                item.setToolTip(render_value(header.tooltip, localized=True))
+            item.setToolTip(render_value(header.tooltip, localized=True))
+        if header.heuristic:
+            item.setForeground(_STATUS_COLOR)
     for n, cells in enumerate(rows, start=1):
         row_item = QStandardItem(str(n))
         row_item.setData(n, Qt.ItemDataRole.UserRole)
