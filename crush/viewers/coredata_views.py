@@ -644,6 +644,7 @@ class RecordDetailPanel(QWidget):
         note: Any = None,
     ) -> None:
         self.model.clear()
+        self._expand_after: list[QStandardItem] = []
         set_headers(self.model, gens(
             QT_TRANSLATE_NOOP("GeneratedView", "Property"),
             QT_TRANSLATE_NOOP("GeneratedView", "Kind"),
@@ -700,6 +701,8 @@ class RecordDetailPanel(QWidget):
                     for it in child:
                         it.setEditable(False)
                     items[0].appendRow(child)
+                # The candidates are what the analyst compares: shown open.
+                self._expand_after.append(items[0])
         if relationships is not None:
             rels = gen_item(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Relationships")))
             rels.setEditable(False)
@@ -707,8 +710,15 @@ class RecordDetailPanel(QWidget):
             for rel in relationships:
                 self._add_relationship(rels, rel)
         self.tree.expandToDepth(0)
+        for item in self._expand_after:
+            self.tree.expand(self.model.indexFromItem(item))
+        self._expand_after = []
         for col in range(self.model.columnCount()):
             self.tree.resizeColumnToContents(col)
+
+    @staticmethod
+    def _has_stored_key(rel: Any) -> bool:
+        return rel.rule.resolved and not rel.to_many and not isinstance(rel.stored, tuple)
 
     def _add_relationship(self, parent: QStandardItem, rel: Any) -> None:
         rule = rel.rule
@@ -735,7 +745,9 @@ class RecordDetailPanel(QWidget):
             _item(word("relationship")),
             QStandardItem(("→ " if not rel.to_many else "↠ ") + (rel.destination or "?")),
             QStandardItem(summary),
-            QStandardItem(_raw_text(rel.stored) if rel.stored is not None and not isinstance(rel.stored, tuple) else ""),
+            # A to-one link's stored key, NULL included; a to-many link has
+            # none in this row, an unresolved one lists its candidates below.
+            QStandardItem(_raw_text(rel.stored) if self._has_stored_key(rel) else ""),
             QStandardItem(
                 f"{rule.table or ''} {columns}".strip() if rule.resolved else ", ".join(rule.candidates)
             ),
@@ -746,7 +758,22 @@ class RecordDetailPanel(QWidget):
             it.setEditable(False)
         if rule.resolved and not rel.to_many and rel.targets:
             items[0].setData((rel.targets[0].entity, rel.targets[0].pk), TARGET_ROLE)
+        if self._has_stored_key(rel):
+            _set_raw(items[0], items[4], rel.stored, rule.key_column or "")
         parent.appendRow(items)
+        if isinstance(rel.stored, tuple):
+            # Not resolved: each candidate column with its complete stored value.
+            for column, value in rel.stored:
+                child = [
+                    QStandardItem(column), QStandardItem(""), QStandardItem(""), QStandardItem(""),
+                    QStandardItem(_raw_text(value)), QStandardItem(column), QStandardItem(""),
+                ]
+                _set_raw(child[0], child[4], value, column)
+                for it in child:
+                    it.setEditable(False)
+                items[0].appendRow(child)
+            if rel.stored:
+                self._expand_after.append(items[0])
         if rel.to_many:
             for target in rel.targets:
                 child = [
@@ -1021,10 +1048,10 @@ def history_table(result: Any) -> HistoryTable:
         tomb_tip = []
         for slot in r.tombstones:
             if slot.attribute is not None:
-                tomb_parts.append(heuristic_value(f"{slot.attribute} = {_tomb_text(slot.raw)}").pair()[1])
+                tomb_parts.append(heuristic_value(f"{slot.attribute} = {slot.value_text}").pair()[1])
             else:
                 tomb_parts.append(translate("CoreDataView", "[{slot}] = {value} (unassigned)").format(
-                    slot=slot.slot, value=_tomb_text(slot.raw),
+                    slot=slot.slot, value=slot.value_text,
                 ))
                 tomb_tip.append(
                     render_value(slot.status, localized=True) + " — "
@@ -1037,17 +1064,6 @@ def history_table(result: Any) -> HistoryTable:
             cells.append(stored_cell(r.raw.get(column.upper())))
         rows.append(cells)
     return HistoryTable(headers, rows, result)
-
-
-def _tomb_text(value: Any) -> str:
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        data = bytes(value)
-        if len(data) == 16:
-            import uuid
-
-            return str(uuid.UUID(bytes=data)).upper()
-        return f"<BLOB {len(data):,} B>"
-    return str(value)
 
 
 def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header], list[list[Cell]]]:

@@ -1036,6 +1036,18 @@ class TombstoneSlot:
     attribute: str | None
     status: ParseIssue | None
     candidates: tuple[str, ...]
+    # The value as text: a 16-byte BLOB as a UUID only when the assigned
+    # attribute is a UUID, any other BLOB as hex (complete), else as stored.
+    value_text: str = ""
+
+
+def tombstone_text(value: Any, attribute: ModelProperty | None) -> str:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        data = bytes(value)
+        if attribute is not None and attribute.attribute_type == TYPE_UUID and len(data) == 16:
+            return str(uuid.UUID(bytes=data)).upper()
+        return data.hex(" ") if data else "<0 B>"
+    return str(value)
 
 
 @dataclass
@@ -1331,28 +1343,51 @@ class CoreDataStore:
             return ent
 
         names = {r[0]: r[1] for r in rows}
+        # Every table some root entity names as its own by the rule; another
+        # entity never falls back onto one of these.
+        claimed = {
+            (self._preferred_table(str(names[e])) or "").upper()
+            for e in names if supers.get(e) in (0, None)
+        }
         infos: list[EntityInfo] = []
         for ent, name, super_ent, max_pk in rows:
             root = root_of(ent)
             root_name = str(names.get(root, name))
-            table_name, status = self._root_table(root_name)
+            table_name, status = self._root_table(root_name, claimed)
             infos.append(EntityInfo(
                 ent=ent, name=str(name), super_ent=super_ent, max_pk=max_pk, root_ent=root,
                 table=table_name, table_status=status,
             ))
         return infos
 
-    def _root_table(self, root_name: str) -> tuple[str | None, ParseIssue | None]:
-        """A + uppercase name for Core Data's own entities -- by their exact
-        Z_NAME: CHANGE, TRANSACTION, TRANSACTIONSTRING and NSCK* -- and Z +
-        uppercase name for every other entity, so an app entity "Change"
-        (ZCHANGE) and the history's CHANGE (ACHANGE) each keep their table."""
-        prefix = "A" if is_internal_entity(root_name) else "Z"
-        wanted = prefix + root_name.upper()
-        table = self.table(wanted)
+    @staticmethod
+    def _prefixes(root_name: str) -> tuple[str, str]:
+        """(preferred, other) table prefix: A first for Core Data's own
+        entities -- by their exact Z_NAME: CHANGE, TRANSACTION,
+        TRANSACTIONSTRING and NSCK* -- Z first for every other entity."""
+        return ("A", "Z") if is_internal_entity(root_name) else ("Z", "A")
+
+    def _preferred_table(self, root_name: str) -> str | None:
+        return self.table(self._prefixes(root_name)[0] + root_name.upper())
+
+    def _root_table(
+        self, root_name: str, claimed: set[str] | None = None,
+    ) -> tuple[str | None, ParseIssue | None]:
+        """The entity's table by its preferred prefix, so an app entity
+        "Change" (ZCHANGE) and the history's CHANGE (ACHANGE) each keep their
+        own. When only the other prefix's table exists and no entity claims
+        it as its own (an app entity called exactly TRANSACTION or NSCK...),
+        that one."""
+        preferred, other = self._prefixes(root_name)
+        table = self.table(preferred + root_name.upper())
         if table is not None:
             return table, None
-        return None, ParseIssue("coredata.no_table", {"entity": root_name, "tables": wanted})
+        fallback = self.table(other + root_name.upper())
+        if fallback is not None and fallback.upper() not in (claimed or set()):
+            return fallback, None
+        return None, ParseIssue("coredata.no_table", {
+            "entity": root_name, "tables": f"{preferred}{root_name.upper()}",
+        })
 
     def entity(self, name: str) -> EntityInfo | None:
         return self._by_name.get(name)
@@ -1415,7 +1450,6 @@ class CoreDataStore:
         if cached is not None:
             return cached
         roles: dict[str, list[tuple[str, ModelProperty, str]]] = {}
-        self._roles_cache[table] = roles
         seen: set[tuple[str, str]] = set()
         for entity, prop in self.table_properties(table):
             if not (prop.is_attribute or (prop.is_relationship and not prop.to_many)):
@@ -1427,6 +1461,8 @@ class CoreDataStore:
             link = self.column_link(entity, prop)
             for column in link.candidates:
                 roles.setdefault(column.upper(), []).append((declared, prop, link.status))
+        # Cached only once complete: a failure above leaves nothing cached.
+        self._roles_cache[table] = roles
         return roles
 
     def decode_kind(self, table: str, column: str, prop: ModelProperty | None, status: str | None) -> str | None:
@@ -1939,6 +1975,9 @@ class CoreDataStore:
                     target_status = known
                 else:
                     target_exists = entity_pk in known
+            elif info is not None:
+                # In Z_PRIMARYKEY, but its rows have no table: say that.
+                target_status = info.table_status or ParseIssue("coredata.no_table", {"tables": "?"})
             elif ent_raw is not None:
                 target_status = ParseIssue("coredata.ent_unknown", {"ent": ent_raw})
             slots = self._tombstones(entity_name, rec, tomb_cols)
@@ -1973,19 +2012,22 @@ class CoreDataStore:
             if value is None:
                 continue
             n = int(_TOMBSTONE_COLUMN.fullmatch(column).group(1))  # type: ignore[union-attr]
+            unassigned = tombstone_text(value, None)
             if entity is None or self.model is None or not self.in_model(entity):
-                slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_no_model"), names))
+                slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_no_model"), names,
+                                           unassigned))
             elif n >= len(attrs):
                 slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_beyond", {
                     "slot": n, "count": len(attrs),
-                }), names))
+                }), names, unassigned))
             elif not _compatible(attrs[n], value):
                 slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_type", {
                     "slot": n, "attribute": attrs[n].name, "type": _type_text(attrs[n]),
                     "stored": _storage_class(value),
-                }), names))
+                }), names, unassigned))
             else:
-                slots.append(TombstoneSlot(n, column, value, attrs[n].name, None, names))
+                slots.append(TombstoneSlot(n, column, value, attrs[n].name, None, names,
+                                           tombstone_text(value, attrs[n])))
         return slots
 
     # -- primary keys --------------------------------------------------------

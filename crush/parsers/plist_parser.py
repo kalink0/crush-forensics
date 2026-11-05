@@ -90,6 +90,13 @@ class PlistParser(AbstractParser):
                 hints["resolved"] = resolved
                 _add_coredata_model(raw, reading.loaded, meta, hints)
             is_model = reading.keyed and root_class(reading.loaded) == "NSManagedObjectModel"
+            if is_model:
+                # The file's format is the model; how the plist is stored
+                # (binary/XML, resolved or not) keeps its own row, so the
+                # Format row and the format knowledge name the same format.
+                meta = {"Format": CORE_DATA_MODEL_FORMAT, "Plist format": fmt, **{
+                    k: v for k, v in meta.items() if k != "Format"
+                }}
             return ParseResult(
                 viewer_type="tree_text",
                 data=data,

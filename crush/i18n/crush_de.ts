@@ -8287,6 +8287,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Plist format</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Recognised by</source>
         <translation type="unfinished"></translation>
     </message>

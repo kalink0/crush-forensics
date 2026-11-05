@@ -949,3 +949,80 @@ def test_parsers_report_the_specific_format(tmp_path: Path) -> None:
     other.write_bytes(plistlib.dumps({"a": 1}, fmt=plistlib.FMT_BINARY))
     vfs = FileVFS(other)
     assert PlistParser().parse(vfs.root(), vfs).format_short_name is None
+
+
+def test_sixteen_bytes_are_a_uuid_only_for_a_uuid_attribute(tmp_path: Path) -> None:
+    digest = bytes.fromhex("9e107d9d372bb6826bd81d3542a419d6")  # an MD5, 16 bytes
+    uuid_attr = cds.ModelProperty(index=-1, class_name="NSAttributeDescription", kind="attribute",
+                                  known_class=True, name="uuid", entity="X", attribute_type=cds.TYPE_UUID)
+    hash_attr = cds.ModelProperty(index=-1, class_name="NSAttributeDescription", kind="attribute",
+                                  known_class=True, name="hash", entity="X", attribute_type=cds.TYPE_BINARY)
+    assert cds.tombstone_text(digest, uuid_attr) == "9E107D9D-372B-B682-6BD8-1D3542A419D6"
+    assert cds.tombstone_text(digest, hash_attr) == digest.hex(" ")
+    assert cds.tombstone_text(digest, None) == digest.hex(" ")
+    # An unassigned slot holding 16 bytes: hex, never a UUID.
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE ACHANGE SET ZTOMBSTONE0 = ? WHERE Z_PK = 3", (digest,))  # filename slot: type conflict
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    slot = next(s for r in store.load_history().rows if r.change_pk == 3 for s in r.tombstones if s.slot == 0)
+    assert slot.attribute is None and slot.value_text == digest.hex(" ")
+    store.close()
+
+
+def test_history_names_an_entity_without_a_table_correctly(tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO Z_PRIMARYKEY VALUES (8, 'Orphan', 0, 1)")
+    conn.execute("INSERT INTO ACHANGE (Z_ENT, Z_OPT, ZCHANGETYPE, ZENTITY, ZENTITYPK, ZTRANSACTIONID) "
+                 "VALUES (16001, 1, 0, 8, 1, 1)")
+    conn.execute("INSERT INTO ACHANGE (Z_ENT, Z_OPT, ZCHANGETYPE, ZENTITY, ZENTITYPK, ZTRANSACTIONID) "
+                 "VALUES (16001, 1, 0, 77, 1, 1)")
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    rows = store.load_history().rows
+    orphan = next(r for r in rows if r.entity_raw == 8)
+    assert orphan.target_status.code == "coredata.no_table"  # it is in Z_PRIMARYKEY
+    stray = next(r for r in rows if r.entity_raw == 77)
+    assert stray.target_status.code == "coredata.ent_unknown"
+    store.close()
+
+
+def test_table_falls_back_to_the_other_prefix_only_when_unclaimed(tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    # An app entity named like Core Data's own: only its Z table exists.
+    conn.execute("INSERT INTO Z_PRIMARYKEY VALUES (9, 'NSCKMine', 0, 1)")
+    conn.execute("CREATE TABLE ZNSCKMINE (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER)")
+    # An app entity "Change" without ZCHANGE: ACHANGE is the history's, not its.
+    conn.execute("INSERT INTO Z_PRIMARYKEY VALUES (10, 'Change', 0, 1)")
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    assert store.entity("NSCKMine").table == "ZNSCKMINE"
+    assert store.entity("Change").table is None
+    assert store.entity("Change").table_status.code == "coredata.no_table"
+    assert store.entity("CHANGE").table == "ACHANGE"
+    store.close()
+
+
+def test_column_roles_not_cached_after_a_failure(store, monkeypatch) -> None:
+    real = store.column_link
+    calls = {"n": 0}
+
+    def flaky(entity, prop):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("simulated failure")
+        return real(entity, prop)
+
+    store._roles_cache.clear()
+    monkeypatch.setattr(store, "column_link", flaky)
+    with pytest.raises(RuntimeError):
+        store.column_roles("ZASSET")
+    assert "ZASSET" not in store._roles_cache
+    roles = store.column_roles("ZASSET")
+    assert "ZUUID" in roles and "ZFILENAME" in roles

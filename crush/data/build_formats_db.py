@@ -3999,9 +3999,31 @@ FORMATS: list[dict[str, Any]] = [
         "extensions": [".sqlite", ".db", ".store", ".sqlitedb"],
         "links": [
             (
-                "Tables and fields of Core Data (fatbobman; its history table names differ "
-                "from observed stores: ACHANGE, ATRANSACTION, ATRANSACTIONSTRING)",
+                "How Core Data Saves Data in SQLite (fatbobman; its history table names "
+                "Z_ACHANGE etc. differ from observed stores: ACHANGE, ATRANSACTION, "
+                "ATRANSACTIONSTRING)",
                 "https://fatbobman.com/en/posts/tables_and_fields_of_coredata/",
+            ),
+            (
+                "Consuming relevant store changes: persistent history, transactions, purging "
+                "(Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/consuming-relevant-store-changes",
+            ),
+            (
+                "NSAttributeDescription.preservesValueInHistoryOnDeletion: values kept in the "
+                "history on deletion (Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/nsattributedescription/"
+                "preservesvalueinhistoryondeletion",
+            ),
+            (
+                "NSAttributeDescription.allowsExternalBinaryDataStorage: values stored outside "
+                "the store (Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/nsattributedescription/"
+                "allowsexternalbinarydatastorage",
+            ),
+            (
+                "iOS Photos.sqlite queries: a Core Data store examined field by field (Scott Koenig)",
+                "https://github.com/ScottKjr3347/iOS_Local_PL_Photos.sqlite_Queries",
             ),
         ],
         "status": "reviewed",
@@ -4045,7 +4067,17 @@ FORMATS: list[dict[str, Any]] = [
         "extensions": [".mom"],
         "links": [
             (
-                "Tables and fields of Core Data (fatbobman)",
+                "NSAttributeType: the attribute type enumeration (Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/nsattributetype",
+            ),
+            (
+                "Model File Format and Versions: .momd packages and compiled .mom files "
+                "(Apple Core Data Model Versioning Guide)",
+                "https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/"
+                "CoreDataVersioning/Articles/vmModelFormat.html",
+            ),
+            (
+                "How Core Data Saves Data in SQLite: the model in Z_MODELCACHE (fatbobman)",
                 "https://fatbobman.com/en/posts/tables_and_fields_of_coredata/",
             ),
         ],
@@ -4080,7 +4112,14 @@ FORMATS: list[dict[str, Any]] = [
             }
         ],
         "extensions": [".omo"],
-        "links": [],
+        "links": [
+            (
+                "Model File Format and Versions: the .momd package the file sits in "
+                "(Apple Core Data Model Versioning Guide)",
+                "https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/"
+                "CoreDataVersioning/Articles/vmModelFormat.html",
+            ),
+        ],
         "status": "reviewed",
         "last_reviewed": "2026-11-05",
     },

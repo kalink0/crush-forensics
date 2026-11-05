@@ -118,6 +118,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Note"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Objects"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Opened bytes"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Plist format"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Recognised by"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Original folder"),
     QT_TRANSLATE_NOOP("MetadataLabel", "PDF Version"),

@@ -352,6 +352,8 @@ def test_ambiguous_candidates_each_open_their_complete_bytes(qapp, widgets, tmp_
     v._table_view.setCurrentIndex(v._table_view.model().index(0, 1))
     row = _detail_row(v, "maximumValue")
     assert row[6].text().startswith("ambiguous")
+    # The candidates are what the analyst compares: shown without a click.
+    assert v._cd_record_panel.tree.isExpanded(row[0].index())
     children = {row[0].child(r, 0).text(): row[0].child(r, 0) for r in range(row[0].rowCount())}
     assert set(children) == {"ZMAXIMUMVALUE", "ZMAXIMUMVALUE1"}
     assert children["ZMAXIMUMVALUE1"].data(cdv.BYTES_ROLE) == blob
@@ -459,9 +461,11 @@ def test_properties_show_core_data_knowledge_whatever_the_name(qapp, widgets, tm
     mom.write_bytes(model_archive())
     vfs = FileVFS(mom)
     meta = _enriched(widgets, PlistParser(), vfs.root(), vfs, PlistParser().parse(vfs.root(), vfs))
-    # The plist parser's own "Format" row (its encoding) keeps precedence,
-    # as for every plist; the knowledge shown is the model's.
+    # Format row and format knowledge name the same format; how the plist
+    # is stored keeps its own row.
+    assert meta["Format"] == "Core Data Model"
     assert "NSManagedObjectModel" in str(meta["Forensic relevance"])
+    assert meta["Plist format"]  # binary, resolved or not
     assert meta["Core Data model"].code == "coredata.mom_model"
     assert meta["Base format"] == "Binary Property List"
 
@@ -535,3 +539,16 @@ def test_format_info_uses_the_open_parse_else_the_bytes(qapp, widgets, tmp_path:
     win._viewer_tabs.addTab(tab, "s")
     win._show_format_info(node, vfs)
     assert shown[-1] == "Core Data Store"  # open: the format its parse found
+
+
+def test_relationship_shows_a_stored_null_and_its_bytes(viewer: TableViewer) -> None:
+    _show(viewer, ENTITIES)
+    viewer._cd_entity_panel.select("Asset")
+    model = viewer._table_view.model()
+    row = next(r for r in range(model.rowCount()) if model.data(model.index(r, 1)) == "3")
+    viewer._table_view.setCurrentIndex(model.index(row, 1))
+    rels = viewer._cd_record_panel.model.item(1, 0)
+    additional = next(r for r in range(rels.rowCount()) if rels.child(r, 0).text() == "additional")
+    assert rels.child(additional, 4).text() == "NULL"  # stored NULL, not an empty cell
+    albums = next(r for r in range(rels.rowCount()) if rels.child(r, 0).text() == "albums")
+    assert rels.child(albums, 4).text() == ""  # to-many: no key stored in this row
