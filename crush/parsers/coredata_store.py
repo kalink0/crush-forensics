@@ -29,7 +29,7 @@ import re
 import uuid
 import zlib
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from crush.core.issues import ParseIssue
@@ -378,20 +378,16 @@ def parse_model_bytes(raw: bytes) -> tuple[CoreDataModel | None, list[ParseIssue
     return parse_model_archive(archive)
 
 
-def parse_model_archive(
-    archive: Any, root_name: str | ParseIssue | None = None,
-) -> tuple[CoreDataModel | None, list[ParseIssue]]:
-    """The model in a loaded NSKeyedArchiver plist (*root_name*: its root
-    class, when the caller already has it). Returns (model, issues); model
-    is None when there's none to read."""
+def parse_model_archive(archive: Any) -> tuple[CoreDataModel | None, list[ParseIssue]]:
+    """The model in a loaded NSKeyedArchiver plist. Returns (model,
+    issues); model is None when there's none to read."""
     if not is_keyed_archive(archive):
         return None, [ParseIssue("coredata.model_not_keyed_archive")]
     objects = archive.get("$objects")
     if not isinstance(objects, list):
         return None, [ParseIssue("coredata.model_not_keyed_archive")]
     issues: list[ParseIssue] = []
-    if root_name is None:
-        root_name = root_class(archive)
+    root_name = root_class(archive)
     if root_name != "NSManagedObjectModel":
         issues.append(ParseIssue("coredata.model_root_class", {"found": root_name}))
     ar = _Archive(objects)
@@ -1728,12 +1724,24 @@ class CoreDataStore:
         if rule.resolved and prop.to_many and prop.ordered and rule.order_column is None:
             # Ordered in the model, but no column holds the order: the
             # targets come in the order SQLite returns them, not the stored one.
-            rule = RelationshipRule(
-                rule.kind, rule.status, rule.table, rule.key_column, rule.source_column,
-                None, rule.ent_column, rule.candidates, rule.reason,
-                order_note=ParseIssue("coredata.rel_order_unknown"),
-            )
+            rule = replace(rule, order_note=ParseIssue("coredata.rel_order_unknown"))
         return rule
+
+    def _no_target_rule(
+        self, source: EntityInfo | None, prop: ModelProperty, reason: ParseIssue,
+    ) -> RelationshipRule:
+        """A relationship whose targets can't be looked up (*reason*). A
+        to-one link's stored key is still in the source row: its candidate
+        columns there, shown with their values and no target -- never a key
+        column that appears nowhere."""
+        if not prop.to_many and source is not None and source.table is not None:
+            link = link_columns(
+                prop.name, self.column_names(source.table), self._exact_names.get(source.table, set()),
+            )
+            return RelationshipRule(
+                "to-one column", "unresolved", table=source.table, candidates=link.candidates, reason=reason,
+            )
+        return RelationshipRule("unresolved", "unresolved", reason=reason)
 
     def _relationship_rule(self, entity: str, prop: ModelProperty) -> RelationshipRule:
         if self.model is None:
@@ -1741,21 +1749,11 @@ class CoreDataStore:
         source = self.entity(entity)
         if prop.destination is None:
             # The model stores no destination entity (NSDestinationEntity and
-            # _NSDestinationEntityName both nil, seen in TipKit stores). A
-            # to-one link's stored key is still in the source row: shown,
-            # with no target.
-            reason = ParseIssue("coredata.rel_no_destination")
-            if not prop.to_many and source is not None and source.table is not None:
-                link = link_columns(
-                    prop.name, self.column_names(source.table), self._exact_names.get(source.table, set()),
-                )
-                return RelationshipRule(
-                    "to-one column", "unresolved", table=source.table, candidates=link.candidates, reason=reason,
-                )
-            return RelationshipRule("unresolved", "unresolved", reason=reason)
+            # _NSDestinationEntityName both nil, seen in TipKit stores).
+            return self._no_target_rule(source, prop, ParseIssue("coredata.rel_no_destination"))
         dest = self.entity(prop.destination)
         if source is None or source.table is None or dest is None or dest.table is None:
-            return RelationshipRule("unresolved", "unresolved", reason=ParseIssue(
+            return self._no_target_rule(source, prop, ParseIssue(
                 "coredata.rel_no_table", {"destination": prop.destination},
             ))
         inverse = None
@@ -1804,10 +1802,10 @@ class CoreDataStore:
             )
         e_info = self.entity(self.model.declared_in(entity, prop.name))
         if inverse is not None:
-            d_info = self.entity(self.model.declared_in(prop.destination or "", inverse.name))
+            d_info = self.entity(self.model.declared_in(prop.destination, inverse.name))
             if e_info is None or d_info is None:
                 return RelationshipRule("join table", "unresolved", reason=ParseIssue("coredata.rel_no_table", {
-                    "destination": prop.destination or "?",
+                    "destination": prop.destination,
                 }))
             names = [f"Z_{e_info.ent}{prop.name.upper()}", f"Z_{d_info.ent}{inverse.name.upper()}"]
             found = sorted({t for t in (self.table(n) for n in names) if t})
@@ -1842,7 +1840,7 @@ class CoreDataStore:
             )
         if e_info is None:
             return RelationshipRule("destination column", "unresolved", reason=ParseIssue("coredata.rel_no_table", {
-                "destination": prop.destination or "?",
+                "destination": prop.destination,
             }))
         dest_re = re.compile(re.escape(f"Z{e_info.ent}{prop.name.upper()}") + r"\d*")
         hits = [c for c in self.column_names(dest.table) if dest_re.fullmatch(c.upper())]

@@ -186,13 +186,12 @@ def _add_coredata_model(archive: Any, meta: dict[str, Any], hints: dict[str, Any
     archive whose root object is an NSManagedObjectModel, whatever the file
     is called. Adds the Core Data Model view next to the plist views, read
     from the archive as read_plist() loaded it. Returns whether it is one."""
-    root_name = root_class(archive)
-    if root_name != "NSManagedObjectModel":
+    if root_class(archive) != "NSManagedObjectModel":
         return False
     from crush.parsers.coredata_store import ModelSource, parse_model_archive
 
     try:
-        model, issues = parse_model_archive(archive, root_name)
+        model, issues = parse_model_archive(archive)
     except Exception as exc:  # noqa: BLE001 -- the plist views stay
         meta["Core Data model"] = ParseIssue("coredata.mom_incomplete", {
             "issues": ParseIssue("common.library_error", detail=str(exc)),

@@ -203,14 +203,16 @@ def _coredata_connector(
     password: str | None,
     raw_key: bool,
     cipher_params: SQLCipherParams | None,
+    known_preset: tuple[int | None, ...] = (),
 ) -> Callable[[], Any]:
     """Opens a new read-only connection to the database state the table
     grid shows: the rollback-recovered image when there is one, the working
     copy (with its -wal) otherwise, SQLCipher with the key it was opened with.
-    The SQLCipher preset that opened the first connection is the only one
-    tried for the next (each attempt is a full key derivation); should it
-    fail, every preset is tried again."""
-    found: list[int | None] = []
+    The SQLCipher preset that opened the database (*known_preset*, from the
+    parse) or the first connection is the only one tried for the next (each
+    attempt is a full key derivation); should it fail, every preset is tried
+    again."""
+    found: list[int | None] = list(known_preset[:1])
 
     def connect() -> Any:
         if password is not None:
@@ -510,9 +512,12 @@ class SQLiteParser(AbstractParser):
             # try/except below so a wrong password raises WrongPasswordError
             # and reaches the caller's retry-prompt loop instead of being
             # swallowed into a "parse failed, showing hex" fallback.
-            conn = _connect_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            conn, opened_preset = _open_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            # The Core Data views' connections start with the preset found here.
+            known_preset: tuple[int | None, ...] = (opened_preset,)
         else:
             conn = None
+            known_preset = ()
 
         try:
             if conn is None:
@@ -608,6 +613,7 @@ class SQLiteParser(AbstractParser):
                     conn,
                     _coredata_connector(
                         recovered_db_path or tmp_path, tmp_path, password, raw_key, cipher_params,
+                        known_preset,
                     ),
                     support=lambda: _support_folder(node, vfs),
                 )

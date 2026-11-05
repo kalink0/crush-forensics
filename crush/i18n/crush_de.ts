@@ -4808,8 +4808,100 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Time (UTC) [derived, heuristic]</source>
+        <translation>Zeit (UTC) [abgeleitet, heuristisch]</translation>
+    </message>
+    <message>
+        <source>Time (UTC) [derived]</source>
+        <translation>Zeit (UTC) [abgeleitet]</translation>
+    </message>
+    <message>
+        <source>Author</source>
+        <translation>Autor</translation>
+    </message>
+    <message>
+        <source>Bundle ID</source>
+        <translation>Bundle-ID</translation>
+    </message>
+    <message>
+        <source>Context</source>
+        <translation>Kontext</translation>
+    </message>
+    <message>
+        <source>Change type [derived]</source>
+        <translation>Änderungsart [abgeleitet]</translation>
+    </message>
+    <message>
+        <source>Entity [derived]</source>
+        <translation>Entität [abgeleitet]</translation>
+    </message>
+    <message>
+        <source>Object now [derived]</source>
+        <translation>Objekt jetzt [abgeleitet]</translation>
+    </message>
+    <message>
+        <source>ZCOLUMNS set bits [derived, heuristic]</source>
+        <translation>Gesetzte ZCOLUMNS-Bits [abgeleitet, heuristisch]</translation>
+    </message>
+    <message>
+        <source>Tombstones [derived]</source>
+        <translation>Tombstones [abgeleitet]</translation>
+    </message>
+    <message>
         <source>[{slot}] = {value} (unassigned)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Superentity</source>
+        <translation>Superentität</translation>
+    </message>
+    <message>
+        <source>Root table</source>
+        <translation>Stammtabelle</translation>
+    </message>
+    <message>
+        <source>Declared in</source>
+        <translation>Deklariert in</translation>
+    </message>
+    <message>
+        <source>Value class</source>
+        <translation>Wertklasse</translation>
+    </message>
+    <message>
+        <source>Transformer</source>
+        <translation>Transformer</translation>
+    </message>
+    <message>
+        <source>Column candidates</source>
+        <translation>Spaltenkandidaten</translation>
+    </message>
+    <message>
+        <source>Declared SQL type</source>
+        <translation>Deklarierter SQL-Typ</translation>
+    </message>
+    <message>
+        <source>Mapping status</source>
+        <translation>Zuordnungsstatus</translation>
+    </message>
+    <message>
+        <source>Destination</source>
+        <translation>Ziel</translation>
+    </message>
+    <message>
+        <source>Inverse</source>
+        <translation>Inverse</translation>
+    </message>
+    <message>
+        <source>Delete rule</source>
+        <translation>Löschregel</translation>
+    </message>
+    <message>
+        <source>Relationship rule</source>
+        <translation>Beziehungsregel</translation>
+    </message>
+    <message>
+        <source>Rule status</source>
+        <translation>Regelstatus</translation>
     </message>
     <message>
         <source>heuristic: {what}</source>
@@ -5846,6 +5938,46 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>External data folder</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Missing keys below MAX(Z_PK)</source>
+        <translation>Fehlende Schlüssel unter MAX(Z_PK)</translation>
+    </message>
+    <message>
+        <source>Missing key values</source>
+        <translation>Fehlende Schlüsselwerte</translation>
+    </message>
+    <message>
+        <source>Z_MAX − MAX(Z_PK)</source>
+        <translation>Z_MAX − MAX(Z_PK)</translation>
+    </message>
+    <message>
+        <source>UUID / file</source>
+        <translation>UUID / Datei</translation>
+    </message>
+    <message>
+        <source>Model flag</source>
+        <translation>Modell-Flag</translation>
+    </message>
+    <message>
+        <source>Recognised by</source>
+        <translation>Erkannt durch</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>Roh</translation>
+    </message>
+    <message>
+        <source>File status</source>
+        <translation>Dateistatus</translation>
+    </message>
+    <message>
+        <source>Path</source>
+        <translation>Pfad</translation>
+    </message>
+    <message>
+        <source>Content (by its bytes)</source>
+        <translation>Inhalt (nach seinen Bytes)</translation>
     </message>
     <message>
         <source>Setting (generated)</source>

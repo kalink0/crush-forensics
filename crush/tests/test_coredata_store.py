@@ -1211,6 +1211,26 @@ def test_relationship_without_destination_says_so(tmp_path: Path) -> None:
     store.close()
 
 
+def test_to_one_to_an_entity_without_table_keeps_its_stored_key(tmp_path: Path) -> None:
+    """Destination in the model, not in Z_PRIMARYKEY: the key column is
+    still shown (with its value, no target), never dropped from the record."""
+    entities = [
+        ("Event", None, [("id", 700, 0)], [("tip", "Tip", None, 1, False)]),
+        ("Tip", None, [("title", 700, 0)], []),
+    ]
+    path = _mini_store(
+        tmp_path / "s", model_archive(entities, unknown_class=False), [(1, "Event", 0, 1)],
+        ["CREATE TABLE ZEVENT (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, ZTIP INTEGER, ZID VARCHAR)"],
+        [("INSERT INTO ZEVENT VALUES (?, ?, ?, ?, ?)", [(1, 1, 1, 7, "e")])],
+    )
+    store = _store(path)
+    records, row = _record(store, "Event", 1)
+    tip = _rel(store.relationship_values(records, row), "tip")
+    assert tip.status.code == "coredata.rel_no_table"
+    assert tip.rule.kind == "to-one column" and tip.stored == (("ZTIP", 7),) and tip.targets == []
+    store.close()
+
+
 def test_history_gaps_have_a_status(tmp_path: Path) -> None:
     path = build_store(tmp_path / "s")
     conn = sqlite3.connect(path)

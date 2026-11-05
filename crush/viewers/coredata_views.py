@@ -160,6 +160,18 @@ def pk_value(columns: list[tuple[str, str]], values: tuple[Any, ...]) -> Any:
     return values[index] if index is not None else None
 
 
+def joined_cell(parts: list[tuple[str, str]], tooltip: Any = None) -> Cell:
+    """Parts as (English, display) pairs, joined with "; ": shown in the UI
+    language, exported in English, in the status colour when there are any."""
+    cell = Cell(
+        "; ".join(d for _e, d in parts), None, tooltip,  # i18n: keep -- joins translated parts
+        STATUS_COLOR if parts else None,
+    )
+    english = "; ".join(e for e, _d in parts)  # i18n: keep -- joins English parts
+    cell.export = english if english != cell.display else None
+    return cell
+
+
 def status_cell(status: Any) -> Cell:
     """A status (or the reason a derived cell has no value): shown in the
     UI language, exported in English, in the status colour. None: empty."""
@@ -785,7 +797,8 @@ class RecordDetailPanel(QWidget):
             QStandardItem(_raw_text(rel.stored) if self._has_stored_key(rel) else ""),
             QStandardItem(
                 f"{rule.table or ''} {columns}".strip() if rule.resolved
-                else ", ".join(rule.candidates) if rule.candidates_in_source_row or not rule.table
+                else ", ".join(rule.candidates)
+                if rule.candidates_in_source_row or not rule.table or not rule.candidates
                 else f"{rule.table}: {', '.join(rule.candidates)}"
             ),
             QStandardItem("; ".join(parts)),  # i18n: keep -- joins translated parts
@@ -1025,30 +1038,29 @@ def history_table(result: Any) -> HistoryTable:
     references next to what they resolve to, tombstones as attribute =
     value (marked heuristic) and every raw slot. Plain Python: safe off the
     UI thread."""
-    g = QT_TRANSLATE_NOOP
     time_header = (
-        g("GeneratedView", "Time (UTC) [derived, heuristic]") if result.timestamp_heuristic
-        else g("GeneratedView", "Time (UTC) [derived]")
+        QT_TRANSLATE_NOOP("GeneratedView", "Time (UTC) [derived, heuristic]") if result.timestamp_heuristic
+        else QT_TRANSLATE_NOOP("GeneratedView", "Time (UTC) [derived]")
     )
     headers = [
         Header("Z_PK"),
         Header("ZTRANSACTIONID"),
         Header(Gen(time_header)),
         Header("ZTIMESTAMP"),
-        Header(Gen(g("GeneratedView", "Author"))), Header("ZAUTHORTS"), Header("ZAUTHOR"),
-        Header(Gen(g("GeneratedView", "Bundle ID"))), Header("ZBUNDLEIDTS"), Header("ZBUNDLEID"),
-        Header(Gen(g("GeneratedView", "Process"))), Header("ZPROCESSIDTS"), Header("ZPROCESSID"),
-        Header(Gen(g("GeneratedView", "Context"))), Header("ZCONTEXTNAMETS"), Header("ZCONTEXTNAME"),
-        Header(Gen(g("GeneratedView", "Change type [derived]"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Author"))), Header("ZAUTHORTS"), Header("ZAUTHOR"),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Bundle ID"))), Header("ZBUNDLEIDTS"), Header("ZBUNDLEID"),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Process"))), Header("ZPROCESSIDTS"), Header("ZPROCESSID"),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Context"))), Header("ZCONTEXTNAMETS"), Header("ZCONTEXTNAME"),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Change type [derived]"))),
         Header("ZCHANGETYPE"),
         Header("ZENTITY"),
-        Header(Gen(g("GeneratedView", "Entity [derived]"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Entity [derived]"))),
         Header("ZENTITYPK"),
-        Header(Gen(g("GeneratedView", "Object now [derived]"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Object now [derived]"))),
         Header("ZCOLUMNS"),
         # Bit numbering byte × 8 + bit, least significant first: an assumed order.
-        Header(Gen(g("GeneratedView", "ZCOLUMNS set bits [derived, heuristic]"))),
-        Header(Gen(g("GeneratedView", "Tombstones [derived]"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "ZCOLUMNS set bits [derived, heuristic]"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Tombstones [derived]"))),
     ] + [Header(c) for c in result.tombstone_columns]
     for index in (2, 23):
         if index != 2 or result.timestamp_heuristic:
@@ -1105,13 +1117,7 @@ def history_table(result: Any) -> HistoryTable:
                     render_value(slot.status, localized=True) + " — "
                     + translate("CoreDataView", "candidates: {names}").format(names=", ".join(slot.candidates) or "—")
                 )
-        tomb_cell = Cell(
-            "; ".join(d for _e, d in tomb_parts), None,  # i18n: keep -- joins translated parts
-            "\n".join(tomb_tip) if tomb_tip else None, STATUS_COLOR if tomb_parts else None,
-        )
-        tomb_english = "; ".join(e for e, _d in tomb_parts)  # i18n: keep -- joins English parts
-        tomb_cell.export = tomb_english if tomb_english != tomb_cell.display else None
-        cells.append(tomb_cell)
+        cells.append(joined_cell(tomb_parts, "\n".join(tomb_tip) if tomb_tip else None))
         for column in result.tombstone_columns:
             cells.append(stored_cell(r.raw.get(column.upper())))
         rows.append(cells)
@@ -1120,42 +1126,41 @@ def history_table(result: Any) -> HistoryTable:
 
 def model_rows_cells(rows: list[Any], with_columns: bool) -> tuple[list[Header], list[list[Cell]]]:
     """The Core Data Model view: one row per property as each entity lists it."""
-    g = QT_TRANSLATE_NOOP
     headers = [
-        Header(Gen(g("GeneratedView", "Entity"))), Header("Z_ENT"),
-        Header(Gen(g("GeneratedView", "Superentity"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Entity"))), Header("Z_ENT"),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Superentity"))),
     ]
     if with_columns:
-        headers.append(Header(Gen(g("GeneratedView", "Root table"))))
+        headers.append(Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Root table"))))
     headers += [
-        Header(Gen(g("GeneratedView", "Property"))),
-        Header(Gen(g("GeneratedView", "Declared in"))),
-        Header(Gen(g("GeneratedView", "Kind"))),
-        Header(Gen(g("GeneratedView", "Class"))),
-        Header(Gen(g("GeneratedView", "Type"))),
-        Header(Gen(g("GeneratedView", "Value class"))),
-        Header(Gen(g("GeneratedView", "Transformer"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Property"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Declared in"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Kind"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Class"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Type"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Value class"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Transformer"))),
         Header("NSFlagsKey"),
         Header("NSIsOptional"),
         Header("_P"),
     ]
     if with_columns:
         headers += [
-            Header(Gen(g("GeneratedView", "Column candidates"))),
-            Header(Gen(g("GeneratedView", "Declared SQL type"))),
-            Header(Gen(g("GeneratedView", "Mapping status"))),
+            Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Column candidates"))),
+            Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Declared SQL type"))),
+            Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Mapping status"))),
         ]
     headers += [
-        Header(Gen(g("GeneratedView", "Destination"))),
-        Header(Gen(g("GeneratedView", "Inverse"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Destination"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Inverse"))),
         Header("NSMinCount"), Header("NSMaxCount"),
-        Header(Gen(g("GeneratedView", "Delete rule"))),
+        Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Delete rule"))),
         Header("NSIsOrdered"),
     ]
     if with_columns:
         headers += [
-            Header(Gen(g("GeneratedView", "Relationship rule"))),
-            Header(Gen(g("GeneratedView", "Rule status"))),
+            Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Relationship rule"))),
+            Header(Gen(QT_TRANSLATE_NOOP("GeneratedView", "Rule status"))),
         ]
     out: list[list[Cell]] = []
     for row in rows:

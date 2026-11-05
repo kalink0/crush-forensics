@@ -855,14 +855,131 @@ def test_formats_db_names_the_real_parsers(qapp, widgets, tmp_path: Path) -> Non
     db = FormatDatabase.get()
     assert db.by_short_name("Core Data Store").parser_class == "SQLiteParser"
     assert db.by_short_name("Core Data Model").parser_class == "PlistParser"
-    assert db.by_short_name("Core Data OMO").parser_class == "CoreDataOmoParser"
     path = build_store(tmp_path / "s")
     peek = path.read_bytes()[:4096]
     assert [f.short_name for f in db.for_parser("SQLiteParser", peek)] == ["SQLite"]
+
+
+def _run_query(viewer: TableViewer) -> None:
+    viewer._sql_input.setPlainText("SELECT 1 AS a UNION ALL SELECT 2")
+    viewer._run_sql()
+    assert viewer._query_results_active
+
+
+def test_query_results_never_drive_core_data_row_actions(viewer: TableViewer, monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(viewer, "_open_cd_external_row", lambda *a: calls.append("external"))
+    monkeypatch.setattr(viewer, "_update_cd_object_detail", lambda *a: calls.append("model"))
+    monkeypatch.setattr(viewer, "_on_cd_history_activated", lambda *a, **k: calls.append("history"))
+    monkeypatch.setattr(viewer, "_update_cd_record_detail", lambda *a: calls.append("record"))
+    for label in (EXTERNAL, MODEL, HISTORY, ENTITIES):
+        _show(viewer, label)
+        calls.clear()
+        _run_query(viewer)
+        for row in range(2):
+            index = viewer._table_view.model().index(row, 1)
+            viewer._table_view.setCurrentIndex(index)
+            viewer._on_table_double_clicked(index)
+        assert calls == [], label
+        assert not viewer._cd_rows_shown(label)
+        assert viewer._cd_record_cell(viewer._table_view.model().index(0, 1)) is None
+
+
+def test_rows_shown_only_for_the_views_own_rows(viewer: TableViewer, monkeypatch) -> None:
+    _show(viewer, EXTERNAL)
+    assert viewer._cd_rows_shown(EXTERNAL) and not viewer._cd_rows_shown(MODEL)
+    _show(viewer, HISTORY)
+    assert viewer._cd_rows_shown(HISTORY)
+    _show(viewer, ENTITIES)
+    viewer._cd_entity_panel.select("Asset")
+    assert viewer._cd_rows_shown(ENTITIES)
+    monkeypatch.setattr(viewer._coredata, "load_records", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    viewer._cd_entity_panel.select("Album")  # a failed read: an empty grid, no rows of the view
+    assert not viewer._cd_rows_shown(ENTITIES)
+
+
+def test_status_reset_after_a_successful_read(viewer: TableViewer, monkeypatch) -> None:
+    _show(viewer, ENTITIES)
+    store = viewer._coredata
+    real = store.load_records
+    monkeypatch.setattr(store, "load_records", lambda name, conn=None: (
+        (_ for _ in ()).throw(RuntimeError("disk I/O error")) if name == "Album" else real(name, conn)
+    ))
+    viewer._cd_entity_panel.select("Album")
+    assert "failed" in viewer._sql_status.text() and "red" in viewer._sql_status.styleSheet()
+    viewer._cd_entity_panel.select("Asset")
+    assert viewer._sql_status.text() == "" and viewer._sql_status.styleSheet() == ""
+    # A later message is never red because of an earlier one.
+    viewer._sql_status.setStyleSheet("color: red;")
+    viewer._cd_select_pk(999)
+    assert "no such row" in viewer._sql_status.text() and viewer._sql_status.styleSheet() == ""
+
+
+def test_failed_read_on_opening_entities_reads_once(viewer: TableViewer, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def failing(name, conn=None):
+        calls.append(name)
+        raise RuntimeError("disk I/O error")
+
+    monkeypatch.setattr(viewer._coredata, "load_records", failing)
+    _show(viewer, ENTITIES)
+    assert len(calls) == 1
+    assert "Reading the records of" in viewer._sql_status.text()
+
+
+def test_unresolved_relationship_without_candidates_has_no_dangling_prefix(qapp, widgets, tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("ALTER TABLE ZCONTRIBUTOR DROP COLUMN Z4CONTRIBUTORS")
+    conn.commit()
+    conn.close()
+    v = _viewer(widgets, path)
+    _show(v, ENTITIES)
+    _select_record(v, "Asset", 1)
+    rels = v._cd_record_panel.model.item(1, 0)
+    row = next(r for r in range(rels.rowCount()) if rels.child(r, 0).text() == "contributors")
+    assert rels.child(row, 5).text() == ""  # no "ZCONTRIBUTOR: " with nothing after it
+    assert "Z4CONTRIBUTORS" in rels.child(row, 6).text()  # the status says what is missing
+
+
+def test_core_data_headers_are_in_the_catalog() -> None:
+    """Every header is found by lupdate (no QT_TRANSLATE_NOOP alias)."""
+    import crush.viewers.coredata_views as views
+    import crush.viewers.table_viewer as table
+
+    root = Path(views.__file__).parents[1]
+    catalog = (root / "i18n" / "crush_de.ts").read_text(encoding="utf-8")
+    for header in ("Model flag", "File status", "Missing key values", "UUID / file", "Raw", "Recognised by"):
+        assert f"<source>{header}</source>" in catalog, header
+    for module in (views, table):
+        assert "= QT_TRANSLATE_NOOP\n" not in Path(module.__file__).read_text(encoding="utf-8")
+
+
+def test_omo_is_not_yet_supported_but_opens_and_is_named(qapp, widgets, tmp_path: Path) -> None:
+    """Recognised, not decoded: the catalog says "Not yet supported", the
+    file still opens with its status, Properties and Format Info name it."""
+    from PySide6.QtWidgets import QLabel
+
+    from crush.core.format_db import FormatDatabase
+    from crush.parsers.coredata_omo_parser import CoreDataOmoParser
+    from crush.ui.format_info_dialog import FormatInfoDialog
+
+    fmt = FormatDatabase.get().by_short_name("Core Data OMO")
+    assert fmt.parser_class is None
     omo = tmp_path / "omo_without_extension"
     omo.write_bytes(b"momv2$sr" + bytes(64))
-    from crush.parsers.coredata_omo_parser import CoreDataOmoParser
-
     vfs = FileVFS(omo)
-    meta = _enriched(widgets, CoreDataOmoParser(), vfs.root(), vfs, CoreDataOmoParser().parse(vfs.root(), vfs))
+    result = CoreDataOmoParser().parse(vfs.root(), vfs)
+    assert result.viewer_type == "hex"
+    assert result.metadata["Status"].code == "coredata.omo_not_decoded"
+    meta = _enriched(widgets, CoreDataOmoParser(), vfs.root(), vfs, result)
+    # The parser's Format row (it wins over the catalog's) names the format
+    # and that it isn't decoded; the catalog's knowledge is next to it.
+    assert meta["Format"].code == "coredata.omo_not_decoded"
+    assert "Optimized Core Data model" in str(meta["Format"])
     assert "momv2$sr" in str(meta["Forensic relevance"])
+    assert FormatDatabase.get().identify(omo.read_bytes(), "") is fmt
+    dialog = widgets(FormatInfoDialog(vfs.root(), fmt, None, []))
+    texts = [label.text() for label in dialog.findChildren(QLabel)]
+    assert "Not yet supported" in texts and "Supported" not in texts

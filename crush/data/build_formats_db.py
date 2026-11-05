@@ -4101,7 +4101,9 @@ FORMATS: list[dict[str, Any]] = [
             "Core Data Optimized Model",
         ),
         "platforms": ["macOS", "iOS"],
-        "parser_class": "CoreDataOmoParser",
+        # Recognised (CoreDataOmoParser shows it as hex with a status), not
+        # decoded: the catalog says "Not yet supported", which is the truth.
+        "parser_class": None,
         "magic": [
             {
                 "offset": 0,
