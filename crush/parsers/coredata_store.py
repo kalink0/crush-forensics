@@ -284,22 +284,6 @@ class CoreDataModel:
                 found = ent.name
         return found
 
-    def descendants(self, name: str) -> list[str]:
-        """Every entity below *name* (not *name* itself)."""
-        out: list[str] = []
-        pending = list(reversed(self.entities[name].subentities)) if name in self.entities else []
-        seen: set[str] = {name}
-        while pending:
-            sub = pending.pop()
-            if sub in seen:
-                continue
-            seen.add(sub)
-            out.append(sub)
-            ent = self.entities.get(sub)
-            if ent is not None:
-                pending.extend(reversed(ent.subentities))
-        return out
-
     def property_rows(self) -> list[ModelProperty]:
         rows = [p for ent in self.entities.values() for p in ent.properties]
         return rows + self.unattached
@@ -383,20 +367,31 @@ def _bool_or_none(value: Any) -> bool | None:
     return None
 
 
-def parse_model_archive(raw: bytes) -> tuple[CoreDataModel | None, list[ParseIssue]]:
-    """The model in *raw* (an NSKeyedArchiver plist, binary or XML).
-    Returns (model, issues); model is None when there's none to read."""
+def parse_model_bytes(raw: bytes) -> tuple[CoreDataModel | None, list[ParseIssue]]:
+    """The model in *raw*, a binary plist (Z_MODELCACHE's content after
+    inflating). A model file is loaded by the plist parser and handed to
+    parse_model_archive() as loaded."""
     try:
         archive = plistlib.loads(raw)
     except Exception as exc:  # noqa: BLE001 -- plistlib raises several kinds
         return None, [ParseIssue("coredata.model_plist_unreadable", detail=str(exc))]
+    return parse_model_archive(archive)
+
+
+def parse_model_archive(
+    archive: Any, root_name: str | ParseIssue | None = None,
+) -> tuple[CoreDataModel | None, list[ParseIssue]]:
+    """The model in a loaded NSKeyedArchiver plist (*root_name*: its root
+    class, when the caller already has it). Returns (model, issues); model
+    is None when there's none to read."""
     if not is_keyed_archive(archive):
         return None, [ParseIssue("coredata.model_not_keyed_archive")]
     objects = archive.get("$objects")
     if not isinstance(objects, list):
         return None, [ParseIssue("coredata.model_not_keyed_archive")]
     issues: list[ParseIssue] = []
-    root_name = root_class(archive)
+    if root_name is None:
+        root_name = root_class(archive)
     if root_name != "NSManagedObjectModel":
         issues.append(ParseIssue("coredata.model_root_class", {"found": root_name}))
     ar = _Archive(objects)
@@ -895,6 +890,13 @@ def is_internal_entity(name: str) -> bool:
     persistent history's CHANGE, TRANSACTION, TRANSACTIONSTRING and the
     CloudKit mirroring's NSCK* entities. Their rows are in A<NAME>."""
     return name in HISTORY_ENTITIES or name.startswith("NSCK")
+
+
+def _table_prefix(root_name: str) -> str:
+    """A for Core Data's own entities, Z for every other (one rule)."""
+    return "A" if is_internal_entity(root_name) else "Z"
+
+
 _HISTORY_STRING_REFS = (
     ("author", "ZAUTHORTS", "ZAUTHOR"),
     ("bundle", "ZBUNDLEIDTS", "ZBUNDLEID"),
@@ -923,9 +925,12 @@ class RelationshipRule:
       destination's) whose *source_column* holds this object's Z_PK
     - "join table": rows of *table* whose *source_column* holds this
       object's Z_PK, *key_column* the target's
-    *order_column* orders the targets (ordered relationships). *status*
+    *order_column* orders the targets (ordered relationships); *order_note*
+    says when the model marks the relationship ordered but no order column
+    was found (the targets' order is then not the stored one). *status*
     "resolved", or "ambiguous"/"unresolved" with *candidates* and *reason*
-    -- then no link is offered."""
+    -- then no link is offered. *candidates* are columns of *table*: of the
+    source row for "to-one column", else of the destination or join table."""
 
     kind: str
     status: str
@@ -936,10 +941,17 @@ class RelationshipRule:
     ent_column: str | None = None
     candidates: tuple[str, ...] = ()
     reason: ParseIssue | None = None
+    order_note: ParseIssue | None = None
 
     @property
     def resolved(self) -> bool:
         return self.status == "resolved"
+
+    @property
+    def candidates_in_source_row(self) -> bool:
+        """Whether the candidates are columns of the record's own row (only
+        then do their values belong to this record)."""
+        return self.kind == "to-one column"
 
     def link_text(self) -> str:
         """Where the link is stored: the to-one key column, the join table,
@@ -963,7 +975,6 @@ class GridColumn:
     source: int | None
     decode: str | None = None
     derived: bool = False
-    tooltip: Any = None
     heuristic: bool = False
 
     @property
@@ -1005,7 +1016,6 @@ HEURISTIC_NAME_MATCH = "name match"
 HEURISTIC_BYTE_PATTERN = "byte pattern"
 HEURISTIC_FOLDER_NAME = "folder name"
 HEURISTIC_COCOA_DATE = "read as date"
-HEURISTIC_TABLE_NAME = "table name"
 
 
 @dataclass(frozen=True)
@@ -1042,10 +1052,15 @@ class TombstoneSlot:
 
 
 def tombstone_text(value: Any, attribute: ModelProperty | None) -> str:
+    """A tombstone value as text: as a UUID (decode_value) when *attribute*
+    is a UUID attribute and the value reads as one, any other BLOB as
+    complete hex, everything else as stored."""
     if isinstance(value, (bytes, bytearray, memoryview)):
+        if attribute is not None and attribute.attribute_type == TYPE_UUID:
+            text, _status = decode_value(DECODE_UUID, value)
+            if text is not None:
+                return text
         data = bytes(value)
-        if attribute is not None and attribute.attribute_type == TYPE_UUID and len(data) == 16:
-            return str(uuid.UUID(bytes=data)).upper()
         return data.hex(" ") if data else "<0 B>"
     return str(value)
 
@@ -1069,6 +1084,13 @@ class HistoryRow:
     target_exists: bool | None  # None: unknown (see target_status) or no entity
     raw: dict[str, Any]
     target_status: ParseIssue | None = None
+    # Why the transaction's values (time, strings) are empty: no row of
+    # the transaction table has this change's ZTRANSACTIONID.
+    transaction_status: ParseIssue | None = None
+    # Why a ZCHANGETYPE has no name (a value outside 0-2).
+    change_type_status: ParseIssue | None = None
+    # Per string key: why a stored reference resolves to no name.
+    string_status: dict[str, ParseIssue] = field(default_factory=dict)
 
 
 @dataclass
@@ -1202,6 +1224,7 @@ class CoreDataStore:
         self.model_issues: list[ParseIssue] = []
         self._read_model(conn)
         self.entities = self._read_entities(conn)
+        self._children: dict[Any, list[EntityInfo]] | None = None
         self._by_name = {e.name: e for e in self.entities}
         self._by_ent: dict[Any, EntityInfo] = {e.ent: e for e in self.entities}
         self._exact_names: dict[str, set[str]] = {}
@@ -1311,7 +1334,7 @@ class CoreDataStore:
                 "head": data[:16].hex(" "), "size": len(data),
             }, str(exc))
             return
-        model, issues = parse_model_archive(raw)
+        model, issues = parse_model_bytes(raw)
         self.model_issues.extend(issues)
         if model is None:
             self.model_status = issues[0] if issues else ParseIssue("coredata.model_not_keyed_archive")
@@ -1343,51 +1366,45 @@ class CoreDataStore:
             return ent
 
         names = {r[0]: r[1] for r in rows}
-        # Every table some root entity names as its own by the rule; another
-        # entity never falls back onto one of these.
-        claimed = {
-            (self._preferred_table(str(names[e])) or "").upper()
-            for e in names if supers.get(e) in (0, None)
+        # The tables root entities have by the rule: a status never names
+        # one of these as the place of another entity's rows.
+        taken = {
+            t.upper() for t in (
+                self.table(_table_prefix(str(names[e])) + str(names[e]).upper())
+                for e in names if supers.get(e) in (0, None)
+            ) if t
         }
         infos: list[EntityInfo] = []
         for ent, name, super_ent, max_pk in rows:
             root = root_of(ent)
             root_name = str(names.get(root, name))
-            table_name, status = self._root_table(root_name, claimed)
+            table_name, status = self._root_table(root_name, taken)
             infos.append(EntityInfo(
                 ent=ent, name=str(name), super_ent=super_ent, max_pk=max_pk, root_ent=root,
                 table=table_name, table_status=status,
             ))
         return infos
 
-    @staticmethod
-    def _prefixes(root_name: str) -> tuple[str, str]:
-        """(preferred, other) table prefix: A first for Core Data's own
-        entities -- by their exact Z_NAME: CHANGE, TRANSACTION,
-        TRANSACTIONSTRING and NSCK* -- Z first for every other entity."""
-        return ("A", "Z") if is_internal_entity(root_name) else ("Z", "A")
-
-    def _preferred_table(self, root_name: str) -> str | None:
-        return self.table(self._prefixes(root_name)[0] + root_name.upper())
-
-    def _root_table(
-        self, root_name: str, claimed: set[str] | None = None,
-    ) -> tuple[str | None, ParseIssue | None]:
-        """The entity's table by its preferred prefix, so an app entity
-        "Change" (ZCHANGE) and the history's CHANGE (ACHANGE) each keep their
-        own. When only the other prefix's table exists and no entity claims
-        it as its own (an app entity called exactly TRANSACTION or NSCK...),
-        that one."""
-        preferred, other = self._prefixes(root_name)
-        table = self.table(preferred + root_name.upper())
+    def _root_table(self, root_name: str, taken: set[str] | None = None) -> tuple[str | None, ParseIssue | None]:
+        """The table of a root entity, by one rule: A + uppercase name for
+        Core Data's own entities (by their exact Z_NAME, see
+        is_internal_entity), Z + uppercase name for every other. No other
+        table is taken in its place: when that one is missing, the status
+        says so, and names the other prefix's table if it exists and isn't
+        another entity's by the rule (*taken*) -- its rows stay visible as a
+        plain table."""
+        prefix = _table_prefix(root_name)
+        other = "Z" if prefix == "A" else "A"
+        wanted = prefix + root_name.upper()
+        table = self.table(wanted)
         if table is not None:
             return table, None
-        fallback = self.table(other + root_name.upper())
-        if fallback is not None and fallback.upper() not in (claimed or set()):
-            return fallback, None
-        return None, ParseIssue("coredata.no_table", {
-            "entity": root_name, "tables": f"{preferred}{root_name.upper()}",
-        })
+        present = self.table(other + root_name.upper())
+        if present is not None and present.upper() not in (taken or set()):
+            return None, ParseIssue("coredata.no_table_other_exists", {
+                "entity": root_name, "tables": wanted, "other": present,
+            })
+        return None, ParseIssue("coredata.no_table", {"entity": root_name, "tables": wanted})
 
     def entity(self, name: str) -> EntityInfo | None:
         return self._by_name.get(name)
@@ -1396,7 +1413,13 @@ class CoreDataStore:
         return self._by_ent.get(ent)
 
     def children(self, ent: int) -> list[EntityInfo]:
-        return [e for e in self.entities if e.super_ent == ent and e.ent != ent]
+        if self._children is None:
+            by_super: dict[Any, list[EntityInfo]] = {}
+            for e in self.entities:
+                if e.super_ent != e.ent:
+                    by_super.setdefault(e.super_ent, []).append(e)
+            self._children = by_super
+        return list(self._children.get(ent, []))
 
     def subtree(self, ent: int) -> list[int]:
         """*ent* and every entity below it, by Z_PRIMARYKEY.Z_SUPER."""
@@ -1520,11 +1543,12 @@ class CoreDataStore:
 
     # -- records ---------------------------------------------------------------
 
-    def row_counts(self, conn: Any | None = None) -> dict[str, dict[Any, int]]:
+    def row_counts(self, conn: Any | None = None) -> dict[str, dict[Any, int] | ParseIssue]:
         """Rows per stored Z_ENT value, per entity table (a table without
-        Z_ENT: all rows under the key None)."""
+        Z_ENT: all rows under the key None); for a table that couldn't be
+        counted, why."""
         conn = conn or self.ui_conn()
-        counts: dict[str, dict[Any, int]] = {}
+        counts: dict[str, dict[Any, int] | ParseIssue] = {}
         for table in sorted({e.table for e in self.entities if e.table}):
             has_ent = any(c.upper() == "Z_ENT" for c in self.column_names(table))
             try:
@@ -1537,16 +1561,24 @@ class CoreDataStore:
                         f"SELECT COUNT(*) FROM {quote_ident(table)}"  # noqa: S608
                     ).fetchone()[0]}
             except Exception as exc:  # noqa: BLE001
-                self.issues.append(ParseIssue("coredata.table_unreadable", {"table": table}, str(exc)))
+                counts[table] = ParseIssue("coredata.table_unreadable", {"table": table}, str(exc))
         return counts
 
-    def entity_row_count(self, name: str, counts: dict[str, dict[Any, int]]) -> int | None:
+    def entity_row_count(
+        self, name: str, counts: dict[str, dict[Any, int] | ParseIssue],
+    ) -> int | ParseIssue | None:
         """The rows the entity shows: a root every row of its table, a
-        subentity its own and those of the entities below it."""
+        subentity its own and those of the entities below it. Why it
+        couldn't be counted, when so; None when the entity has no table
+        (entity_status says why)."""
         info = self.entity(name)
-        if info is None or info.table is None or info.table not in counts:
+        if info is None or info.table is None:
             return None
-        per_ent = counts[info.table]
+        per_ent = counts.get(info.table)
+        if per_ent is None:
+            return ParseIssue("coredata.count_missing", {"table": info.table})
+        if isinstance(per_ent, ParseIssue):
+            return per_ent
         if info.super_ent in (0, None):
             return sum(per_ent.values())
         return sum(per_ent.get(e, 0) for e in self.subtree(info.ent))
@@ -1650,16 +1682,31 @@ class CoreDataStore:
                     prop.name, prop.kind, type_text, "", None, (),
                     ParseIssue("coredata.mapping_no_column", {"column": ("Z" + prop.name).upper()}),
                 ))
+        # A to-one link's entity column (Z<n>_<NAME>): shown as stored, with
+        # the relationship it belongs to by its name.
+        ent_columns: dict[str, str] = {}
         for prop in props:
             if prop.is_relationship and not prop.to_many:
                 used.update(c.upper() for c in self.column_link(entity, prop).candidates)
                 rule = self.relationship_rule(entity, prop)
                 if rule.ent_column:
-                    used.add(rule.ent_column.upper())
+                    ent_columns[rule.ent_column.upper()] = prop.name
+        # Z_PK is the record's key (in the head); every other column is here.
         for i, (column, declared) in enumerate(records.columns):
-            if column.upper() in used or column.upper() in ("Z_PK", "Z_ENT", "Z_OPT"):
+            up = column.upper()
+            if up == "Z_PK" or (up in used and up not in ent_columns):
                 continue
             raw = row[i]
+            if up in ent_columns:
+                out.append(PropertyValue(
+                    column, "column", declared, value_text(raw), raw, (column,),
+                    ParseIssue("coredata.column_rel_entity", {"relationship": ent_columns[up]}),
+                    heuristic=HEURISTIC_NAME_MATCH,
+                ))
+                continue
+            if up in ("Z_ENT", "Z_OPT"):
+                out.append(PropertyValue(column, "column", declared, value_text(raw), raw, (column,), None))
+                continue
             kind = self.decode_kind(records.table, column, None, None)
             text, status = decode_value(kind, raw) if kind else (None, None)
             heuristic = (
@@ -1677,13 +1724,39 @@ class CoreDataStore:
     def relationship_rule(self, entity: str, prop: ModelProperty) -> RelationshipRule:
         """The rule (established on observed stores) that finds the
         relationship's targets, or why none applies."""
+        rule = self._relationship_rule(entity, prop)
+        if rule.resolved and prop.to_many and prop.ordered and rule.order_column is None:
+            # Ordered in the model, but no column holds the order: the
+            # targets come in the order SQLite returns them, not the stored one.
+            rule = RelationshipRule(
+                rule.kind, rule.status, rule.table, rule.key_column, rule.source_column,
+                None, rule.ent_column, rule.candidates, rule.reason,
+                order_note=ParseIssue("coredata.rel_order_unknown"),
+            )
+        return rule
+
+    def _relationship_rule(self, entity: str, prop: ModelProperty) -> RelationshipRule:
         if self.model is None:
             return RelationshipRule("unresolved", "unresolved", reason=ParseIssue("coredata.rel_no_model"))
         source = self.entity(entity)
-        dest = self.entity(prop.destination) if prop.destination else None
+        if prop.destination is None:
+            # The model stores no destination entity (NSDestinationEntity and
+            # _NSDestinationEntityName both nil, seen in TipKit stores). A
+            # to-one link's stored key is still in the source row: shown,
+            # with no target.
+            reason = ParseIssue("coredata.rel_no_destination")
+            if not prop.to_many and source is not None and source.table is not None:
+                link = link_columns(
+                    prop.name, self.column_names(source.table), self._exact_names.get(source.table, set()),
+                )
+                return RelationshipRule(
+                    "to-one column", "unresolved", table=source.table, candidates=link.candidates, reason=reason,
+                )
+            return RelationshipRule("unresolved", "unresolved", reason=reason)
+        dest = self.entity(prop.destination)
         if source is None or source.table is None or dest is None or dest.table is None:
             return RelationshipRule("unresolved", "unresolved", reason=ParseIssue(
-                "coredata.rel_no_table", {"destination": prop.destination or "?"},
+                "coredata.rel_no_table", {"destination": prop.destination},
             ))
         inverse = None
         if prop.inverse and prop.destination in self.model.entities:
@@ -1780,8 +1853,15 @@ class CoreDataStore:
                     "column": f"Z{e_info.ent}{prop.name.upper()}", "table": dest.table,
                 }),
             )
+        order = None
+        if prop.ordered:
+            # The order is in Z_FOK_ + the key column's name without its Z
+            # (Z2ACTIONS -> Z_FOK_2ACTIONS, observed).
+            want = "Z_FOK_" + hits[0][1:].upper()
+            order = next((c for c in self.column_names(dest.table) if c.upper() == want), None)
         return RelationshipRule(
             "destination column", "resolved", table=dest.table, key_column="Z_PK", source_column=hits[0],
+            order_column=order,
         )
 
     def relationship_values(
@@ -1802,9 +1882,12 @@ class CoreDataStore:
             value = RelationshipValue(prop.name, prop.destination, prop.to_many, rule)
             dest = self.entity(prop.destination) if prop.destination else None
             if not rule.resolved:
+                # Only a candidate in this record's own row has a value of
+                # this record; the destination's or a join table's candidates
+                # are named (rule.candidates, rule.table), never valued from here.
                 value.stored = tuple(
                     (c, row[index_of[c.upper()]]) for c in rule.candidates if c.upper() in index_of
-                )
+                ) if rule.candidates_in_source_row else ()
                 value.status = rule.reason
                 out.append(value)
                 continue
@@ -1826,9 +1909,13 @@ class CoreDataStore:
                     value.targets = self._targets(conn, dest, found)
             except Exception as exc:  # noqa: BLE001
                 value.status = ParseIssue("coredata.rel_query_failed", detail=str(exc))
+            notes = [value.status] if value.status is not None else []
             missing = sum(1 for t in value.targets if not t.exists)
             if missing:
-                value.status = ParseIssue("coredata.rel_target_missing", {"count": missing})
+                notes.append(ParseIssue("coredata.rel_target_missing", {"count": missing}))
+            if rule.order_note is not None:
+                notes.append(rule.order_note)
+            value.status = notes[0] if len(notes) == 1 else (notes or None)
             out.append(value)
         return out
 
@@ -1859,10 +1946,14 @@ class CoreDataStore:
     # -- history ------------------------------------------------------------
 
     def history_tables(self) -> dict[str, str | None]:
-        return {
-            name: (self.entity(name).table if self.entity(name) else None)  # type: ignore[union-attr]
-            for name in HISTORY_ENTITIES
-        }
+        """The persistent history's tables: the A-table of each history
+        entity in Z_PRIMARYKEY. A table by another prefix is never one of them."""
+        out: dict[str, str | None] = {}
+        for name in HISTORY_ENTITIES:
+            info = self.entity(name)
+            table = info.table if info is not None else None
+            out[name] = table if table is not None and table.upper().startswith("A") else None
+        return out
 
     def history_status(self, conn: Any | None = None) -> ParseIssue:
         tables = self.history_tables()
@@ -1934,27 +2025,57 @@ class CoreDataStore:
             issues.append(ParseIssue("coredata.history_no_transactions"))
         strings: dict[Any, Any] = {}
         str_table = tables.get("TRANSACTIONSTRING")
+        # Why every string reference stays unresolved, when it can't be looked up.
+        strings_missing: ParseIssue | None = None
         if str_table and any(c.upper() == "ZNAME" for c in self.column_names(str_table)):
             strings = dict(conn.execute(
                 f"SELECT Z_PK, ZNAME FROM {quote_ident(str_table)}"  # noqa: S608
             ).fetchall())
+        elif str_table:
+            strings_missing = ParseIssue("coredata.history_column_missing", {"table": str_table, "column": "ZNAME"})
+        else:
+            strings_missing = ParseIssue("coredata.history_no_strings")
         # Which entity rows still exist, per table (for "jump to object");
         # a table that can't be read: existence unknown, never "no such row".
         existing: dict[str, set[Any] | ParseIssue] = {}
         out: list[HistoryRow] = []
         for r in rows:
             rec = {c.upper(): v for c, v in zip(cols, tuple(r))}
-            tx = transactions.get(rec.get("ZTRANSACTIONID"), {})
+            tx_id = rec.get("ZTRANSACTIONID")
+            tx = transactions.get(tx_id)
+            tx_status: ParseIssue | None = None
+            if tx is None:
+                tx = {}
+                if tx_table:
+                    tx_status = ParseIssue("coredata.history_transaction_missing", {
+                        "id": _short_repr(tx_id) if tx_id is not None else "NULL", "table": tx_table,
+                    })
+                else:
+                    tx_status = ParseIssue("coredata.history_no_transactions")
             ts_raw = tx.get("ZTIMESTAMP")
             ts_text, ts_status = decode_value(DECODE_DATE, ts_raw)
             resolved: dict[str, tuple[Any, Any, Any]] = {}
+            string_status: dict[str, ParseIssue] = {}
             for key, ref_col, text_col in _HISTORY_STRING_REFS:
                 ref = tx.get(ref_col)
-                resolved[key] = (ref, strings.get(ref) if ref is not None else None, tx.get(text_col))
+                name = strings.get(ref) if ref is not None else None
+                if ref is not None and name is None:
+                    string_status[key] = strings_missing or (
+                        ParseIssue("coredata.history_string_missing", {"ref": _short_repr(ref), "table": str_table})
+                        if ref not in strings else ParseIssue("coredata.history_string_null", {
+                            "ref": _short_repr(ref), "table": str_table,
+                        })
+                    )
+                resolved[key] = (ref, name, tx.get(text_col))
             ent_raw = rec.get("ZENTITY")
             info = self._by_ent.get(ent_raw)
             entity_name = info.name if info else None
             ctype = rec.get("ZCHANGETYPE")
+            change_type = CHANGE_TYPES.get(ctype) if isinstance(ctype, int) and not isinstance(ctype, bool) else None
+            ctype_status = (
+                ParseIssue("coredata.history_change_type_unknown", {"value": _short_repr(ctype)})
+                if change_type is None and ctype is not None else None
+            )
             target_exists: bool | None = None
             target_status: ParseIssue | None = None
             entity_pk = rec.get("ZENTITYPK")
@@ -1977,7 +2098,7 @@ class CoreDataStore:
                     target_exists = entity_pk in known
             elif info is not None:
                 # In Z_PRIMARYKEY, but its rows have no table: say that.
-                target_status = info.table_status or ParseIssue("coredata.no_table", {"tables": "?"})
+                target_status = info.table_status
             elif ent_raw is not None:
                 target_status = ParseIssue("coredata.ent_unknown", {"ent": ent_raw})
             slots = self._tombstones(entity_name, rec, tomb_cols)
@@ -1989,7 +2110,7 @@ class CoreDataStore:
                 timestamp_status=ts_status,
                 strings=resolved,
                 change_type_raw=ctype,
-                change_type=CHANGE_TYPES.get(ctype) if isinstance(ctype, int) else None,
+                change_type=change_type,
                 entity_raw=ent_raw,
                 entity_name=entity_name,
                 entity_pk=entity_pk,
@@ -1999,6 +2120,9 @@ class CoreDataStore:
                 target_exists=target_exists,
                 raw=rec,
                 target_status=target_status,
+                transaction_status=tx_status,
+                change_type_status=ctype_status,
+                string_status=string_status,
             ))
         heuristic = bool(tx_table) and self.timestamp_is_heuristic(tx_table or "", "ZTIMESTAMP")
         return HistoryResult(out, issues, tomb_cols, timestamp_heuristic=heuristic)
@@ -2012,22 +2136,21 @@ class CoreDataStore:
             if value is None:
                 continue
             n = int(_TOMBSTONE_COLUMN.fullmatch(column).group(1))  # type: ignore[union-attr]
-            unassigned = tombstone_text(value, None)
+            status: ParseIssue | None = None
             if entity is None or self.model is None or not self.in_model(entity):
-                slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_no_model"), names,
-                                           unassigned))
+                status = ParseIssue("coredata.tombstone_no_model")
             elif n >= len(attrs):
-                slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_beyond", {
-                    "slot": n, "count": len(attrs),
-                }), names, unassigned))
+                status = ParseIssue("coredata.tombstone_beyond", {"slot": n, "count": len(attrs)})
             elif not _compatible(attrs[n], value):
-                slots.append(TombstoneSlot(n, column, value, None, ParseIssue("coredata.tombstone_type", {
+                status = ParseIssue("coredata.tombstone_type", {
                     "slot": n, "attribute": attrs[n].name, "type": _type_text(attrs[n]),
                     "stored": _storage_class(value),
-                }), names, unassigned))
-            else:
-                slots.append(TombstoneSlot(n, column, value, attrs[n].name, None, names,
-                                           tombstone_text(value, attrs[n])))
+                })
+            attribute = attrs[n] if status is None else None
+            slots.append(TombstoneSlot(
+                n, column, value, attribute.name if attribute else None, status, names,
+                tombstone_text(value, attribute),
+            ))
         return slots
 
     # -- primary keys --------------------------------------------------------

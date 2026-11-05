@@ -650,11 +650,11 @@ eure Unterstützung macht dieses Projekt erst möglich.</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;BLOB {size:,} B&gt; {head} … (preview, double-click for all)</source>
+        <source>&lt;BLOB {size:,} B&gt; {head} … (preview)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>[{slot}] = {value} (unassigned)</source>
+        <source>&lt;BLOB {size:,} B&gt; {head} … (preview, double-click for all)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4804,7 +4804,11 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>table name</source>
+        <source>Stored</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>[{slot}] = {value} (unassigned)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4842,10 +4846,6 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>Type</source>
         <translation>Typ</translation>
-    </message>
-    <message>
-        <source>Raw</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Column</source>
@@ -8051,6 +8051,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Abgeleitet von</translation>
     </message>
     <message>
+        <source>Derived reading</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Detection rule</source>
         <translation>Erkennungsregel</translation>
     </message>
@@ -9039,6 +9043,26 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>no table {tables}: no rows shown; {other} exists as a plain table</source>
+        <comment>coredata.no_table_other_exists</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>rows of {table} not counted</source>
+        <comment>coredata.count_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>rows not counted: {detail}</source>
+        <comment>coredata.count_failed</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Z_ENT of the target of {relationship}</source>
+        <comment>coredata.column_rel_entity</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Z_ENT {ent} is no entity in Z_PRIMARYKEY</source>
         <comment>coredata.ent_unknown</comment>
         <translation type="unfinished"></translation>
@@ -9054,6 +9078,16 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>not resolved: the model stores no destination entity</source>
+        <comment>coredata.rel_no_destination</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ordered in the model, but no order column found: the order shown is not the stored one</source>
+        <comment>coredata.rel_order_unknown</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>not resolved: no single column {column} in {table}</source>
         <comment>coredata.rel_destination_column</comment>
         <translation type="unfinished"></translation>
@@ -9066,6 +9100,31 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>persistent history could not be read: {detail}</source>
         <comment>coredata.history_unreadable</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no row Z_PK {id} in {table}: no time or names</source>
+        <comment>coredata.history_transaction_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no transaction string table: name not resolved</source>
+        <comment>coredata.history_no_strings</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no row Z_PK {ref} in {table}</source>
+        <comment>coredata.history_string_missing</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>row Z_PK {ref} in {table} has ZNAME NULL</source>
+        <comment>coredata.history_string_null</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ZCHANGETYPE {value} is none of 0 (insert), 1 (update), 2 (delete)</source>
+        <comment>coredata.history_change_type_unknown</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13697,6 +13756,22 @@ der Plattform), sodass der KDF zur Verlängerung der Passphrase für sie nur unn
     <message>
         <source>({visible:,} of {total:,} rows)</source>
         <translation>({visible:,} von {total:,} Zeilen)</translation>
+    </message>
+    <message>
+        <source>Reading the records of {entity} failed: {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading the Core Data history failed: {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reading the Core Data keys failed: {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Scanning for externally stored values failed: {error}</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Database file missing</source>

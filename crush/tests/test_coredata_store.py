@@ -991,10 +991,10 @@ def test_history_names_an_entity_without_a_table_correctly(tmp_path: Path) -> No
     store.close()
 
 
-def test_table_falls_back_to_the_other_prefix_only_when_unclaimed(tmp_path: Path) -> None:
+def test_table_by_one_rule_never_the_other_prefix(tmp_path: Path) -> None:
     path = build_store(tmp_path / "s")
     conn = sqlite3.connect(path)
-    # An app entity named like Core Data's own: only its Z table exists.
+    # Named like Core Data's own: its A table is missing, a Z table exists.
     conn.execute("INSERT INTO Z_PRIMARYKEY VALUES (9, 'NSCKMine', 0, 1)")
     conn.execute("CREATE TABLE ZNSCKMINE (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER)")
     # An app entity "Change" without ZCHANGE: ACHANGE is the history's, not its.
@@ -1002,11 +1002,46 @@ def test_table_falls_back_to_the_other_prefix_only_when_unclaimed(tmp_path: Path
     conn.commit()
     conn.close()
     store = _store(path)
-    assert store.entity("NSCKMine").table == "ZNSCKMINE"
+    mine = store.entity("NSCKMine")
+    assert mine.table is None
+    assert mine.table_status.code == "coredata.no_table_other_exists"
+    assert mine.table_status.params == {"entity": "NSCKMine", "tables": "ANSCKMINE", "other": "ZNSCKMINE"}
+    assert "ZNSCKMINE exists as a plain table" in str(mine.table_status)
+    # ACHANGE is the history's table by the rule: never named as Change's.
     assert store.entity("Change").table is None
     assert store.entity("Change").table_status.code == "coredata.no_table"
     assert store.entity("CHANGE").table == "ACHANGE"
     store.close()
+
+
+def test_app_entity_change_is_no_history(tmp_path: Path) -> None:
+    """An app entity named exactly CHANGE, no ACHANGE: its rows are not
+    shown as a persistent history the store doesn't have."""
+    path = build_store(tmp_path / "s", history=False)
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO Z_PRIMARYKEY VALUES (20, 'CHANGE', 0, 2)")
+    conn.execute("CREATE TABLE ZCHANGE (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, "
+                 "ZCHANGETYPE INTEGER, ZENTITY INTEGER, ZENTITYPK INTEGER)")
+    conn.execute("INSERT INTO ZCHANGE VALUES (1, 20, 1, 2, 4, 1)")
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    info = store.entity("CHANGE")
+    assert info.table is None
+    assert info.table_status.code == "coredata.no_table_other_exists"
+    assert info.table_status.params["other"] == "ZCHANGE"
+    assert store.history_tables()["CHANGE"] is None
+    assert store.history_status().code == "coredata.history_missing"
+    assert store.load_history().rows == []
+    # Its rows stay in the plain table.
+    assert _parse(path).data["ZCHANGE"]["rows"] == [[1, 20, 1, 2, 4, 1]]
+    store.close()
+
+
+def test_history_tables_only_a_prefixed(store) -> None:
+    assert store.history_tables() == {
+        "CHANGE": "ACHANGE", "TRANSACTION": "ATRANSACTION", "TRANSACTIONSTRING": "ATRANSACTIONSTRING",
+    }
 
 
 def test_column_roles_not_cached_after_a_failure(store, monkeypatch) -> None:
@@ -1026,3 +1061,283 @@ def test_column_roles_not_cached_after_a_failure(store, monkeypatch) -> None:
     assert "ZASSET" not in store._roles_cache
     roles = store.column_roles("ZASSET")
     assert "ZUUID" in roles and "ZFILENAME" in roles
+
+
+# -- full branch review ---------------------------------------------------------
+
+_BASE_SCHEMA = [
+    "CREATE TABLE Z_PRIMARYKEY (Z_ENT INTEGER PRIMARY KEY, Z_NAME VARCHAR, Z_SUPER INTEGER, Z_MAX INTEGER)",
+    "CREATE TABLE Z_METADATA (Z_VERSION INTEGER PRIMARY KEY, Z_UUID VARCHAR(255), Z_PLIST BLOB)",
+    "CREATE TABLE Z_MODELCACHE (Z_CONTENT BLOB)",
+]
+
+
+def _mini_store(path: Path, model: bytes, pk_rows, schema, inserts) -> Path:
+    """A store with its own model and tables (*inserts*: (sql, rows))."""
+    from crush.tests.coredata_helpers import deflate
+
+    conn = sqlite3.connect(path)
+    for sql in _BASE_SCHEMA + list(schema):
+        conn.execute(sql)
+    conn.executemany("INSERT INTO Z_PRIMARYKEY VALUES (?, ?, ?, ?)", pk_rows)
+    conn.execute("INSERT INTO Z_METADATA VALUES (1, 'U', ?)", (plistlib.dumps({}, fmt=plistlib.FMT_BINARY),))
+    conn.execute("INSERT INTO Z_MODELCACHE VALUES (?)", (deflate(model),))
+    for sql, rows in inserts:
+        conn.executemany(sql, rows)
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _record(store, entity: str, pk: int):
+    records = store.load_records(entity)
+    return records, next(r for r in records.rows if r[0] == pk)
+
+
+def _rel(values, name: str):
+    return next(v for v in values if v.name == name)
+
+
+_BUNDLES = [
+    ("Bundle", None, [("name", 700, 0)], [("actions", "Action", None, 0, True)]),
+    ("Action", None, [("title", 700, 0)], []),
+]
+
+
+@pytest.mark.parametrize("with_order", [True, False])
+def test_ordered_destination_column_reads_its_order(tmp_path: Path, with_order: bool) -> None:
+    """MOEventBundleMO.actions: the key in Z2ACTIONS, the order in
+    Z_FOK_2ACTIONS -- without that column the order is said to be unknown."""
+    order_col = ", Z_FOK_1ACTIONS INTEGER" if with_order else ""
+    path = _mini_store(
+        tmp_path / "s", model_archive(_BUNDLES, unknown_class=False),
+        [(1, "Bundle", 0, 1), (2, "Action", 0, 3)],
+        ["CREATE TABLE ZBUNDLE (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, ZNAME VARCHAR)",
+         f"CREATE TABLE ZACTION (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, Z1ACTIONS INTEGER"
+         f"{order_col}, ZTITLE VARCHAR)"],
+        [("INSERT INTO ZBUNDLE VALUES (?, ?, ?, ?)", [(1, 1, 1, "b")])] + [
+            ("INSERT INTO ZACTION VALUES (?, ?, ?, ?, ?, ?)" if with_order else
+             "INSERT INTO ZACTION VALUES (?, ?, ?, ?, ?)",
+             [(1, 2, 1, 1, 3, "c"), (2, 2, 1, 1, 1, "a"), (3, 2, 1, 1, 2, "b")] if with_order else
+             [(1, 2, 1, 1, "c"), (2, 2, 1, 1, "a"), (3, 2, 1, 1, "b")]),
+        ],
+    )
+    store = _store(path)
+    records, row = _record(store, "Bundle", 1)
+    actions = _rel(store.relationship_values(records, row), "actions")
+    assert actions.rule.kind == "destination column" and actions.rule.source_column == "Z1ACTIONS"
+    if with_order:
+        assert actions.rule.order_column == "Z_FOK_1ACTIONS"
+        assert [(t.pk, t.order) for t in actions.targets] == [(2, 1), (3, 2), (1, 3)]
+        assert actions.status is None
+    else:
+        assert actions.rule.order_column is None
+        assert actions.status.code == "coredata.rel_order_unknown"
+        assert {t.pk for t in actions.targets} == {1, 2, 3}
+    store.close()
+
+
+_NODES = [
+    ("Node", None, [("label", 700, 0)],
+     [("parent", "Node", "children", 1, False), ("children", "Node", "parent", 0, False)]),
+]
+
+
+def test_unresolved_candidates_valued_only_from_the_own_row(tmp_path: Path) -> None:
+    """children/parent on one table: the inverse column's candidates belong
+    to the destination's rows, so this record's own ZPARENT is never shown
+    as the value of children."""
+    path = _mini_store(
+        tmp_path / "s", model_archive(_NODES, unknown_class=False), [(1, "Node", 0, 2)],
+        ["CREATE TABLE ZNODE (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, ZPARENT INTEGER, "
+         "ZPARENT1 INTEGER, ZLABEL VARCHAR)"],
+        [("INSERT INTO ZNODE VALUES (?, ?, ?, ?, ?, ?)", [(1, 1, 1, None, None, "root"), (2, 1, 1, 1, None, "kid")])],
+    )
+    store = _store(path)
+    records, row = _record(store, "Node", 2)
+    values = store.relationship_values(records, row)
+    parent = _rel(values, "parent")
+    assert parent.rule.kind == "to-one column" and not parent.rule.resolved
+    assert parent.stored == (("ZPARENT", 1), ("ZPARENT1", None))  # this row's own columns
+    children = _rel(values, "children")
+    assert children.rule.kind == "inverse column" and not children.rule.resolved
+    assert children.rule.table == "ZNODE" and children.rule.candidates == ("ZPARENT", "ZPARENT1")
+    assert children.stored == ()  # named, never valued from this row
+    store.close()
+
+
+def _drop_destinations(archive: bytes, names: set[str]) -> bytes:
+    """The model with no destination entity (nor inverse) for the named
+    relationships, as seen in TipKit stores."""
+    loaded = plistlib.loads(archive)
+    objects = loaded["$objects"]
+    for obj in objects:
+        name = obj.get("NSPropertyName") if isinstance(obj, dict) else None
+        if isinstance(name, plistlib.UID):
+            name = objects[name.data]
+        if name in names and "NSDestinationEntity" in obj:
+            obj["NSDestinationEntity"] = plistlib.UID(0)
+            obj["_NSDestinationEntityName"] = plistlib.UID(0)
+            obj["NSInverseRelationship"] = plistlib.UID(0)
+            obj.pop("_NSInverseRelationshipName", None)
+    return plistlib.dumps(loaded, fmt=plistlib.FMT_BINARY, sort_keys=False)
+
+
+def test_relationship_without_destination_says_so(tmp_path: Path) -> None:
+    entities = [
+        ("CoreEventRecord", None, [("id", 700, 0)], [("tip", "CoreTipRecord", None, 1, False)]),
+        ("CoreTipRecord", None, [("id", 700, 0)], [("events", "CoreEventRecord", None, 0, False)]),
+    ]
+    model = _drop_destinations(model_archive(entities, unknown_class=False), {"tip", "events"})
+    path = _mini_store(
+        tmp_path / "s", model, [(1, "CoreEventRecord", 0, 1), (2, "CoreTipRecord", 0, 1)],
+        ["CREATE TABLE ZCOREEVENTRECORD (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, ZTIP INTEGER, "
+         "ZID VARCHAR)",
+         "CREATE TABLE ZCORETIPRECORD (Z_PK INTEGER PRIMARY KEY, Z_ENT INTEGER, Z_OPT INTEGER, ZID VARCHAR)"],
+        [("INSERT INTO ZCOREEVENTRECORD VALUES (?, ?, ?, ?, ?)", [(1, 1, 1, 1, "e")]),
+         ("INSERT INTO ZCORETIPRECORD VALUES (?, ?, ?, ?)", [(1, 2, 1, "t")])],
+    )
+    store = _store(path)
+    tip_prop = next(p for p in store.model.entities["CoreEventRecord"].properties if p.name == "tip")
+    assert tip_prop.destination is None and tip_prop.inverse is None
+    records, row = _record(store, "CoreEventRecord", 1)
+    tip = _rel(store.relationship_values(records, row), "tip")
+    assert tip.status.code == "coredata.rel_no_destination"
+    assert "no table" not in str(tip.status)
+    assert tip.stored == (("ZTIP", 1),) and tip.targets == []  # the stored key, no target
+    records, row = _record(store, "CoreTipRecord", 1)
+    events = _rel(store.relationship_values(records, row), "events")
+    assert events.status.code == "coredata.rel_no_destination" and events.stored == ()
+    store.close()
+
+
+def test_history_gaps_have_a_status(tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO ATRANSACTIONSTRING VALUES (3, 16003, 1, NULL)")
+    conn.execute("INSERT INTO ATRANSACTION (Z_PK, Z_ENT, Z_OPT, ZBUNDLEIDTS, ZPROCESSIDTS, ZTIMESTAMP) "
+                 "VALUES (3, 16002, 1, 55, 3, 786092798)")
+    conn.execute("INSERT INTO ACHANGE (Z_PK, Z_ENT, Z_OPT, ZCHANGETYPE, ZENTITY, ZENTITYPK, ZTRANSACTIONID) "
+                 "VALUES (5, 16001, 1, 7, 4, 1, 99)")
+    conn.execute("INSERT INTO ACHANGE (Z_PK, Z_ENT, Z_OPT, ZCHANGETYPE, ZENTITY, ZENTITYPK, ZTRANSACTIONID) "
+                 "VALUES (6, 16001, 1, 0, 4, 2, 3)")
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    rows = {r.change_pk: r for r in store.load_history().rows}
+    missing_tx = rows[5]
+    assert missing_tx.transaction_status.code == "coredata.history_transaction_missing"
+    assert missing_tx.transaction_status.params == {"id": "99", "table": "ATRANSACTION"}
+    assert missing_tx.change_type is None
+    assert missing_tx.change_type_status.code == "coredata.history_change_type_unknown"
+    dangling = rows[6]
+    assert dangling.transaction_status is None and dangling.change_type == "insert"
+    assert dangling.string_status["bundle"].code == "coredata.history_string_missing"
+    assert dangling.string_status["process"].code == "coredata.history_string_null"
+    assert "author" not in dangling.string_status  # no reference stored: nothing missing
+    assert rows[1].string_status == {} and rows[1].transaction_status is None
+    store.close()
+
+
+def test_record_detail_shows_every_column_of_the_row(tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("ALTER TABLE ZASSET ADD COLUMN Z5_ADDITIONAL INTEGER")
+    conn.execute("UPDATE ZASSET SET Z5_ADDITIONAL = 5 WHERE Z_PK = 1")
+    conn.commit()
+    conn.close()
+    store = _store(path)
+    records, row = _record(store, "Asset", 1)
+    values = {v.name: v for v in store.property_values(records, row)}
+    assert values["Z_OPT"].raw == 1 and values["Z_OPT"].status is None
+    assert values["Z_ENT"].raw == 4
+    ent = values["Z5_ADDITIONAL"]
+    assert ent.raw == 5 and ent.status.code == "coredata.column_rel_entity"
+    assert ent.status.params == {"relationship": "additional"} and ent.heuristic == cds.HEURISTIC_NAME_MATCH
+    assert "Z_PK" not in values  # in the head
+    store.close()
+
+
+class _FailingConn:
+    """A connection whose queries on one table fail."""
+
+    def __init__(self, conn, table: str) -> None:
+        self._conn = conn
+        self._table = table
+
+    def execute(self, sql, *args):
+        if self._table in sql:
+            raise sqlite3.OperationalError(f"no such table: {self._table}")
+        return self._conn.execute(sql, *args)
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def test_row_count_failure_has_a_reason(store) -> None:
+    before = list(store.issues)
+    worker = _FailingConn(store.open(), "ZCONTRIBUTOR")
+    counts = store.row_counts(worker)
+    worker.close()
+    assert counts["ZCONTRIBUTOR"].code == "coredata.table_unreadable"
+    assert store.entity_row_count("Contributor", counts).code == "coredata.table_unreadable"
+    assert store.entity_row_count("Asset", counts) == 4
+    assert store.entity_row_count("NSCKEvent", counts) == 1
+    missing = store.entity_row_count("Asset", {})
+    assert missing.code == "coredata.count_missing"
+    assert store.issues == before  # a count is no store issue
+
+
+def _xml_uids(value):
+    """UIDs as XML plists write them: {"CF$UID": n}."""
+    if isinstance(value, plistlib.UID):
+        return {"CF$UID": value.data}
+    if isinstance(value, dict):
+        return {k: _xml_uids(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_xml_uids(v) for v in value]
+    return value
+
+
+def test_mom_read_from_the_archive_as_loaded(tmp_path: Path) -> None:
+    """An XML model with a BOM and whitespace before <plist> (no
+    declaration): read_plist loads it, so the model is read from that."""
+    loaded = _xml_uids(plistlib.loads(model_archive()))
+    xml = plistlib.dumps(loaded, fmt=plistlib.FMT_XML, sort_keys=False)
+    data = b"\xef\xbb\xbf\n  " + xml[xml.index(b"<plist"):]
+    with pytest.raises(Exception):  # noqa: B017 -- the narrower path fails on it
+        plistlib.loads(data)
+    path = tmp_path / "model_xml"
+    path.write_bytes(data)
+    vfs = FileVFS(path)
+    result = PlistParser().parse(vfs.root(), vfs)
+    assert result.format_short_name == cds.CORE_DATA_MODEL_FORMAT
+    assert result.metadata["Core Data model"].code == "coredata.mom_model"
+    assert "coredata_model" in result.viewer_hints
+
+
+def test_sqlcipher_connector_reuses_the_preset_that_worked(tmp_path: Path, monkeypatch) -> None:
+    sqlcipher = pytest.importorskip("sqlcipher3.dbapi2")
+    from crush.parsers import sqlite_parser as sp
+
+    path = str(tmp_path / "enc.db")
+    conn = sqlcipher.connect(path)
+    conn.execute("PRAGMA key = 'pw'")
+    conn.execute("PRAGMA cipher_compatibility = 3")
+    conn.execute("CREATE TABLE t (a)")
+    conn.commit()
+    conn.close()
+    calls: list[tuple] = []
+    real = sp._open_sqlcipher
+
+    def spy(*args, **kwargs):
+        calls.append(kwargs.get("presets", sp._CIPHER_COMPATIBILITY_PRESETS))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(sp, "_open_sqlcipher", spy)
+    connect = sp._coredata_connector(path, path, "pw", False, None)
+    for _ in range(2):
+        c = connect()
+        assert c.execute("SELECT count(*) FROM t").fetchone()[0] == 0
+        c.close()
+    assert calls == [sp._CIPHER_COMPATIBILITY_PRESETS, (3,)]

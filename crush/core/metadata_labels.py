@@ -59,6 +59,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Deleted (L01)"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Depth"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Derived from"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Derived reading"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Detection rule"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Display format"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Duration"),

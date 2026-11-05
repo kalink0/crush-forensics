@@ -119,6 +119,21 @@ def _connect_sqlcipher(
     sqlite3.Connection) already verified to decrypt correctly. Raises
     WrongPasswordError if the key/parameters don't work.
     """
+    return _open_sqlcipher(tmp_path, password, raw_key=raw_key, params=params)[0]
+
+
+def _open_sqlcipher(
+    tmp_path: str,
+    password: str,
+    *,
+    raw_key: bool = False,
+    params: SQLCipherParams | None = None,
+    presets: tuple[int | None, ...] = _CIPHER_COMPATIBILITY_PRESETS,
+) -> tuple[Any, int | None]:
+    """_connect_sqlcipher(), trying only *presets* (when no *params*), and
+    also returning the preset that opened it (None: the library default or
+    *params*). Every attempt is a full key derivation, so a caller that
+    opens the same database again passes the preset that worked."""
     from sqlcipher3 import dbapi2 as sqlcipher
 
     from crush.core.passwords import WrongPasswordError
@@ -164,16 +179,16 @@ def _connect_sqlcipher(
 
     if params is not None:
         try:
-            return _try_open(None, params)
+            return _try_open(None, params), None
         except sqlcipher.DatabaseError as exc:
             issue = ParseIssue("sqlite.custom_params_rejected", detail=str(exc))
             _logger.info("%s (SQLCipher: %s)", issue, issue.detail)
             raise WrongPasswordError(issue) from exc
 
     last_exc: Exception | None = None
-    for compat in _CIPHER_COMPATIBILITY_PRESETS:
+    for compat in presets:
         try:
-            return _try_open(compat, None)
+            return _try_open(compat, None), compat
         except sqlcipher.DatabaseError as exc:
             last_exc = exc
             continue
@@ -191,11 +206,24 @@ def _coredata_connector(
 ) -> Callable[[], Any]:
     """Opens a new read-only connection to the database state the table
     grid shows: the rollback-recovered image when there is one, the working
-    copy (with its -wal) otherwise, SQLCipher with the key it was opened with."""
+    copy (with its -wal) otherwise, SQLCipher with the key it was opened with.
+    The SQLCipher preset that opened the first connection is the only one
+    tried for the next (each attempt is a full key derivation); should it
+    fail, every preset is tried again."""
+    found: list[int | None] = []
 
     def connect() -> Any:
         if password is not None:
-            return _connect_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            if found:
+                try:
+                    return _open_sqlcipher(
+                        tmp_path, password, raw_key=raw_key, params=cipher_params, presets=(found[0],),
+                    )[0]
+                except Exception:  # noqa: BLE001 -- fall back to the full search below
+                    found.clear()
+            conn, preset = _open_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            found[:] = [preset]
+            return conn
         conn = sqlite3.connect(f"file:{open_path}?mode=ro", uri=True, check_same_thread=False)
         conn.text_factory = _lenient_text_factory
         return conn

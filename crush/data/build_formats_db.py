@@ -3980,9 +3980,11 @@ FORMATS: list[dict[str, Any]] = [
             "Core Data Store",
         ),
         "platforms": ["macOS", "iOS"],
-        # The store is read by the SQLite parser; its own entry must not name
-        # SQLiteParser, or every SQLite file would tie between the two.
-        "parser_class": "CoreDataStore",
+        # Read by the SQLite parser, which reports this format for a store.
+        # Its signature has no offset (as Apple Keychain's), so the bytes
+        # never single it out: an SQLite file stays "SQLite Database" until
+        # the parse finds the store's tables.
+        "parser_class": "SQLiteParser",
         "magic": [
             {
                 "offset": None,
@@ -4048,9 +4050,10 @@ FORMATS: list[dict[str, Any]] = [
             "Core Data Model",
         ),
         "platforms": ["macOS", "iOS"],
-        # Read by the plist parser, which reports this format for a model;
-        # naming PlistParser here would tie with every binary plist.
-        "parser_class": "CoreDataModel",
+        # Read by the plist parser, which reports this format for a model.
+        # Its signature has no offset, so the bytes never single it out: a
+        # binary plist stays a plist until the parse finds the model's root class.
+        "parser_class": "PlistParser",
         "magic": [
             {
                 "offset": None,
@@ -4098,7 +4101,7 @@ FORMATS: list[dict[str, Any]] = [
             "Core Data Optimized Model",
         ),
         "platforms": ["macOS", "iOS"],
-        "parser_class": None,
+        "parser_class": "CoreDataOmoParser",
         "magic": [
             {
                 "offset": 0,

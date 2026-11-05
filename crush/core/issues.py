@@ -565,6 +565,26 @@ MESSAGES: dict[str, str] = {
         "no table {tables}: no rows shown",
         "coredata.no_table",
     ),
+    "coredata.no_table_other_exists": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no table {tables}: no rows shown; {other} exists as a plain table",
+        "coredata.no_table_other_exists",
+    ),
+    "coredata.count_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "rows of {table} not counted",
+        "coredata.count_missing",
+    ),
+    "coredata.count_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "rows not counted: {detail}",
+        "coredata.count_failed",
+    ),
+    "coredata.column_rel_entity": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_ENT of the target of {relationship}",
+        "coredata.column_rel_entity",
+    ),
     "coredata.entity_not_in_model": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "not in the model: column names only",
@@ -617,6 +637,16 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "not resolved: no table for {destination}",
         "coredata.rel_no_table",
+    ),
+    "coredata.rel_no_destination": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: the model stores no destination entity",
+        "coredata.rel_no_destination",
+    ),
+    "coredata.rel_order_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ordered in the model, but no order column found: the order shown is not the stored one",
+        "coredata.rel_order_unknown",
     ),
     "coredata.rel_join_table": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -677,6 +707,31 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "no transaction table: no times, authors or processes",
         "coredata.history_no_transactions",
+    ),
+    "coredata.history_transaction_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no row Z_PK {id} in {table}: no time or names",
+        "coredata.history_transaction_missing",
+    ),
+    "coredata.history_no_strings": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no transaction string table: name not resolved",
+        "coredata.history_no_strings",
+    ),
+    "coredata.history_string_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no row Z_PK {ref} in {table}",
+        "coredata.history_string_missing",
+    ),
+    "coredata.history_string_null": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "row Z_PK {ref} in {table} has ZNAME NULL",
+        "coredata.history_string_null",
+    ),
+    "coredata.history_change_type_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ZCHANGETYPE {value} is none of 0 (insert), 1 (update), 2 (delete)",
+        "coredata.history_change_type_unknown",
     ),
     "coredata.history_object_exists": QT_TRANSLATE_NOOP(
         "ParseIssue",

@@ -552,3 +552,317 @@ def test_relationship_shows_a_stored_null_and_its_bytes(viewer: TableViewer) -> 
     assert rels.child(additional, 4).text() == "NULL"  # stored NULL, not an empty cell
     albums = next(r for r in range(rels.rowCount()) if rels.child(r, 0).text() == "albums")
     assert rels.child(albums, 4).text() == ""  # to-many: no key stored in this row
+
+
+# -- full branch review ------------------------------------------------------------
+
+FREEBLOCKS = "Freeblocks (generated)"
+
+
+def _headers(viewer: TableViewer) -> list[str]:
+    model = viewer._table_view.model()
+    return [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
+
+
+def _select_record(viewer: TableViewer, entity: str, pk: int) -> None:
+    viewer._cd_entity_panel.select(entity)
+    model = viewer._table_view.model()
+    row = next(r for r in range(model.rowCount()) if model.data(model.index(r, 1)) == str(pk))
+    viewer._table_view.setCurrentIndex(model.index(row, 1))
+
+
+def test_detail_column_is_named_stored(viewer: TableViewer) -> None:
+    _show(viewer, ENTITIES)
+    _select_record(viewer, "Asset", 1)
+    detail = viewer._cd_record_panel.model
+    headers = [detail.horizontalHeaderItem(c).text() for c in range(detail.columnCount())]
+    assert headers[4] == "Stored" and "Raw" not in headers
+
+
+def test_failed_record_read_clears_the_grid(viewer: TableViewer, monkeypatch) -> None:
+    _show(viewer, ENTITIES)
+    _select_record(viewer, "Asset", 1)
+    assert viewer._table_view.model().rowCount() == 4
+    store = viewer._coredata
+    real = store.load_records
+
+    def failing(name, conn=None):
+        if name == "Album":
+            raise RuntimeError("disk I/O error")
+        return real(name, conn)
+
+    monkeypatch.setattr(store, "load_records", failing)
+    viewer._cd_entity_panel.select("Album")
+    assert viewer._table_view.model().rowCount() == 0  # never Asset's rows under Album
+    assert viewer._cd_record_model is None
+    assert viewer._cd_current_entity == "Album"
+    assert "Reading the records of Album failed" in viewer._sql_status.text()
+    assert "disk I/O error" in viewer._sql_status.text()
+    assert "Asset" not in viewer._row_count_label.text()
+    assert viewer._cd_detail_record is None
+
+
+def test_failed_history_read_clears_the_grid(viewer: TableViewer, monkeypatch) -> None:
+    _show(viewer, KEYS)
+    assert viewer._table_view.model().rowCount() > 0
+
+    def failing(conn=None):
+        raise RuntimeError("database disk image is malformed")
+
+    monkeypatch.setattr(viewer._coredata, "load_history", failing)
+    _show(viewer, HISTORY)
+    assert viewer._table_view.model().rowCount() == 0
+    assert "Reading the Core Data history failed" in viewer._sql_status.text()
+    assert viewer._cd_history_cache is None  # read again next time
+
+
+def test_history_with_hex_after_freeblocks_highlights_nothing(viewer: TableViewer, monkeypatch) -> None:
+    from PySide6.QtGui import QStandardItem
+
+    import crush.viewers.table_viewer as tv
+
+    _show(viewer, FREEBLOCKS)
+    # A Freeblocks row with its own byte range, whatever the store holds.
+    item = QStandardItem("1")
+    item.setData("db", tv._STRUCTURE_FILE_KIND_ROLE)
+    item.setData((0, 16), tv._STRUCTURE_BYTE_RANGE_ROLE)
+    viewer._source_model.appendRow([item])
+    highlighted: list[object] = []
+    monkeypatch.setattr(viewer, "_highlight_stashed_byte_ranges", lambda *a: highlighted.append(a))
+    monkeypatch.setattr(viewer, "_highlight_located_cell", lambda *a: highlighted.append(a))
+    viewer._toggle_hex_pane()
+    _show(viewer, HISTORY)
+    assert viewer._source_model.rowCount() == 0  # the previous view's rows are gone
+    model = viewer._table_view.model()
+    for row in range(model.rowCount()):
+        viewer._table_view.setCurrentIndex(model.index(row, 1))
+    assert highlighted == []
+    for label in (STORE, MODEL, KEYS, EXTERNAL):
+        _show(viewer, label)
+        viewer._table_view.setCurrentIndex(viewer._table_view.model().index(0, 1))
+    assert highlighted == []
+
+
+def test_query_then_entity_leaves_query_mode(viewer: TableViewer) -> None:
+    _show(viewer, ENTITIES)
+    viewer._cd_entity_panel.select("Asset")
+    viewer._sql_input.setPlainText("SELECT 1 AS a")
+    viewer._run_sql()
+    assert viewer._query_results_active
+    _select_record(viewer, "Album", 2)
+    assert not viewer._query_results_active
+    index = _cell_index(viewer, "name (ZNAME) [heuristic]", 0)
+    assert viewer._cd_cell_context(index) is not None  # the Core Data actions stay
+    _path, meta = viewer._virtual_cell_path_and_metadata(index, "name (ZNAME) [heuristic]")
+    assert "Source query" not in meta
+    assert meta["Source table"] == "ZGENERICALBUM" and meta["Source row"] == "Z_PK 2"
+
+
+def test_provenance_names_the_rows_own_entity(viewer: TableViewer) -> None:
+    _show(viewer, ENTITIES)
+    _select_record(viewer, "GenericAlbum", 2)  # an Album row under its parent
+    index = _cell_index(viewer, "title (ZTITLE) [heuristic]", viewer._table_view.currentIndex().row())
+    _path, meta = viewer._virtual_cell_path_and_metadata(index, "title")
+    assert meta["Core Data entity"] == "Album"
+    # A plain table's cell: the entity of that row's Z_ENT, not the tree's.
+    _show(viewer, "ZGENERICALBUM")
+    model = viewer._table_view.model()
+    headers = _headers(viewer)
+    row = next(r for r in range(model.rowCount()) if model.data(model.index(r, headers.index("Z_PK"))) == "3")
+    cell = viewer._cd_cell_context(model.index(row, headers.index("ZTITLE")))
+    assert cell.entity == "Folder"
+    row = next(r for r in range(model.rowCount()) if model.data(model.index(r, headers.index("Z_PK"))) == "1")
+    assert viewer._cd_cell_context(model.index(row, headers.index("ZTITLE"))).entity == "GenericAlbum"
+
+
+def test_row_without_z_pk_is_named_by_rowid(viewer: TableViewer, monkeypatch) -> None:
+    _show(viewer, "plain_notes")
+    seen: list[dict] = []
+    monkeypatch.setattr(viewer, "_open_cd_file", lambda file, meta, status: seen.append(meta))
+    model = viewer._table_view.model()
+    headers = _headers(viewer)
+    actions = _actions(viewer, model.index(0, headers.index("ref")))
+    actions["Open external file (heuristic: byte pattern)"]()
+    assert seen[-1]["Source row"] == "rowid 1"
+    assert "None" not in seen[-1]["Source row"]
+    path, meta = viewer._cd_provenance("plain_notes", "ref", None, 1)
+    assert path.endswith("/rowid 1") and meta["Source row"] == "rowid 1"
+
+
+def test_derived_and_stored_cells_have_their_own_paths(viewer: TableViewer) -> None:
+    _show(viewer, ENTITIES)
+    _select_record(viewer, "Asset", 1)
+    row = viewer._table_view.currentIndex().row()
+    paths = {}
+    for header in ("hidden [derived, heuristic]", "hidden (ZHIDDEN) [heuristic]",
+                   "dateCreated [derived, heuristic]", "dateCreated (ZDATECREATED) [heuristic]",
+                   "entity [derived]", "Z_ENT"):
+        paths[header] = viewer._virtual_cell_path_and_metadata(_cell_index(viewer, header, row), header)[0]
+    assert len(set(paths.values())) == len(paths)
+    assert paths["hidden [derived, heuristic]"].startswith(paths["hidden (ZHIDDEN) [heuristic]"] + "/derived-")
+    # The entity name of two different records: two paths.
+    _select_record(viewer, "Album", 2)
+    album_entity = viewer._virtual_cell_path_and_metadata(
+        _cell_index(viewer, "entity [derived]", viewer._table_view.currentIndex().row()), "entity [derived]",
+    )[0]
+    assert album_entity != paths["entity [derived]"]
+
+
+def test_panel_keeps_its_record_after_a_filter_reset(viewer: TableViewer, monkeypatch) -> None:
+    from PySide6.QtCore import QModelIndex
+
+    import crush.viewers.table_viewer as tv
+
+    seen: list[dict] = []
+
+    class _Inspector:
+        def __init__(self, data, parent, artifact_path="", provenance=None, **_kw) -> None:
+            seen.append(provenance or {})
+
+        def show(self) -> None:
+            pass
+
+    monkeypatch.setattr(tv, "BlobInspector", _Inspector)
+    _show(viewer, ENTITIES)
+    _select_record(viewer, "Asset", 1)
+    viewer._search.setText("IMG_0003")
+    viewer._apply_filter("IMG_0003")
+    viewer._table_view.setCurrentIndex(QModelIndex())  # the reset cleared the selection
+    assert viewer._cd_current_record() is None
+    viewer._on_cd_open_value(b"\x00", "ZUUID")
+    assert seen[-1]["Source row"] == "Z_PK 1"
+    viewer._on_cd_navigate("Album", 2)
+    assert viewer._cd_back_stack[-1] == ("Asset", 1)
+    viewer._on_cd_back()
+    assert viewer._cd_current_entity == "Asset"
+    assert "no such row" not in viewer._sql_status.text()
+    assert "Album" not in viewer._sql_status.text()  # no status left from the previous step
+    assert viewer._cd_current_record()[2] == 1
+
+
+def test_row_count_follows_the_filter(viewer: TableViewer) -> None:
+    _show(viewer, ENTITIES)
+    viewer._cd_entity_panel.select("Asset")
+    viewer._search.setText("IMG_0003")
+    viewer._apply_filter("IMG_0003")
+    label = viewer._row_count_label.text()
+    assert "(1 of 4 rows)" in label and label.startswith("Asset · table ZASSET")
+    viewer._cd_entity_panel.select("Album")  # entering with the filter active
+    assert "of 1 row" in viewer._row_count_label.text()
+    viewer._search.setText("delete")
+    _show(viewer, HISTORY)
+    assert viewer._row_count_label.text() == "(2 of 4 rows)"
+
+
+def test_exports_are_english_whatever_the_ui_language(viewer: TableViewer, monkeypatch) -> None:
+    import crush.viewers.generated_text as gt
+
+    from crush.viewers.generated_text import EXPORT_TEXT_ROLE
+
+    monkeypatch.setattr(gt, "gen_text", lambda english: f"[{english}]")
+    _show(viewer, HISTORY)
+    model = viewer._table_view.model()
+    tomb = next(c for c in range(model.columnCount())
+                if model.headerData(c, Qt.Orientation.Horizontal, EXPORT_TEXT_ROLE) == "Tombstones [derived]")
+    index = model.index(2, tomb)
+    assert model.data(index).startswith("[")  # shown in the (pseudo) UI language
+    exported = model.data(index, EXPORT_TEXT_ROLE)
+    assert "filename = IMG_0009.JPG (heuristic)" in exported and "[" not in exported.split(";")[0]
+    _show(viewer, EXTERNAL)
+    model = viewer._table_view.model()
+    col = next(c for c in range(model.columnCount())
+               if model.headerData(c, Qt.Orientation.Horizontal, EXPORT_TEXT_ROLE) == "Recognised by")
+    row = next(r for r in range(model.rowCount()) if model.data(model.index(r, col)))
+    assert model.data(model.index(row, col), EXPORT_TEXT_ROLE).startswith("heuristic: byte pattern")
+
+
+def test_history_status_counted_only_without_rows(viewer: TableViewer, monkeypatch) -> None:
+    calls: list[int] = []
+    real = viewer._coredata.history_status
+    monkeypatch.setattr(viewer._coredata, "history_status", lambda conn=None: calls.append(1) or real(conn))
+    _show(viewer, HISTORY)
+    assert viewer._table_view.model().rowCount() == 4
+    assert calls == []
+
+
+def test_history_gap_cells_say_why(qapp, widgets, tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO ACHANGE (Z_PK, Z_ENT, Z_OPT, ZCHANGETYPE, ZENTITY, ZENTITYPK, ZTRANSACTIONID) "
+                 "VALUES (5, 16001, 1, 7, 4, 1, 99)")
+    conn.commit()
+    conn.close()
+    v = _viewer(widgets, path)
+    _show(v, HISTORY)
+    model = v._table_view.model()
+    headers = _headers(v)
+    row = next(r for r in range(model.rowCount()) if model.data(model.index(r, headers.index("Z_PK"))) == "5")
+    time = model.data(model.index(row, headers.index("Time (UTC) [derived, heuristic]")))
+    assert "no row Z_PK 99 in ATRANSACTION" in time
+    assert "no row Z_PK 99" in model.data(model.index(row, headers.index("Author")))
+    assert "ZCHANGETYPE 7" in model.data(model.index(row, headers.index("Change type [derived]")))
+
+
+def test_failed_count_shows_its_reason_and_is_retried(viewer: TableViewer, monkeypatch) -> None:
+    def failing(conn=None):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(viewer._coredata, "row_counts", failing)
+    _show(viewer, ENTITIES)
+    panel = viewer._cd_entity_panel
+    asset = panel._items["Asset"]
+    rows_cell = asset.parent().child(asset.row(), 1) if asset.parent() else panel.model.item(asset.row(), 1)
+    assert "rows not counted" in rows_cell.text() and "database is locked" in rows_cell.text()
+    assert viewer._cd_counts is None
+    monkeypatch.undo()
+    _show(viewer, STORE)
+    _show(viewer, ENTITIES)
+    asset = panel._items["Asset"]
+    assert panel.model.item(asset.row(), 1).text() == "4"
+
+
+def test_unresolved_relationship_summary_and_candidates(qapp, widgets, tmp_path: Path) -> None:
+    path = build_store(tmp_path / "s")
+    blob = bytes(range(40))
+    conn = sqlite3.connect(path)
+    conn.execute("ALTER TABLE ZGENERICALBUM ADD COLUMN ZPARENTFOLDER1 BLOB")
+    conn.execute("UPDATE ZGENERICALBUM SET ZPARENTFOLDER1 = ? WHERE Z_PK = 2", (blob,))
+    conn.commit()
+    conn.close()
+    v = _viewer(widgets, path)
+    _show(v, ENTITIES)
+    _select_record(v, "Album", 2)
+    rels = v._cd_record_panel.model.item(1, 0)
+    row = next(r for r in range(rels.rowCount()) if rels.child(r, 0).text() == "parentFolder")
+    summary = rels.child(row, 3).text()
+    assert "(preview)" in summary and "double-click" not in summary  # this row has no bytes
+    candidate = rels.child(row, 0)
+    texts = [candidate.child(r, 4).text() for r in range(candidate.rowCount())]
+    assert any("double-click for all" in t for t in texts)  # the candidate rows open them
+    # Candidates in another table: named with their table, no value from this row.
+    folder_rels = None
+    _select_record(v, "Folder", 3)
+    folder_rels = v._cd_record_panel.model.item(1, 0)
+    child_albums = next(r for r in range(folder_rels.rowCount()) if folder_rels.child(r, 0).text() == "childAlbums")
+    assert folder_rels.child(child_albums, 5).text() == "ZGENERICALBUM: ZPARENTFOLDER, ZPARENTFOLDER1"
+    assert folder_rels.child(child_albums, 3).text() == "—"
+    assert folder_rels.child(child_albums, 0).rowCount() == 0
+
+
+def test_formats_db_names_the_real_parsers(qapp, widgets, tmp_path: Path) -> None:
+    from crush.core.format_db import FormatDatabase
+
+    db = FormatDatabase.get()
+    assert db.by_short_name("Core Data Store").parser_class == "SQLiteParser"
+    assert db.by_short_name("Core Data Model").parser_class == "PlistParser"
+    assert db.by_short_name("Core Data OMO").parser_class == "CoreDataOmoParser"
+    path = build_store(tmp_path / "s")
+    peek = path.read_bytes()[:4096]
+    assert [f.short_name for f in db.for_parser("SQLiteParser", peek)] == ["SQLite"]
+    omo = tmp_path / "omo_without_extension"
+    omo.write_bytes(b"momv2$sr" + bytes(64))
+    from crush.parsers.coredata_omo_parser import CoreDataOmoParser
+
+    vfs = FileVFS(omo)
+    meta = _enriched(widgets, CoreDataOmoParser(), vfs.root(), vfs, CoreDataOmoParser().parse(vfs.root(), vfs))
+    assert "momv2$sr" in str(meta["Forensic relevance"])
