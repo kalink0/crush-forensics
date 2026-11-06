@@ -526,7 +526,9 @@ in `NOT_APPLICABLE`, with the reason.
 | `crush/core/raw_image.py` | Raw disk image / EWF adapter backing `RawImageVFS` — volume tree, unallocated-gap synthesis, deleted-file recovery, EWF verify; wraps `crush/third_party/{qnxprobe,ewfprobe}` |
 | `crush/core/mounted.py` | Sources built from other VFSes' trees (`_MountVFS`, `delegate()` to a node's own VFS): a ZIP folder with every iTunes backup in it opened in place; `ZipWithITunesBackupVFS` (a ZIP opened with its backup) |
 | `crush/core/ufd.py` | Cellebrite UFD (INI) and UFDX (XML) parsing; `UFDVFS`/`UFDXVFS` on `_MountVFS`, each dump a ZIP folder |
-| `crush/core/ufdr.py` | Cellebrite UFDR (10.x) adapter backing `UFDRVFS` — extracts + parses the embedded `pg_dump` database via `pgdumplib`, builds the device filesystem tree from `Nodes` (Type 10 derived items beside their file), resolves a node to its physical bytes in the outer ZIP |
+| `crush/core/ufdr.py` | Cellebrite UFDR (10.x) adapter backing `UFDRVFS` — extracts + parses the embedded `pg_dump` database via `pgdumplib`, builds the device filesystem tree from `Nodes` (Type 10 derived items beside their file), resolves a node to its physical bytes in the outer ZIP; decrypts protected containers through `ufdr_crypto` |
+| `crush/core/ufdr_crypto.py` | Cellebrite UFDR file-level Protection — encryption-footer parse, PBKDF2 key derivation, per-member AES-256-CBC decrypt and a seekable `DecryptingReader` |
+| `crush/core/split_zip.py` | PKWARE split (segmented) ZIP sets — segment discovery, and a reassembled single-disk stream (central directory rewritten to absolute offsets) that stdlib `zipfile` can read; used by `ZipVFS`/`UFDRVFS` via their `segments=` argument |
 | `crush/core/ios_keybag.py` | Apple backup KeyBag parsing + `Manifest.db`/per-file decrypt (iOS 10.2+) |
 | `crush/core/android_backup_crypto.py` | Android `adb backup` master-key unwrap + payload decrypt (PBKDF2/AES-256) |
 | `crush/core/passwords.py` | `PasswordRequiredError`, `WrongPasswordError` — shared contract for any password-protected source/parser |

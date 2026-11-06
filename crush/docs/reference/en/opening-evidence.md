@@ -27,6 +27,8 @@ Most viewers need a file's bytes in memory — often several times over (raw byt
 - Above that it asks what to do: **Open anyway**, **Open in New Window** (opens the file as a source of its own, so an archive or backup becomes browsable; not offered for a file on disk whose content holds nothing to browse, but always offered for a member of an archive or image, since only extracting it would tell; a disk image opens via right-click → **Open Disk Image in New Window** instead), **Export…**, or **Cancel**. **Open anyway** is not offered once the file is more than about 80 % of free memory — it could not realistically fit.
 - Nothing is ever cut short: a file is opened whole or not at all.
 
+**Split ZIP sets** (`.z01`, `.z02`, … and the final `.zip`, or `.ufdr` for a Cellebrite report) open from any one part — Crush reassembles the set and reads it as one archive. Every part must be present in the same folder; a missing part is named rather than giving a partial tree.
+
 **Compressed tar archives** (`.tar.gz`, `.tar.xz`, `.tar.bz2`) have no index. Crush reads the whole stream once to build the tree — the loading dialog stays up until that pass ends — and keeps the first bytes of every file during it, so browsing and type detection afterwards need no further reading. Opening one file's content still decompresses everything before it, behind a wait dialog. For big compressed tars, extract once to a fast disk or ask for ZIP/plain TAR.
 
 Archive members, disk-image files and backups are streamed rather than unpacked into memory, so hex-viewing, hashing, exporting and **Open in New Window** work on multi-gigabyte members without exhausting RAM. Reading, hashing and searching larger files runs behind a wait dialog so the window keeps responding.

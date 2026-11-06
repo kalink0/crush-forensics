@@ -14,6 +14,8 @@ All notable changes to Crush will be documented in this file.
 - Added to the Image Viewer's C2PA detection -> Support for BigTIFF and a C2PA tag in any IFD of a TIFF's main chain.
 - Added to the SQLite viewer -> Support for Core Data stores (entities, relationships, model, persistent history, primary keys, external data).
 - Added to plists -> Support for compiled Core Data models (`.mom`).
+- Added to Cellebrite UFDR -> Support for protected (encrypted) reports: one protected without a password opens directly, one protected with a password prompts for it; a wrong password is reported rather than showing an empty or garbled tree.
+- Added to ZIP archives and Cellebrite UFDR -> Support for split (segmented) sets (`.z01`, `.z02`, … and the final `.zip`/`.ufdr`), opened from any part; a missing part is named rather than giving a partial tree.
 
 ### Changed
 

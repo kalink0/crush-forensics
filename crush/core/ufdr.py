@@ -41,10 +41,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, cast
 
-from crush.core import tempdir
+from crush.core import tempdir, ufdr_crypto
 from crush.core.issues import ParseIssue
+from crush.core.passwords import PasswordRequiredError, WrongPasswordError
+from crush.core.ufdr_crypto import EncryptionFooter
 from crush.core.vfs_stream import STREAM_THRESHOLD, copy_stream
 
 if TYPE_CHECKING:
@@ -190,9 +192,26 @@ class UFDRHandle:
     """An opened UFDR: the outer ZIP, the built VFSNode tree, and the
     means to resolve a tree node back to its physical bytes."""
 
-    def __init__(self, zf: zipfile.ZipFile, tree: "VFSNode", catalog: _Catalog) -> None:
+    def __init__(
+        self,
+        zf: zipfile.ZipFile,
+        tree: "VFSNode",
+        catalog: _Catalog,
+        *,
+        key: bytes | None = None,
+        footer: EncryptionFooter | None = None,
+        split_source: IO[bytes] | None = None,
+    ) -> None:
         self.zf = zf
         self.tree = tree
+        # For a split UFDR, the reassembled single-disk stream the outer ZIP is
+        # read through (closed with the handle); None for a single-file UFDR.
+        self._split_source = split_source
+        # When the container is protected, the one AES key that decrypts every
+        # member (None for a plain UFDR). Member reads go through read_member/
+        # open_member so the key is applied in exactly one place.
+        self._key = key
+        self._footer = footer
         self._node_meta = catalog.node_meta
         self._absent = catalog.absent
         self._dir_counts = catalog.dir_counts
@@ -220,12 +239,52 @@ class UFDRHandle:
 
     def close(self) -> None:
         self.zf.close()
+        if self._split_source is not None:
+            self._split_source.close()
+
+    @property
+    def encryption(self) -> EncryptionFooter | None:
+        """The container's encryption footer, or None for a plain UFDR."""
+        return self._footer
+
+    def _size_key(self, plain_size: int) -> int:
+        """The stored ZIP (ciphertext) size of a member whose plaintext is
+        *plain_size*. For a plain UFDR this is the size itself; a protected
+        member grows by its PKCS#7 padding (1..16 bytes), so resolution by
+        Cellebrite's recorded plaintext size matches the stored member
+        without decrypting anything."""
+        if self._key is None:
+            return plain_size
+        return plain_size + (16 - plain_size % 16)
+
+    def open_member(self, info: zipfile.ZipInfo) -> IO[bytes]:
+        """A readable plaintext stream for *info* -- a decrypting view for a
+        protected container, the raw ZIP stream otherwise."""
+        raw = self.zf.open(info)
+        if self._key is None:
+            return raw
+        return cast(
+            "IO[bytes]",
+            ufdr_crypto.DecryptingReader(raw, self._key, info.filename, info.file_size),
+        )
+
+    def read_member(self, info: zipfile.ZipInfo) -> bytes:
+        """The whole plaintext payload of *info*."""
+        data = self.zf.read(info)
+        if self._key is None:
+            return data
+        return ufdr_crypto.decrypt_member(self._key, info.filename, data)
+
+    def peek_member(self, info: zipfile.ZipInfo, n: int) -> bytes:
+        """The first *n* plaintext bytes of *info*."""
+        with self.open_member(info) as f:
+            return f.read(n)
 
     def _md5_of(self, info: zipfile.ZipInfo) -> str:
         md5 = self._member_md5.get(info.filename)
         if md5 is None:
             digest = hashlib.md5()
-            with self.zf.open(info) as f:
+            with self.open_member(info) as f:
                 while chunk := f.read(1 << 20):
                     digest.update(chunk)
             md5 = self._member_md5[info.filename] = digest.hexdigest()
@@ -233,10 +292,11 @@ class UFDRHandle:
 
     def _candidates(self, meta: _NodeMeta) -> list[zipfile.ZipInfo]:
         seen: list[zipfile.ZipInfo] = []
+        size_key = self._size_key(meta.size)
         exact = self._by_exact.get((meta.tag, meta.bucket_name))
-        if exact is not None and exact.file_size == meta.size:
+        if exact is not None and exact.file_size == size_key:
             seen.append(exact)
-        for info in self._by_bucket_size.get((meta.tag, meta.size), []):
+        for info in self._by_bucket_size.get((meta.tag, size_key), []):
             if info not in seen:
                 seen.append(info)
         return seen
@@ -278,7 +338,7 @@ class UFDRHandle:
         if not meta.md5 or meta.size > STREAM_THRESHOLD:
             return None
         expected = meta.md5.lower()
-        for info in self._by_size.get(meta.size, []):
+        for info in self._by_size.get(self._size_key(meta.size), []):
             if info not in tried and self._md5_of(info) == expected:
                 return info
         return None
@@ -848,15 +908,62 @@ def _add_placeholders(
     return {key for _, key in missing}
 
 
-def open_ufdr(path: str | Path) -> UFDRHandle:
+def _resolve_key(p: Path, footer: EncryptionFooter | None, password: str) -> bytes | None:
+    """The AES key for a protected UFDR, or None when it is not encrypted.
+
+    Raises PasswordRequiredError when a user-password archive has none,
+    WrongPasswordError when the supplied password fails the footer verifier,
+    and UFDROpenError when the built-in default password fails (a container or
+    footer problem the analyst cannot fix with a password)."""
+    if footer is None or not footer.is_encrypted:
+        return None
+    if footer.is_default_password:
+        pw = ufdr_crypto.default_password(footer.enc_version)
+    elif not password:
+        raise PasswordRequiredError(ParseIssue("password.ufdr_required", {"path": str(p)}))
+    else:
+        pw = password
+    key = ufdr_crypto.derive_key(pw, footer.salt)
+    if not ufdr_crypto.verify_key(key, footer):
+        if footer.is_default_password:
+            raise UFDROpenError(ParseIssue("ufdr.default_password_failed"))
+        raise WrongPasswordError(ParseIssue("password.ufdr_wrong"))
+    return key
+
+
+def open_ufdr(
+    path: str | Path, *, password: str = "", segments: list[Path] | None = None
+) -> UFDRHandle:
     """Open a UFDR container: validate its layout, extract and parse the
-    embedded Postgres dump, and build the device filesystem tree(s)."""
+    embedded Postgres dump, and build the device filesystem tree(s).
+
+    A protected (encrypted) UFDR is decrypted with the built-in default
+    password, or with *password* when it was sealed with a user password;
+    see crush.core.ufdr_crypto. A split UFDR is read through a reassembled
+    stream over *segments* (the final segment carries the footer and EOCD)."""
     from crush.core.vfs import VFSNode
 
     p = Path(path)
+    footer_path = segments[-1] if segments else p
+    footer = ufdr_crypto.read_footer(footer_path)
+    key = _resolve_key(footer_path, footer, password)
+
+    def _read_member(name: str) -> bytes:
+        data = zf.read(name)
+        return ufdr_crypto.decrypt_member(key, name, data) if key is not None else data
+
+    split_source: IO[bytes] | None = None
     try:
-        zf = zipfile.ZipFile(p, "r")
+        if segments is not None:
+            from crush.core import split_zip
+
+            split_source = cast("IO[bytes]", split_zip.open_split_zip_stream(segments))
+            zf = zipfile.ZipFile(split_source, "r")
+        else:
+            zf = zipfile.ZipFile(p, "r")
     except (zipfile.BadZipFile, OSError) as exc:
+        if split_source is not None:
+            split_source.close()
         raise UFDROpenError(ParseIssue("ufdr.not_readable", detail=str(exc))) from exc
 
     try:
@@ -866,7 +973,7 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
             raise UFDROpenError(ParseIssue("ufdr.missing_members", {"members": ", ".join(missing)}))
 
         try:
-            manifest = json.loads(zf.read("DbData/database.json"))
+            manifest = json.loads(_read_member("DbData/database.json"))
         except (json.JSONDecodeError, KeyError, zipfile.BadZipFile):
             manifest = {}
         manifest_device_id = manifest.get("DeviceId")
@@ -881,7 +988,13 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
         fd, tmp_path_str = tempdir.mkstemp(prefix="crush-ufdr-db-", suffix=".db")
         tmp_path = Path(tmp_path_str)
         try:
-            with zf.open("DbData/database.db") as src, os.fdopen(fd, "wb") as dst:
+            src_db: IO[bytes] = zf.open("DbData/database.db")
+            if key is not None:
+                src_db = cast(
+                    "IO[bytes]",
+                    ufdr_crypto.DecryptingReader(src_db, key, "DbData/database.db", db_info.file_size),
+                )
+            with src_db as src, os.fdopen(fd, "wb") as dst:
                 copy_stream(src, dst, total=db_info.file_size)
 
             dump = _load_dump(tmp_path)
@@ -931,6 +1044,8 @@ def open_ufdr(path: str | Path) -> UFDRHandle:
             tmp_path.unlink(missing_ok=True)
     except Exception:
         zf.close()
+        if split_source is not None:
+            split_source.close()
         raise
 
-    return UFDRHandle(zf, root, catalog)
+    return UFDRHandle(zf, root, catalog, key=key, footer=footer, split_source=split_source)

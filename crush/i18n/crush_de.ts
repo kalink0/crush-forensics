@@ -12155,6 +12155,21 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Backup-Keybag enthält keinen verwendbaren Class Key für Klasse {class_num}</translation>
     </message>
     <message>
+        <source>UFDR is password-protected: {path}</source>
+        <comment>password.ufdr_required</comment>
+        <translation>UFDR ist passwortgeschützt: {path}</translation>
+    </message>
+    <message>
+        <source>Incorrect UFDR password</source>
+        <comment>password.ufdr_wrong</comment>
+        <translation>Falsches UFDR-Passwort</translation>
+    </message>
+    <message>
+        <source>WinZip AES-encrypted members in a split ZIP set are not supported</source>
+        <comment>password.zip_aes_split</comment>
+        <translation>WinZip-AES-verschlüsselte Einträge in einem geteilten ZIP-Satz werden nicht unterstützt</translation>
+    </message>
+    <message>
         <source>Disk image is encrypted: {path} — {detail}</source>
         <comment>password.image_required</comment>
         <translation>Disk-Image ist verschlüsselt: {path} — {detail}</translation>
@@ -12228,6 +12243,26 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>ZIP signature found, but not opened as ZIP — {detail}</source>
         <comment>vfs.zip_not_opened</comment>
         <translation>ZIP-Signatur gefunden, aber nicht als ZIP geöffnet — {detail}</translation>
+    </message>
+    <message>
+        <source>Split ZIP set cannot be assembled — {detail}</source>
+        <comment>vfs.split_zip_incomplete</comment>
+        <translation>Geteilter ZIP-Satz kann nicht zusammengesetzt werden — {detail}</translation>
+    </message>
+    <message>
+        <source>No final segment (.zip/.ufdr with the central directory) found for {stem}</source>
+        <comment>splitzip.no_final</comment>
+        <translation>Kein finales Segment (.zip/.ufdr mit dem Central Directory) für {stem} gefunden</translation>
+    </message>
+    <message>
+        <source>Split set {stem} is missing segment(s): {missing}</source>
+        <comment>splitzip.missing_segment</comment>
+        <translation>Im geteilten Satz {stem} fehlen Segment(e): {missing}</translation>
+    </message>
+    <message>
+        <source>Split ZIP directory has {found} entries but the end record declares {declared}</source>
+        <comment>splitzip.entry_count</comment>
+        <translation>Das Central Directory des geteilten ZIP hat {found} Einträge, der End-Record nennt aber {declared}</translation>
     </message>
     <message>
         <source>7z signature found, but not opened as 7z — {detail}</source>
@@ -12693,6 +12728,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Not a UFDR container -- missing {members}</source>
         <comment>ufdr.missing_members</comment>
         <translation>Kein UFDR-Container -- es fehlt: {members}</translation>
+    </message>
+    <message>
+        <source>This UFDR is protected but the built-in password does not decrypt it -- the container or its encryption footer is damaged.</source>
+        <comment>ufdr.default_password_failed</comment>
+        <translation>Diese UFDR ist geschützt, aber das eingebaute Passwort entschlüsselt sie nicht -- der Container oder sein Verschlüsselungs-Footer ist beschädigt.</translation>
     </message>
     <message>
         <source>Not enough space in the temp directory to extract the UFDR&apos;s database ({needed:,} bytes needed, {free:,} available at {location})</source>

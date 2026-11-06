@@ -19,8 +19,11 @@ from typing import Any
 
 import pytest
 
+from crush.core import ufdr_crypto
+from crush.core.passwords import PasswordRequiredError, WrongPasswordError
 from crush.core.ufdr import UFDRContentNotLocatedError, UFDROpenError, is_ufdr_zip
 from crush.core.vfs import UFDRVFS, VFSNode, open_vfs
+from crush.tests.test_ufdr_crypto import _encrypt_member, _footer
 
 _COLUMNS = [
     "Id",
@@ -130,11 +133,17 @@ def _build_fake_ufdr(
     files: dict[str, bytes],
     name: str = "sample.ufdr",
     source_nodes: list[tuple[str, str, int]] | None = None,
+    encrypt: tuple[str, bool] | None = None,
 ) -> Path:
     """A minimal, self-contained fake UFDR: *devices* maps a device UUID to
     its Nodes rows (one or more devices), *files* maps a zip-internal
     ``files/<Tag>/<name>`` path to its content, *source_nodes* are
-    SourceInfoNodes rows (node id, device path, size) for the first device."""
+    SourceInfoNodes rows (node id, device path, size) for the first device.
+
+    *encrypt* turns on file-level Protection: a ``(password, is_default)``
+    pair, where every member is AES-encrypted with the key derived from
+    *password* and a fixed salt, and an encryption footer (``is_default`` =
+    built-in default password vs a user password) is appended after the EOCD."""
     import pgdumplib
 
     dump = pgdumplib.new(dbname="ufdr")
@@ -144,24 +153,38 @@ def _build_fake_ufdr(
     dump.save(db_path)
 
     first_device = next(iter(devices))
+    manifest = json.dumps(
+        {
+            "DeviceId": first_device,
+            "DatabaseVersion": "10.11.0.3022",
+            "CaseId": "case-1",
+            "SourceExtractionIds": ["ext-1"],
+        }
+    ).encode("utf-8")
+    members: dict[str, bytes] = {
+        "report.xml": b"<Report/>",
+        "settings.json": b"{}",
+        "DbData/database.json": manifest,
+        "DbData/database.db": db_path.read_bytes(),
+    }
+    for zip_rel, content in files.items():
+        members[zip_rel] = content
+
+    key: bytes | None = None
+    if encrypt is not None:
+        password, _is_default = encrypt
+        salt = b"salt-16-bytes!!!"
+        key = ufdr_crypto.derive_key(password, salt)
+
     ufdr_path = tmp_path / name
     with zipfile.ZipFile(ufdr_path, "w") as zf:
-        zf.writestr("report.xml", "<Report/>")
-        zf.writestr("settings.json", "{}")
-        zf.writestr(
-            "DbData/database.json",
-            json.dumps(
-                {
-                    "DeviceId": first_device,
-                    "DatabaseVersion": "10.11.0.3022",
-                    "CaseId": "case-1",
-                    "SourceExtractionIds": ["ext-1"],
-                }
-            ),
-        )
-        zf.write(db_path, "DbData/database.db")
-        for zip_rel, content in files.items():
-            zf.writestr(zip_rel, content)
+        for member_name, content in members.items():
+            zf.writestr(member_name, _encrypt_member(key, member_name, content) if key else content)
+    if encrypt is not None:
+        verifier = _encrypt_member(key, "UFDR footer unique path", ufdr_crypto.VERIFIER_PLAINTEXT)
+        footer = _footer(salt, verifier, is_default=1 if encrypt[1] else 0)
+        with ufdr_path.open("ab") as fh:
+            fh.write(footer)
     return ufdr_path
 
 
@@ -1050,3 +1073,91 @@ def test_ufdr_reproducible(tmp_path: Path) -> None:
             vfs.close()
 
     assert snapshot() == snapshot()
+
+
+# -- File-level Protection (encryption) --------------------------------------
+# Built end to end through UFDRVFS: a fake UFDR whose members are all encrypted
+# and that carries an encryption footer. The decryption algorithm's absolute
+# constants are pinned in test_ufdr_crypto and were verified against a real
+# protected UFDR 10.x sample; here we check the open/resolve/read path.
+
+
+def _encrypted_note(tmp_path: Path, encrypt: tuple[str, bool], name: str = "sample.ufdr") -> tuple[Path, bytes]:
+    content = b"protected note body" * 50
+    rows = [
+        _row(
+            "n1", 2, "note.txt", "/sdcard/note.txt",
+            size=len(content), md5=hashlib.md5(content).hexdigest(), tag="Text",
+        )
+    ]
+    path = _build_fake_ufdr(
+        tmp_path, devices={DEVICE: rows}, files={"files/Text/note.txt": content},
+        name=name, encrypt=encrypt,
+    )
+    return path, content
+
+
+def test_encrypted_default_password_opens_without_a_password(tmp_path: Path) -> None:
+    # Protection without a user password: the built-in default opens it, no prompt.
+    path, content = _encrypted_note(tmp_path, ("Cellebrite 1.0 password", True))
+    vfs = UFDRVFS(path)
+    assert vfs._handle.encryption is not None and vfs._handle.encryption.is_encrypted
+    node = _find(vfs.root(), ["sdcard", "note.txt"])
+    assert node is not None
+    assert node.size == len(content)  # the recorded plaintext size, not the padded member
+    assert vfs.read(node) == content
+    with vfs.open(node) as f:
+        assert f.read() == content
+    vfs.close()
+
+
+def test_encrypted_user_password_opens_with_the_right_one(tmp_path: Path) -> None:
+    path, content = _encrypted_note(tmp_path, ("hunter2", False))
+    vfs = UFDRVFS(path, password="hunter2")
+    node = _find(vfs.root(), ["sdcard", "note.txt"])
+    assert node is not None
+    assert vfs.read(node) == content
+    vfs.close()
+
+
+def test_encrypted_user_password_missing_and_wrong(tmp_path: Path) -> None:
+    path, _ = _encrypted_note(tmp_path, ("hunter2", False))
+    with pytest.raises(PasswordRequiredError):
+        UFDRVFS(path)
+    with pytest.raises(WrongPasswordError):
+        UFDRVFS(path, password="nope")
+
+
+def test_encrypted_member_resolves_by_plaintext_size_across_a_collision(tmp_path: Path) -> None:
+    # Cellebrite's size/MD5 are over the plaintext, while the stored member is
+    # padded: resolution must still find it by size, then confirm by hash.
+    content = b"collided encrypted content"
+    rows = [
+        _row(
+            "n1", 2, "base.apk", "/data/app/base.apk",
+            size=len(content), md5=hashlib.md5(content).hexdigest(), tag="Application",
+        )
+    ]
+    path = _build_fake_ufdr(
+        tmp_path, devices={DEVICE: rows},
+        files={"files/Application/base_912.apk": content},  # collision-suffixed name
+        encrypt=("Cellebrite 1.0 password", True),
+    )
+    vfs = UFDRVFS(path)
+    node = _find(vfs.root(), ["data", "app", "base.apk"])
+    assert node is not None
+    assert vfs.read(node) == content
+    vfs.close()
+
+
+def test_open_vfs_prompts_for_an_encrypted_ufdr_password(tmp_path: Path) -> None:
+    # The password flows through open_vfs (content-sniffed UFDR), not only the
+    # direct UFDRVFS constructor.
+    path, content = _encrypted_note(tmp_path, ("sekret", False), name="protected.ufdr")
+    with pytest.raises(PasswordRequiredError):
+        open_vfs(path)
+    vfs = open_vfs(path, password="sekret")
+    assert isinstance(vfs, UFDRVFS)
+    node = _find(vfs.root(), ["sdcard", "note.txt"])
+    assert node is not None and vfs.read(node) == content
+    vfs.close()

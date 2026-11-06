@@ -3504,6 +3504,21 @@ MESSAGES: dict[str, str] = {
         "Backup keybag has no usable class key for class {class_num}",
         "password.itunes_no_class_key",
     ),
+    "password.ufdr_required": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "UFDR is password-protected: {path}",
+        "password.ufdr_required",
+    ),
+    "password.ufdr_wrong": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Incorrect UFDR password",
+        "password.ufdr_wrong",
+    ),
+    "password.zip_aes_split": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "WinZip AES-encrypted members in a split ZIP set are not supported",
+        "password.zip_aes_split",
+    ),
     "password.image_required": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Disk image is encrypted: {path} — {detail}",
@@ -3582,6 +3597,26 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "ZIP signature found, but not opened as ZIP — {detail}",
         "vfs.zip_not_opened",
+    ),
+    "vfs.split_zip_incomplete": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Split ZIP set cannot be assembled — {detail}",
+        "vfs.split_zip_incomplete",
+    ),
+    "splitzip.no_final": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "No final segment (.zip/.ufdr with the central directory) found for {stem}",
+        "splitzip.no_final",
+    ),
+    "splitzip.missing_segment": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Split set {stem} is missing segment(s): {missing}",
+        "splitzip.missing_segment",
+    ),
+    "splitzip.entry_count": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Split ZIP directory has {found} entries but the end record declares {declared}",
+        "splitzip.entry_count",
     ),
     "vfs.7z_not_opened": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -4068,6 +4103,12 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "Not a UFDR container -- missing {members}",
         "ufdr.missing_members",
+    ),
+    "ufdr.default_password_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "This UFDR is protected but the built-in password does not decrypt it -- "
+        "the container or its encryption footer is damaged.",
+        "ufdr.default_password_failed",
     ),
     "ufdr.no_space": QT_TRANSLATE_NOOP(
         "ParseIssue",

@@ -555,9 +555,22 @@ class ZipVFS(VFS):
 
     _WZ_AES_COMPRESS_TYPE = 99
 
-    def __init__(self, path: str | Path, *, password: str = "") -> None:
+    def __init__(
+        self, path: str | Path, *, password: str = "", segments: list[Path] | None = None
+    ) -> None:
+        # For a split set, *path* is the final segment (used only for the
+        # display name); the archive is read through a reassembled single-disk
+        # stream over *segments*. See crush.core.split_zip.
         self._zip_path = Path(path)
-        self._zf = zipfile.ZipFile(self._zip_path, "r")
+        self._segments = segments
+        self._split_source: Any = None
+        if segments is not None:
+            from crush.core import split_zip
+
+            self._split_source = split_zip.open_split_zip_stream(segments)
+            self._zf = zipfile.ZipFile(self._split_source, "r")
+        else:
+            self._zf = zipfile.ZipFile(self._zip_path, "r")
         self._password = password
         self._aes_zf: Any = None  # pyzipper.AESZipFile, constructed on first need
         self._zf_lock = threading.Lock()
@@ -593,6 +606,10 @@ class ZipVFS(VFS):
             raise WrongPasswordError(ParseIssue("password.zip_wrong")) from exc
 
     def _aes_zip(self) -> Any:
+        if self._segments is not None:
+            # pyzipper reads from a single file; a WinZip-AES member inside a
+            # split set is surfaced explicitly rather than silently failing.
+            raise WrongPasswordError(ParseIssue("password.zip_aes_split"))
         if self._aes_zf is None:
             import pyzipper
 
@@ -696,8 +713,14 @@ class ZipVFS(VFS):
         if cached is None:
             offset = self._zf.infolist()[index].header_offset
             try:
-                with _open_noatime(self._zip_path) as f:
-                    local = zip_local_times(f, offset)
+                if self._segments is not None:
+                    # Offsets are absolute in the reassembled stream; the local
+                    # header spans disks, so read it through that stream.
+                    with self._zf_lock:
+                        local = zip_local_times(cast(IO[bytes], self._zf.fp), offset)
+                else:
+                    with _open_noatime(self._zip_path) as f:
+                        local = zip_local_times(f, offset)
             except OSError as exc:
                 local = ParseIssue("time.zip_local_unreadable", detail=str(exc))
             cached = local if isinstance(local, ParseIssue) else merge_local(node.stored_times, local)
@@ -753,6 +776,8 @@ class ZipVFS(VFS):
         self._zf.close()
         if self._aes_zf is not None:
             self._aes_zf.close()
+        if self._split_source is not None:
+            self._split_source.close()
 
     def file_count(self, node: VFSNode) -> int:
         return self._file_counts.get(node.path, 0)
@@ -2663,11 +2688,13 @@ class UFDRVFS(VFS):
     forensic tables (Contacts, Calls, Chats, ...) are out of scope.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self, path: str | Path, *, password: str = "", segments: list[Path] | None = None
+    ) -> None:
         from crush.core.ufdr import UFDRHandle, open_ufdr
 
         self._path = Path(path)
-        self._handle: UFDRHandle = open_ufdr(self._path)
+        self._handle: UFDRHandle = open_ufdr(self._path, password=password, segments=segments)
         self._zf_lock = threading.Lock()
         self._tree = self._handle.tree
         self._file_counts: dict[str, int] = {}
@@ -2685,14 +2712,14 @@ class UFDRVFS(VFS):
         # second pass over the member.
         info = self._handle.resolve(node, confirm=False)
         with self._zf_lock:
-            data = self._handle.zf.read(info)
+            data = self._handle.read_member(info)
         if self._handle.is_unconfirmed(node):
             self._handle.confirm(node, hashlib.md5(data).hexdigest())
             # Raises if the recorded bytes are nowhere in the container.
             confirmed = self._handle.resolve(node)
             if confirmed is not info:  # found in another bucket
                 with self._zf_lock:
-                    data = self._handle.zf.read(confirmed)
+                    data = self._handle.read_member(confirmed)
         return data
 
     def open(self, node: VFSNode) -> IO[bytes]:
@@ -2700,7 +2727,7 @@ class UFDRVFS(VFS):
             return BytesIO(self.read(node))
         info = self._handle.resolve(node)
         with self._zf_lock:
-            inner = self._handle.zf.open(info)
+            inner = self._handle.open_member(info)
         return buffered(LockedStream(inner, self._zf_lock))
 
     def peek(self, node: VFSNode, n: int = 32) -> bytes:
@@ -2708,8 +2735,7 @@ class UFDRVFS(VFS):
             return b""
         info = self._handle.resolve(node, confirm=False)
         with self._zf_lock:
-            with self._handle.zf.open(info) as f:
-                return f.read(n)
+            return self._handle.peek_member(info, n)
 
     def peek_if_cached(self, node: VFSNode, n: int = 32) -> bytes | None:
         # A ZIP member decompresses from its own start: a short read, unless
@@ -2720,8 +2746,7 @@ class UFDRVFS(VFS):
         if not self._zf_lock.acquire(blocking=False):
             return None
         try:
-            with self._handle.zf.open(info) as f:
-                return f.read(n)
+            return self._handle.peek_member(info, n)
         finally:
             self._zf_lock.release()
 
@@ -3041,6 +3066,17 @@ def _open_vfs(
     if ufd_source is not None:
         return ufd_source
     kind = archive_kind(head)
+    if kind != "zip":
+        # The final segment of a split ZIP set begins mid-member (no ZIP
+        # signature at offset 0), so it is recognised by name/structure, not
+        # by its first bytes. A .z01 first segment already sniffs as ZIP.
+        from crush.core.split_zip import SplitZipError, find_split_set
+
+        try:
+            if find_split_set(p) is not None:
+                kind = "zip"
+        except SplitZipError:
+            kind = "zip"  # a split set with a missing part -- _open_zip reports it
     vfs: VFS | None = None
     if kind == "zip":
         vfs = _open_zip(p, password, notes)
@@ -3117,14 +3153,51 @@ def _open_ufd_source(p: Path, head: bytes, password: str, notes: list[ParseIssue
     return None
 
 
+def _open_split_zip(
+    segments: list[Path], password: str, notes: list[ParseIssue]
+) -> VFS | None:
+    """A split (segmented) ZIP set, assembled into one logical archive:
+    UFDRVFS when its layout is a UFDR's, else ZipVFS. Password errors
+    propagate. The final segment is passed as the display path."""
+    from crush.core.split_zip import open_split_zip_stream
+    from crush.core.ufdr import _REQUIRED_MEMBERS, UFDROpenError
+
+    final = segments[-1]
+    with open_split_zip_stream(segments) as stream:
+        with zipfile.ZipFile(stream) as probe:
+            names = set(probe.namelist())
+    is_ufdr = all(m in names for m in _REQUIRED_MEMBERS)
+    if is_ufdr:
+        try:
+            return UFDRVFS(final, password=password, segments=segments)
+        except UFDROpenError as exc:
+            notes.append(ParseIssue("vfs.ufdr_as_zip", detail=str(exc)))
+    try:
+        return ZipVFS(final, password=password, segments=segments)
+    except (zipfile.BadZipFile, OSError, ValueError, EOFError, NotImplementedError) as exc:
+        if isinstance(exc, (PasswordRequiredError, WrongPasswordError)):
+            raise
+        notes.append(ParseIssue("vfs.zip_not_opened", detail=str(exc)))
+        return None
+
+
 def _open_zip(p: Path, password: str, notes: list[ParseIssue]) -> VFS | None:
     """UFDRVFS for a UFDR's layout, else ZipVFS; None (reason in *notes*)
     when the archive can't be read. Password errors propagate."""
+    from crush.core.split_zip import SplitZipError, find_split_set
     from crush.core.ufdr import UFDROpenError, is_ufdr_zip
+
+    try:
+        segments = find_split_set(p)
+    except SplitZipError as exc:
+        notes.append(ParseIssue("vfs.split_zip_incomplete", detail=str(exc)))
+        return None
+    if segments is not None:
+        return _open_split_zip(segments, password, notes)
 
     if is_ufdr_zip(p):
         try:
-            return UFDRVFS(p)
+            return UFDRVFS(p, password=password)
         except UFDROpenError as exc:
             notes.append(ParseIssue("vfs.ufdr_as_zip", detail=str(exc)))
     try:
@@ -3277,10 +3350,11 @@ def _disk_image_hint(path: Path, head: bytes) -> ParseIssue | None:
 
 def is_browsable_source_file(path: str | Path) -> bool:
     """True when open_vfs() would open this on-disk file as a browsable
-    source (archive, backup) rather than a single file -- the
-    content-sniffed cases only; extension-routed archives are the caller's
-    cheaper check. Mirrors open_vfs()'s own sniffing. A disk image isn't one
-    of them: it opens only through Open Disk Image…."""
+    source (archive, backup) rather than a single file -- the content-sniffed
+    cases, plus a split ZIP set found by name/structure (its final segment has
+    no archive signature at offset 0); extension-routed single archives are the
+    caller's cheaper check. Mirrors open_vfs()'s own sniffing. A disk image
+    isn't one of them: it opens only through Open Disk Image…."""
     p = Path(path)
     if not p.is_file():
         return False
@@ -3288,6 +3362,15 @@ def is_browsable_source_file(path: str | Path) -> bool:
         head = f.read(SNIFF_BYTES)
     if archive_kind(head) is not None or opens_as_logical_evidence(head):
         return True
+    from crush.core.split_zip import SplitZipError, find_split_set
+
+    try:
+        # The final segment of a split ZIP set begins mid-member, so its first
+        # bytes don't sniff as an archive; it is browsable all the same.
+        if find_split_set(p) is not None:
+            return True
+    except SplitZipError:
+        pass  # a split set, but incomplete -- open_vfs would not browse it
     from crush.core.ufd import is_ufd, is_ufdx, looks_like_ufd, looks_like_ufdx
 
     if (looks_like_ufdx(head) and is_ufdx(p)) or (looks_like_ufd(head) and is_ufd(p)):
