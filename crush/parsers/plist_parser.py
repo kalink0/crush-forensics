@@ -13,6 +13,7 @@ from crush.core.issues import ParseIssue
 from crush.core.magic import BPLIST_MAGIC, looks_like_plist_xml, xml_plist_body
 from crush.core.vfs import VFS, VFSNode
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.coredata_store import CORE_DATA_MODEL_FORMAT
 from crush.parsers.nska_archive import (
     Resolution,
     archive_stats,
@@ -87,12 +88,22 @@ class PlistParser(AbstractParser):
                 # wasn't possible or failed), so it's always found in one place.
                 hints["archive"] = reading.loaded
                 hints["resolved"] = resolved
+            is_model = reading.keyed and _add_coredata_model(reading.loaded, meta, hints)
+            if is_model:
+                # The file's format is the model; how the plist is stored
+                # (binary/XML, resolved or not) keeps its own row, so the
+                # Format row and the format knowledge name the same format.
+                meta = {"Format": CORE_DATA_MODEL_FORMAT, "Plist format": fmt, **{
+                    k: v for k, v in meta.items() if k != "Format"
+                }}
             return ParseResult(
                 viewer_type="tree_text",
                 data=data,
                 metadata=meta,
                 text_index=text_index if text_index is not None else _flatten_text(data),
                 viewer_hints=hints,
+                # A compiled Core Data model: its own format knowledge applies.
+                format_short_name=CORE_DATA_MODEL_FORMAT if is_model else None,
             )
         except Exception as exc:
             logging.getLogger(__name__).warning("Plist parse error for %s: %s", node.path, exc)
@@ -168,6 +179,32 @@ def read_plist(raw: bytes) -> PlistReading:
         xml=xml, loaded=loaded, data=data, format=fmt, status=status, keyed=True,
         resolution=resolution,
     )
+
+
+def _add_coredata_model(archive: Any, meta: dict[str, Any], hints: dict[str, Any]) -> bool:
+    """A compiled Core Data model (.mom), recognised by its content: a keyed
+    archive whose root object is an NSManagedObjectModel, whatever the file
+    is called. Adds the Core Data Model view next to the plist views, read
+    from the archive as read_plist() loaded it. Returns whether it is one."""
+    if root_class(archive) != "NSManagedObjectModel":
+        return False
+    from crush.parsers.coredata_store import ModelSource, parse_model_archive
+
+    try:
+        model, issues = parse_model_archive(archive)
+    except Exception as exc:  # noqa: BLE001 -- the plist views stay
+        meta["Core Data model"] = ParseIssue("coredata.mom_incomplete", {
+            "issues": ParseIssue("common.library_error", detail=str(exc)),
+        })
+        return True
+    if model is None:
+        meta["Core Data model"] = ParseIssue("coredata.mom_incomplete", {"issues": issues})
+        return True
+    meta["Core Data model"] = ParseIssue("coredata.mom_model", {"entities": len(model.entities)})
+    if issues:
+        meta["Core Data model issues"] = ParseIssue("coredata.mom_incomplete", {"issues": issues})
+    hints["coredata_model"] = ModelSource(model, issues)
+    return True
 
 
 def failed_format(xml: bool) -> ParseIssue:

@@ -30,9 +30,12 @@ class TreeTextViewer(QWidget):
         archive: Any = None,
         status: ParseIssue | list[ParseIssue] | None = None,
         resolved: bool = False,
+        coredata_model: Any = None,
     ) -> None:
         """*archive*: the NSKeyedArchiver archive as stored, for its own tab.
-        *resolved*: *data* is the tree the parser resolved from it."""
+        *resolved*: *data* is the tree the parser resolved from it.
+        *coredata_model*: a Core Data model read from the archive (a .mom
+        file), shown in its own first tab; the other tabs stay."""
         super().__init__(parent)
         self._raw_text = raw_text
         self._text_view: TextView | None = None
@@ -52,6 +55,12 @@ class TreeTextViewer(QWidget):
             layout.addWidget(label)
 
         self._tabs = QTabWidget()
+        if coredata_model is not None:
+            from crush.viewers.coredata_views import ModelView
+
+            self._tabs.addTab(
+                ModelView(coredata_model, self._tabs), translate("TreeTextViewer", "Core Data Model")
+            )
         # Only a tree resolved from an NSKeyedArchiver archive folds its class
         # metadata into the Type column. Decoded is the archive itself when it
         # wasn't resolved (missing references, a cycle, resolving failed),

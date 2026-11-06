@@ -3951,6 +3951,184 @@ FORMATS: list[dict[str, Any]] = [
         "last_reviewed": "2026-10-04",
     },
     {
+        "name": "Core Data Store",
+        "short_name": "Core Data Store",
+        "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "Apple's Core Data framework keeps an app's objects in an SQLite database; many "
+            "iOS and macOS app and system databases are such stores. A store is recognised by "
+            "its tables, not by its first bytes (those are SQLite's): Z_PRIMARYKEY lists every "
+            "entity (Z_ENT, Z_NAME, Z_SUPER, Z_MAX) and Z_METADATA holds the store's UUID and a "
+            "metadata plist (Z_PLIST, also with keys the app sets). An entity's rows are in "
+            "the table Z + uppercase name of its root entity, shared with its subentities; "
+            "Z_ENT in a row names its entity. Core Data's own entities -- the persistent "
+            "history (CHANGE, TRANSACTION, TRANSACTIONSTRING) and CloudKit mirroring (NSCK*) "
+            "-- are in A + name tables. Z_MODELCACHE holds the managed object model (property "
+            "names and types). Apple does not document this layout: which column holds a "
+            "property, how a relationship is stored, which file in "
+            ".<store name>_SUPPORT/_EXTERNAL_DATA/ a reference names and which tombstone slot "
+            "holds which attribute follow naming conventions and orders seen in real stores, "
+            "so they are heuristics, not stored facts. Deleted objects can leave traces in the "
+            "persistent history (delete changes, with tombstone values of flagged attributes, "
+            "for example a deleted photo's UUID) and, as in any SQLite file, in the WAL, "
+            "freelist pages, freeblocks and unallocated space; an empty history doesn't mean "
+            "nothing changed, since history can be purged. Dates are seconds since "
+            "2001-01-01 UTC. A store is an SQLite database, so everything about SQLite "
+            "applies too.",
+            "Core Data Store",
+        ),
+        "platforms": ["macOS", "iOS"],
+        # Read by the SQLite parser, which reports this format for a store.
+        # Its signature has no offset (as Apple Keychain's), so the bytes
+        # never single it out: an SQLite file stays "SQLite Database" until
+        # the parse finds the store's tables.
+        "parser_class": "SQLiteParser",
+        "magic": [
+            {
+                "offset": None,
+                "value": b"\x53\x51\x4c\x69\x74\x65\x20\x66\x6f\x72\x6d\x61\x74\x20\x33\x00",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "SQLite magic string at offset 0, shared with every SQLite database; a "
+                    "store is recognised by its Z_PRIMARYKEY and Z_METADATA tables",
+                    "Core Data Store",
+                ),
+            }
+        ],
+        "extensions": [".sqlite", ".db", ".store", ".sqlitedb"],
+        "links": [
+            (
+                "How Core Data Saves Data in SQLite (fatbobman; its history table names "
+                "Z_ACHANGE etc. differ from observed stores: ACHANGE, ATRANSACTION, "
+                "ATRANSACTIONSTRING)",
+                "https://fatbobman.com/en/posts/tables_and_fields_of_coredata/",
+            ),
+            (
+                "Consuming relevant store changes: persistent history, transactions, purging "
+                "(Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/consuming-relevant-store-changes",
+            ),
+            (
+                "NSAttributeDescription.preservesValueInHistoryOnDeletion: values kept in the "
+                "history on deletion (Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/nsattributedescription/"
+                "preservesvalueinhistoryondeletion",
+            ),
+            (
+                "NSAttributeDescription.allowsExternalBinaryDataStorage: values stored outside "
+                "the store (Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/nsattributedescription/"
+                "allowsexternalbinarydatastorage",
+            ),
+            (
+                "iOS Photos.sqlite queries: a Core Data store examined field by field (Scott Koenig)",
+                "https://github.com/ScottKjr3347/iOS_Local_PL_Photos.sqlite_Queries",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-11-05",
+    },
+    {
+        "name": "Core Data Model",
+        "short_name": "Core Data Model",
+        "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "A compiled Core Data managed object model (.mom, often inside a .momd folder in "
+            "an app bundle or framework): a binary NSKeyedArchiver archive whose root object "
+            "is an NSManagedObjectModel, recognised by that root class rather than its name. "
+            "It lists every entity with its attributes and their types (NSAttributeType), "
+            "relationships with destination, inverse and delete rule, fetch indexes and "
+            "version hashes. A Core Data store keeps a copy in its Z_MODELCACHE table, so the "
+            "model that names a store's columns can be read from either. The archive's object "
+            "graph is cyclic (entities and properties refer to each other). An optimized "
+            "model (.omo) next to it is a different, undocumented format.",
+            "Core Data Model",
+        ),
+        "platforms": ["macOS", "iOS"],
+        # Read by the plist parser, which reports this format for a model.
+        # Its signature has no offset, so the bytes never single it out: a
+        # binary plist stays a plist until the parse finds the model's root class.
+        "parser_class": "PlistParser",
+        "magic": [
+            {
+                "offset": None,
+                "value": b"bplist",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "binary plist magic, shared with every binary plist; a model is "
+                    "recognised by its archive's root class NSManagedObjectModel",
+                    "Core Data Model",
+                ),
+            }
+        ],
+        "extensions": [".mom"],
+        "links": [
+            (
+                "NSAttributeType: the attribute type enumeration (Apple Developer Documentation)",
+                "https://developer.apple.com/documentation/coredata/nsattributetype",
+            ),
+            (
+                "Model File Format and Versions: .momd packages and compiled .mom files "
+                "(Apple Core Data Model Versioning Guide)",
+                "https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/"
+                "CoreDataVersioning/Articles/vmModelFormat.html",
+            ),
+            (
+                "How Core Data Saves Data in SQLite: the model in Z_MODELCACHE (fatbobman)",
+                "https://fatbobman.com/en/posts/tables_and_fields_of_coredata/",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-11-05",
+    },
+    {
+        "name": "Core Data Optimized Model",
+        "short_name": "Core Data OMO",
+        "category": "database",
+        #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+        "forensic_relevance": QT_TRANSLATE_NOOP(
+            "FormatKnowledge",
+            "An optimized form of a compiled Core Data model (.omo), stored next to the .mom "
+            "files in a .momd folder. It starts with the bytes 'momv2$sr'; its layout is not "
+            "documented. The .mom files in the same folder hold the model as an "
+            "NSKeyedArchiver archive.",
+            "Core Data Optimized Model",
+        ),
+        "platforms": ["macOS", "iOS"],
+        # Recognised (CoreDataOmoParser shows it as hex with a status), not
+        # decoded: the catalog says "Not yet supported", which is the truth.
+        "parser_class": None,
+        "magic": [
+            {
+                "offset": 0,
+                "value": b"momv2$sr",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "'momv2$sr' at offset 0 (seen in every observed .omo file)",
+                    "Core Data Optimized Model",
+                ),
+            }
+        ],
+        "extensions": [".omo"],
+        "links": [
+            (
+                "Model File Format and Versions: the .momd package the file sits in "
+                "(Apple Core Data Model Versioning Guide)",
+                "https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/"
+                "CoreDataVersioning/Articles/vmModelFormat.html",
+            ),
+        ],
+        "status": "reviewed",
+        "last_reviewed": "2026-11-05",
+    },
+    {
         "name": "SQLite WAL",
         "short_name": "SQLite WAL",
         "category": "database",

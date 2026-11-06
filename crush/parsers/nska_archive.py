@@ -125,7 +125,7 @@ def is_keyed_archive(obj: Any) -> bool:
     return isinstance(obj, dict) and obj.get("$archiver") in ARCHIVERS
 
 
-def _uid_index(value: Any) -> int | None:
+def uid_index(value: Any) -> int | None:
     """The `$objects` index a UID points to; None for anything else.
 
     Binary plists store a UID as its own type (ccl_bplist's BplistUID,
@@ -151,7 +151,7 @@ def _uids_in(value: Any) -> list[int]:
     stack = [value]
     while stack:
         item = stack.pop()
-        index = _uid_index(item)
+        index = uid_index(item)
         if index is not None:
             found.append(index)
         elif isinstance(item, dict):
@@ -168,14 +168,14 @@ def root_class(archive: dict[str, Any]) -> str | ParseIssue:
     objects = archive.get("$objects")
     if not isinstance(top, dict) or "root" not in top:
         return ParseIssue("plist.nska_root_none")
-    index = _uid_index(top["root"])
+    index = uid_index(top["root"])
     if index is None:
         # Stored in $top itself rather than referenced: a plain value.
         return ParseIssue("plist.nska_root_plain", {"type": type(top["root"]).__name__})
     if not isinstance(objects, list) or not 0 <= index < len(objects):
         return ParseIssue("plist.nska_root_missing")
     entry = objects[index]
-    class_index = _uid_index(entry.get("$class")) if isinstance(entry, dict) else None
+    class_index = uid_index(entry.get("$class")) if isinstance(entry, dict) else None
     if class_index is None:
         # Strings, numbers and data are stored as plain values, without a class.
         return ParseIssue("plist.nska_root_plain", {"type": type(entry).__name__})
@@ -254,7 +254,7 @@ def unconvertible_dates(archive: dict[str, Any]) -> int | None:
         entry = objects[index]
         if not isinstance(entry, dict) or "NS.time" not in entry:
             continue
-        class_index = _uid_index(entry.get("$class"))
+        class_index = uid_index(entry.get("$class"))
         if class_index is None or not 0 <= class_index < len(objects):
             continue
         # The class resolved as the converter sees it, checked by
@@ -328,8 +328,8 @@ class Resolution:
 
 def _with_uids(value: Any) -> Any:
     """An XML archive with each `{"CF$UID": n}` as a UID, as CoreFoundation
-    reads it back (same test as _uid_index), for the binary form."""
-    index = _uid_index(value)
+    reads it back (same test as uid_index), for the binary form."""
+    index = uid_index(value)
     if index is not None:
         return plistlib.UID(index)
     if isinstance(value, dict):

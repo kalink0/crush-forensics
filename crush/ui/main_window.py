@@ -3980,6 +3980,9 @@ class MainWindow(QMainWindow):
             widget.setProperty("crush_source_path", source_path)
         widget.setProperty("crush_vfs", vfs)
         widget.setProperty("crush_node", node)
+        # The specific format the parse found (Format Info uses it for an
+        # entry that is already open).
+        widget.setProperty("crush_format_short_name", result.format_short_name or "")
         # Wrapped: a dict as a Qt property comes back as a QVariantMap,
         # its keys sorted -- the panel's rows would change order.
         widget.setProperty("crush_metadata", _TabMetadata(result.metadata))
@@ -4257,6 +4260,23 @@ class MainWindow(QMainWindow):
                     "entry.format_not_singled_out",
                     {"candidates": ", ".join(m.name for m in matches)},
                 )
+            # The parser found a more specific format than its own and the
+            # bytes give (a Core Data store in an SQLite file): that one's
+            # knowledge first, the parser's format kept as the base format.
+            specific_name = getattr(result, "format_short_name", None)
+            if specific_name:
+                specific = db.by_short_name(specific_name)
+                if specific is None:
+                    fmt_meta["Format (specific)"] = ParseIssue(
+                        "entry.format_entry_missing", {"name": specific_name},
+                    )
+                else:
+                    if fmt is not None and fmt.short_name != specific.short_name:
+                        fmt_meta["Base format"] = fmt.name
+                        if fmt.forensic_relevance:
+                            fmt_meta["Base format relevance"] = fmt.relevance_text()
+                    fmt_meta.pop("Format (identified)", None)
+                    fmt = specific
             if fmt is not None:
                 fmt_meta["Format"] = fmt.name
                 if fmt.platforms:
@@ -4274,6 +4294,7 @@ class MainWindow(QMainWindow):
                 merged,
                 result.text_index,  # type: ignore[union-attr]
                 result.viewer_hints,  # type: ignore[union-attr]
+                specific_name,
             )
         except Exception:
             return result
@@ -4294,6 +4315,14 @@ class MainWindow(QMainWindow):
                 peek = _format_peek(vfs, node)
                 matches = FormatDatabase.get().top_matches(peek)
             fmt = matches[0] if len(matches) == 1 else None
+            # Already open: the format its parse found (a Core Data store,
+            # not only "SQLite"). Not open: the bytes alone, without opening
+            # the file -- a true but less specific answer.
+            specific_name = self._open_format_short_name(node, vfs)
+            if specific_name:
+                specific = FormatDatabase.get().by_short_name(specific_name)
+                if specific is not None:
+                    fmt, matches = specific, [specific]
             if not matches and not node.is_dir:
                 from crush.core.magic import detect_fast_label
                 label = detect_fast_label(peek, node.path or node.name)
@@ -4323,6 +4352,20 @@ class MainWindow(QMainWindow):
             self._status.showMessage(
                 translate("MainWindow", "Format info error: {exc}").format(exc=exc)
             )
+
+    def _open_format_short_name(self, node: VFSNode, vfs: VFS) -> str:
+        """The specific format an open tab of *node* (same source) was parsed
+        as; "" when it isn't open or its parse reported none."""
+        for i in range(self._viewer_tabs.count()):
+            w = self._viewer_tabs.widget(i)
+            if w is None or w.property("crush_path") != node.path:
+                continue
+            if w.property("crush_vfs") is not vfs:
+                continue
+            name = w.property("crush_format_short_name")
+            if name:
+                return str(name)
+        return ""
 
     def _show_format_reference(self) -> None:
         from crush.ui.format_reference import FormatReferenceDialog

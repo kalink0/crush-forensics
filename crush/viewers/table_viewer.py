@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 import bisect
 import csv
@@ -116,6 +116,7 @@ from crush.ui.busy_dialog import busy_call, run_with_busy_dialog
 from crush.ui.elided_label import ElidedLabel
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.viewers.blob_inspector import BlobInspector
+from crush.viewers import coredata_views as _cdv
 from crush.viewers.open_bytes import request_open_bytes
 from crush.viewers.hex_viewer import HexViewer
 from crush.ui.i18n import translate
@@ -275,6 +276,22 @@ def _virtual_path_component(value: object, fallback: str) -> str:
     text = text.strip(" .")
     return text or fallback
 
+
+
+class _CdCell(NamedTuple):
+    """One cell of a Core Data store's table, for provenance and the Core
+    Data cell actions. *entity*: the row's own entity (a record's concrete
+    entity, a plain row's Z_ENT), None when not known. *derived*: the kind
+    of a derived reading the grid shows (a decoded date, the entity name),
+    None for the stored value itself."""
+
+    table: str
+    column: str | None
+    raw: Any
+    pk: Any
+    rowid: Any
+    entity: str | None
+    derived: str | None
 
 
 def _rows_label(total: int) -> str:
@@ -1204,6 +1221,35 @@ class TableViewer(QWidget):
             "GeneratedView", "Unallocated Space (generated)"
         )
         self._strings_label = QT_TRANSLATE_NOOP("GeneratedView", "Strings (generated)")
+        # Core Data views: only for a detected store (the parser's
+        # "__coredata" object, which every one of them reads from).
+        self._coredata: Any = data.get("__coredata") if isinstance(data, dict) else None
+        self._cd_entities_label = QT_TRANSLATE_NOOP("GeneratedView", "Core Data Entities (generated)")
+        self._cd_store_label = QT_TRANSLATE_NOOP("GeneratedView", "Core Data Store (generated)")
+        self._cd_model_label = QT_TRANSLATE_NOOP("GeneratedView", "Core Data Model (generated)")
+        self._cd_history_label = QT_TRANSLATE_NOOP("GeneratedView", "Core Data History (generated)")
+        self._cd_keys_label = QT_TRANSLATE_NOOP("GeneratedView", "Core Data Keys (generated)")
+        self._cd_external_label = QT_TRANSLATE_NOOP(
+            "GeneratedView", "Core Data External Data (generated)"
+        )
+        self._cd_record_model: _cdv.RecordModel | None = None
+        self._cd_rows_model: _cdv.RowsModel | None = None
+        self._cd_model_active = False
+        self._cd_counts: dict[str, Any] | None = None
+        # The record the detail panel shows, as its own identity (records,
+        # row values, Z_PK, rowid) -- not the grid's current row, which a
+        # filter or another selection can change -- and its dedup key.
+        self._cd_detail_record: tuple[Any, tuple[Any, ...], Any, Any] | None = None
+        self._cd_detail_row: Any = None
+        self._cd_external_rows: list[Any] = []
+        self._cd_entity_shows = 0  # counts _show_cd_entity() calls
+        self._cd_history_cache: Any = None
+        self._cd_external_cache: Any = None
+        self._cd_keys_cache: Any = None
+        self._cd_model_rows: list[Any] = []
+        self._cd_back_stack: list[tuple[str, Any]] = []
+        self._cd_current_entity: str | None = None
+        self._cd_pending_pk: Any = None
         # The last scan, keyed by its minimum length, and the model showing
         # it while the Strings view is active (see _load_strings()).
         self._strings_cache: tuple[int, Any, _StringsTexts] | None = None
@@ -1257,6 +1303,14 @@ class TableViewer(QWidget):
                 self._table_combo.clear()
                 if show_db_tabs:
                     self._add_generated_view(self._summary_label)
+                    if self._coredata is not None:
+                        self._add_generated_view(self._cd_entities_label)
+                        self._add_generated_view(self._cd_store_label)
+                        self._add_generated_view(self._cd_model_label)
+                        if self._coredata.history_tables().get("CHANGE"):
+                            self._add_generated_view(self._cd_history_label)
+                        self._add_generated_view(self._cd_keys_label)
+                        self._add_generated_view(self._cd_external_label)
                     self._add_generated_view(self._db_structure_label)
                     self._add_generated_view(self._file_structure_label)
                     self._add_generated_view(self._db_info_label)
@@ -1565,7 +1619,19 @@ class TableViewer(QWidget):
         table_container_layout.setContentsMargins(0, 0, 0, 0)
         table_container_layout.setSpacing(0)
         table_container_layout.addWidget(self._source_status)
-        table_container_layout.addWidget(self._table_view, stretch=1)
+        # Core Data Entities: the entity tree left of the grid (hidden in
+        # every other view); the grid itself shows the records.
+        self._cd_entity_panel = _cdv.EntityTreePanel()
+        self._cd_entity_panel.entitySelected.connect(self._on_cd_entity_selected)
+        self._cd_entity_panel.backRequested.connect(self._on_cd_back)
+        self._cd_entity_panel.setVisible(False)
+        grid_splitter = QSplitter(Qt.Orientation.Horizontal)
+        grid_splitter.addWidget(self._cd_entity_panel)
+        grid_splitter.addWidget(self._table_view)
+        grid_splitter.setStretchFactor(0, 0)
+        grid_splitter.setStretchFactor(1, 1)
+        grid_splitter.setSizes([260, 800])
+        table_container_layout.addWidget(grid_splitter, stretch=1)
 
         # The selected row's own detail from the caller ("__row_detail", e.g.
         # a SEGB record's payload with every candidate reading), under the
@@ -1588,18 +1654,31 @@ class TableViewer(QWidget):
         self._row_detail_rowid: Any = None
         self._row_detail_panel.setVisible(self._row_detail is not None)
 
+        # Core Data: the selected record (Entities) or model object (Model)
+        # under the grid; hidden in every other view.
+        self._cd_record_panel = _cdv.RecordDetailPanel()
+        self._cd_record_panel.navigateRequested.connect(self._on_cd_navigate)
+        self._cd_record_panel.openBytesRequested.connect(self._on_cd_open_value)
+        self._cd_record_panel.setVisible(False)
+        self._cd_object_panel = _cdv.ObjectDetailPanel()
+        self._cd_object_panel.setVisible(False)
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._sql_bar)
         splitter.addWidget(table_container)
         splitter.addWidget(self._row_detail_panel)
         splitter.addWidget(self._structure_tree)
         splitter.addWidget(self._cell_detail_panel)
+        splitter.addWidget(self._cd_record_panel)
+        splitter.addWidget(self._cd_object_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 1)
         splitter.setStretchFactor(3, 1)
         splitter.setStretchFactor(4, 0)
-        splitter.setSizes([140, 500, 400, 500, 80])
+        splitter.setStretchFactor(5, 1)
+        splitter.setStretchFactor(6, 1)
+        splitter.setSizes([140, 500, 400, 500, 80, 300, 300])
 
         # Embedded, bidirectional Hex pane -- same "Show Hex" toggle
         # convention as TreeViewer/ProtobufTreeWidget, hidden until toggled
@@ -1712,6 +1791,24 @@ class TableViewer(QWidget):
         self._search.setVisible(table_name != self._file_structure_label)
         if table_name != self._file_structure_label:
             self._set_structure_view_visible(False)
+        self._cd_entity_panel.setVisible(table_name == self._cd_entities_label)
+        self._cd_record_panel.setVisible(table_name == self._cd_entities_label)
+        self._cd_object_panel.setVisible(table_name == self._cd_model_label)
+        cd_loaders = {
+            self._cd_entities_label: self._load_cd_entities,
+            self._cd_store_label: self._load_cd_store,
+            self._cd_model_label: self._load_cd_model,
+            self._cd_history_label: self._load_cd_history,
+            self._cd_keys_label: self._load_cd_keys,
+            self._cd_external_label: self._load_cd_external,
+        }
+        if table_name in cd_loaders:
+            self._wal_toggle.setVisible(False)
+            self._journal_toggle.setVisible(False)
+            self._prev_ref_toggle.setVisible(False)
+            if self._coredata is not None:
+                cd_loaders[table_name]()
+            return
         if table_name == self._summary_label:
             self._load_summary()
             return
@@ -1980,6 +2077,7 @@ class TableViewer(QWidget):
         else:
             for r, row_data in enumerate(rows):
                 _append_row(row_data, rowid=rowids[r] if rowids is not None else None)
+        self._cd_tooltip_z_ent(columns)
 
         # Cells the injected WAL / pre-rollback pages held but that couldn't
         # be decoded (see parse_table_leaf_page's problems).
@@ -2202,52 +2300,19 @@ class TableViewer(QWidget):
     def _on_wal_toggle(self, _state: int) -> None:
         """Re-load the current table when the WAL history toggle changes."""
         current = self._current_table()
-        if current and current not in (
-            self._summary_label,
-            self._db_structure_label,
-            self._file_structure_label,
-            self._db_info_label,
-            self._wal_label,
-            self._journal_label,
-            self._freelist_label,
-            self._freeblocks_label,
-            self._unallocated_label,
-            self._strings_label,
-        ):
+        if current and not self._is_generated_view(current):
             self._load_table(current)
 
     def _on_journal_toggle(self, _state: int) -> None:
         """Re-load the current table when the pre-rollback-state toggle changes."""
         current = self._current_table()
-        if current and current not in (
-            self._summary_label,
-            self._db_structure_label,
-            self._file_structure_label,
-            self._db_info_label,
-            self._wal_label,
-            self._journal_label,
-            self._freelist_label,
-            self._freeblocks_label,
-            self._unallocated_label,
-            self._strings_label,
-        ):
+        if current and not self._is_generated_view(current):
             self._load_table(current)
 
     def _on_prev_ref_toggle(self, _state: int) -> None:
         """Re-load the current table when the prev-ref diff toggle changes."""
         current = self._current_table()
-        if current and current not in (
-            self._summary_label,
-            self._db_structure_label,
-            self._file_structure_label,
-            self._db_info_label,
-            self._wal_label,
-            self._journal_label,
-            self._freelist_label,
-            self._freeblocks_label,
-            self._unallocated_label,
-            self._strings_label,
-        ):
+        if current and not self._is_generated_view(current):
             self._load_table(current)
 
     def _inject_prev_ref_rows(
@@ -3753,14 +3818,26 @@ class TableViewer(QWidget):
         old = self._strings_model
         self._strings_model = model
         self._strings_active = True
+        self._show_self_sorting_model(model)
+        model.set_filter(self._search.text())
+        if old is not None and old is not model:
+            old.deleteLater()
+
+    def _show_self_sorting_model(self, model: QAbstractTableModel) -> None:
+        """Show a model that sorts and filters itself (Strings, Core Data)
+        through the proxy: no proxy sorting or filtering, unsorted."""
         self._proxy_model.setDynamicSortFilter(False)
         self._proxy_model.setFilterFixedString("")
         self._table_view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
         self._proxy_model.setSourceModel(model)
-        model.set_filter(self._search.text())
-        if old is not None and old is not model:
-            old.deleteLater()
+
+    def _show_standard_model(self) -> None:
+        """Back from a self-sorting model to the standard one, with the
+        search box's text as the proxy's filter again."""
+        self._proxy_model.setSourceModel(self._source_model)
+        self._proxy_model.setDynamicSortFilter(True)
+        self._proxy_model.setFilterFixedString(self._search.text())
 
     def _drop_strings_model(self) -> None:
         """Leave the Strings view's model: back to the standard one, with
@@ -3768,9 +3845,7 @@ class TableViewer(QWidget):
         if not self._strings_active:
             return
         self._strings_active = False
-        self._proxy_model.setSourceModel(self._source_model)
-        self._proxy_model.setDynamicSortFilter(True)
-        self._proxy_model.setFilterFixedString(self._search.text())
+        self._show_standard_model()
         if self._strings_model is not None:
             self._strings_model.deleteLater()
             self._strings_model = None
@@ -3779,7 +3854,13 @@ class TableViewer(QWidget):
         """Double-click handler: navigate to table from summary, open WAL page in hex viewer, or inspect bytes cell."""
         current = self._current_table()
 
-        if self._query_results_active:
+        if self._cd_rows_shown(self._cd_history_label):
+            self._on_cd_history_activated(index, jump=True)  # type: ignore[arg-type]
+            return
+        if self._cd_rows_shown(self._cd_external_label):
+            self._open_cd_external_row(index)  # type: ignore[arg-type]
+            return
+        if self._query_results_active or self._cd_rows_shown(self._cd_entities_label):
             model_index = self._proxy_model.index(index.row(), index.column())  # type: ignore[union-attr]
             raw = self._proxy_model.data(model_index, Qt.ItemDataRole.UserRole)
             display = self._proxy_model.data(model_index, Qt.ItemDataRole.DisplayRole)
@@ -4087,6 +4168,770 @@ class TableViewer(QWidget):
             self._append_structure_node(item, node)
         return True
 
+    # -- Core Data views ------------------------------------------------------
+
+    def _enter_cd_view(self, model: QAbstractTableModel | None = None) -> None:
+        """The one way into a Core Data view's grid, whatever the grid
+        showed before: leaves query results, the Strings model and the
+        previous Core Data model, and replaces the standard model's rows
+        with none -- so nothing of the previous view (its rows, their byte
+        ranges, the query text) is read for this one. Then shows *model*
+        (a Core Data view's own model) when given; otherwise the view fills
+        the empty standard model itself."""
+        if self._leave_query_results():
+            # The status describes the query, not this view.
+            self._sql_status.setText("")
+            self._sql_status.setStyleSheet("")
+        self._drop_strings_model()
+        self._drop_cd_model()
+        self._reset_source_model()
+        if model is not None:
+            self._activate_cd_model(model)
+
+    def _activate_cd_model(self, model: QAbstractTableModel) -> None:
+        """Show a Core Data view's own model through the proxy (as the
+        Strings view does), unsorted, with the search text as its filter.
+        Only through _enter_cd_view()."""
+        old = [m for m in (self._cd_record_model, self._cd_rows_model) if m is not None and m is not model]
+        self._cd_model_active = True
+        self._show_self_sorting_model(model)
+        if self._search.text():
+            self._cd_filter(model, self._search.text())
+        if isinstance(model, _cdv.RecordModel):
+            self._cd_record_model, self._cd_rows_model = model, None
+        else:
+            self._cd_record_model, self._cd_rows_model = None, model  # type: ignore[assignment]
+        for m in old:
+            m.deleteLater()
+
+    def _drop_cd_model(self) -> None:
+        if not self._cd_model_active:
+            return
+        self._cd_model_active = False
+        self._show_standard_model()
+        for m in (self._cd_record_model, self._cd_rows_model):
+            if m is not None:
+                m.deleteLater()
+        self._cd_record_model = None
+        self._cd_rows_model = None
+
+    def _cd_filter(self, model: Any, text: str) -> None:
+        """Filter a Core Data view's own model; its search text is built
+        behind the wait dialog the first time (every cell of every row)."""
+        if text and model.needs_haystack():
+            haystack = self._cd_busy(
+                translate("TableViewer", "Preparing the search…"), model.build_haystack,
+            )
+            if haystack is None:
+                return
+            model.set_haystack(haystack)
+        model.set_filter(text)
+
+    def _cd_active_model(self) -> Any:
+        return self._cd_record_model or self._cd_rows_model
+
+    def _cd_rows_shown(self, label: str) -> bool:
+        """Whether the grid shows the rows of the Core Data view *label*:
+        it is the current view and the proxy shows that view's own model --
+        not query results, not an empty grid after a failed read. Every row
+        action of a Core Data view (detail, double-click, provenance, hex)
+        asks this first, so a grid row is never taken for a row of the view."""
+        if self._coredata is None or self._current_table() != label or self._query_results_active:
+            return False
+        source = self._proxy_model.sourceModel()
+        if label == self._cd_entities_label:
+            return self._cd_record_model is not None and source is self._cd_record_model
+        if label == self._cd_history_label:
+            return self._cd_rows_model is not None and source is self._cd_rows_model
+        return label in self._cd_labels() and source is self._source_model
+
+    def _cd_busy(self, text: str, work: Callable[[], Any]) -> Any:
+        """Run Core Data reading off the UI thread behind the wait dialog;
+        None (and the error in the status line) when it failed."""
+        return self._cd_busy_result(text, work)[0]
+
+    def _cd_busy_result(self, text: str, work: Callable[[], Any]) -> tuple[Any, str | None]:
+        """_cd_busy(), also returning the error text (None: it worked)."""
+        try:
+            return busy_call(self, text, work), None
+        except RuntimeError as exc:
+            self._sql_status.setStyleSheet("color: red;")
+            self._sql_status.setText(str(exc))
+            return None, str(exc)
+
+    def _cd_read_failed(self, message: str) -> None:
+        """A Core Data view whose rows couldn't be read: an empty grid (the
+        previous rows never stay) and *message* -- which read failed and
+        why -- in the status line."""
+        self._enter_cd_view()
+        self._row_count_label.setText("")
+        self._sql_status.setStyleSheet("color: red;")
+        self._sql_status.setText(message)
+
+    def _cd_rows_text(self, model: Any) -> str:
+        """The row count of a Core Data view's model: "(3 of 5,000 rows)"
+        while the search filters it."""
+        total = model.total_rows()
+        if self._search.text():
+            return translate("TableViewer", "({visible:,} of {total:,} rows)").format(
+                visible=model.rowCount(), total=total,
+            )
+        return _rows_label(total)
+
+    def _cd_update_count_label(self) -> None:
+        model = self._cd_active_model()
+        if model is None:
+            return
+        rows = self._cd_rows_text(model)
+        if isinstance(model, _cdv.RecordModel):
+            info = self._coredata.entity(model.records.entity)
+            rows = translate("TableViewer", "{entity} · table {table} · Z_ENT {ent} {rows}").format(
+                entity=model.records.entity, table=model.records.table or "—",
+                ent=info.ent if info else "?", rows=rows,
+            )
+        self._row_count_label.setText(rows)
+
+    def _cd_with_conn(self, fn: Callable[[Any], Any]) -> Callable[[], Any]:
+        """*fn(conn)* on a connection the worker thread opens and closes itself."""
+        store = self._coredata
+
+        def work() -> Any:
+            conn = store.open()
+            try:
+                return fn(conn)
+            finally:
+                conn.close()
+
+        return work
+
+    def _cd_entities_note(self) -> str:
+        return translate("TableViewer", "Current rows only. Deleted data may be in other views.")
+
+    def _load_cd_entities(self) -> None:
+        store = self._coredata
+        self._sql_status.setText("")
+        # Nothing of the previous view stays in the grid while this one loads.
+        self._enter_cd_view()
+        if self._cd_counts is None:
+            counts, error = self._cd_busy_result(
+                translate("TableViewer", "Counting Core Data rows…"),
+                self._cd_with_conn(store.row_counts),
+            )
+            if error is None:
+                self._cd_counts = counts
+                self._cd_entity_panel.populate(store, counts)
+            else:
+                # Not cached: counted again the next time the view opens;
+                # meanwhile every Rows cell says why it's empty.
+                self._cd_entity_panel.populate(
+                    store, {}, count_failure=ParseIssue("coredata.count_failed", detail=error),
+                )
+        name = self._cd_current_entity or self._cd_entity_panel.current()
+        if name is None and store.entities:
+            first = self._cd_entity_panel.model.item(0, 0)
+            name = first.data(_cdv.ENTITY_ROLE) if first is not None else None
+        if name is None:
+            self._set_source_status([self._cd_entities_note()])
+            return
+        shown = False
+        if self._cd_entity_panel.current() != name:
+            # Emits entitySelected -> _show_cd_entity, which takes a pending
+            # record (a jump from History or a relationship) with it.
+            before = self._cd_entity_shows
+            self._cd_entity_panel.select(name)
+            shown = self._cd_entity_shows != before
+        if not shown:
+            # The tree didn't emit (already current): read it here, once --
+            # also when that read fails, never a second time.
+            pending, self._cd_pending_pk = self._cd_pending_pk, None
+            self._show_cd_entity(name, pending)
+
+    def _on_cd_entity_selected(self, name: str) -> None:
+        if self._current_table() != self._cd_entities_label:
+            return
+        pk, self._cd_pending_pk = self._cd_pending_pk, None
+        self._show_cd_entity(name, pk)
+
+    def _clear_cd_record_panel(self) -> None:
+        self._cd_record_panel.clear()
+        self._cd_detail_record = None
+        self._cd_detail_row = None
+
+    def _show_cd_entity(self, name: str, select_pk: Any = None) -> None:
+        store = self._coredata
+        self._cd_entity_shows += 1  # whether a caller's select() already showed it
+        records, error = self._cd_busy_result(
+            translate("TableViewer", "Reading Core Data records…"),
+            self._cd_with_conn(lambda conn: store.load_records(name, conn)),
+        )
+        # The tree shows *name* selected from here on: the grid, the count
+        # and the panel follow it, read or not.
+        self._cd_current_entity = name
+        self._clear_cd_record_panel()
+        if error is not None:
+            self._cd_read_failed(
+                translate("TableViewer", "Reading the records of {entity} failed: {error}").format(
+                    entity=name, error=error,
+                )
+            )
+            return
+        # Read: no status of an earlier step (a failed read, a jump) stays
+        # above this entity's rows, nor its style.
+        self._cd_reset_status()
+        model = _cdv.RecordModel(store, records, self)
+        self._enter_cd_view(model)
+        self._resize_and_cap()
+        self._cd_update_count_label()
+        statuses: list[Any] = [self._cd_entities_note()]
+        entity_status = store.entity_status(name)
+        if entity_status is not None:
+            statuses.append(entity_status)
+        self._set_source_status(statuses)
+        if select_pk is not None:
+            self._cd_select_pk(select_pk)
+
+    def _cd_reset_status(self) -> None:
+        self._sql_status.setText("")
+        self._sql_status.setStyleSheet("")
+
+    def _cd_select_pk(self, pk: Any) -> bool:
+        model = self._cd_record_model
+        # A jump within the same entity: the status is this jump's only.
+        self._cd_reset_status()
+        if model is None or pk is None:
+            # No key to look for: never reported as a missing row.
+            return False
+        row = model.row_of_pk(pk)
+        if row is None and model.has_pk(pk):
+            # The record exists but the search filter hides it: never report
+            # it as missing -- clear the filter and show it.
+            self._search.blockSignals(True)
+            self._search.setText("")
+            self._search.blockSignals(False)
+            self._apply_filter("")
+            row = model.row_of_pk(pk)
+            self._sql_status.setText(
+                translate("TableViewer", "Search cleared to show {entity} Z_PK {pk}.").format(
+                    entity=self._cd_current_entity, pk=pk,
+                )
+            )
+        if row is None:
+            self._sql_status.setText(
+                translate("TableViewer", "{entity} Z_PK {pk}: no such row in the current database state").format(
+                    entity=self._cd_current_entity, pk=pk,
+                )
+            )
+            return False
+        proxy_index = self._proxy_model.mapFromSource(model.index(row, 1))
+        if proxy_index.isValid():
+            self._table_view.setCurrentIndex(proxy_index)
+            self._table_view.scrollTo(proxy_index)
+        return True
+
+    def _cd_current_record(self) -> tuple[Any, tuple[Any, ...], Any, Any] | None:
+        """(records, row values, Z_PK, rowid) of the grid's current Entities row."""
+        model = self._cd_record_model
+        current = self._table_view.currentIndex()
+        if model is None or not current.isValid():
+            return None
+        row = self._proxy_model.mapToSource(current).row()
+        if not 0 <= row < model.rowCount():
+            return None
+        values = model.record_values(row)
+        return model.records, values, _cdv.pk_value(model.records.columns, values), model.rowid(row)
+
+    def _update_cd_record_detail(self) -> None:
+        record = self._cd_current_record()
+        if record is None:
+            # No current row (a filter reset cleared it): the panel keeps
+            # the record it shows, with that record's own identity.
+            return
+        records, values, pk, rowid = record
+        key = (records.entity, id(records), pk, id(values))
+        if self._cd_detail_row == key:
+            return
+        self._cd_detail_row = key
+        store = self._coredata
+        try:
+            props = store.property_values(records, values)
+            rels = store.relationship_values(records, values) if store.model is not None else None
+        except Exception as exc:  # noqa: BLE001 -- the grid stays usable
+            self._cd_detail_record = None
+            self._cd_record_panel.clear()
+            self._cd_record_panel.label.setText(str(exc))
+            return
+        self._cd_detail_record = record
+        entity = store.concrete_entity(records, values)
+        self._cd_record_panel.show_record(
+            entity, pk if pk is not None else f"— (rowid {rowid})", records.table, props, rels,
+            note=store.entity_status(entity) if rels is None else None,
+        )
+
+    def _on_cd_navigate(self, entity: str, pk: Any) -> None:
+        # Back returns to the record the panel shows (its own identity),
+        # whatever the grid's current row is now.
+        record = self._cd_detail_record
+        if record is not None:
+            self._cd_back_stack.append((record[0].entity, record[2]))
+            self._cd_entity_panel.back_button.setEnabled(True)
+        self._cd_go_to(entity, pk)
+
+    def _on_cd_back(self) -> None:
+        if not self._cd_back_stack:
+            return
+        entity, pk = self._cd_back_stack.pop()
+        self._cd_entity_panel.back_button.setEnabled(bool(self._cd_back_stack))
+        self._cd_go_to(entity, pk)
+
+    def _cd_go_to(self, entity: str, pk: Any) -> None:
+        if self._current_table() != self._cd_entities_label:
+            self._cd_current_entity = entity
+            self._cd_pending_pk = pk
+            index = self._table_combo.findData(self._cd_entities_label)
+            self._table_combo.setCurrentIndex(index)  # loads the view
+            if self._cd_pending_pk is not None and self._cd_record_model is not None:
+                pending, self._cd_pending_pk = self._cd_pending_pk, None
+                self._cd_select_pk(pending)
+            return
+        if entity == self._cd_current_entity and self._cd_record_model is not None:
+            self._cd_select_pk(pk)
+            return
+        self._cd_pending_pk = pk
+        before = self._cd_entity_shows
+        self._cd_entity_panel.select(entity)
+        if self._cd_entity_shows == before:  # the tree didn't emit (already current)
+            pending, self._cd_pending_pk = self._cd_pending_pk, None
+            self._show_cd_entity(entity, pending)
+
+    @staticmethod
+    def _cd_row_key(pk: Any, rowid: Any) -> str:
+        """How provenance names a row: by Z_PK, by rowid for a table without
+        Z_PK (as the External Data view does)."""
+        if pk is not None:
+            return f"Z_PK {pk}"
+        if rowid is not None:
+            return f"rowid {rowid}"
+        return "no Z_PK, no rowid"  # i18n: keep -- provenance stays English
+
+    def _cd_provenance(
+        self, table: str, column: str | None, pk: Any, rowid: Any = None,
+        entity: str | None = None, derived: str | None = None,
+    ) -> tuple[str, dict[str, str]]:
+        """Virtual path and provenance of one stored value. *entity*: the
+        row's own entity (a record's concrete entity, a plain row's Z_ENT),
+        never the tree's selection. *derived*: the kind of a derived reading
+        of the value (a decoded date, a boolean, the entity name) -- its own
+        path, so it never shares a tab with the stored value."""
+        db_name = _virtual_path_component(self._source_name, "sqlite")
+        row_key = self._cd_row_key(pk, rowid)
+        path = "/virtual/{db}/{table}/{column}/{row}".format(  # i18n: keep -- path
+            db=db_name, table=_virtual_path_component(table, "table"),
+            column=_virtual_path_component(column, "column"),
+            row=_virtual_path_component(row_key, "row"),
+        )
+        if derived:
+            path += f"/derived-{_virtual_path_component(derived, 'value')}"
+        meta = {"Source table": table, "Source column": column or "", "Source row": row_key}
+        if entity:
+            meta["Core Data entity"] = entity
+        if derived:
+            meta["Derived reading"] = derived
+        return path, meta
+
+    def _on_cd_open_value(self, data: bytes, column: str) -> None:
+        """Inspect a value from the record detail: *column* is the SQL column
+        it is stored in (provenance names the column, not the property), the
+        record the one the panel shows."""
+        record = self._cd_detail_record
+        if record is None:
+            return
+        records, values, pk, rowid = record
+        path, meta = self._cd_provenance(
+            records.table, column, pk, rowid, entity=self._coredata.concrete_entity(records, values),
+        )
+        meta["Inspected bytes"] = translate("TableViewer", "the cell's bytes")
+        BlobInspector(data, self, artifact_path=path, provenance=meta).show()
+
+    def _load_cd_store(self) -> None:
+        store = self._coredata
+        self._enter_cd_view()
+        headers = [
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Item"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Value"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Note"))),
+        ]
+        rows: list[list[_cdv.Cell]] = []
+
+        def add(item: Any, value: Any, note: Any = None, raw: Any = None) -> None:
+            note_cell = _cdv.Cell(render_value(note, localized=True) if note is not None else "")
+            if note is not None:
+                note_cell.export = render_value(note)
+            rows.append([_cdv.Cell(item), _cdv.Cell(value, raw), note_cell])
+
+        add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Detected by")),
+            ", ".join(store.detection.present))
+        for n, meta in enumerate(store.metadata, start=1):
+            prefix = f"Z_METADATA[{n}]." if len(store.metadata) > 1 else ""
+            add(prefix + "Z_VERSION", _cdv.stored_cell(meta.version).display)
+            add(prefix + "Z_UUID", _cdv.stored_cell(meta.store_uuid).display)
+            if meta.plist_issue is not None:
+                add(prefix + "Z_PLIST", _cdv.stored_cell(meta.plist_raw).display, meta.plist_issue,
+                    raw=bytes(meta.plist_raw) if isinstance(meta.plist_raw, (bytes, bytearray, memoryview)) else None)
+            else:
+                for key, value in store.plist_items(meta.plist):
+                    add(f"{prefix}Z_PLIST.{key}", value)
+        add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Model")),
+            render_value(store.model_status, localized=True) if store.model_status else "")
+        for issue in store.model_issues:
+            add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Model")), "", issue)
+        add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Persistent history")),
+            render_value(store.history_status(), localized=True))
+        if store.support is not None:
+            folder = _cdv.Cell(render_value(store.support.status(), localized=True))
+            folder.export = render_value(store.support.status())
+            # Found through the folder-name rule .<store>_SUPPORT: a heuristic.
+            rows.append([
+                _cdv.Cell(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "External data folder"))), folder,
+                _cdv.Cell(_cdv.heuristic("folder name"), None, None, _cdv.STATUS_COLOR),
+            ])
+        for issue in store.issues:
+            add(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Note")), "", issue)
+        _cdv.fill_standard_model(self._source_model, headers, rows)
+        self._resize_and_cap()
+        self._row_count_label.setText(_rows_label(len(rows)))
+        self._set_source_status([translate(
+            "TableViewer",
+            "Some links in these views are heuristic, not stored in the file. Rows marked "
+            "\"heuristic\" show where; check the raw values for important findings.",
+        )])
+
+    def _load_cd_model(self) -> None:
+        store = self._coredata
+        self._enter_cd_view()
+        self._cd_model_rows = store.model_rows()
+        headers, cells = _cdv.model_rows_cells(self._cd_model_rows, with_columns=True)
+        _cdv.fill_standard_model(self._source_model, headers, cells)
+        self._resize_and_cap()
+        self._row_count_label.setText(_rows_label(len(cells)))
+        status: list[Any] = [store.model_status] if store.model is None else []
+        self._set_source_status(status + list(store.model_issues))
+
+    def _update_cd_object_detail(self, row: int) -> None:
+        if not 0 <= row < len(self._cd_model_rows):
+            return
+        self._cd_object_panel.show_sections(
+            _cdv.model_detail_sections(self._coredata, self._cd_model_rows[row])
+        )
+
+    def _load_cd_history(self) -> None:
+        store = self._coredata
+        # Nothing of the previous view stays in the grid while this one loads.
+        self._enter_cd_view()
+        if self._cd_history_cache is None:
+            table, error = self._cd_busy_result(
+                translate("TableViewer", "Reading Core Data history…"),
+                self._cd_with_conn(lambda conn: _cdv.history_table(store.load_history(conn))),
+            )
+            if error is not None:
+                self._cd_read_failed(translate(
+                    "TableViewer", "Reading the Core Data history failed: {error}",
+                ).format(error=error))
+                return
+            self._cd_history_cache = table
+        table = self._cd_history_cache
+        result = table.result
+        self._enter_cd_view(table.model(self))
+        self._resize_and_cap()
+        self._cd_update_count_label()
+        status: list[Any] = [translate("TableViewer", "What the ZCOLUMNS bits stand for is unknown.")]
+        if not result.rows:  # empty or unreadable: say so here too
+            status.append(store.history_status())
+        self._set_source_status(status + list(result.issues))
+
+    def _cd_history_row(self, proxy_index: QModelIndex) -> Any:
+        model = self._cd_rows_model
+        if model is None or not proxy_index.isValid():
+            return None
+        return model.row_record(self._proxy_model.mapToSource(proxy_index).row())
+
+    def _on_cd_history_activated(self, proxy_index: QModelIndex, jump: bool) -> None:
+        change = self._cd_history_row(proxy_index)
+        if change is None or change.entity_name is None:
+            return
+        info = self._coredata.entity(change.entity_name)
+        table = info.table if info else "?"
+        if change.target_status is not None or change.target_exists is None:
+            # Existence not known (the table couldn't be read): never "gone".
+            self._sql_status.setText(render_value(ParseIssue("coredata.history_object_unknown", {
+                "entity": change.entity_name, "pk": change.entity_pk,
+                "reason": change.target_status or ParseIssue("coredata.no_table", {"tables": table}),
+            }), localized=True))
+        elif change.target_exists:
+            self._sql_status.setText(render_value(ParseIssue("coredata.history_object_exists", {
+                "entity": change.entity_name, "pk": change.entity_pk,
+            }), localized=True))
+            if jump:
+                self._cd_back_stack.clear()
+                self._cd_entity_panel.back_button.setEnabled(False)
+                self._cd_go_to(change.entity_name, change.entity_pk)
+        else:
+            self._sql_status.setText(render_value(ParseIssue("coredata.history_object_gone", {
+                "entity": f"{change.entity_name} ({table})", "pk": change.entity_pk,
+            }), localized=True))
+
+    def _load_cd_keys(self) -> None:
+        store = self._coredata
+        self._enter_cd_view()
+        if self._cd_keys_cache is None:
+            facts, error = self._cd_busy_result(
+                translate("TableViewer", "Reading Core Data keys…"), self._cd_with_conn(store.load_keys),
+            )
+            if error is not None:
+                self._cd_read_failed(translate(
+                    "TableViewer", "Reading the Core Data keys failed: {error}",
+                ).format(error=error))
+                return
+            self._cd_keys_cache = facts
+        facts = self._cd_keys_cache
+        headers = [
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Entity"))), _cdv.Header("Z_ENT"),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Table"))), _cdv.Header("Z_MAX"),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Rows"))), _cdv.Header("MIN(Z_PK)"), _cdv.Header("MAX(Z_PK)"),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Missing keys below MAX(Z_PK)"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Missing key values"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Z_MAX − MAX(Z_PK)"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Status"))),
+        ]
+        rows = [[
+            _cdv.Cell(f.entity), _cdv.stored_cell(f.ent),
+            _cdv.Cell(_cdv.heuristic_value(f.table), None, None, _cdv.STATUS_COLOR) if f.table else _cdv.Cell(""),
+            _cdv.stored_cell(f.z_max),
+            _cdv.stored_cell(f.rows), _cdv.stored_cell(f.min_pk), _cdv.stored_cell(f.max_pk),
+            _cdv.stored_cell(f.missing_count), _cdv.Cell(f.missing_ranges), _cdv.stored_cell(f.max_gap),
+            _cdv.status_cell(f.status),
+        ] for f in facts]
+        _cdv.fill_standard_model(self._source_model, headers, rows)
+        self._resize_and_cap()
+        self._row_count_label.setText(_rows_label(len(rows)))
+        self._set_source_status([translate("TableViewer", "These numbers don't show why keys are missing.")])
+
+    def _load_cd_external(self) -> None:
+        store = self._coredata
+        self._enter_cd_view()
+        if self._cd_external_cache is None:
+            def work(conn: Any) -> Any:
+                scan = store.scan_external(conn)
+                labels = {}
+                if store.support is not None and store.support.state == "found":
+                    from crush.core.magic import detect_fast_label
+
+                    for row in scan.rows:
+                        if row.file is not None and row.file.rel_path not in labels:
+                            try:
+                                labels[row.file.rel_path] = detect_fast_label(
+                                    store.support.head(row.file.rel_path), ""
+                                ) or "?"
+                            except Exception as exc:  # noqa: BLE001
+                                labels[row.file.rel_path] = str(exc)
+                return scan, labels
+
+            scanned, error = self._cd_busy_result(
+                translate("TableViewer", "Scanning every table for externally stored values…"),
+                self._cd_with_conn(work),
+            )
+            if error is not None:
+                self._cd_read_failed(translate(
+                    "TableViewer", "Scanning for externally stored values failed: {error}",
+                ).format(error=error))
+                return
+            self._cd_external_cache = scanned
+        scan, labels = self._cd_external_cache
+        headers = [
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Kind"))), _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Table"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Column"))), _cdv.Header("rowid"), _cdv.Header("Z_PK"),
+            _cdv.Header("Z_ENT"), _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "UUID / file"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Model flag"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Recognised by"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Raw"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "File status"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Path"))), _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Size"))),
+            _cdv.Header(_Gen(QT_TRANSLATE_NOOP("GeneratedView", "Content (by its bytes)"))),
+        ]
+        location = store.support.location if store.support is not None else ""
+        rows = []
+        for r in scan.rows:
+            status_cell = _cdv.status_cell(r.status)
+            if r.status is not None and not (r.file is None or r.kind != "reference"):
+                status_cell.color = None  # a found file: no marker
+            marks_cell = _cdv.joined_cell([_cdv.heuristic(h).pair() for h in r.heuristics])
+            raw_cell = (
+                _cdv.Cell(r.raw.hex(" "), r.raw) if r.raw is not None else _cdv.Cell("")
+            )  # the cell as stored, complete
+            rows.append([
+                _cdv.Cell(_cdv.word(r.kind)), _cdv.Cell(r.table or ""), _cdv.Cell(r.column or ""),
+                _cdv.stored_cell(r.rowid), _cdv.stored_cell(r.pk), _cdv.stored_cell(r.ent),
+                _cdv.Cell(r.name or ""), _cdv.Cell(r.model_flag),
+                marks_cell, raw_cell, status_cell,
+                _cdv.Cell(f"{location}/{r.file.rel_path}" if r.file is not None else ""),
+                _cdv.stored_cell(r.file.size if r.file is not None else None),
+                _cdv.Cell(labels.get(r.file.rel_path, "") if r.file is not None else ""),
+            ])
+        self._cd_external_rows = scan.rows
+        _cdv.fill_standard_model(self._source_model, headers, rows)
+        self._resize_and_cap()
+        self._row_count_label.setText(_rows_label(len(rows)))
+        folder: list[Any] = [] if scan.folder_status.code == "coredata.support_found" else [scan.folder_status]
+        self._set_source_status(folder + list(scan.issues))
+
+    def _open_cd_external_row(self, proxy_index: QModelIndex) -> None:
+        rows = self._cd_external_rows
+        source_row = self._proxy_model.mapToSource(proxy_index).row()
+        if not 0 <= source_row < len(rows):
+            return
+        r = rows[source_row]
+        meta = {"Core Data store": self._source_name}
+        if r.table:
+            meta.update({"Source table": r.table, "Source column": r.column or "",
+                         "Source row": f"Z_PK {r.pk}" if r.pk is not None else f"rowid {r.rowid}"})
+        if r.name:
+            meta["External value reference"] = r.name
+        if r.heuristics:
+            meta["Recognised by"] = "; ".join(  # i18n: keep -- provenance stays English
+                _cdv.heuristic(h).pair()[0] for h in r.heuristics
+            )
+        self._open_cd_file(r.file, meta, r.status)
+
+    def _open_cd_file(self, file: Any, meta: dict[str, str], status: Any) -> None:
+        store = self._coredata
+        if file is None or store.support is None or store.support.state != "found":
+            self._sql_status.setText(render_value(status, localized=True) if status is not None else "")
+            return
+        path = f"{store.support.location}/{file.rel_path}"
+        data = self._cd_busy(translate("TableViewer", "Reading external file…"),
+                             lambda: store.support.read(file.rel_path))
+        if data is None:
+            return
+        meta = dict(meta)
+        meta["External file"] = path
+        request_open_bytes(self, data, path, None, meta)
+
+    def _cd_record_cell(self, index: QModelIndex) -> _CdCell | None:
+        """An Entities record's cell: the stored value of the table column
+        it shows; for a derived column (a decoded value, the entity name)
+        the column it is derived from and the kind of reading."""
+        model = self._cd_record_model
+        if model is None or not index.isValid() or not self._cd_rows_shown(self._cd_entities_label):
+            return None
+        source = self._proxy_model.mapToSource(index)
+        if not 0 <= source.row() < model.rowCount():
+            return None
+        grid = model.grid_column(source.column())
+        if grid is None:
+            return None
+        records = model.records
+        values = model.record_values(source.row())
+        column = model.column_name(source.column())
+        if grid.is_entity_name:
+            column = next((c for c, _t in records.columns if c.upper() == "Z_ENT"), None)
+        return _CdCell(
+            records.table, column, model.raw_value(source.row(), source.column()),
+            _cdv.pk_value(records.columns, values), model.rowid(source.row()),
+            self._coredata.concrete_entity(records, values),
+            grid.decode if grid.derived else None,
+        )
+
+    def _cd_cell_context(self, index: QModelIndex) -> _CdCell | None:
+        """A table cell for the Core Data cell actions: a plain table's cell
+        or an Entities record's stored (not derived) cell."""
+        if self._coredata is None or not index.isValid() or self._query_results_active:
+            return None
+        current = self._current_table()
+        if current == self._cd_entities_label:
+            cell = self._cd_record_cell(index)
+            return cell if cell is not None and cell.column is not None and cell.derived is None else None
+        if self._is_pseudo_table(current) or current == self._journal_label:
+            return None
+        table = self._data.get(current) if isinstance(self._data, dict) else None
+        if not isinstance(table, dict):
+            return None
+        columns = table.get("columns") or []
+        col = index.column() - 1
+        if not 0 <= col < len(columns):
+            return None
+        raw = _coerce_blob(self._proxy_model.data(index, Qt.ItemDataRole.UserRole))
+        upper = [str(c).upper() for c in columns]
+        pk = None
+        if "Z_PK" in upper:
+            pk = self._proxy_model.data(index.siblingAtColumn(upper.index("Z_PK") + 1), Qt.ItemDataRole.DisplayRole)
+        # The row's own entity, from its Z_ENT -- never the tree's selection.
+        entity = None
+        if "Z_ENT" in upper:
+            ent = self._proxy_model.data(index.siblingAtColumn(upper.index("Z_ENT") + 1), Qt.ItemDataRole.UserRole)
+            info = self._coredata.entity_by_ent(ent)
+            entity = info.name if info is not None else None
+        row_item = self._source_model.item(self._proxy_model.mapToSource(index).row(), 0)
+        rowid = row_item.data(_ROWID_ROLE) if row_item is not None else None
+        return _CdCell(current, str(columns[col]), raw, pk, rowid, entity, None)
+
+    def _add_cd_cell_actions(self, menu: QMenu, index: QModelIndex) -> dict[object, Callable[[], None]]:
+        """"Open external file" on a reference cell, and "Open without the
+        0x01 prefix" on an external-storage column's inline value."""
+        cell = self._cd_cell_context(index)
+        if cell is None:
+            return {}
+        table, column, raw, pk = cell.table, cell.column or "", cell.raw, cell.pk
+        store = self._coredata
+        actions: dict[object, Callable[[], None]] = {}
+        name = store.reference_name(raw)
+        if name is not None:
+            act = menu.addAction(translate("TableViewer", "Open external file (heuristic: byte pattern)"))
+            file = store.support.external_file(name) if store.support is not None else None
+            meta = {"Core Data store": self._source_name, "Source table": table, "Source column": column,
+                    "Source row": self._cd_row_key(pk, cell.rowid), "External value reference": name,
+                    "Recognised by": "heuristic: byte pattern; heuristic: folder name"}  # i18n: keep -- provenance
+            if cell.entity:
+                meta["Core Data entity"] = cell.entity
+            status = store.file_status(name, file)
+            if file is None:
+                act.setToolTip(render_value(status, localized=True) if status is not None else "")
+            actions[act] = lambda: self._open_cd_file(file, meta, status)
+        if store.is_inline_value(raw):
+            offered, note = store.inline_action(table, column)
+            if offered:
+                label = translate("TableViewer", "Open without the 0x01 prefix (heuristic: byte pattern)")
+                if note is not None:
+                    label = translate(
+                        "TableViewer", "Open without the 0x01 prefix (heuristic: byte pattern; {note})"
+                    ).format(note=render_value(note, localized=True))
+                act = menu.addAction(label)
+                data = bytes(raw)[1:]
+
+                def open_inline() -> None:
+                    path, meta = self._cd_provenance(table, column, pk, cell.rowid, cell.entity)
+                    meta["Opened bytes"] = render_value(ParseIssue("coredata.inline_provenance"))
+                    request_open_bytes(self, data, path + "/without-0x01-prefix", None, meta)
+
+                actions[act] = open_inline
+        menu.setToolTipsVisible(True)
+        return actions
+
+    def _cd_tooltip_z_ent(self, columns: list[str]) -> None:
+        """Plain tables of a store: the stored Z_ENT stays in the cell, its
+        entity name is the cell's tooltip."""
+        if self._coredata is None:
+            return
+        upper = [str(c).upper() for c in columns]
+        if "Z_ENT" not in upper:
+            return
+        col = upper.index("Z_ENT") + 1
+        for row in range(self._source_model.rowCount()):
+            item = self._source_model.item(row, col)
+            if item is None:
+                continue
+            info = self._coredata.entity_by_ent(item.data(Qt.ItemDataRole.UserRole))
+            if info is not None:
+                item.setToolTip(translate("TableViewer", "Core Data entity: {name}").format(name=info.name))
+
     def _load_db_info(self) -> None:
         """Show all PRAGMA settings with decoded enum values and descriptions."""
         conn = self._ensure_db()
@@ -4356,7 +5201,7 @@ class TableViewer(QWidget):
         self._sql_status.setText("")
 
     def _on_search_text_changed(self, text: str) -> None:
-        if self._strings_active:
+        if self._strings_active or self._cd_model_active:
             self._strings_filter_timer.start()
             return
         self._apply_filter(text)
@@ -4376,6 +5221,12 @@ class TableViewer(QWidget):
             self._strings_model.set_filter(text)
             visible = self._strings_model.rowCount()
             total = self._strings_model.total_rows()
+        elif self._cd_model_active and self._cd_active_model() is not None:
+            # Same matching, done by the Core Data view's own model; the
+            # count keeps the view's own label (entity, table).
+            self._cd_filter(self._cd_active_model(), text)
+            self._cd_update_count_label()
+            return
         else:
             self._proxy_model.setFilterFixedString(text)
             visible = self._proxy_model.rowCount()
@@ -4568,6 +5419,7 @@ class TableViewer(QWidget):
 
         model_started = time.perf_counter()
         self._drop_strings_model()
+        self._drop_cd_model()
         old_query_model = self._query_model
         self._query_model = _QueryResultModel(columns, rows, self)
         self._query_results_active = True
@@ -4640,6 +5492,7 @@ class TableViewer(QWidget):
         open_tab_text = open_tab_menu.addAction(translate("TableViewer", "Text"))
         open_tab_proto = open_tab_menu.addAction(translate("TableViewer", "Protobuf"))
         open_tab_flatbuffers = open_tab_menu.addAction(translate("TableViewer", "FlatBuffers"))
+        cd_actions = self._add_cd_cell_actions(menu, index)
         blob_bytes = _coerce_blob(blob)
         display_val = self._table_view.model().data(index, Qt.ItemDataRole.DisplayRole)
         display_str = str(display_val) if display_val is not None else ""
@@ -4655,6 +5508,9 @@ class TableViewer(QWidget):
             blob_hex.setEnabled(True)
             blob_export.setEnabled(True)
         action = menu.exec(self._table_view.viewport().mapToGlobal(pos))
+        if action in cd_actions:
+            cd_actions[action]()
+            return
         if action == copy_cell:
             cell_val = self._table_view.model().data(index, Qt.ItemDataRole.UserRole)
             blob_bytes = _coerce_blob(cell_val)
@@ -4726,6 +5582,15 @@ class TableViewer(QWidget):
         Query text especially is never truncated here or in the path, since
         it can be arbitrarily long — see the Properties panel, not the path
         or the tooltip, for that."""
+        cd_cell = self._cd_record_cell(index)
+        if cd_cell is not None:
+            # A record's cell, stored or derived: its table, column and row,
+            # and a path of its own for each derived reading.
+            path, meta = self._cd_provenance(
+                cd_cell.table, cd_cell.column, cd_cell.pk, cd_cell.rowid, cd_cell.entity, cd_cell.derived,
+            )
+            meta["Grid column"] = str(col_header)
+            return path, meta
         db_name = _virtual_path_component(self._source_name, "sqlite")
         query_text = self._last_executed_query if self._query_results_active else ""
         if query_text:
@@ -4758,6 +5623,8 @@ class TableViewer(QWidget):
         if col <= 0:  # column 0 is "Row" — skip
             return
         if self._strings_active:  # offsets, lengths and text -- no timestamps
+            return
+        if self._cd_model_active:  # Core Data views decode their dates themselves
             return
 
         menu = QMenu(self)
@@ -5090,8 +5957,14 @@ class TableViewer(QWidget):
 
     def _activate_standard_model(self) -> None:
         self._drop_strings_model()
+        self._drop_cd_model()
+        self._leave_query_results()
+
+    def _leave_query_results(self) -> bool:
+        """Leave query-results mode (back to the standard model); whether
+        it was active."""
         if not self._query_results_active:
-            return
+            return False
         old_query_model = self._query_model
         self._proxy_model.setSourceModel(self._source_model)
         self._proxy_model.setDynamicSortFilter(True)
@@ -5100,6 +5973,7 @@ class TableViewer(QWidget):
         self._last_executed_query = ""
         if old_query_model is not None:
             old_query_model.deleteLater()
+        return True
 
     def _on_current_cell_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if not current.isValid():
@@ -5140,6 +6014,12 @@ class TableViewer(QWidget):
         if not self._syncing_hex_selection:
             self._sync_hex_pane(current)
         self._update_row_detail(current)
+        if self._cd_rows_shown(self._cd_entities_label):
+            self._update_cd_record_detail()
+        elif self._cd_rows_shown(self._cd_history_label):
+            self._on_cd_history_activated(current, jump=False)
+        elif self._cd_rows_shown(self._cd_model_label):
+            self._update_cd_object_detail(self._proxy_model.mapToSource(current).row())
 
     def _update_row_detail(self, current: QModelIndex) -> None:
         """Show the caller's detail for the selected row under the table
@@ -5194,7 +6074,18 @@ class TableViewer(QWidget):
             self._db_info_label,
             self._wal_label, self._freelist_label, self._freeblocks_label,
             self._unallocated_label, self._strings_label,
+        ) or table_name in self._cd_labels()
+
+    def _cd_labels(self) -> tuple[str, ...]:
+        return (
+            self._cd_entities_label, self._cd_store_label, self._cd_model_label,
+            self._cd_history_label, self._cd_keys_label, self._cd_external_label,
         )
+
+    def _is_generated_view(self, table_name: str) -> bool:
+        """Any generated view (not a table of the file): the WAL /
+        pre-rollback / prev-ref toggles don't reload these."""
+        return self._is_pseudo_table(table_name) or table_name == self._journal_label
 
     def _toggle_hex_pane(self) -> None:
         visible = not self._hex_panel.isVisible()
@@ -5244,6 +6135,24 @@ class TableViewer(QWidget):
         if table_name in (self._wal_label, self._journal_label, self._strings_label):
             self._sync_wal_hex_pane(current)
             return
+        if table_name in self._cd_labels():
+            # Only an Entities record has a byte location (its table's row);
+            # every other Core Data view's row has none: nothing highlighted.
+            model = self._cd_record_model
+            if (
+                model is None or not self._cd_rows_shown(self._cd_entities_label)
+                or current is None or not current.isValid() or self._cell_locator is None
+            ):
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            source = self._proxy_model.mapToSource(current)
+            rowid = model.rowid(source.row())
+            col_idx = model.source_column(source.column())
+            if rowid is None or col_idx is None:
+                self._hex_viewer.clear_byte_range_highlight()
+                return
+            self._highlight_located_cell(model.records.table, rowid, col_idx)
+            return
 
         row_item = None
         rowid = None
@@ -5292,7 +6201,14 @@ class TableViewer(QWidget):
         ):
             self._hex_viewer.clear_byte_range_highlight()
             return
+        self._highlight_located_cell(table_name, rowid, col_idx)
 
+    def _highlight_located_cell(self, table_name: str, rowid: Any, col_idx: int) -> None:
+        """Highlight one table cell's row and column bytes in the Hex pane
+        (CellLocator), or say why it can't be located."""
+        if self._cell_locator is None:
+            self._hex_viewer.clear_byte_range_highlight()
+            return
         self._ensure_hex_pane_loaded()
         location = self._cell_locator.locate_cell(table_name, rowid, col_idx)
         file_label = f"{self._source_name}  ·  {self._cell_locator.label_for(self._hex_file_kind)}"
@@ -5491,6 +6407,27 @@ class TableViewer(QWidget):
         if table_name == self._file_structure_label:
             self._select_structure_item_for_offset(offset)
             return
+        if table_name == self._cd_entities_label:
+            model = self._cd_record_model
+            if model is None or not self._cd_rows_shown(self._cd_entities_label):
+                return  # no record rows in the grid (query results, a failed read)
+            found = self._cell_locator.locate_offset(model.records.table, self._hex_file_kind, offset)
+            row = model.row_of_rowid(found[0]) if found is not None else None
+            if row is None:
+                return
+            col_idx = found[1]  # type: ignore[index]
+            target_col = next(
+                (c for c in range(1, model.columnCount())
+                 if model.source_column(c) == col_idx and not model.grid_column(c).derived),
+                1,
+            )
+            proxy_index = self._proxy_model.mapFromSource(model.index(row, target_col))
+            if proxy_index.isValid():
+                self._syncing_hex_selection = True
+                self._table_view.setCurrentIndex(proxy_index)
+                self._table_view.scrollTo(proxy_index)
+                self._syncing_hex_selection = False
+            return
         if self._is_pseudo_table(table_name):
             # WAL Frames, Freeblocks, Unallocated Space: rows here have no
             # rowid a CellLocator could resolve, only their own stashed byte
@@ -5686,6 +6623,8 @@ class TableViewer(QWidget):
     def closeEvent(self, event: object) -> None:  # type: ignore[override]
         self._table_interaction_timer.stop()
         self._end_table_interaction()
+        if self._coredata is not None:
+            self._coredata.close()
         if self._db_conn is not None:
             self._db_conn.close()
             self._db_conn = None

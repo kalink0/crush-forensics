@@ -446,6 +446,424 @@ MESSAGES: dict[str, str] = {
         "Before frame 1: the WAL header is not valid, so SQLite reads no frame",
         "sqlite_wal.log_end_header",
     ),
+    # -- Core Data store (on SQLite) and model ------------------------------
+    "coredata.detected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Core Data store, {entities:,} entities; model: {model}",
+        "coredata.detected",
+    ),
+    "coredata.detection_incomplete": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Only part of the Core Data tables is present (missing: {missing}); shown as plain SQLite",
+        "coredata.detection_incomplete",
+    ),
+    "coredata.failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Core Data views not available: {detail}",
+        "coredata.failed",
+    ),
+    "coredata.table_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table {table} could not be read: {detail}",
+        "coredata.table_unreadable",
+    ),
+    "coredata.metadata_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_METADATA could not be read: {detail}",
+        "coredata.metadata_unreadable",
+    ),
+    "coredata.primarykey_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_PRIMARYKEY could not be read: {detail}",
+        "coredata.primarykey_unreadable",
+    ),
+    "coredata.plist_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_PLIST is not a readable plist: {detail}",
+        "coredata.plist_unreadable",
+    ),
+    "coredata.plist_null": QT_TRANSLATE_NOOP(
+        "ParseIssue", "Z_PLIST is NULL", "coredata.plist_null",
+    ),
+    "coredata.plist_not_blob": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_PLIST is stored as {type}, not as a BLOB",
+        "coredata.plist_not_blob",
+    ),
+    "coredata.model_read": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "read from Z_MODELCACHE ({entities:,} entities, {properties:,} properties)",
+        "coredata.model_read",
+    ),
+    "coredata.model_cache_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no model in the file (no Z_MODELCACHE table): column names only",
+        "coredata.model_cache_missing",
+    ),
+    "coredata.model_cache_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no model in the file (Z_MODELCACHE has no content, {rows:,} rows): column names only",
+        "coredata.model_cache_empty",
+    ),
+    "coredata.model_cache_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_MODELCACHE could not be read: {detail}",
+        "coredata.model_cache_unreadable",
+    ),
+    "coredata.model_cache_not_blob": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_MODELCACHE.Z_CONTENT is stored as {type}, not as a BLOB: no model",
+        "coredata.model_cache_not_blob",
+    ),
+    "coredata.model_cache_rows": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_MODELCACHE has {rows:,} rows with content; the model is read from the first",
+        "coredata.model_cache_rows",
+    ),
+    "coredata.model_not_decompressible": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_MODELCACHE.Z_CONTENT ({size:,} B, starts {head}) could not be decompressed: {detail}",
+        "coredata.model_not_decompressible",
+    ),
+    "coredata.model_plist_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The model is not a readable plist: {detail}",
+        "coredata.model_plist_unreadable",
+    ),
+    "coredata.model_not_keyed_archive": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The model plist is not an NSKeyedArchiver archive",
+        "coredata.model_not_keyed_archive",
+    ),
+    "coredata.model_root_class": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The archive's root object is {found}, not NSManagedObjectModel",
+        "coredata.model_root_class",
+    ),
+    "coredata.model_entities_unlisted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} entity descriptions are not in the model's entity list; shown too",
+        "coredata.model_entities_unlisted",
+    ),
+    "coredata.model_duplicate_entity": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Entity name {name} occurs more than once in the model",
+        "coredata.model_duplicate_entity",
+    ),
+    "coredata.model_unknown_class": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{entity}.{property}: unknown class {class_name}",
+        "coredata.model_unknown_class",
+    ),
+    "coredata.unknown_attribute_type": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{entity}.{property}: unknown NSAttributeType {type}; shown as stored",
+        "coredata.unknown_attribute_type",
+    ),
+    "coredata.no_table": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no table {tables}: no rows shown",
+        "coredata.no_table",
+    ),
+    "coredata.no_table_other_exists": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no table {tables}: no rows shown; {other} exists as a plain table",
+        "coredata.no_table_other_exists",
+    ),
+    "coredata.count_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "rows of {table} not counted",
+        "coredata.count_missing",
+    ),
+    "coredata.count_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "rows not counted: {detail}",
+        "coredata.count_failed",
+    ),
+    "coredata.column_rel_entity": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_ENT of the target of {relationship}",
+        "coredata.column_rel_entity",
+    ),
+    "coredata.entity_not_in_model": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not in the model: column names only",
+        "coredata.entity_not_in_model",
+    ),
+    "coredata.ent_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Z_ENT {ent} is no entity in Z_PRIMARYKEY",
+        "coredata.ent_unknown",
+    ),
+    "coredata.mapping_ambiguous": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ambiguous: {columns}",
+        "coredata.mapping_ambiguous",
+    ),
+    "coredata.mapping_no_column": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no column found ({column})",
+        "coredata.mapping_no_column",
+    ),
+    "coredata.column_unassigned": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no property linked",
+        "coredata.column_unassigned",
+    ),
+    "coredata.value_not_date": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "stored as {type}: not decoded",
+        "coredata.value_not_date",
+    ),
+    "coredata.date_zero": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "stored value 0, the reference date itself",
+        "coredata.date_zero",
+    ),
+    "coredata.value_not_boolean": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{value} is neither 0 nor 1: not decoded",
+        "coredata.value_not_boolean",
+    ),
+    "coredata.value_not_uuid": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "BLOB of {length:,} B, not 16: not decoded",
+        "coredata.value_not_uuid",
+    ),
+    "coredata.rel_no_model": QT_TRANSLATE_NOOP(
+        "ParseIssue", "not resolved: no model", "coredata.rel_no_model",
+    ),
+    "coredata.rel_no_table": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: no table for {destination}",
+        "coredata.rel_no_table",
+    ),
+    "coredata.rel_no_destination": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: the model stores no destination entity",
+        "coredata.rel_no_destination",
+    ),
+    "coredata.rel_order_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ordered in the model, but no order column found: the order shown is not the stored one",
+        "coredata.rel_order_unknown",
+    ),
+    "coredata.rel_join_table": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: {found} of the join tables {tables} exist",
+        "coredata.rel_join_table",
+    ),
+    "coredata.rel_join_columns": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: unexpected columns in join table {table}",
+        "coredata.rel_join_columns",
+    ),
+    "coredata.rel_reflexive": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: reflexive join table {table}",
+        "coredata.rel_reflexive",
+    ),
+    "coredata.rel_destination_column": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not resolved: no single column {column} in {table}",
+        "coredata.rel_destination_column",
+    ),
+    "coredata.rel_query_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "reading the related rows failed: {detail}",
+        "coredata.rel_query_failed",
+    ),
+    "coredata.rel_target_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} target row(s) not in the current database state",
+        "coredata.rel_target_missing",
+    ),
+    "coredata.history_present": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} changes in {table}",
+        "coredata.history_present",
+    ),
+    "coredata.history_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no persistent history in this store; changes may still have happened",
+        "coredata.history_missing",
+    ),
+    "coredata.history_empty": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "persistent history {table} is empty; changes may still have happened",
+        "coredata.history_empty",
+    ),
+    "coredata.history_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "persistent history could not be read: {detail}",
+        "coredata.history_unreadable",
+    ),
+    "coredata.history_column_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{table} has no column {column}",
+        "coredata.history_column_missing",
+    ),
+    "coredata.history_no_transactions": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no transaction table: no times, authors or processes",
+        "coredata.history_no_transactions",
+    ),
+    "coredata.history_transaction_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no row Z_PK {id} in {table}: no time or names",
+        "coredata.history_transaction_missing",
+    ),
+    "coredata.history_no_strings": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no transaction string table: name not resolved",
+        "coredata.history_no_strings",
+    ),
+    "coredata.history_string_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no row Z_PK {ref} in {table}",
+        "coredata.history_string_missing",
+    ),
+    "coredata.history_string_null": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "row Z_PK {ref} in {table} has ZNAME NULL",
+        "coredata.history_string_null",
+    ),
+    "coredata.history_change_type_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ZCHANGETYPE {value} is none of 0 (insert), 1 (update), 2 (delete)",
+        "coredata.history_change_type_unknown",
+    ),
+    "coredata.history_object_exists": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{entity} Z_PK {pk} exists in the current database state",
+        "coredata.history_object_exists",
+    ),
+    "coredata.history_object_gone": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{entity} Z_PK {pk}: no such row in the current database state",
+        "coredata.history_object_gone",
+    ),
+    "coredata.history_object_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{entity} Z_PK {pk}: whether the row exists is unknown ({reason})",
+        "coredata.history_object_unknown",
+    ),
+    "coredata.tombstone_beyond": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "slot {slot} unassigned: only {count} attributes flagged for tombstones",
+        "coredata.tombstone_beyond",
+    ),
+    "coredata.tombstone_type": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "slot {slot} unassigned: {stored} doesn't fit {attribute} ({type})",
+        "coredata.tombstone_type",
+    ),
+    "coredata.tombstone_no_model": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unassigned: the entity is not in the model",
+        "coredata.tombstone_no_model",
+    ),
+    "coredata.external_reference": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "external file {name} (heuristic: byte pattern)",
+        "coredata.external_reference",
+    ),
+    "coredata.external_unrecognised": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unrecognised shape ({length:,} B): not a reference",
+        "coredata.external_unrecognised",
+    ),
+    "coredata.external_file_found": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "found ({size:,} B)",
+        "coredata.external_file_found",
+    ),
+    "coredata.external_file_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not found: no file {name} in {path}/_EXTERNAL_DATA",
+        "coredata.external_file_missing",
+    ),
+    "coredata.external_file_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "file {name} not readable: {reason}",
+        "coredata.external_file_unreadable",
+    ),
+    "coredata.external_file_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unknown whether file {name} exists: the folder could not be listed ({reason})",
+        "coredata.external_file_unknown",
+    ),
+    "coredata.external_unreferenced": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no reference in the current database state",
+        "coredata.external_unreferenced",
+    ),
+    "coredata.support_other_file": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "outside _EXTERNAL_DATA; content not interpreted",
+        "coredata.support_other_file",
+    ),
+    "coredata.support_found": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "folder {path}: {count:,} files",
+        "coredata.support_found",
+    ),
+    "coredata.support_not_found": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no folder {path} next to the store in this source",
+        "coredata.support_not_found",
+    ),
+    "coredata.support_unavailable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "folder not available in this source ({reason}); the files may still exist",
+        "coredata.support_unavailable",
+    ),
+    "coredata.support_no_parent": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the store was opened without the folder it sits in",
+        "coredata.support_no_parent",
+    ),
+    "coredata.support_not_on_disk": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the store file was opened on its own; {path} is not next to it on disk",
+        "coredata.support_not_on_disk",
+    ),
+    "coredata.support_folder_unlisted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "folder could not be listed: {reason}",
+        "coredata.support_folder_unlisted",
+    ),
+    "coredata.inline_ambiguous": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "column ambiguous: {properties}",
+        "coredata.inline_ambiguous",
+    ),
+    "coredata.inline_provenance": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the cell's bytes without their first byte 0x01, removed by Crush (heuristic: byte "
+        "pattern); the cell itself is unchanged",
+        "coredata.inline_provenance",
+    ),
+    "coredata.keys_non_integer": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} rows have a Z_PK that is not an integer; counted as rows, not as keys",
+        "coredata.keys_non_integer",
+    ),
+    "coredata.mom_model": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Core Data model, {entities:,} entities",
+        "coredata.mom_model",
+    ),
+    "coredata.mom_incomplete": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Core Data model read in part: {issues}",
+        "coredata.mom_incomplete",
+    ),
+    "coredata.omo_not_decoded": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Optimized Core Data model (starts with \"momv2$sr\"): not decoded, shown as hex",
+        "coredata.omo_not_decoded",
+    ),
     # -- Realm ------------------------------------------------------------
     "realm.encrypted_key_supplied": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -3623,6 +4041,12 @@ MESSAGES: dict[str, str] = {
         "Not determined — the signature bytes don't single out one of: "
         "{candidates}; no format knowledge shown",
         "entry.format_not_singled_out",
+    ),
+    "entry.format_entry_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The parser found the format {name}, which has no entry in the format "
+        "database; shown with the general format's knowledge",
+        "entry.format_entry_missing",
     ),
     # -- UFDR ------------------------------------------------------------------------
     "ufdr.not_recorded": QT_TRANSLATE_NOOP("ParseIssue", "(not recorded)", "ufdr.not_recorded"),

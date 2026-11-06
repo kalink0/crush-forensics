@@ -37,6 +37,10 @@ class ParseResult:
     metadata: dict[str, Any] = field(default_factory=dict)   # Shown in properties panel
     text_index: str = ""               # Plaintext for the search index
     viewer_hints: dict[str, Any] = field(default_factory=dict)  # Kwargs forwarded to viewer constructor
+    # The specific format the parser found, when it is more specific than
+    # what the parser and the first bytes give (a Core Data store is an
+    # SQLite file): the formats.db short_name whose knowledge applies.
+    format_short_name: str | None = None
 
 
 class AbstractParser(ABC):

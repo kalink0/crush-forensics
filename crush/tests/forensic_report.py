@@ -131,6 +131,7 @@ SUBJECT_GROUPS: dict[str, tuple[str, ...]] = {
         "Chromium Disk Cache",
         "MMKV",
         "Property list (plist)",
+        "Core Data optimized model (.omo)",
         "Android Binary XML (ABX)",
         "SEGB",
         "XML",

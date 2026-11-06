@@ -3,14 +3,22 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from crush.core import sqlite_journal, tempdir
 from crush.core.issues import ParseIssue
-from crush.core.vfs import VFS, VFSNode, find_sibling
+from crush.core.vfs import VFS, DirectoryVFS, FileVFS, VFSNode, find_node, find_sibling
 from crush.parsers.base import AbstractParser, ParseResult
+from crush.parsers.coredata_store import (
+    CORE_DATA_STORE_FORMAT,
+    SupportFile,
+    SupportFolder,
+    load_store,
+    support_folder_name,
+)
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 _ROW_LIMIT = 10_000
@@ -111,6 +119,21 @@ def _connect_sqlcipher(
     sqlite3.Connection) already verified to decrypt correctly. Raises
     WrongPasswordError if the key/parameters don't work.
     """
+    return _open_sqlcipher(tmp_path, password, raw_key=raw_key, params=params)[0]
+
+
+def _open_sqlcipher(
+    tmp_path: str,
+    password: str,
+    *,
+    raw_key: bool = False,
+    params: SQLCipherParams | None = None,
+    presets: tuple[int | None, ...] = _CIPHER_COMPATIBILITY_PRESETS,
+) -> tuple[Any, int | None]:
+    """_connect_sqlcipher(), trying only *presets* (when no *params*), and
+    also returning the preset that opened it (None: the library default or
+    *params*). Every attempt is a full key derivation, so a caller that
+    opens the same database again passes the preset that worked."""
     from sqlcipher3 import dbapi2 as sqlcipher
 
     from crush.core.passwords import WrongPasswordError
@@ -156,22 +179,130 @@ def _connect_sqlcipher(
 
     if params is not None:
         try:
-            return _try_open(None, params)
+            return _try_open(None, params), None
         except sqlcipher.DatabaseError as exc:
             issue = ParseIssue("sqlite.custom_params_rejected", detail=str(exc))
             _logger.info("%s (SQLCipher: %s)", issue, issue.detail)
             raise WrongPasswordError(issue) from exc
 
     last_exc: Exception | None = None
-    for compat in _CIPHER_COMPATIBILITY_PRESETS:
+    for compat in presets:
         try:
-            return _try_open(compat, None)
+            return _try_open(compat, None), compat
         except sqlcipher.DatabaseError as exc:
             last_exc = exc
             continue
     issue = ParseIssue("sqlite.password_rejected", detail=str(last_exc))
     _logger.info("%s (SQLCipher: %s)", issue, issue.detail)
     raise WrongPasswordError(issue)
+
+
+def _coredata_connector(
+    open_path: str,
+    tmp_path: str,
+    password: str | None,
+    raw_key: bool,
+    cipher_params: SQLCipherParams | None,
+    known_preset: tuple[int | None, ...] = (),
+) -> Callable[[], Any]:
+    """Opens a new read-only connection to the database state the table
+    grid shows: the rollback-recovered image when there is one, the working
+    copy (with its -wal) otherwise, SQLCipher with the key it was opened with.
+    The SQLCipher preset that opened the database (*known_preset*, from the
+    parse) or the first connection is the only one tried for the next (each
+    attempt is a full key derivation); should it fail, every preset is tried
+    again."""
+    found: list[int | None] = list(known_preset[:1])
+
+    def connect() -> Any:
+        if password is not None:
+            if found:
+                try:
+                    return _open_sqlcipher(
+                        tmp_path, password, raw_key=raw_key, params=cipher_params, presets=(found[0],),
+                    )[0]
+                except Exception:  # noqa: BLE001 -- fall back to the full search below
+                    found.clear()
+            conn, preset = _open_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            found[:] = [preset]
+            return conn
+        conn = sqlite3.connect(f"file:{open_path}?mode=ro", uri=True, check_same_thread=False)
+        conn.text_factory = _lenient_text_factory
+        return conn
+
+    return connect
+
+
+def _host_path(node: VFSNode, vfs: VFS) -> Path | None:
+    """The store's own path on the examiner's filesystem -- only when the
+    source is that single file (FileVFS). For every other source node.path is
+    a path inside the source, and the same path on this machine is not evidence."""
+    return Path(node.path) if isinstance(vfs, FileVFS) else None
+
+
+def _support_files(
+    root: VFSNode,
+) -> tuple[list[SupportFile], dict[str, VFSNode], list[tuple[str, ParseIssue]]]:
+    """Every file below *root* (recursively, no limit), path relative to it,
+    and every folder below it (itself included, as "") that could not be listed."""
+    files: list[SupportFile] = []
+    nodes: dict[str, VFSNode] = {}
+    unlisted: list[tuple[str, ParseIssue]] = []
+    pending = [(root, "")]
+    while pending:
+        current, prefix = pending.pop()
+        if isinstance(current.status, ParseIssue) and current.status.code == "entry.folder_unlisted":
+            unlisted.append((prefix.rstrip("/"), current.status))
+        for child in sorted(current.children, key=lambda n: n.name):
+            rel = f"{prefix}{child.name}"
+            if child.is_dir:
+                pending.append((child, rel + "/"))
+                continue
+            files.append(SupportFile(rel, child.size, child.status or None))
+            nodes[rel] = child
+    files.sort(key=lambda f: f.rel_path)
+    unlisted.sort()
+    return files, nodes, unlisted
+
+
+def _support_folder(node: VFSNode, vfs: VFS) -> SupportFolder:
+    """The store's .<name>_SUPPORT folder next to it: in the VFS first, then
+    -- for a single file opened on its own -- next to it on disk (the same two
+    places the -wal lookup tries)."""
+    folder_name = support_folder_name(node.name)
+    node_path = node.path.replace("\\", "/")
+    # A store at the source's root has the root ("/") as its folder.
+    parent_path = (node_path.rsplit("/", 1)[0] or "/") if "/" in node_path else ""
+    target = f"{parent_path.rstrip('/')}/{folder_name}"
+    folder = find_node(vfs, target)
+    if folder is not None and folder.is_dir:
+        files, nodes, unlisted = _support_files(folder)
+        return SupportFolder(
+            "found", target, files,
+            reader=lambda rel: vfs.read(nodes[rel]),
+            head_reader=lambda rel: vfs.peek(nodes[rel], 512),
+            unlisted=unlisted,
+        )
+    host = _host_path(node, vfs)
+    if host is not None:
+        fs_folder = host.parent / folder_name
+        if fs_folder.is_dir():
+            disk = DirectoryVFS(fs_folder)
+            files, nodes, unlisted = _support_files(disk.root())
+            return SupportFolder(
+                "found", str(fs_folder), files,
+                reader=lambda rel: disk.read(nodes[rel]),
+                head_reader=lambda rel: disk.peek(nodes[rel], 512),
+                unlisted=unlisted,
+            )
+        return SupportFolder(
+            "unavailable", str(fs_folder),
+            note=ParseIssue("coredata.support_not_on_disk", {"path": str(fs_folder)}),
+        )
+    parent = find_node(vfs, parent_path) if parent_path else None
+    if parent is not None and parent.is_dir:
+        return SupportFolder("not_found", target)
+    return SupportFolder("unavailable", target, note=ParseIssue("coredata.support_no_parent"))
 
 
 def _journal_mode_fact(pragma_value: str | None) -> str | ParseIssue:
@@ -255,10 +386,13 @@ class SQLiteParser(AbstractParser):
                     _wal_diag_lines.append(
                         ParseIssue("sqlite.companion_not_in_vfs", {"path": repr(node.path)})
                     )
-                # FileVFS: node.path is an absolute filesystem path — check for the
-                # companion directly on disk (find_sibling only searches the VFS tree)
-                fs_companion = Path(node.path + suffix)
-                if fs_companion.is_file():
+                # A single file opened on its own (FileVFS): its companion is
+                # next to it on disk, outside the VFS tree. For any other
+                # source node.path is a path inside it, and a same-named file
+                # on the examiner's own disk must never be read in as evidence.
+                host = _host_path(node, vfs)
+                fs_companion = Path(str(host) + suffix) if host is not None else None
+                if fs_companion is not None and fs_companion.is_file():
                     try:
                         sib_path = tmp_path + suffix
                         fs_bytes = fs_companion.read_bytes()
@@ -307,8 +441,9 @@ class SQLiteParser(AbstractParser):
                 _logger.warning("%s", issue)
                 companion_failures.append(issue)
         else:
-            fs_journal = Path(node.path + "-journal")
-            if fs_journal.is_file():
+            host = _host_path(node, vfs)
+            fs_journal = Path(str(host) + "-journal") if host is not None else None
+            if fs_journal is not None and fs_journal.is_file():
                 try:
                     journal_bytes = fs_journal.read_bytes()
                     journal_name = fs_journal.name
@@ -377,9 +512,12 @@ class SQLiteParser(AbstractParser):
             # try/except below so a wrong password raises WrongPasswordError
             # and reaches the caller's retry-prompt loop instead of being
             # swallowed into a "parse failed, showing hex" fallback.
-            conn = _connect_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            conn, opened_preset = _open_sqlcipher(tmp_path, password, raw_key=raw_key, params=cipher_params)
+            # The Core Data views' connections start with the preset found here.
+            known_preset: tuple[int | None, ...] = (opened_preset,)
         else:
             conn = None
+            known_preset = ()
 
         try:
             if conn is None:
@@ -465,6 +603,30 @@ class SQLiteParser(AbstractParser):
                         "truncated": False,
                     }
 
+            # Core Data: detected by its tables, whatever the file is called.
+            # Its views read through their own connections to the same
+            # database state the grid shows (see _coredata_connector). A
+            # failure here never stops the SQLite view itself.
+            coredata_status: Any = None
+            try:
+                store, coredata_status = load_store(
+                    conn,
+                    _coredata_connector(
+                        recovered_db_path or tmp_path, tmp_path, password, raw_key, cipher_params,
+                        known_preset,
+                    ),
+                    support=lambda: _support_folder(node, vfs),
+                )
+            except Exception as exc:  # noqa: BLE001 -- never fail the SQLite view
+                _logger.warning("Core Data read failed for %s: %s", node.path, exc)
+                store, coredata_status = None, ParseIssue("coredata.failed", detail=str(exc))
+            if store is not None:
+                data["__coredata"] = store
+                coredata_status = ParseIssue("coredata.detected", {
+                    "entities": len(store.entities),
+                    "model": store.model_status or ParseIssue("coredata.model_cache_missing"),
+                })
+
             pragma_issue: ParseIssue | None = None
             try:
                 pragma_rows = cursor.execute("PRAGMA page_size").fetchone()
@@ -484,6 +646,8 @@ class SQLiteParser(AbstractParser):
             }
             if pragma_issue is not None:
                 meta["Header values"] = pragma_issue
+            if coredata_status is not None:
+                meta["Core Data"] = coredata_status
             if companions:
                 meta["Companion files"] = ", ".join(companions)
             if companion_failures:
@@ -540,4 +704,7 @@ class SQLiteParser(AbstractParser):
             data=data,
             metadata=meta,
             text_index=" ".join(text_parts[:2000]),
+            # A detected Core Data store: its own format knowledge applies
+            # (an SQLite file too -- the SQLite entry stays the base format).
+            format_short_name=CORE_DATA_STORE_FORMAT if "__coredata" in data else None,
         )
