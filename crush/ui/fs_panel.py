@@ -7,6 +7,7 @@ import concurrent.futures
 from collections import deque
 import logging
 import os
+import queue
 import threading
 import time
 from typing import overload
@@ -115,6 +116,9 @@ class FilesystemPanel(QWidget):
     send_to_peach_batch_requested = Signal(object)  # list[(VFSNode, VFS)]
     load_finished = Signal()
     background_status = Signal(str)
+    # The type indexing: "running", "stopped" (by the analyst, not finished)
+    # or "idle" (finished, or nothing to index), for the stop/resume button.
+    type_indexing_state = Signal(str)
     _search_results_ready = Signal(object)  # internal: list of result dicts
     _prescan_activity = Signal(str, bool)   # internal: (activity_name, is_start)
     _prescan_count = Signal(int, int)       # internal: (files indexed, files to index)
@@ -188,6 +192,15 @@ class FilesystemPanel(QWidget):
         self._type_pending_timer.setInterval(1000)
         self._type_pending_timer.timeout.connect(self._retry_pending_types)
         self._activities: set[str] = set()
+        # The analyst stopped the type indexing: (files indexed, files to
+        # index), or (0, 0) when stopped before the files were counted.
+        self._prescan_stopped: tuple[int, int] | None = None
+        self._indexing_state = "idle"
+        # With the indexing stopped, the pending labels of rows shown are
+        # read one by one on a thread of their own (_read_pending_types).
+        self._ondemand_queue: queue.SimpleQueue[tuple[VFSNode, VFS, int]] = queue.SimpleQueue()
+        self._ondemand_keys: set[tuple[int, str]] = set()
+        self._ondemand_thread: threading.Thread | None = None
         self.background_status.emit("")
         self._build_ui()
 
@@ -269,8 +282,10 @@ class FilesystemPanel(QWidget):
         self._type_cache.clear()
         self._type_pending.clear()
         self._activities.clear()
-        self.background_status.emit("")
+        self._prescan_stopped = None
+        self._ondemand_keys.clear()
         self._prescan_gen += 1
+        self._emit_background_status()
 
         # Recreate model to avoid slow row-by-row clears on large trees.
         self._model = QStandardItemModel()
@@ -319,6 +334,9 @@ class FilesystemPanel(QWidget):
         self._prescan_gen += 1
         # A new scan cancels the running one, which may not have finished an
         # earlier source yet: scan them all (labels already found are cached).
+        # A stopped one runs again too: the new source is indexed like any.
+        self._prescan_stopped = None
+        self._ondemand_keys.clear()
         self._start_prescan(list(self._vfs_list), self._prescan_gen)
         self.load_finished.emit()
         self._logger.debug("FilesystemPanel.append_vfs: emitted load_finished")
@@ -352,8 +370,10 @@ class FilesystemPanel(QWidget):
         self._type_cache.clear()
         self._type_pending.clear()
         self._activities.clear()
-        self.background_status.emit("")
+        self._prescan_stopped = None
+        self._ondemand_keys.clear()
         self._prescan_gen += 1
+        self._emit_background_status()
 
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels(
@@ -1084,6 +1104,14 @@ class FilesystemPanel(QWidget):
         if not pending:
             self._type_pending_timer.stop()
             return
+        if self._prescan_stopped is not None:
+            # No scan reads their heads any more: read these, the rows shown.
+            for _item, node, vfs in pending:
+                key = (id(vfs), node.path)
+                if key not in self._ondemand_keys:
+                    self._ondemand_keys.add(key)
+                    self._ondemand_queue.put((node, vfs, self._prescan_gen))
+            self._ensure_ondemand_thread()
         self._type_queue.extend(pending)
         if not self._type_timer.isActive():
             self._activity_start("Type detection")
@@ -1127,6 +1155,68 @@ class FilesystemPanel(QWidget):
             label = "-"
         self._type_cache[cache_key] = label
         return label
+
+    def _ensure_ondemand_thread(self) -> None:
+        if self._ondemand_thread is not None and self._ondemand_thread.is_alive():
+            return
+        window_id = self._window_id
+
+        def _run() -> None:
+            with window_log_scope(window_id):
+                self._read_pending_types()
+
+        self._ondemand_thread = threading.Thread(target=_run, daemon=True)
+        self._ondemand_thread.start()
+
+    def _read_pending_types(self) -> None:
+        """Read the type label of each row queued while the indexing is
+        stopped (_retry_pending_types picks it up from the cache)."""
+        while True:
+            try:
+                node, vfs, gen = self._ondemand_queue.get(timeout=5)
+            except queue.Empty:
+                return
+            if gen != self._prescan_gen:
+                continue  # sources changed or indexing resumed meanwhile
+            try:
+                with background_io():
+                    self._detect_type_label(node, vfs)
+            except Exception as exc:  # noqa: BLE001 -- the label stays pending
+                self._logger.debug("Type read failed for %s: %s", node.path, exc)
+
+    def has_running_activity(self) -> bool:
+        """Something runs in the background (the status text may also only
+        say that the type indexing was stopped)."""
+        return bool(self._activities)
+
+    def stop_type_indexing(self) -> None:
+        """Stop the background type indexing (the analyst's choice). Labels
+        read so far stay; rows shown get theirs read one by one."""
+        if "Indexing types" not in self._activities:
+            return
+        done, total = self._prescan_counts or (0, 0)
+        self._prescan_gen += 1  # ends the running scan (_prescan_worker)
+        self._prescan_stopped = (done, total)
+        self._prescan_counts = None
+        self._ondemand_keys.clear()
+        self._logger.info(
+            "Type indexing stopped by the analyst: %d of %d files indexed", done, total
+        )
+        self._activity_end("Indexing types")
+        if self._type_pending and not self._type_pending_timer.isActive():
+            self._type_pending_timer.start()
+
+    def resume_type_indexing(self) -> None:
+        """Index the types again after stop_type_indexing (labels found
+        are cached, so it goes quickly over them)."""
+        if self._prescan_stopped is None or not self._vfs_list:
+            return
+        self._prescan_stopped = None
+        self._ondemand_keys.clear()
+        self._prescan_gen += 1
+        self._logger.info("Type indexing resumed by the analyst")
+        self._start_prescan(list(self._vfs_list), self._prescan_gen)
+        self._emit_background_status()
 
     def _start_prescan(self, vfs_list: list[VFS], gen: int) -> None:
         window_id = self._window_id
@@ -1197,6 +1287,9 @@ class FilesystemPanel(QWidget):
                     return
             stack: deque[VFSNode] = deque([vfs.root()])
             while stack:
+                if self._prescan_gen != gen:
+                    self._logger.info("Type pre-scan cancelled")
+                    return
                 node = stack.popleft()
                 if not node.is_dir:
                     all_nodes.append((node, vfs))
@@ -1285,10 +1378,27 @@ class FilesystemPanel(QWidget):
             self._logger.debug("FilesystemPanel activity end: %s", name)
 
     def _emit_background_status(self) -> None:
+        state = (
+            "running" if "Indexing types" in self._activities
+            else "stopped" if self._prescan_stopped is not None
+            else "idle"
+        )
+        if state != self._indexing_state:
+            self._indexing_state = state
+            self.type_indexing_state.emit(state)
+        stopped = ""
+        if self._prescan_stopped is not None:
+            done, total = self._prescan_stopped
+            stopped = (
+                translate(
+                    "FilesystemPanel", "Type indexing stopped: {done:,} of {total:,} files"
+                ).format(done=done, total=total)
+                if total else translate("FilesystemPanel", "Type indexing stopped")
+            )
         if not self._activities:
-            self.background_status.emit("")
+            self.background_status.emit(stopped)
             return
-        labels = []
+        labels = [stopped] if stopped else []
         for name in sorted(self._activities, key=_activity_label):
             label = _activity_label(name)
             if name == "Indexing types" and self._prescan_counts is not None:

@@ -22,7 +22,7 @@ from typing import Any, Callable
 from PySide6.QtCore import QEventLoop, QObject, QThread, Signal
 from PySide6.QtWidgets import QWidget
 
-from crush.core.load_phase import phase_reporter
+from crush.core.load_phase import LoadCancelled, phase_reporter
 from crush.ui.i18n import exception_text
 from crush.ui.loading_dialog import LoadingDialog
 from crush.ui.log_scope import window_log_scope
@@ -40,19 +40,29 @@ class _BusyWorker(QObject):
     failed = Signal(object)  # the exception
     phase = Signal(str)  # a crush.core.load_phase key the work reported
     progress = Signal(int, int, int)  # (entries listed, step, steps) -- see load_phase
+    cancelled = Signal()  # the analyst stopped it (load_phase.LoadCancelled)
 
-    def __init__(self, work_fn: Callable[[], object], window_id: str | None = None) -> None:
+    def __init__(
+        self, work_fn: Callable[[], object], window_id: str | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> None:
         super().__init__()
         self._work_fn = work_fn
         self._window_id = window_id
+        self._cancel_requested = cancel_requested
 
     def run(self) -> None:
-        with window_log_scope(self._window_id), phase_reporter(self.phase.emit, self.progress.emit):
+        with window_log_scope(self._window_id), phase_reporter(
+            self.phase.emit, self.progress.emit, cancelled=self._cancel_requested,
+        ):
             self._run()
 
     def _run(self) -> None:
         try:
             result = self._work_fn()
+        except LoadCancelled:
+            self.cancelled.emit()
+            return
         except Exception as exc:  # noqa: BLE001 - reported to caller, not swallowed
             self.failed.emit(exc)
             return
@@ -160,6 +170,7 @@ class _BlockingController(QObject):
         self._loop = loop
         self.result: object = None
         self.error: str | None = None
+        self.cancelled = False
 
     def on_finished(self, result: object) -> None:
         self.result = result
@@ -170,8 +181,14 @@ class _BlockingController(QObject):
         self.error = str(exc)
         self._loop.quit()
 
+    def on_cancelled(self) -> None:
+        self.cancelled = True
+        self._loop.quit()
 
-def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
+
+def busy_call(
+    owner: QWidget, text: str, work_fn: Callable[[], Any], *, cancellable: bool = False,
+) -> Any:
     """Run *work_fn* on a background thread behind a "please wait" dialog and
     return its result, keeping the UI responsive meanwhile.
 
@@ -180,14 +197,22 @@ def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
     straight-line code can call it without being restructured around a
     callback. Raises RuntimeError(message) if *work_fn* raised.
 
+    With *cancellable*, the dialog has a Cancel button; *work_fn* stops at
+    its next crush.core.load_phase checkpoint and busy_call raises
+    LoadCancelled. Only for work that passes such checkpoints (reading a
+    source's entries, volumes, phases), so the button does what it says.
+
     Only for work that is safe off the UI thread (plain byte reading,
     hashing, scanning) -- never anything that creates Qt objects or hands
     thread-bound handles (e.g. sqlite connections) back to the caller.
     """
-    dialog = LoadingDialog(text, owner)
+    dialog = LoadingDialog(text, owner, cancellable=cancellable)
     thread = QThread(owner)
     window_id = getattr(owner.window(), "_window_id", None)
-    worker = _BusyWorker(work_fn, window_id=window_id)
+    worker = _BusyWorker(
+        work_fn, window_id=window_id,
+        cancel_requested=dialog.is_cancel_requested if cancellable else None,
+    )
     worker.moveToThread(thread)
     loop = QEventLoop(owner)
     controller = _BlockingController(owner, loop)
@@ -195,6 +220,7 @@ def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
     thread.started.connect(worker.run)
     worker.finished.connect(controller.on_finished)
     worker.failed.connect(controller.on_failed)
+    worker.cancelled.connect(controller.on_cancelled)
     worker.phase.connect(dialog.set_phase)
     worker.progress.connect(dialog.set_progress)
 
@@ -208,6 +234,8 @@ def busy_call(owner: QWidget, text: str, work_fn: Callable[[], Any]) -> Any:
     thread.deleteLater()
     controller.deleteLater()
     dialog.deleteLater()
+    if controller.cancelled:
+        raise LoadCancelled()
     if controller.error is not None:
         raise RuntimeError(controller.error)
     return controller.result

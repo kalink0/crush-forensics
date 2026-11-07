@@ -1099,6 +1099,14 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>Quelle schließen</translation>
     </message>
     <message>
+        <source>Type indexing stopped: {done:,} of {total:,} files</source>
+        <translation>Typindizierung angehalten: {done:,} von {total:,} Dateien</translation>
+    </message>
+    <message>
+        <source>Type indexing stopped</source>
+        <translation>Typindizierung angehalten</translation>
+    </message>
+    <message>
         <source>{label} {done:,} / {total:,}</source>
         <translation>{label} {done:,} / {total:,}</translation>
     </message>
@@ -6687,6 +6695,14 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
         <translation>Wird geladen</translation>
     </message>
     <message>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <source>Cancelling…</source>
+        <translation>Wird abgebrochen…</translation>
+    </message>
+    <message>
         <source>volume {step} of {steps}</source>
         <translation>Volume {step} von {steps}</translation>
     </message>
@@ -7323,12 +7339,24 @@ Speicherort öffnen?</translation>
         <translation>Das Öffnen von {path} wurde abgebrochen: Die Datei wurde nicht geöffnet</translation>
     </message>
     <message>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <source>Cancelling…</source>
+        <translation>Wird abgebrochen…</translation>
+    </message>
+    <message>
         <source>{path} opened in a new window</source>
         <translation>{path} wurde in einem neuen Fenster geöffnet</translation>
     </message>
     <message>
         <source>{path} opened in a new window: this window shows another source opened with it</source>
         <translation>{path} wurde in einem neuen Fenster geöffnet: In diesem Fenster wird eine weitere Quelle angezeigt, die zusammen mit dieser Datei geöffnet wurde</translation>
+    </message>
+    <message>
+        <source>not hashed: hashing was cancelled</source>
+        <translation>nicht gehasht: Hashen wurde abgebrochen</translation>
     </message>
     <message>
         <source>1 file could not be read and was not exported; it is listed with the reason in {name}.</source>
@@ -7359,6 +7387,34 @@ Open location?</source>
 {missing}
 
 Speicherort öffnen?</translation>
+    </message>
+    <message>
+        <source>Export cancelled: nothing exported</source>
+        <translation>Export abgebrochen: nichts exportiert</translation>
+    </message>
+    <message>
+        <source>Export cancelled: {dest} is incomplete ({n} files exported); marked in {name}.</source>
+        <translation>Export abgebrochen: {dest} ist unvollständig ({n} Dateien exportiert); vermerkt in {name}.</translation>
+    </message>
+    <message>
+        <source>Export cancelled</source>
+        <translation>Export abgebrochen</translation>
+    </message>
+    <message>
+        <source>{text}
+
+Open location?</source>
+        <translation>{text}
+
+Speicherort öffnen?</translation>
+    </message>
+    <message>
+        <source>Export cancelled: nothing saved; the earlier {dest} was already removed</source>
+        <translation>Export abgebrochen: nichts gespeichert; das bisherige {dest} war schon entfernt</translation>
+    </message>
+    <message>
+        <source>Export cancelled: nothing saved</source>
+        <translation>Export abgebrochen: nichts gespeichert</translation>
     </message>
     <message>
         <source>Unable to load hex view: {reason}</source>
@@ -7427,6 +7483,10 @@ Speicherort öffnen?</translation>
     <message>
         <source>Unlocking volumes…</source>
         <translation>Volumes werden entsperrt...</translation>
+    </message>
+    <message>
+        <source>Unlock cancelled: {name} is shown as before</source>
+        <translation>Entsperren abgebrochen: {name} wird wie bisher angezeigt</translation>
     </message>
     <message>
         <source>Unlock Volume</source>
@@ -7835,6 +7895,14 @@ Lassen Sie das Feld leer, um den vom Betriebssystem vorgeschlagenen Standard zu 
         <translation>Schließen...</translation>
     </message>
     <message>
+        <source>Stop type indexing</source>
+        <translation>Typindizierung anhalten</translation>
+    </message>
+    <message>
+        <source>Resume type indexing</source>
+        <translation>Typindizierung fortsetzen</translation>
+    </message>
+    <message>
         <source>This backup is password-protected. Enter the backup password:</source>
         <translation>Dieses Backup ist passwortgeschützt. Geben Sie das Backup-Passwort ein:</translation>
     </message>
@@ -7933,6 +8001,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Hashing {name}…</source>
         <translation>{name} wird gehasht...</translation>
+    </message>
+    <message>
+        <source>{path} not hashed: hashing was cancelled</source>
+        <translation>{path} nicht gehasht: Hashen wurde abgebrochen</translation>
     </message>
     <message>
         <source>Cannot open file</source>

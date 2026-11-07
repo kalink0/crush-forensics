@@ -2,6 +2,13 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- Added to opening sources, unlocking volumes, exports and `.logarchive` export -> Support for cancelling: a cancelled source is not opened, a cancelled export keeps what it wrote marked as incomplete in `crush-export-cancelled.txt`, and a cancelled hash in integrity mode is logged while the data still opens.
+- Added to the type indexing -> Support for stopping and resuming it from the status bar; the status bar says how far it got.
+
 ## v0.25.0 - 2026-11-07
 
 **Focus: Chromium Disk Cache, FlatBuffers and Core Data stores; protected and split UFDR reports; bundled peach updated to v0.11.0.**

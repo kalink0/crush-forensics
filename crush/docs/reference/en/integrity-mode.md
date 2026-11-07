@@ -7,6 +7,7 @@ Integrity mode adds hashing and traceability to file access:
 - Opening a folder does not hash the full directory.
 - **Open in New Window** hashes the member while it is being extracted (one pass) and logs it.
 - Exports also create a `crush-export-hashes.txt` file next to the exported data.
+- Hashing a source or a file being opened can be cancelled in its dialog. The data still opens; the log records `INTEGRITY ... not hashed: hashing cancelled by the analyst` and the status bar says it was not hashed. A later export hashes what it writes as usual.
 - The bottom-right status badge shows the current mode. Click the badge to toggle it, or right-click it for a quick menu and a short explanation.
 
 ---
