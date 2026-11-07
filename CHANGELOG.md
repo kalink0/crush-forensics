@@ -26,6 +26,8 @@ All notable changes to Crush will be documented in this file.
 - For an opened LevelDB folder, **Open Format Info…** opens again and the Properties panel shows the format's platforms and relevance.
 - An SQLite database in an archive, backup or disk image no longer reads a `-wal` or `-journal` file from the same path on the examiner's own computer as its companion.
 - The macOS app is no longer reported as damaged: Qt's bundled developer tools made its signature invalid. ([@CyberMike81](https://github.com/CyberMike81), [#182](https://github.com/kalink0/crush-forensics/pull/182))
+- A binary file whose first byte happens to be `<`, `{` or `[` no longer opens as a broken XML or JSON document; an XML file with a UTF-8 BOM now opens as XML.
+- A 7z archive opened with a wrong password is always reported as such, rather than occasionally failing with "Already at end of stream".
 
 ## v0.24.0 - 2026-10-26
 
