@@ -2,7 +2,9 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.25.0 - 2026-11-07
+
+**Focus: Chromium Disk Cache, FlatBuffers and Core Data stores; protected and split UFDR reports; bundled peach updated to v0.11.0.**
 
 ### New Features
 
@@ -20,6 +22,7 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - The `C2PA` row names where a scan stopped and lists unevaluated C2PA data under `C2PA scan notes`; several Manifest Stores are shown numbered.
+- Bundled [peach](https://github.com/kalink0/peach-forensics) updated to v0.11.0 (from v0.10.0), with a translatable interface (German included) and 53 AUL rules. See its [release notes](https://github.com/kalink0/peach-forensics/releases/tag/v0.11.0).
 
 ### Bug Fixes
 
