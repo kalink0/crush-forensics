@@ -18,8 +18,7 @@ class XmlParser(AbstractParser):
     PARSE_OFF_UI_THREAD = True
 
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
-        stripped = peek_bytes.lstrip()
-        if not (stripped[:5] == b"<?xml" or stripped[:1] == b"<"):
+        if not starts_like_xml_document(peek_bytes):
             return False
         if path.lower().endswith(".plist"):
             return False
@@ -61,6 +60,58 @@ class XmlParser(AbstractParser):
             text_index=text,
             viewer_hints={"raw_text": raw},
         )
+
+
+# XML 1.0 (Fifth Edition) §2.3 S: the only whitespace allowed before markup.
+_XML_WHITESPACE = b" \t\r\n"
+
+
+def starts_like_xml_document(peek_bytes: bytes) -> bool:
+    """Whether *peek_bytes* can begin a UTF-8 XML document (XML 1.0 §2.1).
+
+    A document opens, after an optional UTF-8 BOM (Appendix F) and
+    whitespace, with markup: ``<?`` (XML declaration or processing
+    instruction), ``<!`` (comment or DOCTYPE) or the root element's start
+    tag, i.e. ``<`` followed by a NameStartChar (§2.3). A lone ``<`` is not
+    enough: binary data whose first byte is 0x3C (a length, a count) would
+    otherwise open as a broken XML document.
+    """
+    start = 3 if peek_bytes.startswith(b"\xef\xbb\xbf") else 0
+    head = peek_bytes[start:].lstrip(_XML_WHITESPACE)
+    if head[:1] != b"<":
+        return False
+    if head[1:2] in (b"?", b"!"):
+        return True
+    # The first character after "<", decoded as UTF-8 (at most 4 bytes).
+    for length in range(1, 5):
+        try:
+            char = head[1:1 + length].decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        return len(char) == 1 and _is_name_start_char(char)
+    return False
+
+
+def _is_name_start_char(char: str) -> bool:
+    """XML 1.0 (Fifth Edition) §2.3 production [4] NameStartChar."""
+    cp = ord(char)
+    return (
+        char in ":_"
+        or "A" <= char <= "Z"
+        or "a" <= char <= "z"
+        or 0xC0 <= cp <= 0xD6
+        or 0xD8 <= cp <= 0xF6
+        or 0xF8 <= cp <= 0x2FF
+        or 0x370 <= cp <= 0x37D
+        or 0x37F <= cp <= 0x1FFF
+        or 0x200C <= cp <= 0x200D
+        or 0x2070 <= cp <= 0x218F
+        or 0x2C00 <= cp <= 0x2FEF
+        or 0x3001 <= cp <= 0xD7FF
+        or 0xF900 <= cp <= 0xFDCF
+        or 0xFDF0 <= cp <= 0xFFFD
+        or 0x10000 <= cp <= 0xEFFFF
+    )
 
 
 def _element_to_dict(el: Any) -> dict[str, Any]:

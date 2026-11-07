@@ -22,8 +22,8 @@ class JsonParser(AbstractParser):
     def can_parse(self, path: str, peek_bytes: bytes) -> bool:
         if any(path.lower().endswith(ext) for ext in self.SUPPORTED_EXTENSIONS):
             return True
-        stripped = peek_bytes.lstrip()
-        return stripped[:1] in (b"{", b"[")
+        return starts_like_json_container(peek_bytes)
+
 
     def parse(self, node: VFSNode, vfs: VFS) -> ParseResult:
         raw = vfs.read(node)
@@ -91,3 +91,31 @@ def _walk(obj: Any, parts: list[str], limit: int) -> None:
     elif isinstance(obj, (list, tuple)):
         for item in obj:
             _walk(item, parts, limit)
+
+
+# RFC 8259 §2: the only whitespace allowed around structural characters.
+_JSON_WHITESPACE = b" \t\r\n"
+# RFC 8259 §3: what a value can start with (object, array, string, number,
+# true / false / null).
+_JSON_VALUE_STARTS = frozenset(b'{["-0123456789tfn')
+
+
+def starts_like_json_container(peek_bytes: bytes) -> bool:
+    """Whether *peek_bytes* can begin a JSON object or array (RFC 8259).
+
+    After whitespace, ``{`` must be followed by a member name (``"``) or
+    ``}``, and ``[`` by a value or ``]``. A lone ``{`` / ``[`` is not enough:
+    binary data whose first byte is 0x7B or 0x5B (a length, a count) would
+    otherwise open as a broken JSON document. If the peek holds nothing but
+    whitespace after the bracket, the start cannot be ruled out.
+    """
+    head = peek_bytes.lstrip(_JSON_WHITESPACE)
+    opener = head[:1]
+    if opener not in (b"{", b"["):
+        return False
+    rest = head[1:].lstrip(_JSON_WHITESPACE)
+    if not rest:
+        return True
+    if opener == b"{":
+        return rest[:1] in (b'"', b"}")
+    return rest[:1] == b"]" or rest[0] in _JSON_VALUE_STARTS

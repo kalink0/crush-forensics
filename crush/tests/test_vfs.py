@@ -383,6 +383,35 @@ def test_sevenzip_content_encrypted_rejects_wrong_password(
         open_vfs(sevenzip_encrypted_content_fixture, password="wrongpass")
 
 
+@pytest.mark.parametrize("raised", [
+    "lzma", "crc", "eof",
+])
+def test_sevenzip_wrong_key_garbage_is_wrong_password(
+    sevenzip_encrypted_content_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raised: str,
+) -> None:
+    """A wrong key decrypts to garbage; each way the decoder can fail on it
+    is a wrong password. The fixture's random salt makes the real failure
+    vary (EOFError in about 1 of 250 runs), so each one is forced here."""
+    import lzma
+
+    import py7zr
+
+    exc = {
+        "lzma": lzma.LZMAError("Corrupt input data"),
+        "crc": py7zr.exceptions.CrcError(0, 1, "sample.db"),
+        "eof": EOFError("Already at end of stream"),
+    }[raised]
+
+    def fail(self: object, *args: object, **kwargs: object) -> None:
+        raise exc
+
+    monkeypatch.setattr(py7zr.SevenZipFile, "extract", fail)
+    with pytest.raises(WrongPasswordError):
+        open_vfs(sevenzip_encrypted_content_fixture, password="wrongpass")
+
+
 def test_sevenzip_content_encrypted_decrypts_with_correct_password(
     sevenzip_encrypted_content_fixture: Path,
 ) -> None:

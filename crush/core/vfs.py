@@ -1792,7 +1792,10 @@ class SevenZipVFS(VFS):
       case above: usually lzma.LZMAError ("Corrupt input data") when the
       garbage doesn't even decompress, but observed as py7zr's own
       CrcError on macOS CI when it happens to decompress into something
-      that still fails the archive's own CRC32 check.
+      that still fails the archive's own CRC32 check, and as EOFError
+      ("Already at end of stream", about 1 in 250 random salts) when the
+      garbage starts with an LZMA2 end marker and py7zr asks the finished
+      decoder for more.
     """
 
     def __init__(self, path: str | Path, *, password: str = "") -> None:
@@ -1971,7 +1974,7 @@ class SevenZipVFS(VFS):
             self._zf.extract(targets=targets, factory=factory)
         except py7zr.exceptions.PasswordRequired as exc:
             raise PasswordRequiredError(ParseIssue("password.7z_required", {"path": str(self._path)})) from exc
-        except (lzma.LZMAError, py7zr.exceptions.CrcError) as exc:
+        except (lzma.LZMAError, py7zr.exceptions.CrcError, EOFError) as exc:
             raise WrongPasswordError(ParseIssue("password.7z_wrong")) from exc
         finally:
             self._zf.reset()
