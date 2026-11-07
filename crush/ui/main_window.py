@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import uuid
 from pathlib import Path
 from collections.abc import Iterator
@@ -21,7 +22,7 @@ import shutil
 import tempfile
 
 from PySide6.QtCore import (
-    QObject, QThread, Qt, Signal, QUrl, QSettings, QTimer,
+    QObject, QSize, QThread, Qt, Signal, QUrl, QSettings, QTimer,
 )
 from PySide6.QtGui import (
     QCloseEvent,
@@ -66,6 +67,7 @@ from PySide6.QtWidgets import (
 import crush
 from crush.core import tempdir
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
+from crush.core.vfs_stream import CopyCancelledError
 from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog, i18n, relaunch
 from crush.ui.busy_dialog import busy_call
@@ -91,6 +93,11 @@ class _LoadSourceWorker(QObject):
     # (sha256, size, path) of the source file, in integrity mode; before
     # finished, so a window the source is handed to logs it too.
     hashed = Signal(str, int, str)
+    # The analyst stopped hashing the source (integrity mode); it still
+    # opens, before finished. (path)
+    hash_cancelled = Signal(str)
+    # The analyst stopped the load before the source was read: not opened.
+    cancelled = Signal()
     # A crush.core.load_phase key: the step the load is in, for the wait dialog.
     phase = Signal(str)
     progress = Signal(int, int, int)  # (entries listed, step, steps) -- see load_phase
@@ -106,8 +113,10 @@ class _LoadSourceWorker(QObject):
         embedded_zip: bool = False,
         as_disk_image: bool = False,
         private_key: str = "",
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__()
+        self._cancel_requested = cancel_requested
         self._session = session
         self._path = path
         self._integrity = integrity
@@ -121,16 +130,20 @@ class _LoadSourceWorker(QObject):
     def run(self) -> None:
         from crush.core.load_phase import phase_reporter
 
-        with window_log_scope(self._window_id), phase_reporter(self.phase.emit, self.progress.emit):
+        with window_log_scope(self._window_id), phase_reporter(
+            self.phase.emit, self.progress.emit, cancelled=self._cancel_requested,
+        ):
             self._run()
 
     def _run(self) -> None:
+        from crush.core.load_phase import LoadCancelled, check_cancelled
         from crush.core.passwords import (
             PasswordRequiredError,
             PrivateKeyRequiredError,
             WrongPasswordError,
         )
 
+        vfs: VFS | None = None
         try:
             if self._itunes_zip_prefix is not None:
                 # The whole ZIP, its backup(s) opened in place: what the ZIP
@@ -145,8 +158,16 @@ class _LoadSourceWorker(QObject):
                     self._path, password=self._password, embedded_zip=self._embedded_zip,
                     as_disk_image=self._as_disk_image, private_key=self._private_key,
                 )
-            if self._integrity:
-                self._log_source_hash()
+            # A Cancel the reading had no checkpoint left for is a Cancel of
+            # the load, not of the hashing that follows.
+            check_cancelled()
+        except LoadCancelled:
+            # Stopped while the source was read: nothing of it is shown, as
+            # a tree read in part would pass for the whole source.
+            if vfs is not None:
+                self._session.remove_source(vfs)
+            self.cancelled.emit()
+            return
         except WrongPasswordError as exc:
             # A rejection doesn't say what opens the source; the window asks
             # again the way the first prompt did (_disk_image_retry_needs).
@@ -162,6 +183,23 @@ class _LoadSourceWorker(QObject):
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
+        if self._integrity:
+            try:
+                self._log_source_hash()
+            except LoadCancelled:
+                # The source is read: it opens. Only its hash is missing,
+                # said in the log and the status bar; an export hashes what
+                # it writes all the same.
+                logging.getLogger("crush").warning(
+                    "INTEGRITY source not hashed: hashing cancelled by the analyst  path=%s",
+                    self._path,
+                )
+                self.hash_cancelled.emit(self._path)
+            except Exception as exc:
+                # As before: a source that can't be hashed is not opened.
+                self._session.remove_source(vfs)
+                self.failed.emit(str(exc), i18n.exception_text(exc))
+                return
         self.finished.emit(vfs)
 
     def _log_source_hash(self) -> None:
@@ -170,7 +208,7 @@ class _LoadSourceWorker(QObject):
             return
         import hashlib
 
-        from crush.core.load_phase import PHASE_HASH_SOURCE, report_phase
+        from crush.core.load_phase import PHASE_HASH_SOURCE, check_cancelled, report_phase
 
         report_phase(PHASE_HASH_SOURCE)
 
@@ -178,6 +216,7 @@ class _LoadSourceWorker(QObject):
         total = 0
         with path.open("rb") as src:
             while True:
+                check_cancelled()
                 chunk = src.read(1024 * 1024)
                 if not chunk:
                     break
@@ -342,8 +381,27 @@ class _SourceReadError(Exception):
 _EXPORT_FAILED_FILE = "crush-export-failed.txt"
 
 
+class _ExportCancelled(Exception):
+    """The analyst stopped an export."""
+
+
+_EXPORT_CANCELLED_FILE = "crush-export-cancelled.txt"
+
+
+def _write_export_cancelled_file(base: Path, exported: int) -> None:
+    """Mark an export folder the analyst stopped as incomplete."""
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (base / _EXPORT_CANCELLED_FILE).write_text(
+        "# This export was cancelled by the analyst before it finished: it is incomplete.\n"
+        f"# cancelled: {stamp}\n"
+        f"# files exported before the cancel: {exported}\n",
+        encoding="utf-8",
+    )
+
+
 def _copy_export_file(
-    vfs: VFS, node: VFSNode, target: Path, integrity: bool
+    vfs: VFS, node: VFSNode, target: Path, integrity: bool,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[str | None, int]:
     """Copy one file's bytes to *target*: (sha256 hex or None, bytes copied).
 
@@ -351,7 +409,8 @@ def _copy_export_file(
     after the last bytes that could be read (the raw image's length check,
     for one), so the partial copy would otherwise stay under the file's own
     name and pass for the file. A read error raises _SourceReadError; an
-    error writing the copy is raised as it is.
+    error writing the copy is raised as it is; *cancelled()* turning true
+    raises _ExportCancelled.
     """
     import hashlib
 
@@ -364,6 +423,8 @@ def _copy_export_file(
             raise _SourceReadError(str(exc)) from exc
         with src, open(target, "wb") as dst:
             while True:
+                if cancelled is not None and cancelled():
+                    raise _ExportCancelled()
                 try:
                     chunk = src.read(1024 * 1024)
                 except Exception as exc:
@@ -398,6 +459,9 @@ def _write_export_failed_file(base: Path, failed: list[tuple[str, str]]) -> None
 class _ExportWorker(QObject):
     finished = Signal(str, int)  # (export path, files not exported)
     failed = Signal(str, str)  # (English for the log, shown in the UI language)
+    # The analyst stopped it: (export path, files exported before); the
+    # path is "" when nothing was written.
+    cancelled = Signal(str, int)
 
     def __init__(
         self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None
@@ -411,14 +475,21 @@ class _ExportWorker(QObject):
         self._hash_base: Path | None = None
         self._rename_lines: list[str] = []
         self._failed: list[tuple[str, str]] = []
+        self._exported = 0
+        self._cancel = threading.Event()
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
+
+    def cancel(self) -> None:
+        """Stop at the next chunk (from the UI thread)."""
+        self._cancel.set()
 
     def run(self) -> None:
         with window_log_scope(self._window_id):
             self._run()
 
     def _run(self) -> None:
+        target_root: Path | None = None
         try:
             root_name, changed = _safe_name(self._node.name or "export")
             target_root = self._dest_dir / root_name
@@ -445,10 +516,36 @@ class _ExportWorker(QObject):
             self._write_hashes_file(target_root)
             self._write_renames_file(target_root)
             _write_export_failed_file(self._hash_base, self._failed)
+        except _ExportCancelled:
+            self._finish_cancelled(target_root)
+            return
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
         self.finished.emit(str(target_root), len(self._failed))
+
+    def _finish_cancelled(self, target_root: Path | None) -> None:
+        """What was exported before the cancel stays, marked incomplete;
+        the file being copied is gone (_copy_export_file)."""
+        if target_root is None or not self._node.is_dir:
+            # One file: the copy is removed, nothing else was written.
+            self._logger.info("Export cancelled by the analyst: nothing exported")
+            self.cancelled.emit("", 0)
+            return
+        try:
+            self._write_hashes_file(target_root, cancelled=True)
+            self._write_renames_file(target_root)
+            assert self._hash_base is not None
+            _write_export_failed_file(self._hash_base, self._failed)
+            _write_export_cancelled_file(self._hash_base, self._exported)
+        except Exception as exc:
+            self.failed.emit(str(exc), i18n.exception_text(exc))
+            return
+        self._logger.warning(
+            "Export cancelled by the analyst: incomplete, %d file(s) exported to %s",
+            self._exported, target_root,
+        )
+        self.cancelled.emit(str(target_root), self._exported)
 
     def _record_rename(self, original_path: str, sanitized_target: Path) -> None:
         self._rename_lines.append(f"{original_path}\t->\t{sanitized_target}")
@@ -473,6 +570,8 @@ class _ExportWorker(QObject):
     def _export_dir(self, node: VFSNode, target: Path) -> None:
         target.mkdir(parents=True, exist_ok=True)
         for child in node.children:
+            if self._cancel.is_set():
+                raise _ExportCancelled()
             safe_child_name, changed = _safe_name(child.name)
             child_target = target / safe_child_name
             if changed:
@@ -485,11 +584,14 @@ class _ExportWorker(QObject):
 
     def _export_file(self, node: VFSNode, target: Path) -> None:
         try:
-            digest, total = _copy_export_file(self._vfs, node, target, self._integrity)
+            digest, total = _copy_export_file(
+                self._vfs, node, target, self._integrity, self._cancel.is_set
+            )
         except _SourceReadError as exc:
             self._failed.append((node.path, str(exc)))
             self._logger.warning("Export: not exported, could not be read: %s: %s", node.path, exc)
             return
+        self._exported += 1
         if digest is None:
             return
         rel_path = target.name
@@ -501,7 +603,7 @@ class _ExportWorker(QObject):
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
-    def _write_hashes_file(self, target_root: Path) -> None:
+    def _write_hashes_file(self, target_root: Path, cancelled: bool = False) -> None:
         if not self._integrity or not (self._hash_lines or self._failed):
             return
         base = self._hash_base if self._hash_base is not None else target_root.parent
@@ -509,6 +611,9 @@ class _ExportWorker(QObject):
         # The same note as the filtered export's header, so the hash list
         # alone shows that files are missing from it.
         note = (
+            [f"# export cancelled: incomplete (see {_EXPORT_CANCELLED_FILE})"]
+            if cancelled else []
+        ) + (
             [f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE})"]
             if self._failed else []
         )
@@ -518,29 +623,62 @@ class _ExportWorker(QObject):
 class _ExportLogarchiveWorker(QObject):
     finished = Signal(str)
     failed = Signal(str, str)  # (English for the log, shown in the UI language)
+    # The analyst stopped it; nothing is saved. (dest path, whether an
+    # earlier .logarchive there was already removed to be replaced)
+    cancelled = Signal(str, bool)
 
     def __init__(self, vfs: VFS, node: VFSNode, dest_path: str, window_id: str | None = None) -> None:
         super().__init__()
         self._vfs = vfs
         self._node = node
         self._dest_path = Path(dest_path)
+        self._cancel = threading.Event()
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
+
+    def cancel(self) -> None:
+        """Stop before the next file (from the UI thread)."""
+        self._cancel.set()
 
     def run(self) -> None:
         with window_log_scope(self._window_id):
             self._run()
 
+    def _copy_checked(self, src: str, dst: str) -> object:
+        if self._cancel.is_set():
+            raise CopyCancelledError()
+        return shutil.copy2(src, dst)
+
     def _run(self) -> None:
+        replaced = False
+        writing = False
         try:
             from crush.parsers.unified_log_parser import build_logarchive_from_acquisition
             with tempdir.temporary_directory(prefix="crush_logarchive_") as tmp:
                 tmp_path = Path(tmp) / "build"
                 tmp_path.mkdir()
-                build_logarchive_from_acquisition(self._node, self._vfs, tmp_path)
+                build_logarchive_from_acquisition(
+                    self._node, self._vfs, tmp_path, cancelled=self._cancel.is_set
+                )
+                if self._cancel.is_set():
+                    raise CopyCancelledError()
                 if self._dest_path.exists():
                     shutil.rmtree(self._dest_path)
-                shutil.copytree(str(tmp_path), str(self._dest_path))
+                    replaced = True
+                writing = True
+                shutil.copytree(
+                    str(tmp_path), str(self._dest_path), copy_function=self._copy_checked
+                )
+        except CopyCancelledError:
+            if writing:
+                # Copied in part: not left to pass for a whole .logarchive.
+                shutil.rmtree(self._dest_path, ignore_errors=True)
+            self._logger.info(
+                "Logarchive export cancelled by the analyst: nothing saved at %s%s",
+                self._dest_path, " (the earlier one there was already removed)" if replaced else "",
+            )
+            self.cancelled.emit(str(self._dest_path), replaced)
+            return
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
@@ -550,6 +688,7 @@ class _ExportLogarchiveWorker(QObject):
 class _ExportMultiWorker(QObject):
     finished = Signal(str, int)  # (export path, files not exported)
     failed = Signal(str, str)  # (English for the log, shown in the UI language)
+    cancelled = Signal(str, int)  # as _ExportWorker.cancelled
 
     def __init__(
         self,
@@ -567,19 +706,27 @@ class _ExportMultiWorker(QObject):
         self._hash_lines: list[str] = []
         self._rename_lines: list[str] = []
         self._failed: list[tuple[str, str]] = []
+        self._exported = 0
+        self._cancel = threading.Event()
         self._logger = logging.getLogger(__name__)
         self._window_id = window_id
+
+    def cancel(self) -> None:
+        """Stop at the next chunk (from the UI thread)."""
+        self._cancel.set()
 
     def run(self) -> None:
         with window_log_scope(self._window_id):
             self._run()
 
     def _run(self) -> None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        export_root = self._dest_dir / f"crush-export-{stamp}"
         try:
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            export_root = self._dest_dir / f"crush-export-{stamp}"
             export_root.mkdir(parents=True, exist_ok=True)
             for node, vfs, virtual_path in self._entries:
+                if self._cancel.is_set():
+                    raise _ExportCancelled()
                 parts = _split_virtual_path(virtual_path)
                 safe_parts = []
                 changed_any = False
@@ -597,6 +744,22 @@ class _ExportMultiWorker(QObject):
             self._write_hashes_file(export_root, stamp)
             self._write_renames_file(export_root)
             _write_export_failed_file(export_root, self._failed)
+        except _ExportCancelled:
+            # What was exported before stays, marked incomplete.
+            try:
+                self._write_hashes_file(export_root, stamp, cancelled=True)
+                self._write_renames_file(export_root)
+                _write_export_failed_file(export_root, self._failed)
+                _write_export_cancelled_file(export_root, self._exported)
+            except Exception as exc:
+                self.failed.emit(str(exc), i18n.exception_text(exc))
+                return
+            self._logger.warning(
+                "Export cancelled by the analyst: incomplete, %d of %d file(s) exported to %s",
+                self._exported, len(self._entries), export_root,
+            )
+            self.cancelled.emit(str(export_root), self._exported)
+            return
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
@@ -625,23 +788,28 @@ class _ExportMultiWorker(QObject):
         self, node: VFSNode, vfs: VFS, target: Path, rel_path: str, virtual_path: str
     ) -> None:
         try:
-            digest, total = _copy_export_file(vfs, node, target, self._integrity)
+            digest, total = _copy_export_file(
+                vfs, node, target, self._integrity, self._cancel.is_set
+            )
         except _SourceReadError as exc:
             self._failed.append((virtual_path, str(exc)))
             self._logger.warning("Export: not exported, could not be read: %s: %s", virtual_path, exc)
             return
+        self._exported += 1
         if digest is None:
             return
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
-    def _write_hashes_file(self, export_root: Path, stamp: str) -> None:
+    def _write_hashes_file(self, export_root: Path, stamp: str, cancelled: bool = False) -> None:
         if not self._integrity or not (self._hash_lines or self._failed):
             return
         header = [
             "# crush filtered export",
             f"# filter: {self._filter_text}",
             f"# exported: {stamp}",
+            *([f"# export cancelled: incomplete, {self._exported} of {len(self._entries)} "
+               f"files exported (see {_EXPORT_CANCELLED_FILE})"] if cancelled else []),
             f"# files: {len(self._hash_lines)}",
             *([f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE})"]
               if self._failed else []),
@@ -713,6 +881,43 @@ def _split_virtual_path(virtual_path: str) -> list[str]:
     return [p for p in re.split(r"[\\/]+", rel) if p not in ("", ".")]
 
 
+class _CancellableProgress(QProgressDialog):
+    """A busy progress dialog whose Cancel button (or Escape) calls
+    *on_cancel* once and says it is stopping; it stays up until the work
+    behind it ends and the caller closes it."""
+
+    def __init__(
+        self, text: str, title: str, on_cancel: Callable[[], None], parent: QWidget,
+    ) -> None:
+        super().__init__(text, "", 0, 0, parent)
+        self._on_cancel = on_cancel
+        self._button = QPushButton(translate("MainWindow", "Cancel"))
+        self.setCancelButton(self._button)
+        self.setAutoClose(False)
+        self.setAutoReset(False)
+        self.setWindowTitle(title)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.setMinimumDuration(0)
+        self.canceled.connect(self._cancel_requested)
+
+    def _cancel_requested(self) -> None:
+        if not self._button.isEnabled():
+            return
+        self._button.setEnabled(False)
+        self.setLabelText(translate("MainWindow", "Cancelling…"))
+        self._on_cancel()
+
+    def reject(self) -> None:
+        # Escape: stop the work, not hide the dialog while it runs on.
+        self._cancel_requested()
+
+    def close(self) -> bool:
+        # Closed by the caller once the work ended: QProgressDialog's close
+        # emits canceled, which must not read as the analyst's Cancel.
+        self._button.setEnabled(False)
+        return super().close()
+
+
 @dataclass
 class _LoadState:
     """What handling one loaded source needs, as _load_source left it --
@@ -730,6 +935,8 @@ class _LoadState:
     append_to_tree: bool
     progress: LoadingDialog | None
     tree_build_started: float | None
+    # Integrity mode, and the analyst stopped hashing the source.
+    hash_cancelled: bool = False
 
 
 class MainWindow(QMainWindow):
@@ -869,6 +1076,7 @@ class MainWindow(QMainWindow):
         self._fs_panel.close_source_requested.connect(self._show_empty_view_if_no_sources)
         self._fs_panel.load_finished.connect(self._show_viewer_tabs)
         self._fs_panel.background_status.connect(self._on_background_status)
+        self._fs_panel.type_indexing_state.connect(self._on_type_indexing_state)
         self._fs_panel.format_info_requested.connect(self._show_format_info)
         self._fs_panel.open_in_new_window_requested.connect(self._open_in_new_window)
         self._fs_panel.open_disk_image_in_new_window_requested.connect(
@@ -942,6 +1150,13 @@ class MainWindow(QMainWindow):
         self._bg_status = QLabel("")
         self._bg_status.setVisible(False)
         self._status.addPermanentWidget(self._bg_status)
+        # Stops / resumes the type indexing; small, beside its status text.
+        self._indexing_btn = QToolButton()
+        self._indexing_btn.setAutoRaise(True)
+        self._indexing_btn.setIconSize(QSize(12, 12))
+        self._indexing_btn.setVisible(False)
+        self._indexing_btn.clicked.connect(self._on_indexing_button)
+        self._status.addPermanentWidget(self._indexing_btn)
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(100)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
@@ -1298,27 +1513,33 @@ class MainWindow(QMainWindow):
         self._append_to_tree = append_to_tree
         self._pending_focus_path = focus_path
         self._loading_source_hash: tuple[str, int, str] | None = None
+        self._loading_hash_cancelled = False
         self._tree_build_started = time.monotonic()
         self._status.showMessage(translate("MainWindow", "Loading: {path}").format(path=path))
-        self._progress = LoadingDialog(translate("MainWindow", "Loading source…"), self)
+        self._progress = LoadingDialog(
+            translate("MainWindow", "Loading source…"), self, cancellable=True
+        )
         self._progress.show()
 
         self._load_thread = QThread(self)
         self._load_worker = _LoadSourceWorker(
             self.session, path, self.session.integrity_mode, itunes_zip_prefix, password,
             window_id=self._window_id, embedded_zip=embedded_zip, as_disk_image=as_disk_image,
-            private_key=private_key,
+            private_key=private_key, cancel_requested=self._progress.is_cancel_requested,
         )
         self._load_worker.moveToThread(self._load_thread)
         self._load_thread.started.connect(self._load_worker.run)
         self._load_worker.finished.connect(self._on_load_finished)
         self._load_worker.failed.connect(self._on_load_failed)
+        self._load_worker.cancelled.connect(self._on_load_cancelled)
         self._load_worker.password_required.connect(self._on_password_required)
         self._load_worker.hashed.connect(self._on_source_hashed)
+        self._load_worker.hash_cancelled.connect(self._on_source_hash_cancelled)
         self._load_worker.phase.connect(self._progress.set_phase)
         self._load_worker.progress.connect(self._progress.set_progress)
         self._load_worker.finished.connect(self._load_thread.quit)
         self._load_worker.failed.connect(self._load_thread.quit)
+        self._load_worker.cancelled.connect(self._load_thread.quit)
         self._load_worker.password_required.connect(self._load_thread.quit)
         self._load_thread.finished.connect(self._load_worker.deleteLater)
         self._load_thread.finished.connect(self._on_load_thread_finished)
@@ -1326,6 +1547,22 @@ class MainWindow(QMainWindow):
 
     def _on_source_hashed(self, digest: str, size: int, path: str) -> None:
         self._loading_source_hash = (digest, size, path)
+
+    def _on_source_hash_cancelled(self, _path: str) -> None:
+        self._loading_hash_cancelled = True
+
+    def _on_load_cancelled(self) -> None:
+        with self._hold_load_queue():
+            state = self._capture_load_state()
+            if state.progress is not None:
+                state.progress.close()
+            self._pending_focus_path = None
+            self._logger.info("Load cancelled by the analyst, not opened: %s", state.path)
+            self._status.showMessage(
+                translate("MainWindow", "Opening {path} cancelled: it was not opened").format(
+                    path=state.path
+                )
+            )
 
     # -- the load queue while a dialog is open ---------------------------------
     #
@@ -1359,6 +1596,7 @@ class MainWindow(QMainWindow):
             append_to_tree=getattr(self, "_append_to_tree", False),
             progress=getattr(self, "_progress", None),
             tree_build_started=getattr(self, "_tree_build_started", None),
+            hash_cancelled=getattr(self, "_loading_hash_cancelled", False),
         )
 
     def _restore_load_state(self, state: _LoadState) -> None:
@@ -1372,6 +1610,7 @@ class MainWindow(QMainWindow):
         self._pending_focus_path = state.focus_path
         self._loading_focus_path = state.focus_path
         self._loading_source_hash = state.source_hash
+        self._loading_hash_cancelled = state.hash_cancelled
         self._open_after_load = state.open_after_load
         self._append_to_tree = state.append_to_tree
         if state.progress is not None:
@@ -1384,6 +1623,9 @@ class MainWindow(QMainWindow):
             self._show_loaded_source(vfs, self._capture_load_state())
 
     def _show_loaded_source(self, vfs: VFS, state: _LoadState) -> None:
+        if state.progress is not None:
+            # Read: from here on there is nothing left to stop.
+            state.progress.end_cancellable()
         batch = state.batch
         if (
             vfs.root().is_dir
@@ -1533,6 +1775,7 @@ class MainWindow(QMainWindow):
             open_after_load=state.open_after_load,
             focus_path=state.focus_path,
             source_hash=state.source_hash,
+            hash_cancelled=state.hash_cancelled,
         )
 
     def _adopt_loaded_source(
@@ -1544,6 +1787,7 @@ class MainWindow(QMainWindow):
         open_after_load: bool,
         focus_path: str | None,
         source_hash: tuple[str, int, str] | None,
+        hash_cancelled: bool = False,
     ) -> None:
         """Show a source another window loaded (_hand_over_to_new_window)
         as if this window had loaded it."""
@@ -1553,6 +1797,11 @@ class MainWindow(QMainWindow):
             # Hashed while loading, in the window that loaded it; said here
             # too, where the source is shown.
             self._logger.info("INTEGRITY source sha256=%s  size=%d  path=%s", *source_hash)
+        if hash_cancelled:
+            self._logger.warning(
+                "INTEGRITY source not hashed: hashing cancelled by the analyst  path=%s", path,
+            )
+        self._loading_hash_cancelled = hash_cancelled
         self._loading_path = path
         self._loading_itunes_zip_prefix = None
         self._loading_embedded_zip = False
@@ -1643,10 +1892,16 @@ class MainWindow(QMainWindow):
                 getattr(loaded_vfs, "fallback_note", ""), getattr(loaded_vfs, "load_note", ""),
             ) if note
         ]
-        if notes:
+        shown_notes = [render_value(note, localized=True) for note in notes]
+        if state.hash_cancelled:
+            # Logged where it was cancelled (_LoadSourceWorker).
+            shown_notes.insert(
+                0, translate("MainWindow", "not hashed: hashing was cancelled")
+            )
+        if shown_notes:
             for note in notes:
                 self._logger.warning("%s: %s", path, note)
-            text = "; ".join(render_value(note, localized=True) for note in notes)
+            text = "; ".join(shown_notes)
             self._status.showMessage(
                 translate("MainWindow", "Loaded: {loading_path}  — {text}").format(
                     loading_path=path, text=text
@@ -1779,25 +2034,25 @@ class MainWindow(QMainWindow):
 
         self._status.showMessage(translate("MainWindow", "Exporting…"))
         self._logger.info("Export requested: %s -> %s", node.path, dest_dir)
-        self._export_progress = QProgressDialog(
-            translate("MainWindow", "Exporting…"), None, 0, 0, self
+        export_worker = _ExportWorker(
+            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id
         )
-        self._export_progress.setWindowTitle(translate("MainWindow", "Export"))
-        self._export_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self._export_progress.setCancelButton(None)
-        self._export_progress.setMinimumDuration(0)
+        self._export_progress = _CancellableProgress(
+            translate("MainWindow", "Exporting…"), translate("MainWindow", "Export"),
+            export_worker.cancel, self,
+        )
         self._export_progress.show()
 
         self._export_thread = QThread(self)
-        self._export_worker = _ExportWorker(
-            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id
-        )
+        self._export_worker = export_worker
         self._export_worker.moveToThread(self._export_thread)
         self._export_thread.started.connect(self._export_worker.run)
         self._export_worker.finished.connect(self._on_export_finished)
         self._export_worker.failed.connect(self._on_export_failed)
+        self._export_worker.cancelled.connect(self._on_export_cancelled)
         self._export_worker.finished.connect(self._export_thread.quit)
         self._export_worker.failed.connect(self._export_thread.quit)
+        self._export_worker.cancelled.connect(self._export_thread.quit)
         self._export_thread.finished.connect(self._export_worker.deleteLater)
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
@@ -1825,23 +2080,25 @@ class MainWindow(QMainWindow):
         ).format(n=n)
         self._status.showMessage(exporting)
         self._logger.info("Multi-export: %d files, filter=%r -> %s", n, filter_text, dest_dir)
-        self._export_progress = QProgressDialog(exporting, None, 0, 0, self)
-        self._export_progress.setWindowTitle(translate("MainWindow", "Export filtered results"))
-        self._export_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self._export_progress.setCancelButton(None)
-        self._export_progress.setMinimumDuration(0)
-        self._export_progress.show()
-        self._export_thread = QThread(self)
-        self._export_worker = _ExportMultiWorker(
+        multi_worker = _ExportMultiWorker(
             entries, dest_dir, self.session.integrity_mode, filter_text,
             window_id=self._window_id,
         )
+        self._export_progress = _CancellableProgress(
+            exporting, translate("MainWindow", "Export filtered results"),
+            multi_worker.cancel, self,
+        )
+        self._export_progress.show()
+        self._export_thread = QThread(self)
+        self._export_worker = multi_worker
         self._export_worker.moveToThread(self._export_thread)
         self._export_thread.started.connect(self._export_worker.run)
         self._export_worker.finished.connect(self._on_export_finished)
         self._export_worker.failed.connect(self._on_export_failed)
+        self._export_worker.cancelled.connect(self._on_export_cancelled)
         self._export_worker.finished.connect(self._export_thread.quit)
         self._export_worker.failed.connect(self._export_thread.quit)
+        self._export_worker.cancelled.connect(self._export_thread.quit)
         self._export_thread.finished.connect(self._export_worker.deleteLater)
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
@@ -1893,6 +2150,27 @@ class MainWindow(QMainWindow):
             open_path = target.parent if target.is_file() else target
             self._open_local_file(open_path)
 
+    def _on_export_cancelled(self, dest: str, exported: int) -> None:
+        if hasattr(self, "_export_progress"):
+            self._export_progress.close()
+        if not dest:
+            self._status.showMessage(translate("MainWindow", "Export cancelled: nothing exported"))
+            return
+        text = translate(
+            "MainWindow",
+            "Export cancelled: {dest} is incomplete ({n} files exported); marked in {name}.",
+        ).format(dest=dest, n=exported, name=_EXPORT_CANCELLED_FILE)
+        self._status.showMessage(text)
+        choice = QMessageBox.warning(
+            self,
+            translate("MainWindow", "Export cancelled"),
+            translate("MainWindow", "{text}\n\nOpen location?").format(text=text),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice == QMessageBox.StandardButton.Yes:
+            self._open_local_file(Path(dest))
+
     def _on_export_failed(self, message: str, shown: str) -> None:
         if hasattr(self, "_export_progress"):
             self._export_progress.close()
@@ -1940,25 +2218,25 @@ class MainWindow(QMainWindow):
 
         self._status.showMessage(translate("MainWindow", "Building .logarchive…"))
         self._logger.info("Export logarchive: %s -> %s", node.path, dest_path)
-        self._logarchive_progress = QProgressDialog(
-            translate("MainWindow", "Building .logarchive…"), None, 0, 0, self
-        )
-        self._logarchive_progress.setWindowTitle(translate("MainWindow", "Export .logarchive"))
-        self._logarchive_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self._logarchive_progress.setCancelButton(None)
-        self._logarchive_progress.setMinimumDuration(0)
-        self._logarchive_progress.show()
-
-        self._logarchive_thread = QThread(self)
         self._logarchive_worker = _ExportLogarchiveWorker(
             vfs, node, str(dest_path), window_id=self._window_id
         )
+        self._logarchive_progress = _CancellableProgress(
+            translate("MainWindow", "Building .logarchive…"),
+            translate("MainWindow", "Export .logarchive"),
+            self._logarchive_worker.cancel, self,
+        )
+        self._logarchive_progress.show()
+
+        self._logarchive_thread = QThread(self)
         self._logarchive_worker.moveToThread(self._logarchive_thread)
         self._logarchive_thread.started.connect(self._logarchive_worker.run)
         self._logarchive_worker.finished.connect(self._on_logarchive_finished)
         self._logarchive_worker.failed.connect(self._on_logarchive_failed)
+        self._logarchive_worker.cancelled.connect(self._on_logarchive_cancelled)
         self._logarchive_worker.finished.connect(self._logarchive_thread.quit)
         self._logarchive_worker.failed.connect(self._logarchive_thread.quit)
+        self._logarchive_worker.cancelled.connect(self._logarchive_thread.quit)
         self._logarchive_thread.finished.connect(self._logarchive_worker.deleteLater)
         self._logarchive_thread.start()
 
@@ -1978,6 +2256,18 @@ class MainWindow(QMainWindow):
         )
         if choice == QMessageBox.StandardButton.Yes:
             self._open_local_file(Path(dest).parent)
+
+    def _on_logarchive_cancelled(self, dest: str, replaced: bool) -> None:
+        if hasattr(self, "_logarchive_progress"):
+            self._logarchive_progress.close()
+        self._status.showMessage(
+            translate(
+                "MainWindow",
+                "Export cancelled: nothing saved; the earlier {dest} was already removed",
+            ).format(dest=dest)
+            if replaced else
+            translate("MainWindow", "Export cancelled: nothing saved")
+        )
 
     def _on_logarchive_failed(self, message: str, shown: str) -> None:
         if hasattr(self, "_logarchive_progress"):
@@ -2387,11 +2677,22 @@ class MainWindow(QMainWindow):
             key_files=(dialog.key_file(),) if dialog.key_file() else (),
         )
         locked_before = self._locked_volume_names(vfs)
+        from crush.core.load_phase import LoadCancelled
+
         try:
             new_vfs = busy_call(
                 self, translate("MainWindow", "Unlocking volumes…"),
-                lambda: vfs.with_volume_secrets(given),
+                lambda: vfs.with_volume_secrets(given), cancellable=True,
             )
+        except LoadCancelled:
+            # The source read again was stopped: the one shown stays as it was.
+            self._logger.info("Unlock cancelled by the analyst: %s unchanged", vfs.root().name)
+            self._status.showMessage(
+                translate("MainWindow", "Unlock cancelled: {name} is shown as before").format(
+                    name=vfs.root().name
+                )
+            )
+            return
         except RuntimeError as exc:
             self._logger.error("Unlock failed for %s: %s", vfs.root().name, exc)
             QMessageBox.warning(self, translate("MainWindow", "Unlock Volume"), str(exc))
@@ -4458,9 +4759,34 @@ class MainWindow(QMainWindow):
         self._bg_status.setText(text)
         self._bg_status.setToolTip(text)
         self._bg_status.setVisible(True)
+        if not self._fs_panel.has_running_activity():
+            # Only the note that the indexing was stopped: nothing runs.
+            self._spinner_timer.stop()
+            self._spinner_label.setVisible(False)
+            return
         self._spinner_label.setVisible(True)
         if not self._spinner_timer.isActive():
             self._spinner_timer.start()
+
+    def _on_type_indexing_state(self, state: str) -> None:
+        self._indexing_state = state
+        style = self.style()
+        if state == "running":
+            self._indexing_btn.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+            self._indexing_btn.setToolTip(translate("MainWindow", "Stop type indexing"))
+            self._indexing_btn.setVisible(True)
+        elif state == "stopped":
+            self._indexing_btn.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            self._indexing_btn.setToolTip(translate("MainWindow", "Resume type indexing"))
+            self._indexing_btn.setVisible(True)
+        else:
+            self._indexing_btn.setVisible(False)
+
+    def _on_indexing_button(self) -> None:
+        if getattr(self, "_indexing_state", "idle") == "running":
+            self._fs_panel.stop_type_indexing()
+        else:
+            self._fs_panel.resume_type_indexing()
 
     def _sync_dock_titlebar(self, dock: QDockWidget, floating: bool) -> None:
         # A floating panel gets our title bar on every platform, Wayland
@@ -5046,11 +5372,17 @@ class MainWindow(QMainWindow):
             return
         import hashlib
 
+        from crush.core.load_phase import LoadCancelled, check_cancelled
+
         def _hash() -> tuple[str, int]:
             hasher = hashlib.sha256()
             total = 0
             with vfs.open(node) as src:
-                while chunk := src.read(1024 * 1024):
+                while True:
+                    check_cancelled()
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
                     hasher.update(chunk)
                     total += len(chunk)
             return hasher.hexdigest(), total
@@ -5058,11 +5390,22 @@ class MainWindow(QMainWindow):
         try:
             if node.size > _BUSY_BYTES:
                 digest, total = busy_call(
-                    self, translate("MainWindow", "Hashing {name}…").format(name=node.name), _hash
+                    self, translate("MainWindow", "Hashing {name}…").format(name=node.name), _hash,
+                    cancellable=True,
                 )
             else:
                 digest, total = _hash()
             self._logger.info("INTEGRITY sha256=%s  size=%d  path=%s", digest, total, node.path)
+        except LoadCancelled:
+            # As for a source: the file opens, only its hash is missing.
+            self._logger.warning(
+                "INTEGRITY not hashed: hashing cancelled by the analyst  path=%s", node.path
+            )
+            self._status.showMessage(
+                translate("MainWindow", "{path} not hashed: hashing was cancelled").format(
+                    path=node.path
+                )
+            )
         except Exception as exc:
             self._logger.warning("INTEGRITY hash failed for %s: %s", node.path, exc)
 

@@ -53,7 +53,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any, Callable, Generator
 
 from crush.core import tempdir
 from crush.core.log_ts import TS_UNPARSED, naive_ts
@@ -597,13 +597,22 @@ def _entry_from_mandiant_json(obj: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _export_dir_to_real_fs(node: "VFSNode", vfs: "VFS", target: Path) -> None:
-    """Recursively extract a VFS directory node to a real filesystem path."""
+def _export_dir_to_real_fs(
+    node: "VFSNode", vfs: "VFS", target: Path,
+    cancelled: Callable[[], bool] | None = None,
+) -> None:
+    """Recursively extract a VFS directory node to a real filesystem path.
+    Raises CopyCancelledError before the next file once *cancelled()* is
+    true."""
     target.mkdir(parents=True, exist_ok=True)
     for child in node.children:
+        if cancelled is not None and cancelled():
+            from crush.core.vfs_stream import CopyCancelledError
+
+            raise CopyCancelledError()
         child_target = target / child.name
         if child.is_dir:
-            _export_dir_to_real_fs(child, vfs, child_target)
+            _export_dir_to_real_fs(child, vfs, child_target, cancelled)
         else:
             child_target.parent.mkdir(parents=True, exist_ok=True)
             with vfs.open(child) as src, open(child_target, "wb") as dst:
@@ -785,6 +794,7 @@ def build_logarchive_from_acquisition(
     diag_node: "VFSNode",
     vfs: "VFS",
     tmp_root: Path,
+    cancelled: Callable[[], bool] | None = None,
 ) -> Path:
     """Assemble a proper logarchive layout from an iOS full-FS acquisition.
 
@@ -793,9 +803,10 @@ def build_logarchive_from_acquisition(
     ``tmp_root/uuidtext/`` (skipped if already present inside diagnostics).
 
     Returns *tmp_root*, ready for ``unifiedlog_iterator -m log-archive``.
+    Raises CopyCancelledError once *cancelled()* is true (checked per file).
     """
     _log.info("[UnifiedLog] Extracting diagnostics '%s' → %s", diag_node.path, tmp_root)
-    _export_dir_to_real_fs(diag_node, vfs, tmp_root)
+    _export_dir_to_real_fs(diag_node, vfs, tmp_root, cancelled)
 
     top_level = [p.name for p in tmp_root.iterdir()] if tmp_root.exists() else []
     _log.info("[UnifiedLog] Logarchive top-level after diagnostics extract: %s", top_level)
@@ -808,7 +819,7 @@ def build_logarchive_from_acquisition(
     uuidtext_node = _find_uuidtext_sibling(diag_node, vfs)
     if uuidtext_node is not None:
         _log.info("[UnifiedLog] Found uuidtext/ at '%s' — extracting", uuidtext_node.path)
-        _export_dir_to_real_fs(uuidtext_node, vfs, tmp_root / "uuidtext")
+        _export_dir_to_real_fs(uuidtext_node, vfs, tmp_root / "uuidtext", cancelled)
     else:
         _log.warning(
             "[UnifiedLog] uuidtext/ NOT found in VFS — message strings will NOT be resolved. "

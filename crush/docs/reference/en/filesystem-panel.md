@@ -58,7 +58,7 @@ Multiple tokens are always AND-combined. The `type:` token matches against the f
 
 **Type indexing**
 
-When an archive or folder is opened, Crush starts a background type scan that reads the first bytes of every file to detect its format. While this is running, a spinner and `Indexing types` message appear in the status bar, with how many files are indexed of all there are to index (e.g. `Indexing types 1,500 / 40,000`). Once complete, `type:` searches are instant. The scan typically takes a few seconds to a minute depending on archive size — for a 45 GB archive with 162,000 files, expect around 10 seconds.
+When an archive or folder is opened, Crush starts a background type scan that reads the first bytes of every file to detect its format. While this is running, a spinner and `Indexing types` message appear in the status bar, with how many files are indexed of all there are to index (e.g. `Indexing types 1,500 / 40,000`). Once complete, `type:` searches are instant. The scan typically takes a few seconds to a minute depending on archive size — for a 45 GB archive with 162,000 files, expect around 10 seconds. The small stop button beside the message stops the scan; the status bar then says `Type indexing stopped: 1,500 of 40,000 files` until the play button in the same place resumes it (types already found are kept). While it is stopped, the **Type** column of the rows shown still gets filled in, file by file, and a `type:` search reads the types it needs itself, so it stays complete, only slower.
 
 ---
 

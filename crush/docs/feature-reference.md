@@ -26,6 +26,8 @@ You can also **drag and drop** onto the Crush window instead of using the File m
 
 While a source loads, the loading dialog shows how many entries (files and folders) are listed so far, for every source type — a running count, not a percentage, since the total isn't known until the listing ends. With integrity mode on, hashing the source is shown as its own step.
 
+**Cancel** in the loading dialog (or Esc) stops the load, and the source is not opened: a tree listed only in part would look like the whole source. The load stops at the next entry, volume or step; a single long step inside a reader (decompressing a backup into the temp directory, say) finishes first, and until then the dialog says `Cancelling…`. Cancelled while the source is being hashed (integrity mode), the source still opens; the log and the status bar say it was not hashed. Sources queued to open after it still open.
+
 A third way: pass paths on the command line — `crush /path/to/evidence.zip /path/to/case_folder` or `crush --open /path/to/evidence.zip` (repeatable) — to have Crush open them on startup instead of loading manually. Each invocation opens a fresh window. Useful for launching Crush from another tool with evidence already queued up.
 
 Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also select and open one specific file inside it on startup — e.g. `crush /path/to/evidence.zip --focus Documents/chat.db` opens the archive and jumps straight to that file, instead of just showing the tree. `REL_PATH` is relative to the opened target's own root. A single file passed directly (not a folder/archive) already opens itself regardless of `--focus`.
@@ -85,7 +87,7 @@ A volume encrypted inside the disk is a different thing: the image opens, and th
 
 ### Encrypted volumes inside the disk
 
-A locked **BitLocker** volume, an **APFS** container with an encrypted volume whose blocks are ciphertext in the image, and a **LUKS1/LUKS2** container are opened with right-click → **Unlock Volume…** on the volume. The secret entered is a BitLocker password or recovery password (or a startup key file, `.BEK`), an APFS volume's password or personal recovery key, or a LUKS passphrase. Every secret entered for an image is tried on every locked volume in it, together with those entered before, as the underlying reader does; one entry can open several volumes. Secrets are kept in memory while the image is open and are never written anywhere (not to settings, recent files or the log).
+A locked **BitLocker** volume, an **APFS** container with an encrypted volume whose blocks are ciphertext in the image, and a **LUKS1/LUKS2** container are opened with right-click → **Unlock Volume…** on the volume. The secret entered is a BitLocker password or recovery password (or a startup key file, `.BEK`), an APFS volume's password or personal recovery key, or a LUKS passphrase. Every secret entered for an image is tried on every locked volume in it, together with those entered before, as the underlying reader does; one entry can open several volumes. Secrets are kept in memory while the image is open and are never written anywhere (not to settings, recent files or the log). Unlocking reads the image again; **Cancel** in its dialog stops that, and the image stays shown as it was.
 
 Unlocking reads the whole image again: the source is replaced in the tree, and its open tabs are opened again from it; a tab whose file isn't in the image as read again is closed and named. A volume none of the secrets opens stays locked, and its status says why (e.g. *none of the passwords or key files given opens it*).
 
@@ -350,7 +352,7 @@ Multiple tokens are always AND-combined. The `type:` token matches against the f
 
 **Type indexing**
 
-When an archive or folder is opened, Crush starts a background type scan that reads the first bytes of every file to detect its format. While this is running, a spinner and `Indexing types` message appear in the status bar, with how many files are indexed of all there are to index (e.g. `Indexing types 1,500 / 40,000`). Once complete, `type:` searches are instant. The scan typically takes a few seconds to a minute depending on archive size — for a 45 GB archive with 162,000 files, expect around 10 seconds.
+When an archive or folder is opened, Crush starts a background type scan that reads the first bytes of every file to detect its format. While this is running, a spinner and `Indexing types` message appear in the status bar, with how many files are indexed of all there are to index (e.g. `Indexing types 1,500 / 40,000`). Once complete, `type:` searches are instant. The scan typically takes a few seconds to a minute depending on archive size — for a 45 GB archive with 162,000 files, expect around 10 seconds. The small stop button beside the message stops the scan; the status bar then says `Type indexing stopped: 1,500 of 40,000 files` until the play button in the same place resumes it (types already found are kept). While it is stopped, the **Type** column of the rows shown still gets filled in, file by file, and a `type:` search reads the types it needs itself, so it stays complete, only slower.
 
 ---
 
@@ -1231,6 +1233,8 @@ Right-click any file or folder in the Filesystem panel and choose **Export…**.
 
 A file whose bytes can't be read from the evidence (for example, one a disk image's reader returns shorter than its recorded size) is not exported, and nothing is left under its name; the export goes on with the other files. When it's done, the message says how many files were not exported, and `crush-export-failed.txt`, next to the exported data, lists each one's path in the evidence and the reason; with integrity mode on, `crush-export-hashes.txt` notes the count too. Exporting a single file that can't be read fails, with the reason, and puts nothing into the destination folder.
 
+**Cancel** in the export dialog (or Esc) stops the export before the next file, or mid-file. The file being copied is removed, so no file is left partly written under its name. What was exported until then stays, and `crush-export-cancelled.txt` next to it says the export is incomplete and how many files were exported; with integrity mode on, `crush-export-hashes.txt` lists those files and starts with the same note. A cancelled single-file export leaves nothing. **Export as .logarchive…** can be cancelled too: nothing is saved, and the message says if an existing `.logarchive` of that name had already been removed to be replaced.
+
 ---
 
 ## Value Inspector
@@ -1276,6 +1280,7 @@ Integrity mode adds hashing and traceability to file access:
 - Opening a folder does not hash the full directory.
 - **Open in New Window** hashes the member while it is being extracted (one pass) and logs it.
 - Exports also create a `crush-export-hashes.txt` file next to the exported data.
+- Hashing a source or a file being opened can be cancelled in its dialog. The data still opens; the log records `INTEGRITY ... not hashed: hashing cancelled by the analyst` and the status bar says it was not hashed. A later export hashes what it writes as usual.
 - The bottom-right status badge shows the current mode. Click the badge to toggle it, or right-click it for a quick menu and a short explanation.
 
 ---

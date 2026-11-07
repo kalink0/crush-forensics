@@ -3,14 +3,24 @@
 """Loading dialog with lightweight ASCII art."""
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from crush.ui.i18n import translate
 
 
 class LoadingDialog(QDialog):
-    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+    """A "please wait" dialog. With *cancellable*, it has a Cancel button
+    that sets cancel_event; the work behind it stops at its next checkpoint
+    (crush.core.load_phase), so until then the dialog says it is stopping."""
+
+    def __init__(
+        self, text: str, parent: QWidget | None = None, *, cancellable: bool = False,
+    ) -> None:
         super().__init__(parent)
+        self.cancel_event = threading.Event()
         self.setWindowTitle(translate("LoadingDialog", "Loading"))
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlags(
@@ -32,7 +42,49 @@ class LoadingDialog(QDialog):
         self._progress.setStyleSheet("color: gray;")
         layout.addWidget(self._progress)
 
-        self.setFixedSize(320, 120)
+        self._cancel_button: QPushButton | None = None
+        if cancellable:
+            row = QHBoxLayout()
+            row.addStretch(1)
+            self._cancel_button = QPushButton(translate("LoadingDialog", "Cancel"))
+            self._cancel_button.setAutoDefault(False)
+            self._cancel_button.clicked.connect(self.request_cancel)
+            row.addWidget(self._cancel_button)
+            row.addStretch(1)
+            layout.addLayout(row)
+            self.setFixedSize(320, 150)
+        else:
+            self.setFixedSize(320, 120)
+
+    def request_cancel(self) -> None:
+        """Ask the work behind the dialog to stop."""
+        if (
+            self._cancel_button is None or self._cancel_button.isHidden()
+            or self.cancel_event.is_set()
+        ):
+            return
+        self.cancel_event.set()
+        self._cancel_button.setEnabled(False)
+        self._label.setText(translate("LoadingDialog", "Cancelling…"))
+
+    def is_cancel_requested(self) -> bool:
+        return self.cancel_event.is_set()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        # Escape would close (reject) the dialog while the work runs on;
+        # with a Cancel button it asks the work to stop instead.
+        if self._cancel_button is not None and event.key() == Qt.Key.Key_Escape:
+            # Escape never closes it while work runs, Cancel button shown or not.
+            self.request_cancel()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def end_cancellable(self) -> None:
+        """The work that could be stopped is over (what follows, building
+        the tree, cannot be): no Cancel button any more."""
+        if self._cancel_button is not None:
+            self._cancel_button.hide()
 
     def set_text(self, text: str) -> None:
         self._label.setText(text)
@@ -40,6 +92,8 @@ class LoadingDialog(QDialog):
     def set_phase(self, phase: str) -> None:
         """Show the phase a load reported (a crush.core.load_phase key);
         a key with no text of its own leaves the text as it is."""
+        if self.cancel_event.is_set():
+            return  # "Cancelling…" until the work stops
         text = load_phase_text(phase)
         if text:
             self._label.setText(text)

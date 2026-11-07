@@ -15,6 +15,8 @@ You can also **drag and drop** onto the Crush window instead of using the File m
 
 While a source loads, the loading dialog shows how many entries (files and folders) are listed so far, for every source type — a running count, not a percentage, since the total isn't known until the listing ends. With integrity mode on, hashing the source is shown as its own step.
 
+**Cancel** in the loading dialog (or Esc) stops the load, and the source is not opened: a tree listed only in part would look like the whole source. The load stops at the next entry, volume or step; a single long step inside a reader (decompressing a backup into the temp directory, say) finishes first, and until then the dialog says `Cancelling…`. Cancelled while the source is being hashed (integrity mode), the source still opens; the log and the status bar say it was not hashed. Sources queued to open after it still open.
+
 A third way: pass paths on the command line — `crush /path/to/evidence.zip /path/to/case_folder` or `crush --open /path/to/evidence.zip` (repeatable) — to have Crush open them on startup instead of loading manually. Each invocation opens a fresh window. Useful for launching Crush from another tool with evidence already queued up.
 
 Add `--focus REL_PATH` (only valid with exactly one file/folder to open) to also select and open one specific file inside it on startup — e.g. `crush /path/to/evidence.zip --focus Documents/chat.db` opens the archive and jumps straight to that file, instead of just showing the tree. `REL_PATH` is relative to the opened target's own root. A single file passed directly (not a folder/archive) already opens itself regardless of `--focus`.
