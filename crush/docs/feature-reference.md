@@ -737,7 +737,7 @@ Selecting a row reads that entry and fills the tabbed pane below:
 
 Opens a Tencent MMKV key-value store (used by many Android/iOS apps in place of `SharedPreferences`/`NSUserDefaults`) via right-click → **Open as** → **MMKV** or **MMKV (Encrypted)…** — see the [Filesystem Panel](#filesystem-panel) section above. MMKV has no magic bytes, so it's never opened by double-click/auto-detection.
 
-**Overview tab** — the store's `.crc` meta file fields (when that companion file is found next to the main file): meta version, sequence (full write-back count), CRC-32 of the data region as recorded, and whether the store is AES-encrypted. Also shows total entry counts by state.
+**Overview tab** — the store's `.crc` meta file fields (when that companion file is found next to the main file): meta version, sequence (full write-back count), CRC-32 of the data region as recorded, and whether the store is AES-encrypted (yes, no or unknown, with the reason when the `.crc` vector alone would say otherwise). Also shows total entry counts by state.
 
 **Records tab** — every entry in file order (not collapsed to one row per key), since MMKV is append-only between rewrites — a changed key appends a new entry rather than editing the old one, so superseded values remain physically present and readable until the next full rewrite:
 

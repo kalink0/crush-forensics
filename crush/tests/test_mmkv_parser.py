@@ -221,7 +221,9 @@ def test_encrypted_store_without_key_reports_encrypted_not_empty(tmp_path: Path)
 
     result = MMKVParser().parse(node, vfs)  # no password
     assert result.viewer_type == "tree"
-    assert str(result.metadata["Encrypted"]) == "yes"
+    # Ciphertext and a damaged region read the same without the key.
+    assert str(result.metadata["Encrypted"]) == "yes, or the store is damaged"
+    assert "encrypted or damaged" in str(result.data["error"])
     assert "records" not in result.data
 
 
@@ -242,7 +244,7 @@ def test_high_meta_version_false_positive_encrypted_flag_does_not_block_plaintex
     result = MMKVParser().parse(node, vfs)  # no password
     assert result.data["records"][0]["decoded"] == "b"
     assert result.data["records"][1]["decoded"] == "d"
-    assert "false positive" in str(result.metadata["Encrypted"])
+    assert str(result.metadata["Encrypted"]).startswith("no — the store reads as plaintext")
 
 
 def test_encrypted_store_with_correct_key_decrypts(tmp_path: Path) -> None:
@@ -421,7 +423,7 @@ def test_false_positive_store_reports_plaintext_to_the_viewer_too(tmp_path: Path
 
     meta_info = result.data["meta_info"]
     assert meta_info["encrypted"] is False
-    assert "false positive" in str(meta_info["encrypted_note"])
+    assert "reads as plaintext" in str(meta_info["encrypted_note"])
     assert str(result.metadata["Encrypted"]).startswith("no")
     e1_start = payload.index(e1)
     assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
@@ -441,6 +443,50 @@ def test_key_supplied_for_plaintext_store_is_not_reported_as_decrypted(tmp_path:
     assert "ignored" in str(result.metadata["Encrypted"])
     e1_start = payload.index(e1)
     assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
+
+
+def test_key_supplied_for_plaintext_store_with_vector_is_not_reported_as_decrypted(
+    tmp_path: Path,
+) -> None:
+    """MMKV::clearAll writes an AES vector into the .crc of every store it
+    clears, encrypted or not. "Open as -> MMKV (Encrypted)..." on such a
+    plaintext store: the region reads as plaintext, so the key is ignored --
+    the metadata must say so, and byte-provenance must not decrypt it."""
+    node, vfs, payload, (e1, _e2) = _plain_store_with_crc(
+        tmp_path, version=3, vector=bytes(range(1, 17))
+    )
+
+    result = MMKVParser().parse(node, vfs, password=b"any key at all")
+
+    assert result.data["records"][0]["decoded"] == "hello"
+    encrypted = str(result.metadata["Encrypted"])
+    assert encrypted.startswith("no")
+    assert "ignored" in encrypted
+    assert result.data["meta_info"]["encrypted"] is False
+    e1_start = payload.index(e1)
+    assert result.data["records"][0]["entry_range"] == (e1_start, e1_start + len(e1))
+    assert "Hex offsets" not in result.metadata
+
+
+@pytest.mark.parametrize("password", [None, b"any key at all"])
+def test_cleared_store_with_vector_is_empty_with_encryption_unknown(
+    tmp_path: Path, password: bytes | None
+) -> None:
+    """MMKV::clearAll writes a recorded size of 0 and an AES vector, whether
+    the store was encrypted or not (seen on an iOS extraction). There are no
+    records to tell it by: an empty store whose encryption is unknown, not
+    one refused as encrypted -- and not one said to be decrypted."""
+    payload = struct.pack("<I", 0) + b"\x00" * 4092
+    crc = _meta_bytes(version=2, sequence=1, vector=bytes(range(1, 17)))
+    node, vfs = _write_store(tmp_path, payload, crc=crc)
+
+    result = MMKVParser().parse(node, vfs, password=password)
+
+    assert "error" not in result.data
+    assert result.data["records"] == []
+    assert str(result.metadata["Encrypted"]).startswith("unknown")
+    assert "recorded data size is 0" in str(result.metadata["Encrypted"])
+    assert result.data["meta_info"]["encrypted"] is None
 
 
 def test_key_supplied_without_crc_is_reported_as_ignored_not_decrypted(tmp_path: Path) -> None:

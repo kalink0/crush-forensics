@@ -11192,24 +11192,9 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Konnte nicht gelesen werden: {detail}</translation>
     </message>
     <message>
-        <source>This MMKV store is AES-encrypted.</source>
-        <comment>mmkv.encrypted_error</comment>
-        <translation>Dieser MMKV-Speicher ist AES-verschlüsselt.</translation>
-    </message>
-    <message>
         <source>Use &quot;Open as -&gt; MMKV (Encrypted)...&quot; and supply the key.</source>
         <comment>mmkv.encrypted_hint</comment>
         <translation>Verwende &quot;Öffnen als -&gt; MMKV (verschlüsselt)...&quot; und gib den Schlüssel an.</translation>
-    </message>
-    <message>
-        <source>MMKV Key-Value Store (encrypted)</source>
-        <comment>mmkv.format_encrypted</comment>
-        <translation>MMKV Key-Value Store (verschlüsselt)</translation>
-    </message>
-    <message>
-        <source>yes</source>
-        <comment>mmkv.encrypted_yes</comment>
-        <translation>ja</translation>
     </message>
     <message>
         <source>{detail}</source>
@@ -11285,11 +11270,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>no — {note}</source>
         <comment>mmkv.encrypted_false_positive</comment>
         <translation>nein — {note}</translation>
-    </message>
-    <message>
-        <source>.crc meta file&apos;s vector field is non-zero, which normally flags AES encryption, but the store read cleanly as plaintext anyway, so that flag is treated as a false positive here</source>
-        <comment>mmkv.false_positive_note</comment>
-        <translation>Das Vektor-Feld der .crc-Metadatei ist ungleich null, was normalerweise auf AES-Verschlüsselung hinweist, aber der Store ließ sich trotzdem fehlerfrei als Klartext lesen, daher wird dieser Hinweis hier als Fehlalarm behandelt</translation>
     </message>
     <message>
         <source>Entry byte offsets could not be derived; Locate in Hex is unavailable</source>
@@ -11820,6 +11800,41 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>its key doesn&apos;t end in a signature and a child number in hex, each after a colon</source>
         <comment>chromium_cache.sparse_key_id</comment>
         <translation>sein Schlüssel endet nicht auf eine Signatur und eine Kindnummer in Hex, jeweils nach einem Doppelpunkt</translation>
+    </message>
+    <message>
+        <source>This MMKV store doesn&apos;t read as plaintext and its .crc meta file holds an AES vector: it is encrypted or damaged.</source>
+        <comment>mmkv.encrypted_error</comment>
+        <translation>Dieser MMKV-Speicher lässt sich nicht als Klartext lesen und seine .crc-Metadatei enthält einen AES-Vektor: Er ist verschlüsselt oder beschädigt.</translation>
+    </message>
+    <message>
+        <source>MMKV Key-Value Store (encrypted or damaged)</source>
+        <comment>mmkv.format_encrypted</comment>
+        <translation>MMKV Key-Value Store (verschlüsselt oder beschädigt)</translation>
+    </message>
+    <message>
+        <source>yes, or the store is damaged</source>
+        <comment>mmkv.encrypted_yes</comment>
+        <translation>ja, oder der Store ist beschädigt</translation>
+    </message>
+    <message>
+        <source>unknown — {note}</source>
+        <comment>mmkv.encrypted_unknown</comment>
+        <translation>unbekannt — {note}</translation>
+    </message>
+    <message>
+        <source>the recorded data size is 0, so there are no records to tell it by; the .crc meta file&apos;s AES vector is non-zero, which MMKV also writes when it clears a store</source>
+        <comment>mmkv.nothing_recorded_note</comment>
+        <translation>die aufgezeichnete Datengröße ist 0, daher gibt es keine Datensätze, an denen es sich erkennen ließe; der AES-Vektor der .crc-Metadatei ist ungleich null, was MMKV auch beim Leeren eines Stores schreibt</translation>
+    </message>
+    <message>
+        <source>no — a key was supplied but ignored: {note}</source>
+        <comment>mmkv.key_ignored_plaintext</comment>
+        <translation>nein — ein Schlüssel wurde angegeben, aber ignoriert: {note}</translation>
+    </message>
+    <message>
+        <source>the store reads as plaintext; the .crc meta file&apos;s AES vector is non-zero, which MMKV also writes when it clears a store</source>
+        <comment>mmkv.false_positive_note</comment>
+        <translation>der Store lässt sich als Klartext lesen; der AES-Vektor der .crc-Metadatei ist ungleich null, was MMKV auch beim Leeren eines Stores schreibt</translation>
     </message>
     <message>
         <source>Payload column: schema-less rendering (heuristic), valid UTF-8 shown as text and 64/32-bit fields as double/float. The selected record&apos;s payload is shown below the table with every candidate reading of each field</source>

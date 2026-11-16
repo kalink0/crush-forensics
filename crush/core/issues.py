@@ -2945,7 +2945,8 @@ MESSAGES: dict[str, str] = {
     # -- MMKV -------------------------------------------------------------
     "mmkv.encrypted_error": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "This MMKV store is AES-encrypted.",
+        "This MMKV store doesn't read as plaintext and its .crc meta file holds an AES "
+        "vector: it is encrypted or damaged.",
         "mmkv.encrypted_error",
     ),
     "mmkv.encrypted_hint": QT_TRANSLATE_NOOP(
@@ -2955,10 +2956,12 @@ MESSAGES: dict[str, str] = {
     ),
     "mmkv.format_encrypted": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "MMKV Key-Value Store (encrypted)",
+        "MMKV Key-Value Store (encrypted or damaged)",
         "mmkv.format_encrypted",
     ),
-    "mmkv.encrypted_yes": QT_TRANSLATE_NOOP("ParseIssue", "yes", "mmkv.encrypted_yes"),
+    "mmkv.encrypted_yes": QT_TRANSLATE_NOOP(
+        "ParseIssue", "yes, or the store is damaged", "mmkv.encrypted_yes"
+    ),
     "mmkv.read_failed": QT_TRANSLATE_NOOP("ParseIssue", "{detail}", "mmkv.read_failed"),
     "mmkv.read_failed_hint": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -3025,6 +3028,23 @@ MESSAGES: dict[str, str] = {
         "zero, so the store is not encrypted",
         "mmkv.key_ignored_zero_vector",
     ),
+    "mmkv.encrypted_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unknown — {note}",
+        "mmkv.encrypted_unknown",
+    ),
+    "mmkv.nothing_recorded_note": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the recorded data size is 0, so there are no records to tell it by; the "
+        ".crc meta file's AES vector is non-zero, which MMKV also writes when it "
+        "clears a store",
+        "mmkv.nothing_recorded_note",
+    ),
+    "mmkv.key_ignored_plaintext": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no — a key was supplied but ignored: {note}",
+        "mmkv.key_ignored_plaintext",
+    ),
     "mmkv.encrypted_false_positive": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "no — {note}",
@@ -3032,9 +3052,8 @@ MESSAGES: dict[str, str] = {
     ),
     "mmkv.false_positive_note": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        ".crc meta file's vector field is non-zero, which normally flags AES "
-        "encryption, but the store read cleanly as plaintext anyway, so that flag "
-        "is treated as a false positive here",
+        "the store reads as plaintext; the .crc meta file's AES vector is non-zero, "
+        "which MMKV also writes when it clears a store",
         "mmkv.false_positive_note",
     ),
     "mmkv.offsets_unavailable": QT_TRANSLATE_NOOP(
