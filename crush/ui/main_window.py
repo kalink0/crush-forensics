@@ -2340,9 +2340,7 @@ class MainWindow(QMainWindow):
             self._warn_unreadable(node, exc)
             return
         if parser is None:
-            self._status.showMessage(
-                translate("MainWindow", "No parser found for {name}").format(name=node.name)
-            )
+            self._warn_unrecognised_folder(node)
             return
 
         try:
@@ -5417,6 +5415,19 @@ class MainWindow(QMainWindow):
         )
         self._status.showMessage(text)
         QMessageBox.warning(self, translate("MainWindow", "Cannot open file"), text)
+
+    def _warn_unrecognised_folder(self, node: VFSNode) -> None:
+        """No folder format recognises the folder *node*: say so in a box,
+        not only in the status bar -- an Open that does nothing visible
+        reads as a missed click. (A file always has a parser: the hex
+        fallback.)"""
+        text = translate(
+            "MainWindow",
+            "No viewer recognises the folder {path!r} by its files; "
+            "open a file or subfolder inside it.",
+        ).format(path=node.path)
+        self._status.showMessage(text)
+        QMessageBox.warning(self, translate("MainWindow", "Cannot open folder"), text)
 
     def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> tuple[bytes | None, str]:
         """The node's bytes, or None and why they couldn't be read."""

@@ -7275,10 +7275,6 @@ Speicherort öffnen?</translation>
         <translation>{name} wird aus {source} gelesen...</translation>
     </message>
     <message>
-        <source>No parser found for {name}</source>
-        <translation>Für {name} wurde kein Parser gefunden</translation>
-    </message>
-    <message>
         <source>Loading {name}…</source>
         <translation>{name} wird geladen...</translation>
     </message>
@@ -8009,6 +8005,14 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>Cannot open file</source>
         <translation>Datei kann nicht geöffnet werden</translation>
+    </message>
+    <message>
+        <source>Cannot open folder</source>
+        <translation>Ordner kann nicht geöffnet werden</translation>
+    </message>
+    <message>
+        <source>No viewer recognises the folder {path!r} by its files; open a file or subfolder inside it.</source>
+        <translation>Kein Viewer erkennt den Ordner {path!r} an seinen Dateien; stattdessen lässt sich eine Datei oder ein Unterordner darin öffnen.</translation>
     </message>
     <message>
         <source>{path}  (disk image)</source>
