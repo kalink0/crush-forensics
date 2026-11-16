@@ -41,7 +41,15 @@ from crush.core.load_phase import (
     PHASE_UNLOCK_VOLUMES,
     report_phase,
 )
-from crush.core.stored_times import fat_stored_times
+from crush.core.stored_times import (
+    ACCESSED,
+    BACKUP,
+    BIRTH,
+    CHANGED,
+    MODIFIED,
+    StoredTime,
+    fat_stored_times,
+)
 from crush.third_party.ewfprobe import ewfprobe as _ewfprobe
 
 sys.modules.setdefault("ewfprobe", _ewfprobe)
@@ -50,7 +58,9 @@ from crush.third_party.qnxprobe.qnxprobe import (  # noqa: E402
     ApfsLock,
     ApfsWalker,
     BitLocker,
+    BtrfsWalker,
     ExfatWalker,
+    ExtWalker,
     F2fsWalker,
     Fat32Walker,
     HfsPlusWalker,
@@ -77,6 +87,41 @@ _MAX_DEPTH = 64  # a directory this deep in a walk is a loop, not a directory
 _ZERO_IS_NO_TIME = (
     NtfsWalker, RefsWalker, F2fsWalker, ApfsWalker, HfsPlusWalker, Fat32Walker, ExfatWalker,
 )
+
+# Walkers with times(): modified, accessed, changed and created (HFS+ also
+# backup) as (seconds, nanoseconds) since 1970 UTC, None where the record
+# holds none -- and where each is stored. Unlike entry(), times() gives an
+# APFS 0 as stored (the APFS reference has no "unset" value); HFS+ gives
+# None for a stored 0 (TN1150).
+_TIMES_SOURCE: dict[type, str] = {
+    ExtWalker: "time.ext_inode",
+    ApfsWalker: "time.apfs_inode",
+    HfsPlusWalker: "time.hfsplus_catalog",
+    BtrfsWalker: "time.btrfs_inode",
+}
+# times() keys -> StoredTime kinds
+_TIMES_KINDS = (
+    ("modified", MODIFIED), ("accessed", ACCESSED), ("changed", CHANGED),
+    ("created", BIRTH), ("backup", BACKUP),
+)
+
+
+def walker_stored_times(walker: Any, wnode: Any) -> list[StoredTime] | None:
+    """The times walker.times() reads for *wnode*, one StoredTime per kind
+    the record holds, or None when it gives none (no inode or record).
+    Shown to the whole second; the fraction stays in the image's bytes."""
+    times = walker.times(wnode)
+    if not times:
+        return None
+    source = ParseIssue(_TIMES_SOURCE[type(walker)])
+    out: list[StoredTime] = []
+    for key, kind in _TIMES_KINDS:
+        value = times.get(key)
+        if value is None:
+            continue
+        seconds, nanoseconds = value
+        out.append(StoredTime(kind, source, utc=seconds + nanoseconds / 1_000_000_000))
+    return out
 
 
 def _entry_time(walker: Any, value: Any) -> float | None:
@@ -785,7 +830,7 @@ def _compute_unallocated_gaps(vols: list[dict[str, Any]], total_size: int) -> li
 
 def build_volume_node(
     vol: dict[str, Any], read_map: dict[str, _Entry], facts: VolumeFacts | None = None,
-    image_size: int | None = None,
+    image_size: int | None = None, times_map: dict[str, tuple[Any, Any]] | None = None,
 ) -> "VFSNode":
     """One top-level VFSNode for a qnxprobe volumes() entry.
 
@@ -795,6 +840,9 @@ def build_volume_node(
     silently dropped -- and it stays fully readable as the raw bytes of that
     region (e.g. via Hex View), since a forensic tool must never make part
     of the source look less accessible than it actually is.
+
+    *times_map* collects, by path, the walker and node of every entry whose
+    filesystem stores more times than entry()'s mtime (walker_stored_times).
     """
     from crush.core.vfs import VFSNode, join_notes
 
@@ -830,7 +878,9 @@ def build_volume_node(
     notes: list[Any] = list(facts_status)
     if vol.get("note"):
         notes.insert(0, ParseIssue("entry.raw_volume_note", detail=str(vol["note"])))
-    _walk_into(walker, walker.root, node, read_map, path, set())
+    if times_map is not None and type(walker) in _TIMES_SOURCE:
+        times_map[path] = (walker, walker.root)
+    _walk_into(walker, walker.root, node, read_map, path, set(), times_map=times_map)
     # The root folder can carry named streams too; they sit beside its
     # entries as ":name", the way the root's own name is empty.
     _add_stream_nodes(walker, walker.root, "", path, node.children, read_map)
@@ -922,6 +972,7 @@ def _walk_into(
     base_path: str,
     seen: set[Any],
     depth: int = 0,
+    times_map: dict[str, tuple[Any, Any]] | None = None,
 ) -> None:
     from crush.core.vfs import VFSNode
 
@@ -970,11 +1021,13 @@ def _walk_into(
             continue
         mode, size, raw_mtime = ent
         mtime = _entry_time(walker, raw_mtime)  # 0 is "no time" only where the walker says so
+        if times_map is not None and type(walker) in _TIMES_SOURCE:
+            times_map[child_path] = (walker, child)  # read on request (walker_stored_times)
         if (mode & 0o170000) == qnxprobe.S_IFDIR:  # not just the bit: block devices and sockets share it
             child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime,
                                  stored_times=times)
             children.append(child_node)
-            _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1)
+            _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1, times_map)
             _add_stream_nodes(walker, child, name, base_path, children, read_map)
         elif (mode & 0o170000) == 0o100000:  # regular files only
             child_node = VFSNode(

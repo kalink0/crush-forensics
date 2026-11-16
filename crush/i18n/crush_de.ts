@@ -12542,6 +12542,31 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>UTC-Offset {offset} daneben gespeichert, nicht angewendet</translation>
     </message>
     <message>
+        <source>ext inode</source>
+        <comment>time.ext_inode</comment>
+        <translation>ext-Inode</translation>
+    </message>
+    <message>
+        <source>APFS inode record</source>
+        <comment>time.apfs_inode</comment>
+        <translation>APFS-Inode-Datensatz</translation>
+    </message>
+    <message>
+        <source>HFS+ catalog record</source>
+        <comment>time.hfsplus_catalog</comment>
+        <translation>HFS+-Katalog-Datensatz</translation>
+    </message>
+    <message>
+        <source>Btrfs inode item</source>
+        <comment>time.btrfs_inode</comment>
+        <translation>Btrfs-Inode-Item</translation>
+    </message>
+    <message>
+        <source>The times stored for this entry could not be read: {detail}</source>
+        <comment>time.raw_times_unreadable</comment>
+        <translation>Die für diesen Eintrag gespeicherten Zeiten konnten nicht gelesen werden: {detail}</translation>
+    </message>
+    <message>
         <source>Stored {count} times in this archive under this name; this is occurrence {k} of {count} (archive order)</source>
         <comment>entry.duplicate</comment>
         <translation>{count}-mal unter diesem Namen in diesem Archiv gespeichert; dies ist Vorkommen {k} von {count} (Archivreihenfolge)</translation>
@@ -13237,6 +13262,10 @@ YnBsaXN0MDA…       (Base64)
     <message>
         <source>Warnings</source>
         <translation>Warnungen</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>Backup</translation>
     </message>
     <message>
         <source>{reading} (as stored, no time zone)</source>

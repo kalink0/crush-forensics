@@ -23,6 +23,9 @@ from crush.core.issues import ParseIssue
 
 MODIFIED, ACCESSED, CHANGED, BIRTH = "modified", "accessed", "changed", "birth"
 KINDS = (MODIFIED, ACCESSED, CHANGED, BIRTH)
+# A kind only some sources store (HFS+'s backup date): shown only where stored.
+BACKUP = "backup"
+EXTRA_KINDS = (BACKUP,)
 
 _WIN_EPOCH_OFFSET = 11_644_473_600  # seconds from 1601-01-01 to 1970-01-01
 

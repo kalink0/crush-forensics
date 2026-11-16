@@ -2280,6 +2280,10 @@ class RawImageVFS(VFS):
         )
         self._lock = threading.Lock()
         self._read_map: dict[str, Any] = {}
+        # Entries whose filesystem stores more times than the listing reads
+        # (ext, APFS, HFS+, Btrfs): read on first request, then kept.
+        self._times_map: dict[str, tuple[Any, Any]] = {}
+        self._times_read: dict[str, list[StoredTime] | ParseIssue] = {}
         self._volume_facts: dict[str, Any] = {}
 
         report_phase(PHASE_READ_FILESYSTEMS)
@@ -2288,7 +2292,9 @@ class RawImageVFS(VFS):
         for number, vol in enumerate(volumes, 1):
             report_step(number, len(volumes))
             facts = volume_facts(vol, self._handle)
-            node = build_volume_node(vol, self._read_map, facts, self._handle.size)
+            node = build_volume_node(
+                vol, self._read_map, facts, self._handle.size, times_map=self._times_map,
+            )
             self._volume_facts[node.path] = facts
             root.children.append(node)
         root.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -2324,6 +2330,28 @@ class RawImageVFS(VFS):
 
     def root(self) -> VFSNode:
         return self._tree
+
+    def stored_times(self, node: VFSNode) -> list[StoredTime] | ParseIssue:
+        """Modified, accessed, changed and birth (HFS+ also backup) from the
+        inode or catalog record, on ext, APFS, HFS+ and Btrfs: read on first
+        request, not when the image opens (one record read per entry)."""
+        from crush.core.raw_image import walker_stored_times
+
+        held = self._times_map.get(node.path)
+        if held is None:
+            return node.stored_times
+        cached = self._times_read.get(node.path)
+        if cached is None:
+            try:
+                with self._lock:
+                    times = walker_stored_times(*held)
+            except Exception as exc:  # noqa: BLE001 -- shown, the listing's time stays
+                cached = ParseIssue("time.raw_times_unreadable", detail=str(exc))
+            else:
+                # None: no record holds times for it; the listing's time stands
+                cached = times if times is not None else node.stored_times
+            self._times_read[node.path] = cached
+        return cached
 
     def _resolve_entry(self, node: VFSNode) -> Any:
         from crush.core.raw_image import RawImageFileUnreadableError

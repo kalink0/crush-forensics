@@ -3832,6 +3832,17 @@ MESSAGES: dict[str, str] = {
         "UTC offset {offset} stored beside it, not applied",
         "time.offset_not_applied",
     ),
+    "time.ext_inode": QT_TRANSLATE_NOOP("ParseIssue", "ext inode", "time.ext_inode"),
+    "time.apfs_inode": QT_TRANSLATE_NOOP("ParseIssue", "APFS inode record", "time.apfs_inode"),
+    "time.hfsplus_catalog": QT_TRANSLATE_NOOP(
+        "ParseIssue", "HFS+ catalog record", "time.hfsplus_catalog"
+    ),
+    "time.btrfs_inode": QT_TRANSLATE_NOOP("ParseIssue", "Btrfs inode item", "time.btrfs_inode"),
+    "time.raw_times_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The times stored for this entry could not be read: {detail}",
+        "time.raw_times_unreadable",
+    ),
     # -- Entries in a browsed source (Properties: Entry status) --------------------
     "entry.duplicate": QT_TRANSLATE_NOOP(
         "ParseIssue",
