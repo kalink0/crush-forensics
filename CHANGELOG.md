@@ -11,6 +11,8 @@ All notable changes to Crush will be documented in this file.
 
 ### Changed
 
+- A LevelDB table block that can't be read, decompressed or read to its end is skipped and named with its offset and whether its stored checksum matches; the blocks after it are still read, as LevelDB reads on.
+- Bundled [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) updated to v0.6 (from v0.4), with [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) bundled from its own repository.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.78 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
 
 ## v0.25.0 - 2026-11-07

@@ -145,10 +145,10 @@ def _ack_body() -> str:
     <td><a href="https://github.com/cclgroupltd/ccl-segb">CCL Forensics</a></td>
   </tr>
   <tr>
-    <td><b>ccl_leveldb</b></td>
+    <td><b>ccl_leveldb</b><br><b>ccl_simplesnappy</b></td>
     <td>{desc['ccl_leveldb']}</td>
     <td class="lic">MIT</td>
-    <td><a href="https://github.com/cclgroupltd/ccl_chromium_reader">CCL Forensics</a></td>
+    <td><a href="https://github.com/cclgroupltd/ccl_chromium_reader">CCL Forensics</a><br><a href="https://github.com/cclgroupltd/ccl_simplesnappy">CCL Forensics</a></td>
   </tr>
   <tr class="alt">
     <td><b>mmkv-parser</b></td>

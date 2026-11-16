@@ -16,6 +16,12 @@ from LevelDB's own, a subclass here overrides the one method concerned:
 - table blocks (_LdbFile._read_block): only compression types 0 (none) and
   1 (Snappy) are decoded, any other is named instead of being fed to the
   Snappy decoder;
+- table files (_LdbFile.__iter__): a data block that can't be read,
+  decompressed or read to its end is described in *damaged*, with whether
+  its stored checksum matches, and reading goes on with the next block, as
+  LevelDB's table iterator moves on past a corrupt block -- the vendored
+  reader skips an unreadable block too, but not an entry it can't read,
+  and doesn't keep the position of each part;
 - MANIFEST edits (_decode_version_edit): a tag LevelDB doesn't define stops
   the edit with its offset, as VersionEdit::DecodeFrom does, instead of
   being read past, and says whether its record's checksum matches; and the
@@ -40,7 +46,6 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, cast
 
-from crush.third_party.ccl_leveldb import ccl_simplesnappy
 from crush.third_party.ccl_leveldb.ccl_leveldb import (
     Block,
     BlockHandle,
@@ -55,6 +60,7 @@ from crush.third_party.ccl_leveldb.ccl_leveldb import (
     read_le_varint,
     read_length_prefixed_blob,
 )
+from crush.third_party.ccl_simplesnappy import ccl_simplesnappy
 
 _BLOCK_SIZE = 32768  # log_format.h kBlockSize
 _HEADER_SIZE = 7  # crc (4), length (2), type (1)
@@ -388,7 +394,8 @@ def _shifted(parts: dict[str, Ranges], base: int) -> dict[str, Ranges]:
 
 
 class _LdbFile(LdbFile):
-    """A .ldb/.sst table that names a compression type it can't decode.
+    """A .ldb/.sst table that names a compression type it can't decode, and
+    skips a damaged data block, describing it in *damaged*, and reads on.
 
     After each record it yields, *location* is where the record's parts are
     (see record_location): in the file for an uncompressed block, in the
@@ -396,20 +403,54 @@ class _LdbFile(LdbFile):
 
     location: dict[str, Any] | None = None
 
+    def __init__(self, path: Path) -> None:
+        super().__init__(path)  # reads the footer and index block; raises if they can't be
+        self.damaged: list[str] = []
+
+    def _block_damage(self, handle: BlockHandle, stream: Any, what: str) -> str:
+        # The stored checksum covers the block as stored and its compression
+        # type byte (table/format.cc ReadBlock).
+        crc = (
+            "the block's stored checksum matches"
+            if self._block_checksum_matches(handle, stream)
+            else "the block's stored checksum doesn't match"
+        )
+        return (f"Block at offset {handle.offset} ({handle.length:,} bytes and its "
+                f"{LdbFile.BLOCK_TRAILER_SIZE}-byte trailer): {what}; {crc}")
+
     def __iter__(self) -> Iterator[Record]:
         # The vendored __iter__, keeping the position of each part.
+        if self.closed:
+            raise OSError("Tried to read from a closed file")
+        self.damaged.clear()
+        with self.path.open("rb") as stream:
+            self._active_handles.add(stream)
+            yield from self._records(stream)
+        self._active_handles.discard(stream)
+
+    def _records(self, stream: Any) -> Iterator[Record]:
         for _block_key, handle in self._index:
-            block = self._read_block(handle)
+            try:
+                block = self._read_block(handle, stream)
+            except OSError:
+                raise  # the copy being read, not the data
+            except Exception as exc:  # noqa: BLE001 -- described, reading goes on
+                self.damaged.append(self._block_damage(
+                    handle, stream, f"can't be read ({exc}); the block is skipped"))
+                continue
             # Read the whole block first, for its record count; an entry
             # that can't be read still lets the ones before it through,
-            # as the vendored reader does, then stops.
+            # and the rest of the block is skipped.
             entries: list[tuple[bytes, bytes, dict[str, Ranges]]] = []
-            failure: Exception | None = None
             try:
                 for entry in _block_entries(block):
                     entries.append(entry)
-            except Exception as exc:  # noqa: BLE001 -- raised again below
-                failure = exc
+            except Exception as exc:  # noqa: BLE001 -- described, reading goes on
+                self.damaged.append(self._block_damage(
+                    handle, stream,
+                    f"entry {len(entries) + 1} can't be read ({exc}); the rest of the "
+                    f"block is skipped after {len(entries):,} records",
+                ))
             for key, value, parts in entries:
                 if block.was_compressed:
                     self.location = record_location(None, {
@@ -425,15 +466,13 @@ class _LdbFile(LdbFile):
                     self.location = record_location(_shifted(parts, block.offset))
                     offset = block.offset + parts["entry"][0][0]
                 yield Record.ldb_record(key, value, self.path, offset, block.was_compressed)
-            if failure is not None:
-                raise failure
 
-    def _read_block(self, handle: BlockHandle) -> Block:
+    def _read_block(self, handle: BlockHandle, stream: Any) -> Block:
         # block (handle.length bytes), then a 5-byte trailer: compression
         # type (1) and CRC (4)
-        self._f.seek(handle.offset)
-        raw_block = self._f.read(handle.length)
-        trailer = self._f.read(LdbFile.BLOCK_TRAILER_SIZE)
+        stream.seek(handle.offset)
+        raw_block = stream.read(handle.length)
+        trailer = stream.read(LdbFile.BLOCK_TRAILER_SIZE)
         if len(raw_block) != handle.length or len(trailer) != LdbFile.BLOCK_TRAILER_SIZE:
             raise ValueError(f"Could not read all of the block at offset {handle.offset} in file {self.path}")
         if trailer[0] not in (0, 1):
@@ -457,7 +496,10 @@ class _ManifestFile(ManifestFile):
         if not re.match(ManifestFile.MANIFEST_FILENAME_PATTERN, path.name):
             raise ValueError("Invalid name for Manifest")
         self.path = path
-        self._f = path.open("rb")
+        # what the vendored __init__ sets up for _get_raw_blocks and close
+        self._damage: set[Any] = set()
+        self._active_handles: set[Any] = set()
+        self._closed = False
         self.checksum_mismatches: list[int] = []
 
     def _get_batches(self) -> Iterator[tuple[int, bytes]]:
