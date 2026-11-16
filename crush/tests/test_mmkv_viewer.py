@@ -242,10 +242,23 @@ def test_overview_shows_encrypted_verdict_with_reason_for_false_positive_flag(qa
 
     meta_info = {
         "crc": 0, "version": 61, "sequence": 0, "actual_size": None,
-        "encrypted": False, "encrypted_note": "flag treated as a false positive",
+        "encrypted": False, "encrypted_note": "the store reads as plaintext",
     }
     viewer = MMKVViewer({"records": [], "meta_info": meta_info})
-    assert _overview_value(viewer, "Encrypted") == "no — flag treated as a false positive"
+    assert _overview_value(viewer, "Encrypted") == "no — the store reads as plaintext"
+
+
+def test_overview_shows_unknown_encryption_with_the_parsers_reason(qapp, widgets) -> None:
+    """encrypted None: the parser couldn't tell (a cleared store, nothing
+    recorded) -- the Overview says unknown, never "no"."""
+    from crush.viewers.mmkv_viewer import MMKVViewer
+
+    meta_info = {
+        "crc": 0, "version": 2, "sequence": 1, "actual_size": None,
+        "encrypted": None, "encrypted_note": "the recorded data size is 0",
+    }
+    viewer = widgets(MMKVViewer({"records": [], "meta_info": meta_info}))
+    assert _overview_value(viewer, "Encrypted") == "unknown — the recorded data size is 0"
 
 
 def test_overview_encrypted_plain_yes_no_without_note(qapp) -> None:

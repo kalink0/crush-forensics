@@ -362,8 +362,9 @@ class LeveldbParser(AbstractParser):
                 stopped = ParseIssue("leveldb.read_stopped", {"count": from_file}, detail=reason(exc))
             finally:
                 reader.close()
-            # Damaged parts of a .log the reader skipped, reading on as
-            # LevelDB does (leveldb_reader._read_batches).
+            # Damaged parts of a .log or table blocks the reader skipped,
+            # reading on as LevelDB does (leveldb_reader._read_batches,
+            # _LdbFile).
             damaged: list[str] = getattr(reader, "damaged", [])
             file_notes: list[Any] = [stopped]
             if damaged:

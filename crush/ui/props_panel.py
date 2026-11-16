@@ -15,7 +15,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crush.core.stored_times import ACCESSED, BIRTH, CHANGED, KINDS, MODIFIED, StoredTime
+from crush.core.stored_times import (
+    ACCESSED,
+    BACKUP,
+    BIRTH,
+    CHANGED,
+    EXTRA_KINDS,
+    KINDS,
+    MODIFIED,
+    StoredTime,
+)
 from crush.core.ts_decode import unix_to_utc
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
 from crush.core.issues import CatalogText, ParseIssue, render_value
@@ -306,8 +315,11 @@ class PropertiesPanel(QScrollArea):
             ACCESSED: translate("PropertiesPanel", "Accessed"),
             CHANGED: translate("PropertiesPanel", "Changed"),
             BIRTH: translate("PropertiesPanel", "Birth"),
+            BACKUP: translate("PropertiesPanel", "Backup"),
         }
-        for kind in KINDS:
+        # The four MACB rows always; a kind only some sources store, where stored
+        extra = [k for k in EXTRA_KINDS if any(t.kind == k for t in times)]
+        for kind in (*KINDS, *extra):
             rows = [t for t in times if t.kind == kind]
             if not rows:
                 self._add_timestamp(names[kind], None)
