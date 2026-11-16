@@ -1,6 +1,6 @@
 # Vendored, byte-for-byte and UNMODIFIED, from:
 #   https://github.com/abrignoni/qnxprobe
-#   commit c8099eea0b5d0f30bf6899bd66242680514ba0ab (2026-10-23, tag v1.75)
+#   commit 0c18009ee0e2dc3242486dc010e4d940f13747b3 (2026-11-13, tag v1.78)
 #   qnxprobe.py, MIT License (see LICENSE in this directory)
 #
 # Crush's own wrapper lives in crush/core/raw_image.py — it walks the volumes
@@ -55,7 +55,7 @@ except ImportError:                  # not on sys.path when imported as a module
     except ImportError:
         ewfprobe = None
 
-QNXPROBE_VERSION = "1.75"
+QNXPROBE_VERSION = "1.78"
 
 QNX6_MAGIC     = 0x68191122
 BOOTBLOCK_SIZE = 0x2000
@@ -1358,6 +1358,10 @@ EXT_F = dict(inodes_count=0, blocks_count=4, free_blocks=12, first_data_block=20
 EXT_INCOMPAT_EXTENTS  = 0x0040   # ext4.h
 EXT_COMPAT_HAS_JOURNAL = 0x0004  # ext4.h
 EXT_VALID_FS = 0x0001            # ext4.h
+EXT_GOOD_OLD_INODE_SIZE = 128    # ext4.h EXT4_GOOD_OLD_INODE_SIZE
+EXT4_EPOCH_BITS = 2              # ext4.h; the low bits of an i_*time_extra field
+EXT4_EPOCH_MASK = (1 << EXT4_EPOCH_BITS) - 1
+EXT4_EA_INODE_FL = 0x200000      # ext4.h; the inode holds an extended attribute value
 
 
 def _e(sb, k, n=4):
@@ -1761,6 +1765,67 @@ class ExtWalker:
         size = (struct.unpack_from("<I", raw, 4)[0]
                 | struct.unpack_from("<I", raw, 108)[0] << 32)
         return mode, size, struct.unpack_from("<I", raw, 16)[0]
+
+    def times(self, num):
+        """{"modified", "accessed", "changed", "created"} as (seconds,
+        nanoseconds) since 1970-01-01 UTC, each None where the inode does not
+        hold it, or None for an inode that cannot be read. The shape
+        BtrfsWalker.times() gives. entry() keeps its unsigned 32-bit mtime.
+
+        Read the way the kernel reads them (fs/ext4/ext4.h and fs/ext4/inode.c
+        at v7.3, c03c1a14507dfaf8b856c2608f9ac216021fc222; the layout in
+        Documentation/filesystems/ext4/inodes.rst at the same commit):
+
+        - i_atime, i_ctime and i_mtime (0x08, 0x0C, 0x10) are signed 32-bit
+          seconds (EXT4_INODE_GET_XTIME_VAL casts them signed). The kernel has
+          no unset value for them, so a stored 0 is returned as stored.
+        - i_ctime_extra, i_mtime_extra and i_atime_extra (0x84, 0x88, 0x8C) and
+          i_crtime with i_crtime_extra (0x90, 0x94) are read only when they fit
+          in 128 + i_extra_isize bytes (EXT4_FITS_IN_INODE). An extra field's
+          low two bits add that many 2^32 seconds and its upper 30 bits are the
+          nanoseconds (ext4_decode_extra_time, EXT4_EPOCH_BITS).
+        - created is None unless i_crtime fits; the kernel then reports no
+          birth time (ext4_getattr sets STATX_BTIME only when it fits).
+        - i_extra_isize is read only when the superblock's inode size is past
+          128 (on a 128-byte inode the next inode starts there). A value that
+          runs past the inode or is not a multiple of 4 makes the kernel refuse
+          the inode ("iget: bad extra_isize" in __ext4_iget), and this returns
+          None for it.
+        - An inode flagged EXT4_EA_INODE_FL (0x200000 in i_flags, 0x20) holds an
+          extended attribute value, and inodes.rst says its atime, ctime and
+          mtime fields then hold a checksum, a reference count and an owner, so
+          those three are None.
+
+        e2fsprogs 1.47.4 reads the base as unsigned (ext2fs_inode_xtime_get), so
+        debugfs disagrees with this for a base with its top bit set: a time
+        before 1970, or one the kernel encodes between 2038 and 2106."""
+        raw = self.inode(num)
+        if not raw:
+            return None
+        extra = 0
+        if self.isz > EXT_GOOD_OLD_INODE_SIZE:
+            if len(raw) < EXT_GOOD_OLD_INODE_SIZE + 2:
+                return None
+            extra = struct.unpack_from("<H", raw, EXT_GOOD_OLD_INODE_SIZE)[0]
+            if EXT_GOOD_OLD_INODE_SIZE + extra > self.isz or extra & 3:
+                return None
+        room = min(EXT_GOOD_OLD_INODE_SIZE + extra, len(raw))
+
+        def stamp(base_at, extra_at):
+            sec = struct.unpack_from("<i", raw, base_at)[0]
+            if extra_at + 4 > room:
+                return (sec, 0)
+            bits = struct.unpack_from("<I", raw, extra_at)[0]
+            return (sec + ((bits & EXT4_EPOCH_MASK) << 32), bits >> EXT4_EPOCH_BITS)
+
+        out = {"modified": None, "accessed": None, "changed": None, "created": None}
+        if not struct.unpack_from("<I", raw, 0x20)[0] & EXT4_EA_INODE_FL:
+            out["accessed"] = stamp(0x08, 0x8C)
+            out["changed"] = stamp(0x0C, 0x84)
+            out["modified"] = stamp(0x10, 0x88)
+        if 0x90 + 4 <= room:
+            out["created"] = stamp(0x90, 0x94)
+        return out
 
     def read_file(self, num, size):
         """Yield the file's bytes, exactly ``size`` of them, holes and all."""
@@ -2780,8 +2845,16 @@ class Fat32Walker:
         return [(name, child) for name, child, _times in self.listdir_records(node)]
 
     def read_file(self, node, size):
+        """The first min(size, recorded size) bytes, read from as many clusters
+        of the chain as that takes and no more. An empty file, or a size of
+        zero, reads nothing: on FAT16 and FAT12 an empty file's cluster 0 is the
+        fixed root directory's, and _read_chain() would read that."""
         clus, sz, _ = node
-        yield self._read_chain(clus, sz)
+        want = sz if size is None else min(size, sz)
+        if want <= 0:
+            yield b""
+            return
+        yield self._read_chain(clus, want)
 
     def chain_shortfall(self, node):
         """(clusters in the chain, clusters the recorded size needs) for a file
@@ -3616,13 +3689,18 @@ class ExfatWalker:
 
     def read_file(self, node, size):
         clus, sz, _, contig = node
-        if not sz:
+        want = sz if size is None else min(size, sz)
+        if want <= 0:
             # _read() takes a size of zero to mean a directory, read to the end
             # of its allocation. An empty file has no first cluster, and read
             # that way it came back as one cluster of the volume's own bytes.
+            # A request for no bytes of a file that has some is the same: it
+            # must never reach _read() as zero.
             yield b""
             return
-        yield self._read(clus, sz, contig)
+        # _read() stops at want, so only the clusters that hold it are read,
+        # from a NoFatChain run and a FAT chain alike.
+        yield self._read(clus, want, contig)
 
     def chain_shortfall(self, node):
         """(clusters in the chain, clusters the recorded size needs) for a file
@@ -7116,6 +7194,31 @@ class ApfsWalker:
                 size = struct.unpack_from("<Q", head, 8)[0]
         return (mode or 0o100644, size, mtime)
 
+    def times(self, node):
+        """{"modified", "accessed", "changed", "created"} as (seconds,
+        nanoseconds) since 1970-01-01 UTC, or None for the container or a node
+        with no inode. The shape BtrfsWalker.times() gives.
+
+        j_inode_val_t (Apple File System Reference, edition 2020-06-22, pages
+        74-75) holds create_time, mod_time, change_time and access_time at
+        offsets 16, 24, 32 and 40, each a uint64_t count of nanoseconds since
+        1970-01-01 00:00 UTC, disregarding leap seconds: "the time that this
+        record was created", "last modified", "attributes were last modified"
+        (the change time) and "last accessed". The reference gives no unset
+        value, so each is returned as stored, 0 included. entry() keeps its
+        whole-second mod_time with 0 for a value it treats as unset."""
+        if node == APFS_CONTAINER:
+            return None
+        oid = self._select(node)
+        if oid is None:
+            return None
+        val = self._inode(oid)
+        if not val or len(val) < 48:
+            return None
+        created, modified, changed, accessed = struct.unpack_from("<4Q", val, 16)
+        return {"modified": divmod(modified, APFS_NANO), "accessed": divmod(accessed, APFS_NANO),
+                "changed": divmod(changed, APFS_NANO), "created": divmod(created, APFS_NANO)}
+
     def allocation(self, node):
         """What the volume stores for a file, beside the size it records. The
         same dict NtfsWalker.allocation() returns, less the two NTFS fields:
@@ -7371,6 +7474,10 @@ HFSP_FOLDER, HFSP_FILE, HFSP_FOLDER_THREAD, HFSP_FILE_THREAD = 1, 2, 3, 4
 
 # HFS+ counts seconds from 1904-01-01; this is the gap to the Unix epoch.
 HFSP_EPOCH_DELTA = 2082844800
+# A catalog file or folder record's flags bit saying its dates are Unix seconds
+# rather than seconds since 1904 (kHFSCatExpandedTimesMask, core/hfs_format.h in
+# Apple's hfs-715.120.4, 124b970fd5390f1c2cd6f985478616a04f6eeb1f).
+HFSP_CAT_EXPANDED_TIMES = 0x1000
 
 # A hard link is a file whose Finder type and creator say so; the number of the
 # indirect node it points at is in the BSD info's special field.
@@ -7862,6 +7969,52 @@ class HfsPlusWalker:
         if blob and len(blob) >= 16:
             size = struct.unpack_from("<Q", blob, 8)[0]
         return (mode or 0o100644, size, mtime)
+
+    def times(self, cnid):
+        """{"modified", "accessed", "changed", "created", "backup"} as (seconds,
+        0) since 1970-01-01 UTC, each None where the record holds no date, or
+        None for a node with no file or folder record. A hard link gives its
+        indirect node's dates, as entry() gives its size. The four shared names
+        are the shape BtrfsWalker.times() gives; "backup" has no counterpart.
+
+        TN1150 ("HFS Plus Volume Format", HFSPlusCatalogFolder and
+        HFSPlusCatalogFile, and "HFS Plus Dates") puts createDate,
+        contentModDate, attributeModDate, accessDate and backupDate at the same
+        offsets, 12 to 28, in both records: UInt32 seconds since 1904-01-01 GMT.
+        Only the volume header's createDate is local time, and it is not read
+        here. attributeModDate is "the last date and time that any field in the
+        file's catalog record was changed", which TN1150 says the Mac OS X BSD
+        APIs return as st_ctime, so it is the change time.
+
+        Apple's HFS (hfs-715.120.4, 124b970fd5390f1c2cd6f985478616a04f6eeb1f)
+        adds two rules TN1150 predates. A record whose flags carry
+        kHFSCatExpandedTimesMask stores Unix seconds instead (hfs_catalog.c reads
+        each record's own bit; to_bsd_time in core/MacOSStubs.c returns them
+        unconverted, and to_hfs_time says zero is then 1970-01-01). Otherwise
+        to_hfs_time stores an unset time as 0 ("treat as uninitialized"), so a
+        stored 0 is None. A date stored before 1970 is returned as TN1150 counts
+        it, negative; macOS's own to_bsd_time shows it as 1970-01-01."""
+        rec = self._record(cnid)
+        if not rec or len(rec) < 2:
+            return None
+        kind = struct.unpack_from(">H", rec, 0)[0]
+        if kind == HFSP_FILE:
+            _target, rec = self._resolve(cnid, rec)
+        elif kind != HFSP_FOLDER:
+            return None
+        if len(rec) < 32:
+            return None
+        expanded = struct.unpack_from(">H", rec, 2)[0] & HFSP_CAT_EXPANDED_TIMES
+
+        def stamp(v):
+            if expanded:
+                return (v, 0)
+            return (v - HFSP_EPOCH_DELTA, 0) if v else None
+
+        created, content, attributes, accessed, backup = struct.unpack_from(">5I", rec, 12)
+        return {"modified": stamp(content), "accessed": stamp(accessed),
+                "changed": stamp(attributes), "created": stamp(created),
+                "backup": stamp(backup)}
 
     def listdir(self, cnid):
         out = []
@@ -30901,6 +31054,89 @@ def _ntfs_deleted_check(image_gz, listing):
     return matched, len(want), missing, different
 
 
+def _times_fixture_checks(fixtures):
+    """[(label, passed)] for times() of the ext, APFS and HFS+ walkers against
+    known data no qnxprobe code produced: ext-times.json (debugfs's stored
+    fields, decoded by the kernel's rule; tools/make_ext_times_fixture.sh) and
+    mac-times.json (macOS's own getattrlist reading of images it wrote;
+    tools/make_times_fixtures.sh). Every name each file lists is compared,
+    None included, so a time read from the wrong field, a value invented where
+    the volume holds none, or a hard link answered from its own record fails."""
+    import gzip, io, json
+    out = []
+
+    def node_of(w, path):
+        node = w.root
+        for part in path.strip("/").split("/"):
+            node = dict(w.listdir(node)).get(part)
+            if node is None:
+                return None
+        return node
+
+    for listing, stems in (("ext-times.json", ("ext4-times", "ext2-times128")),
+                           ("mac-times.json", ("apfs-times", "hfsplus-times"))):
+        with open(os.path.join(fixtures, listing), encoding="utf-8") as fh:
+            known = json.load(fh)
+        for stem in stems:
+            with gzip.open(os.path.join(fixtures, stem + ".img.gz"), "rb") as gz:
+                img = io.BytesIO(gz.read())
+            size = img.getbuffer().nbytes
+            kind = (identify_fs(img, 0, size) or (None,))[0]
+            w = walker_for(kind, img, 0, size) if kind else None
+            wrong, rows = [], known[stem]
+            for path, row in sorted(rows.items()):
+                if kind == "apfs":
+                    path = "QNXTIMES/" + path
+                node = node_of(w, path) if w is not None else None
+                want = row["expected"]
+                if want is not None:
+                    want = {k: tuple(v) if v is not None else None for k, v in want.items()}
+                got = None
+                if node is not None:
+                    try:
+                        got = w.times(node)
+                    except Exception as exc:         # pylint: disable=broad-except
+                        wrong.append(f"{path}: times() raised {type(exc).__name__}: {exc}")
+                        continue
+                    if got is not None and want is not None:
+                        got = {k: got.get(k) for k in want}
+                if node is None or got != want:
+                    wrong.append(f"{path}: {got} where {want}")
+            out.append((f"{stem}: times() of {len(rows)} files and folders match the known "
+                        f"data in {listing}" + (f"; {'; '.join(wrong)}" if wrong else ""),
+                        not wrong))
+            if kind == "hfs+" and w is not None:
+                try:
+                    out.append(_hfs_expanded_times_check(img, w, node_of(w, "plain.txt")))
+                except Exception as exc:             # pylint: disable=broad-except
+                    out.append(("an HFS+ record flagged for expanded times reads its dates as "
+                                f"Unix seconds ({type(exc).__name__}: {exc})", False))
+    return out
+
+
+def _hfs_expanded_times_check(img, w, cnid):
+    """A record flagged kHFSCatExpandedTimesMask holds Unix seconds (Apple's
+    to_bsd_time returns them unconverted). macOS writes no such record here, so
+    the bit is set in a copy of one the fixture holds: the same five stored
+    words must then read 2082844800 seconds later, and a stored 0 as 1970."""
+    import io
+    rec = w._record(cnid)
+    buf = bytearray(img.getvalue())
+    at = buf.find(rec)
+    ok = at >= 0 and buf.find(rec, at + 1) < 0
+    label = "an HFS+ record flagged for expanded times reads its dates as Unix seconds"
+    if not ok:
+        return (label + " (the record was not found once in the image)", False)
+    struct.pack_into(">H", buf, at + 2, struct.unpack_from(">H", rec, 2)[0]
+                     | HFSP_CAT_EXPANDED_TIMES)
+    struct.pack_into(">I", buf, at + 28, 0)                 # backupDate 0
+    plain = w.times(cnid)
+    got = HfsPlusWalker(io.BytesIO(bytes(buf)), 0).times(cnid)
+    want = {k: (v[0] + HFSP_EPOCH_DELTA, 0) for k, v in plain.items() if k != "backup"}
+    want["backup"] = (0, 0)
+    return (label + ("" if got == want else f"; {got} where {want}"), got == want)
+
+
 def _ext_fixture_check(image_gz, listing):
     """Walk a committed ext fixture and compare every file against the hashes
     sha256sum recorded over the tree the image was built from.
@@ -31803,6 +32039,127 @@ def _fat_listing_check(image_gz, wcls):
     if missing:
         return False, f"reading not printed for {missing[:3]}"
     return True, f"{len(files)} files, readings printed as stored"
+
+
+def _counting_image(data):
+    """An image in memory that totals the bytes read() hands back, in
+    ``read_bytes``, so a check can tell a reader that read only what it
+    returned from one that read the whole file and cut it to length. The two
+    return the same bytes."""
+    import io
+
+    class _CountingImage(io.BytesIO):
+        def __init__(self, raw):
+            super().__init__(raw)
+            self.read_bytes = 0
+
+        def read(self, n=-1):
+            got = super().read(n)
+            self.read_bytes += len(got)
+            return got
+
+    return _CountingImage(data)
+
+
+def _fat_chain_of(w, node):
+    """The clusters a FAT or exFAT file's data is in, in order, walked here
+    rather than by the reader under test."""
+    clus, sz = node[0], node[1]
+    if not sz:
+        return []
+    need = -(-sz // w.cluster_bytes)
+    if isinstance(w, ExfatWalker) and node[3]:
+        return list(range(clus, clus + need))
+    out, c = [], clus
+    end = 0xFFFFFFF7 if isinstance(w, ExfatWalker) else _FAT_ENTRY[w.FAT_BITS][3]
+    while 0x2 <= c < end and c not in out and len(out) < need:
+        out.append(c)
+        c = w._fat_next(c)
+    return out
+
+
+def _read_size_problems(w, node, want, label):
+    """What is wrong with read_file(node, size) on one file whose whole content
+    is ``want``: for no bytes, for short requests that end inside a cluster, on
+    a cluster's edge and just past the first cluster, for the recorded size,
+    and for a size several clusters past the end. ``w.fh`` must come from
+    _counting_image(). Every request has to return exactly the first
+    min(size, file size) bytes, and to read no more of the image than the
+    clusters holding them plus the table entries that lead there (eight bytes
+    a cluster is more than any FAT entry takes)."""
+    sz, cl = node[1], w.cluster_bytes
+    shorts = sorted({k for k in (1, cl - 1, cl, cl + 1, 2 * cl + 7, sz // 2, sz - 1)
+                     if 0 < k < sz})
+    problems = []
+    for k in [0] + shorts + [sz, sz + 3 * cl]:
+        w.fh.read_bytes = 0
+        got = b"".join(w.read_file(node, k))
+        spent = w.fh.read_bytes
+        if got != want[:k]:
+            problems.append(f"{label}: size {k} gave {len(got)} bytes, not the first "
+                            f"{len(want[:k])} of the file")
+        clusters = -(-min(k, sz) // cl)
+        if spent > clusters * (cl + 8):
+            problems.append(f"{label}: size {k} read {spent} bytes of the image for "
+                            f"{clusters} clusters")
+    return problems
+
+
+def _fat_read_size_check(image_gz, wcls, known=None, need_shapes=False):
+    """read_file() returns min(size, file size) bytes and reads only the
+    clusters that hold them, for every file on a FAT or exFAT fixture a driver
+    wrote. ``known`` is the fixture's sha256 list, held against each whole
+    read where it names the file. With ``need_shapes`` the fixture must hold a
+    fragmented and an empty file, so the check cannot pass on a volume that
+    has neither. Returns (ok, detail)."""
+    import gzip, hashlib
+    with gzip.open(image_gz, "rb") as gz:
+        w = wcls(_counting_image(gz.read()), 0)
+    listed = {}
+    if known and os.path.isfile(known):
+        with open(known, encoding="utf-8") as fh:
+            for line in fh:
+                digest, _sp, rel = line.rstrip("\n").partition("  ")
+                listed[rel] = digest
+    files = []
+
+    def walk(node, prefix, depth):
+        if depth > 16:
+            return
+        for name, child in w.listdir(node):
+            if name in (".", ".."):
+                continue
+            if child[2]:
+                walk(child, f"{prefix}{name}/", depth + 1)
+            else:
+                files.append((prefix + name, child))
+
+    walk(w.root, "", 0)
+    problems, fragmented, empty, matched = [], 0, 0, 0
+    for rel, node in files:
+        chain = _fat_chain_of(w, node)
+        if any(b != a + 1 for a, b in zip(chain, chain[1:])):
+            fragmented += 1
+        if not node[1]:
+            empty += 1
+        want = b"".join(read_at(w.fh, w._cluster_off(c), w.cluster_bytes)
+                        for c in chain)[:node[1]]
+        if rel in listed:
+            if hashlib.sha256(want).hexdigest() != listed[rel]:
+                problems.append(f"{rel}: the chain walked here does not hash to the "
+                                f"fixture's list")
+            matched += 1
+        problems += _read_size_problems(w, node, want, rel)
+    if not files:
+        problems.append("no files in the fixture")
+    if need_shapes and not (fragmented and empty):
+        problems.append(f"premise failed: {fragmented} fragmented and {empty} empty "
+                        f"files, so the check proves less than it says")
+    detail = (f"{len(files)} files, {fragmented} fragmented, {empty} empty"
+              + (f", {matched} held against the known list" if listed else ""))
+    if problems:
+        detail += "; " + "; ".join(problems[:4])
+    return not problems, detail
 
 
 def _ntfs_listing_check(image_gz):
@@ -34887,6 +35244,25 @@ def self_test():
             print("  [SKIP] the HFS+ fixture is not beside this script, so the "
                   "walk was not compared against it")
 
+        # ---- ext, APFS and HFS+ times() -------------------------------
+        # Known data from debugfs (ext) and from macOS's own reading of the
+        # images it wrote (APFS, HFS+), never from this reader.
+        times_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures")
+        if all(os.path.isfile(os.path.join(times_dir, n)) for n in (
+                "ext-times.json", "mac-times.json", "ext4-times.img.gz",
+                "ext2-times128.img.gz", "apfs-times.img.gz", "hfsplus-times.img.gz")):
+            try:
+                times_checks = _times_fixture_checks(times_dir)
+            except Exception as exc:                 # pylint: disable=broad-except
+                times_checks = [(f"the times() checks ran ({type(exc).__name__}: {exc})", False)]
+            for label, cond in times_checks:
+                if not cond:
+                    ok = False
+                print(f"  [{'PASS' if cond else 'FAIL'}] {label}")
+        else:
+            print("  [SKIP] the times fixtures are not beside this script, so times() "
+                  "was not compared against them")
+
         # ---- NTFS ----------------------------------------------------
         # A boot sector built by hand, so identification is tested against bytes
         # this file did not read from a volume it also wrote.
@@ -35258,6 +35634,59 @@ def self_test():
                         and _fatcw.chain_shortfall(_fat_cut) == (1, 3)
                         and len(b"".join(_fatcw.read_file(_fat_cut, 3 * 512))) == 512)
 
+        # read_file(node, size) reads min(size, file size) bytes and only the
+        # clusters that hold them. Neither fixture a driver wrote has a
+        # fragmented FAT32 file or a FAT-chained exFAT one, so both are built
+        # here: HELLO.TXT becomes three clusters less ten bytes in the order
+        # 11, 30, 5, and the exFAT WHOLE file's chain becomes 12, 30, 9, 33.
+        # Each cluster holds its own number, and the bytes each file should
+        # read are written out below rather than walked, so a reader that
+        # followed the clusters in disk order would fail. CUT (a short chain),
+        # RUN (a NoFatChain run) and an empty file in each go through the
+        # same requests.
+        _fatfr = bytearray(_fatbuf)
+        struct.pack_into("<I", _fatfr, _de + 28, 3 * 512 - 10)
+        for _c, _next in ((11, 30), (30, 5), (5, 0x0FFFFFFF)):
+            struct.pack_into("<I", _fatfr, _fat_at + _c * 4, _next)
+            _at = _fat_data + (_c - 2) * FAT_BPS
+            _fatfr[_at:_at + FAT_BPS] = bytes([_c]) * FAT_BPS
+        _fatfr[_de + 64:_de + 75] = b"EMPTY   DAT"
+        _fatfr[_de + 75] = 0x20                     # cluster 0, size 0
+        _fatfrw = Fat32Walker(_counting_image(bytes(_fatfr)), 0)
+        _fatfrs = dict(_fatfrw.listdir(_fatfrw.root))
+        fat_size_problems = []
+        if not ({"HELLO.TXT", "EMPTY.DAT"} <= set(_fatfrs)):
+            fat_size_problems.append(f"premise failed: the root lists {sorted(_fatfrs)}")
+        else:
+            fat_size_problems += _read_size_problems(
+                _fatfrw, _fatfrs["HELLO.TXT"],
+                bytes([11]) * 512 + bytes([30]) * 512 + bytes([5]) * 502,
+                "fragmented FAT32 HELLO.TXT")
+            fat_size_problems += _read_size_problems(
+                _fatfrw, _fatfrs["EMPTY.DAT"], b"", "empty FAT32 EMPTY.DAT")
+        _exfr = bytearray(_exsf)
+        for _c, _next in ((12, 30), (30, 9), (9, 33), (33, 0xFFFFFFFF)):
+            struct.pack_into("<I", _exfr, _ex_fat + _c * 4, _next)
+            _at = _ex_heap + (_c - 2) * 512
+            _exfr[_at:_at + 512] = bytes([_c]) * 512
+        _exfrw = ExfatWalker(_counting_image(bytes(_exfr)), 0)
+        _exfrs = dict(_exfrw.listdir(_exfrw.root))
+        exfat_size_problems = []
+        for _name, _want in (
+                ("WHOLE", bytes([12]) * 512 + bytes([30]) * 512 + bytes([9]) * 512
+                 + bytes([33]) * 502),
+                ("CUT", bytes([5]) * 512 + bytes([6]) * 512),
+                ("RUN", (bytes([26]) * 512 + bytes([27]) * 512 + bytes([28]) * 512
+                         + bytes([29]) * 512)[:EX_FILE_BYTES]),
+                ("EMPTY", b"")):
+            if _name not in _exfrs:
+                exfat_size_problems.append(f"premise failed: no {_name} in the root")
+                continue
+            exfat_size_problems += _read_size_problems(
+                _exfrw, _exfrs[_name], _want, f"exFAT {_name}")
+        if _exfrw.chain_shortfall(_exfrs.get("WHOLE", (0, 0, False, True))) is not None:
+            exfat_size_problems.append("the fragmented WHOLE chain was called short")
+
         # A qnx6 volume's free space. 512-byte blocks, 4,997 of them, so the
         # bitmap is 625 bytes: two blocks, reached through one indirect block.
         # That indirect block is stored block 0, as it is on the Ford Sync G4
@@ -35482,6 +35911,18 @@ def self_test():
                  not exfat_orphan_problems),
                 ("a FAT32 file whose cluster chain ends before its recorded size "
                  "says so, and a whole chain does not", fat_chain_ok),
+                ("read_file(node, size) on a fragmented FAT32 file and an empty "
+                 "one returns min(size, file size) bytes in chain order and reads "
+                 "only the clusters that hold them, for no bytes, short, whole and "
+                 "past-the-end requests"
+                 + "".join(f"; {p}" for p in fat_size_problems[:4]),
+                 not fat_size_problems),
+                ("read_file(node, size) on a fragmented FAT-chained exFAT file, a "
+                 "short chain, a NoFatChain run and an empty file returns "
+                 "min(size, file size) bytes and reads only the clusters that "
+                 "hold them, and never takes a size of zero as read to the end"
+                 + "".join(f"; {p}" for p in exfat_size_problems[:4]),
+                 not exfat_size_problems),
                 ("a qnx6 volume reads its free blocks out of the bitmap tree, least "
                  "significant bit first, as offsets into the image", qnx6_free_ok),
                 ("a qnx6 free-space floor drops the short runs", qnx6_floor_ok),
@@ -36430,6 +36871,31 @@ def self_test():
                 ok = False
             print(f"  [{'PASS' if lok else 'FAIL'}] a {label} listing prints each file's "
                   f"modified reading as stored and never 1970-01-01 ({ldetail})")
+        # FAT16, TFAT16 and FAT12 each hold a fragmented file and an empty one,
+        # and their lists name every file, so those three must show both shapes.
+        # The FAT32 and exFAT fixtures hold neither, and the built volumes
+        # above cover those two.
+        for label, stem, wcls, shapes in (("FAT32", "fat32-deleted", Fat32Walker, False),
+                                          ("FAT16", "fat16-fixture", Fat16Walker, True),
+                                          ("TFAT16", "tfat16-fixture", Fat16Walker, True),
+                                          ("FAT12", "fat12-fixture", Fat12Walker, True),
+                                          ("exFAT", "exfat-deleted", ExfatWalker, False)):
+            fix = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "tests", "fixtures", stem + ".img.gz")
+            if not os.path.isfile(fix):
+                print(f"  [SKIP] the {label} fixture is not beside this script, so "
+                      "read_file sizes were not checked on it")
+                continue
+            try:
+                rok, rdetail = _fat_read_size_check(
+                    fix, wcls, fix[:-len(".img.gz")] + ".sha256", shapes)
+            except Exception as exc:                 # pylint: disable=broad-except
+                rok, rdetail = False, f"the check raised {type(exc).__name__}: {exc}"
+            if not rok:
+                ok = False
+            print(f"  [{'PASS' if rok else 'FAIL'}] read_file(node, size) on every {label} "
+                  f"fixture file returns min(size, file size) bytes and reads only the "
+                  f"clusters that hold them ({rdetail})")
         if os.path.isfile(ntfs_fix):
             try:
                 nok, ndetail = _ntfs_listing_check(ntfs_fix)
