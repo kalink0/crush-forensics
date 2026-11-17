@@ -59,20 +59,8 @@ class PropertiesPanel(QScrollArea):
         self._current_vfs: VFS | None = None
 
     def clear(self) -> None:
-        # Hold a Python reference to every row widget while Qt deletes it.
-        # Otherwise a row widget made in Python loses its last reference in
-        # the middle of its own C++ destructor (Shiboken drops it with the
-        # parent link), and Shiboken::Object::destroy goes on with the freed
-        # Python object: a heap corruption, seen as a segfault or a glibc
-        # abort in free(), depending on what reused the memory.
-        rows = [
-            self._layout.itemAt(i).widget()
-            for i in range(self._layout.count())
-            if self._layout.itemAt(i).widget() is not None
-        ]
         while self._layout.rowCount():
             self._layout.removeRow(0)
-        del rows
 
     def update_properties(
         self, node: VFSNode, metadata: dict[str, Any], vfs: VFS | None = None,

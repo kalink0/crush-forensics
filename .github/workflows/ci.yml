@@ -175,44 +175,28 @@ jobs:
       - name: Download flatc
         run: python scripts/download_flatc_binaries.py
 
-      # Before/after check of the PropertiesPanel.clear() fix, in the setup
-      # that caught the heap corruption (gdb + glibc malloc checks; freed
-      # memory is overwritten, so a use-after-free shows reliably): one run
-      # with props_panel.py as on main (1fa0699), one with the fix.
-      # Each run: "ABORT" = glibc caught the corruption, "OK" = clean.
-      - name: Malloc-check runs, before and after the fix
+      # glibc's malloc checks catch the heap corruption where it happens
+      # (C++ stack seen: Shiboken::Object::destroy -> free() abort, from
+      # PropertiesPanel.clear() and from a QWidget deleting a Python-made
+      # QtCore child). Without gdb, so faulthandler prints the Python stack
+      # of every thread: the test and the line that deletes the object.
+      # Up to three runs, stopping at the first abort.
+      - name: Malloc-check runs with the Python stack at the abort
         continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
           MALLOC_CHECK_: "3"
           MALLOC_PERTURB_: "165"
         run: |
-          run_suite() {
-            local rc=0
-            gdb -q -batch -return-child-result \
-              -ex "set pagination off" \
-              -ex "handle SIGPIPE nostop noprint pass" \
-              -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
-              -ex run \
-              -ex "bt 25" \
-              --args python -X faulthandler -m pytest -q -p no:cacheprovider \
-              > "/tmp/run-$1.log" 2>&1 || rc=$?
-            if grep -q "__libc_fatal\|received signal" "/tmp/run-$1.log"; then
-              echo "$1: ABORT (exit $rc)"
-              grep -n -m1 -B2 -A30 "received signal" "/tmp/run-$1.log" || true
-            else
-              echo "$1: OK (exit $rc) -- $(grep -E '[0-9]+ (passed|failed)' "/tmp/run-$1.log" | tail -1)"
+          for i in 1 2 3; do
+            rc=0
+            LD_PRELOAD=/lib/x86_64-linux-gnu/libc_malloc_debug.so.0 \
+              python -X faulthandler -m pytest -q -p no:cacheprovider \
+              > "/tmp/run-$i.log" 2>&1 || rc=$?
+            if grep -q "Fatal Python error" "/tmp/run-$i.log"; then
+              echo "=== run $i: ABORT (exit $rc) ==="
+              sed -n '/Fatal Python error/,/Extension modules/p' "/tmp/run-$i.log"
+              break
             fi
-          }
-          git show 1fa0699:crush/ui/props_panel.py > crush/ui/props_panel.py
-          run_suite before
-          git checkout HEAD -- crush/ui/props_panel.py
-          run_suite after
-          echo "=== summary ==="
-          for f in /tmp/run-*.log; do
-            n=$(basename "$f" .log)
-            if grep -q "__libc_fatal\|received signal" "$f"; then echo "$n ABORT"; else echo "$n OK"; fi
+            echo "=== run $i: no abort (exit $rc) -- $(grep -E '[0-9]+ (passed|failed)' "/tmp/run-$i.log" | tail -1) ==="
           done
-          if ! grep -q "__libc_fatal\|received signal" /tmp/run-before.log; then
-            echo "NOTE: the run before the fix did not abort, so this comparison shows nothing."
-          fi
