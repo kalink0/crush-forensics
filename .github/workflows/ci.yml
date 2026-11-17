@@ -180,24 +180,37 @@ jobs:
       # glibc's malloc checks catch the heap corruption where it happens
       # (C++ stack seen: Shiboken::Object::destroy -> free() abort, from
       # PropertiesPanel.clear() and from a QWidget deleting a Python-made
-      # QtCore child). Without gdb, so faulthandler prints the Python stack
-      # of every thread: the test and the line that deletes the object.
-      # Up to three runs, stopping at the first abort.
-      - name: Malloc-check runs with the Python stack at the abort
+      # QtCore child). It aborted only under gdb (2 of 3 runs; 0 of 3
+      # without), so this runs under gdb and prints the Python stack of
+      # every thread with CPython's gdb extension (py-bt). Up to three runs,
+      # stopping at the first abort.
+      - name: Malloc-check runs under gdb with the Python stack at the abort
         continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
           MALLOC_CHECK_: "3"
           MALLOC_PERTURB_: "165"
         run: |
+          pyver=$(python -c "import platform; print(platform.python_version())")
+          curl -fsSL -o /tmp/libpython.py \
+            "https://raw.githubusercontent.com/python/cpython/v${pyver}/Tools/gdb/libpython.py"
           for i in 1 2 3; do
             rc=0
-            LD_PRELOAD=/lib/x86_64-linux-gnu/libc_malloc_debug.so.0 \
-              python -X faulthandler -m pytest -q -p no:cacheprovider \
+            gdb -q -batch -return-child-result \
+              -ex "set pagination off" \
+              -ex "handle SIGPIPE nostop noprint pass" \
+              -ex "source /tmp/libpython.py" \
+              -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
+              -ex run \
+              -ex "echo \n=== C++ stack ===\n" \
+              -ex "bt 30" \
+              -ex "echo \n=== Python stack, all threads ===\n" \
+              -ex "thread apply all py-bt" \
+              --args python -X faulthandler -m pytest -q -p no:cacheprovider \
               > "/tmp/run-$i.log" 2>&1 || rc=$?
-            if grep -q "Fatal Python error" "/tmp/run-$i.log"; then
+            if grep -q "received signal" "/tmp/run-$i.log"; then
               echo "=== run $i: ABORT (exit $rc) ==="
-              sed -n '/Fatal Python error/,/Extension modules/p' "/tmp/run-$i.log"
+              sed -n '/received signal/,$p' "/tmp/run-$i.log"
               break
             fi
             echo "=== run $i: no abort (exit $rc) -- $(grep -E '[0-9]+ (passed|failed)' "/tmp/run-$i.log" | tail -1) ==="
