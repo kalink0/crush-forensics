@@ -13,6 +13,10 @@ env:
 
 jobs:
   check:
+    # Scheduled runs only in the upstream repo, so forks don't build (and
+    # fail) every night; a manual dispatch still works in a fork. Every
+    # other job needs this one and is skipped with it.
+    if: github.event_name != 'schedule' || github.repository == 'kalink0/crush-forensics'
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
