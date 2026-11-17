@@ -130,9 +130,10 @@ jobs:
 
   # TEMPORARY -- diagnose the Linux segfault in PropertiesPanel.clear()
   # (test_props_panel_tab_refresh). Not for merging: removed once the cause
-  # is fixed. Runs the suite under gdb (C/C++ stack of every thread at the
-  # crash), then once more with glibc's malloc checks, which abort at the
-  # free that corrupts the heap instead of at a later victim.
+  # is fixed. Runs the suite with core dumps and prints the C/C++ stack of
+  # every thread from the dump, then once more with glibc's malloc checks,
+  # which abort at the free that corrupts the heap instead of at a later
+  # victim.
   diagnose-segfault:
     runs-on: ubuntu-latest
 
@@ -172,29 +173,55 @@ jobs:
       - name: Download flatc
         run: python scripts/download_flatc_binaries.py
 
-      - name: Pytest under gdb
+      # Under gdb the crash did not happen (gdb changes timing and memory
+      # layout). So pytest runs as in the test job, writing a core dump, and
+      # gdb reads the dump afterwards.
+      - name: Enable core dumps
+        run: |
+          mkdir -p /tmp/cores
+          sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%p
+          ls -l /lib/x86_64-linux-gnu/libc_malloc_debug.so.0 || true
+
+      - name: Pytest, up to 3 runs until one crashes
         continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          gdb -q -batch -return-child-result \
-            -ex "set pagination off" \
-            -ex "handle SIGPIPE nostop noprint pass" \
-            -ex run \
-            -ex "thread apply all bt 40" \
-            --args python -X faulthandler -m pytest -q -p no:cacheprovider
+          ulimit -c unlimited
+          for attempt in 1 2 3; do
+            echo "=== attempt $attempt ==="
+            python -X faulthandler -m pytest -q -p no:cacheprovider && continue
+            if ls /tmp/cores/core.* >/dev/null 2>&1; then
+              echo "=== crashed in attempt $attempt ==="
+              break
+            fi
+          done
+          for core in /tmp/cores/core.*; do
+            [ -e "$core" ] || { echo "no core dump written"; break; }
+            gdb -q -batch \
+              -ex "set pagination off" \
+              -ex "info sharedlibrary" \
+              -ex "thread apply all bt 40" \
+              "$(which python)" "$core"
+            mv "$core" "$core.plain"
+          done
 
-      - name: Pytest under gdb with malloc checks
+      - name: Pytest with glibc malloc checks
         continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
           MALLOC_CHECK_: "3"
           MALLOC_PERTURB_: "165"
         run: |
-          gdb -q -batch -return-child-result \
-            -ex "set pagination off" \
-            -ex "handle SIGPIPE nostop noprint pass" \
-            -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
-            -ex run \
-            -ex "thread apply all bt 40" \
-            --args python -X faulthandler -m pytest -q -p no:cacheprovider
+          ulimit -c unlimited
+          LD_PRELOAD=/lib/x86_64-linux-gnu/libc_malloc_debug.so.0 \
+            python -X faulthandler -m pytest -q -p no:cacheprovider \
+            || echo "=== pytest exit $? ==="
+          for core in /tmp/cores/core.[0-9]*; do
+            case "$core" in *.plain) continue ;; esac
+            [ -e "$core" ] || { echo "no core dump written"; break; }
+            gdb -q -batch \
+              -ex "set pagination off" \
+              -ex "thread apply all bt 40" \
+              "$(which python)" "$core"
+          done
