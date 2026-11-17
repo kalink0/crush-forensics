@@ -132,18 +132,30 @@ jobs:
 
   # TEMPORARY -- diagnose the Linux segfault in PropertiesPanel.clear()
   # (test_props_panel_tab_refresh). Not for merging: removed once the cause
-  # is fixed. Runs the suite with core dumps and prints the C/C++ stack of
-  # every thread from the dump, then once more with glibc's malloc checks,
-  # which abort at the free that corrupts the heap instead of at a later
-  # victim.
+  # is fixed.
+  #
+  # Each tool changes whether the crash shows (under gdb no segfault; with
+  # glibc's malloc checks an abort in 2 of 3 runs under gdb, 0 of 3
+  # without), so every variant runs in parallel, each up to three times
+  # until the first crash, with all the output it can give:
+  #   plain       -- as the test job; core dump, read by gdb afterwards
+  #   malloc      -- glibc malloc checks, no gdb; core dump as above
+  #   gdb         -- under gdb
+  #   gdb-malloc  -- under gdb with glibc malloc checks
+  # At a crash: faulthandler's Python stack (without gdb), the C++ stack and
+  # every thread's Python stack (gdb, CPython's py-bt). After every run:
+  # the end of its log, whatever the outcome.
   diagnose-segfault:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [plain, malloc, gdb, gdb-malloc]
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -155,6 +167,8 @@ jobs:
           cat /etc/os-release
           echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
           ldd --version | head -1
+          nproc
+          free -m
 
       - name: Install system deps
         run: |
@@ -177,41 +191,74 @@ jobs:
       - name: Download flatc
         run: python scripts/download_flatc_binaries.py
 
-      # glibc's malloc checks catch the heap corruption where it happens
-      # (C++ stack seen: Shiboken::Object::destroy -> free() abort, from
-      # PropertiesPanel.clear() and from a QWidget deleting a Python-made
-      # QtCore child). It aborted only under gdb (2 of 3 runs; 0 of 3
-      # without), so this runs under gdb and prints the Python stack of
-      # every thread with CPython's gdb extension (py-bt). Up to three runs,
-      # stopping at the first abort.
-      - name: Malloc-check runs under gdb with the Python stack at the abort
-        continue-on-error: true
-        env:
-          QT_QPA_PLATFORM: offscreen
-          MALLOC_CHECK_: "3"
-          MALLOC_PERTURB_: "165"
+      - name: Prepare core dumps and CPython's gdb extension
         run: |
+          mkdir -p /tmp/cores
+          sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%p
+          ls -l /lib/x86_64-linux-gnu/libc_malloc_debug.so.0
           pyver=$(python -c "import platform; print(platform.python_version())")
           curl -fsSL -o /tmp/libpython.py \
             "https://raw.githubusercontent.com/python/cpython/v${pyver}/Tools/gdb/libpython.py"
+          ls -l /tmp/libpython.py
+
+      - name: Pytest (${{ matrix.variant }}), up to 3 runs until a crash
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -x
+          ulimit -c unlimited
+          PYTEST=(python -X faulthandler -m pytest -q -p no:cacheprovider)
+          GDB=(gdb -q -batch -return-child-result
+               -ex "set pagination off"
+               -ex "handle SIGPIPE nostop noprint pass"
+               -ex "source /tmp/libpython.py")
+          GDB_AT_CRASH=(-ex "echo \n=== C++ stack, all threads ===\n"
+                        -ex "thread apply all bt 40"
+                        -ex "echo \n=== Python stack, all threads ===\n"
+                        -ex "thread apply all py-bt")
+          MALLOC_ENV=(MALLOC_CHECK_=3 MALLOC_PERTURB_=165
+                      LD_PRELOAD=/lib/x86_64-linux-gnu/libc_malloc_debug.so.0)
+          crashed=""
           for i in 1 2 3; do
+            log="/tmp/run-$i.log"
+            echo "=== run $i ($VARIANT) start: $(date -u +%T) ==="
             rc=0
-            gdb -q -batch -return-child-result \
-              -ex "set pagination off" \
-              -ex "handle SIGPIPE nostop noprint pass" \
-              -ex "source /tmp/libpython.py" \
-              -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
-              -ex run \
-              -ex "echo \n=== C++ stack ===\n" \
-              -ex "bt 30" \
-              -ex "echo \n=== Python stack, all threads ===\n" \
-              -ex "thread apply all py-bt" \
-              --args python -X faulthandler -m pytest -q -p no:cacheprovider \
-              > "/tmp/run-$i.log" 2>&1 || rc=$?
-            if grep -q "received signal" "/tmp/run-$i.log"; then
-              echo "=== run $i: ABORT (exit $rc) ==="
-              sed -n '/received signal/,$p' "/tmp/run-$i.log"
+            case "$VARIANT" in
+              plain)
+                "${PYTEST[@]}" > "$log" 2>&1 < /dev/null || rc=$? ;;
+              malloc)
+                env "${MALLOC_ENV[@]}" "${PYTEST[@]}" > "$log" 2>&1 < /dev/null || rc=$? ;;
+              gdb)
+                "${GDB[@]}" -ex run "${GDB_AT_CRASH[@]}" \
+                  --args "${PYTEST[@]}" > "$log" 2>&1 < /dev/null || rc=$? ;;
+              gdb-malloc)
+                "${GDB[@]}" \
+                  -ex "set environment MALLOC_CHECK_ 3" \
+                  -ex "set environment MALLOC_PERTURB_ 165" \
+                  -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
+                  -ex run "${GDB_AT_CRASH[@]}" \
+                  --args "${PYTEST[@]}" > "$log" 2>&1 < /dev/null || rc=$? ;;
+            esac
+            echo "=== run $i ($VARIANT) end: $(date -u +%T), exit $rc ==="
+            echo "--- end of log ---"
+            tail -n 40 "$log" || true
+            if grep -q "Fatal Python error\|received signal" "$log"; then
+              crashed="run $i"
+              echo "=== run $i: CRASH ==="
+              grep -n -A400 -m1 "Fatal Python error\|received signal" "$log" || true
               break
             fi
-            echo "=== run $i: no abort (exit $rc) -- $(grep -E '[0-9]+ (passed|failed)' "/tmp/run-$i.log" | tail -1) ==="
+            echo "=== run $i: no crash ==="
           done
+          for core in /tmp/cores/core.*; do
+            [ -e "$core" ] || { echo "no core dump"; break; }
+            echo "=== core dump $core ==="
+            gdb -q -batch \
+              -ex "set pagination off" \
+              -ex "source /tmp/libpython.py" \
+              "${GDB_AT_CRASH[@]}" \
+              "$(which python)" "$core" < /dev/null || true
+          done
+          echo "=== summary ($VARIANT): ${crashed:-no crash in 3 runs} ==="
