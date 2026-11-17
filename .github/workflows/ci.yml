@@ -127,3 +127,74 @@ jobs:
           name: forensic-test-report-${{ matrix.os }}
           path: reports/
           retention-days: 90
+
+  # TEMPORARY -- diagnose the Linux segfault in PropertiesPanel.clear()
+  # (test_props_panel_tab_refresh). Not for merging: removed once the cause
+  # is fixed. Runs the suite under gdb (C/C++ stack of every thread at the
+  # crash), then once more with glibc's malloc checks, which abort at the
+  # free that corrupts the heap instead of at a later victim.
+  diagnose-segfault:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Runner image and system libraries
+        run: |
+          cat /etc/os-release
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          ldd --version | head -1
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gdb \
+            libgl1 \
+            libegl1 \
+            libxcb-xinerama0 \
+            libxkbcommon-x11-0 \
+            libmagic1 \
+            libpulse0
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .[dev]
+          python -m pip list
+
+      - name: Download flatc
+        run: python scripts/download_flatc_binaries.py
+
+      - name: Pytest under gdb
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          gdb -q -batch -return-child-result \
+            -ex "set pagination off" \
+            -ex "handle SIGPIPE nostop noprint pass" \
+            -ex run \
+            -ex "thread apply all bt 40" \
+            --args python -X faulthandler -m pytest -q -p no:cacheprovider
+
+      - name: Pytest under gdb with malloc checks
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MALLOC_CHECK_: "3"
+          MALLOC_PERTURB_: "165"
+        run: |
+          gdb -q -batch -return-child-result \
+            -ex "set pagination off" \
+            -ex "handle SIGPIPE nostop noprint pass" \
+            -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
+            -ex run \
+            -ex "thread apply all bt 40" \
+            --args python -X faulthandler -m pytest -q -p no:cacheprovider
