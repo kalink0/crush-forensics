@@ -140,6 +140,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -173,55 +175,44 @@ jobs:
       - name: Download flatc
         run: python scripts/download_flatc_binaries.py
 
-      # Under gdb the crash did not happen (gdb changes timing and memory
-      # layout). So pytest runs as in the test job, writing a core dump, and
-      # gdb reads the dump afterwards.
-      - name: Enable core dumps
-        run: |
-          mkdir -p /tmp/cores
-          sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%p
-          ls -l /lib/x86_64-linux-gnu/libc_malloc_debug.so.0 || true
-
-      - name: Pytest, up to 3 runs until one crashes
-        continue-on-error: true
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          ulimit -c unlimited
-          for attempt in 1 2 3; do
-            echo "=== attempt $attempt ==="
-            python -X faulthandler -m pytest -q -p no:cacheprovider && continue
-            if ls /tmp/cores/core.* >/dev/null 2>&1; then
-              echo "=== crashed in attempt $attempt ==="
-              break
-            fi
-          done
-          for core in /tmp/cores/core.*; do
-            [ -e "$core" ] || { echo "no core dump written"; break; }
-            gdb -q -batch \
-              -ex "set pagination off" \
-              -ex "info sharedlibrary" \
-              -ex "thread apply all bt 40" \
-              "$(which python)" "$core"
-            mv "$core" "$core.plain"
-          done
-
-      - name: Pytest with glibc malloc checks
+      # Before/after check of the PropertiesPanel.clear() fix, in the setup
+      # that caught the heap corruption (gdb + glibc malloc checks; freed
+      # memory is overwritten, so a use-after-free shows reliably): one run
+      # with props_panel.py as on main (1fa0699), one with the fix.
+      # Each run: "ABORT" = glibc caught the corruption, "OK" = clean.
+      - name: Malloc-check runs, before and after the fix
         continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
           MALLOC_CHECK_: "3"
           MALLOC_PERTURB_: "165"
         run: |
-          ulimit -c unlimited
-          LD_PRELOAD=/lib/x86_64-linux-gnu/libc_malloc_debug.so.0 \
-            python -X faulthandler -m pytest -q -p no:cacheprovider \
-            || echo "=== pytest exit $? ==="
-          for core in /tmp/cores/core.[0-9]*; do
-            case "$core" in *.plain) continue ;; esac
-            [ -e "$core" ] || { echo "no core dump written"; break; }
-            gdb -q -batch \
+          run_suite() {
+            local rc=0
+            gdb -q -batch -return-child-result \
               -ex "set pagination off" \
-              -ex "thread apply all bt 40" \
-              "$(which python)" "$core"
+              -ex "handle SIGPIPE nostop noprint pass" \
+              -ex "set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0" \
+              -ex run \
+              -ex "bt 25" \
+              --args python -X faulthandler -m pytest -q -p no:cacheprovider \
+              > "/tmp/run-$1.log" 2>&1 || rc=$?
+            if grep -q "__libc_fatal\|received signal" "/tmp/run-$1.log"; then
+              echo "$1: ABORT (exit $rc)"
+              grep -n -m1 -B2 -A30 "received signal" "/tmp/run-$1.log" || true
+            else
+              echo "$1: OK (exit $rc) -- $(grep -E '[0-9]+ (passed|failed)' "/tmp/run-$1.log" | tail -1)"
+            fi
+          }
+          git show 1fa0699:crush/ui/props_panel.py > crush/ui/props_panel.py
+          run_suite before
+          git checkout HEAD -- crush/ui/props_panel.py
+          run_suite after
+          echo "=== summary ==="
+          for f in /tmp/run-*.log; do
+            n=$(basename "$f" .log)
+            if grep -q "__libc_fatal\|received signal" "$f"; then echo "$n ABORT"; else echo "$n OK"; fi
           done
+          if ! grep -q "__libc_fatal\|received signal" /tmp/run-before.log; then
+            echo "NOTE: the run before the fix did not abort, so this comparison shows nothing."
+          fi
