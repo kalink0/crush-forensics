@@ -10,6 +10,7 @@ env:
 
 jobs:
   lint:
+    if: false  # TEMPORARY, diagnostic branch only: run just diagnose-segfault
     runs-on: ubuntu-latest
 
     steps:
@@ -46,6 +47,7 @@ jobs:
         run: python scripts/i18n.py check
 
   test:
+    if: false  # TEMPORARY, diagnostic branch only: run just diagnose-segfault
     strategy:
       fail-fast: false
       matrix:
