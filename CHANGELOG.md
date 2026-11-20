@@ -14,12 +14,15 @@ All notable changes to Crush will be documented in this file.
 
 - A LevelDB table block that can't be read, decompressed or read to its end is skipped and named with its offset and whether its stored checksum matches; the blocks after it are still read, as LevelDB reads on.
 - Bundled [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) updated to v0.6 (from v0.4), with [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) bundled from its own repository.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.78 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.80 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
 - Bundled [mmkv-parser](https://github.com/abrignoni/mmkv-parser) updated to v1.3.0 (from v1.1.0).
 - An MMKV store with an AES vector that doesn't read as plaintext is reported as encrypted or damaged, as the two can't be told apart without the key.
 
 ### Bug Fixes
 
+- A QNX6 volume with 8, 16 or 32 KiB blocks in a raw disk image listed no files; it now lists them.
+- A QNX6 volume whose superblocks were written before any clock was set (ctime and atime outside 1995 to 2050) was left out of a raw disk image; it is now read when its checksum holds.
+- An extended partition of a raw disk image is no longer listed as a QNX6 volume of its own when its last logical volume ends where it ends.
 - An MMKV store whose `.crc` holds an AES vector but whose recorded data size is 0, as MMKV leaves a store it clears, is no longer reported as AES-encrypted, or as decrypted when a key is given; it opens empty with its encryption shown as unknown.
 - A plaintext MMKV store whose `.crc` holds an AES vector, opened with a key, is read as plaintext with the key reported as ignored, instead of failing as a wrong key.
 - Opening a folder that no viewer recognises by its files, such as Android WebView's `HTTP Cache` (which holds the caches `Cache_Data` and `Code Cache/js`), shows a warning instead of only a status bar message.

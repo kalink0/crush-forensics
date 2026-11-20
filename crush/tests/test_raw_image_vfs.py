@@ -1727,3 +1727,40 @@ def test_a_bitlocker_volume_opens_with_its_startup_key_file(tmp_path: Path) -> N
         )
     finally:
         vfs.close()
+
+
+class TestQnx6BlockSizes:
+    """A QNX6 volume's data area starts after the boot block and the superblock
+    area, rounded up to a whole block. qnxprobe before 1.79 rounded it down, so
+    a volume with 8, 16 or 32 KiB blocks listed no files."""
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="QNX6",
+        desc="A QNX6 volume with 4, 8, 16 or 32 KiB blocks must list its files and read back the bytes written, "
+        "through one and two levels of block pointers",
+    )
+    @pytest.mark.parametrize("block_size", [4096, 8192, 16384, 32768])
+    def test_files_are_listed_and_read_back(self, tmp_path: Path, block_size: int) -> None:
+        # qnxprobe's own self-test builds this volume, so it is written from
+        # QNX's sys/fs_qnx6.h and checked against qnxmount there, not here.
+        from crush.third_party.qnxprobe import qnxprobe
+
+        image, tree, _older, _free = qnxprobe._qnx6_test_volume(block_size)
+        dst = tmp_path / f"qnx6_{block_size}.img"
+        dst.write_bytes(image)
+
+        vfs = open_vfs(dst, as_disk_image=True)
+        try:
+            assert len(vfs.root().children) == 1
+            volume = vfs.root().children[0]
+            names = [path for path, _kind, _data in tree]
+            assert "big.bin" in names and "deep.bin" in names
+            for path, kind, data in tree:
+                node = _find(volume, path.split("/"))
+                assert node is not None, f"missing from tree: {path}"
+                assert node.is_dir == (kind == "d")
+                if kind == "f":
+                    assert vfs.read(node) == data, f"content mismatch: {path}"
+        finally:
+            vfs.close()
