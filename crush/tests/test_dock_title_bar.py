@@ -3,11 +3,11 @@
 the window system (Wayland allows no client-side move or mouse grab)."""
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent, QWindow
 from PySide6.QtWidgets import QApplication, QDockWidget, QLabel, QMainWindow
 
-from crush.ui.main_window import MainWindow, _DockTitleBar
+from crush.ui.main_window import MainWindow, _DockTitleBar, _FloatingDockResizer
 
 
 def _dock(widgets) -> QDockWidget:  # noqa: ANN001
@@ -69,3 +69,85 @@ def test_close_button_only_for_a_closable_panel(qapp, widgets) -> None:  # noqa:
     dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetFloatable)
     bar = _DockTitleBar("Panel", dock)
     assert bar.close_button.isHidden()
+
+
+def _mouse(etype, global_pos, button=Qt.MouseButton.LeftButton, buttons=None) -> QMouseEvent:  # noqa: ANN001
+    pos = QPointF(global_pos)
+    return QMouseEvent(
+        etype, pos, pos, button,
+        button if buttons is None else buttons, Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def _floating(widgets) -> QDockWidget:  # noqa: ANN001
+    dock = _dock(widgets)
+    dock.setFloating(True)
+    dock.show()
+    dock.setGeometry(200, 200, 300, 400)
+    QApplication.processEvents()
+    MainWindow._sync_dock_titlebar(None, dock, True)  # type: ignore[arg-type]
+    return dock
+
+
+def test_floating_panel_resizer_follows_floating_state(qapp, widgets) -> None:  # noqa: ANN001
+    dock = _floating(widgets)
+    resizer = _FloatingDockResizer.for_dock(dock)
+    assert resizer._active
+    assert _FloatingDockResizer.for_dock(dock) is resizer  # one per panel
+    MainWindow._sync_dock_titlebar(None, dock, False)  # type: ignore[arg-type]
+    assert not resizer._active
+
+
+def test_resizer_finds_edges_and_corners(qapp, widgets) -> None:  # noqa: ANN001
+    dock = _floating(widgets)
+    resizer = _FloatingDockResizer.for_dock(dock)
+    g = lambda x, y: dock.mapToGlobal(QPoint(x, y))  # noqa: E731
+    w, h = dock.width(), dock.height()
+    assert resizer.edges_at(g(w // 2, h // 2)) == Qt.Edge(0)
+    assert resizer.edges_at(g(1, h // 2)) == Qt.Edge.LeftEdge
+    assert resizer.edges_at(g(w - 2, h // 2)) == Qt.Edge.RightEdge
+    assert resizer.edges_at(g(w // 2, h - 1)) == Qt.Edge.BottomEdge
+    assert resizer.edges_at(g(w - 1, h - 1)) == Qt.Edge.BottomEdge | Qt.Edge.RightEdge
+    assert resizer.edges_at(g(0, 0)) == Qt.Edge.TopEdge | Qt.Edge.LeftEdge
+    assert resizer.edges_at(g(w + 5, h // 2)) == Qt.Edge(0)
+
+
+def test_edge_hover_sets_the_resize_cursor(qapp, widgets) -> None:  # noqa: ANN001
+    dock = _floating(widgets)
+    resizer = _FloatingDockResizer.for_dock(dock)
+    handle = dock.windowHandle()
+    edge = dock.mapToGlobal(QPoint(dock.width() - 1, dock.height() // 2))
+    move = _mouse(QEvent.Type.MouseMove, edge, Qt.MouseButton.NoButton, Qt.MouseButton.NoButton)
+    assert resizer.eventFilter(handle, move) is False
+    assert dock.cursor().shape() == Qt.CursorShape.SizeHorCursor
+    resizer.eventFilter(handle, QEvent(QEvent.Type.Leave))
+    assert dock.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_press_on_an_edge_starts_a_system_resize(qapp, widgets, monkeypatch) -> None:  # noqa: ANN001
+    dock = _floating(widgets)
+    resizer = _FloatingDockResizer.for_dock(dock)
+    calls: list[Qt.Edge] = []
+    monkeypatch.setattr(QWindow, "startSystemResize", lambda self, e: calls.append(e) or True)
+    middle = dock.mapToGlobal(QPoint(dock.width() // 2, dock.height() // 2))
+    assert resizer.eventFilter(dock.windowHandle(), _mouse(QEvent.Type.MouseButtonPress, middle)) is False
+    corner = dock.mapToGlobal(QPoint(dock.width() - 1, dock.height() - 1))
+    assert resizer.eventFilter(dock.windowHandle(), _mouse(QEvent.Type.MouseButtonPress, corner)) is True
+    assert calls == [Qt.Edge.RightEdge | Qt.Edge.BottomEdge]
+    assert resizer._drag is None
+
+
+def test_resize_falls_back_to_the_mouse_delta(qapp, widgets, monkeypatch) -> None:  # noqa: ANN001
+    dock = _floating(widgets)
+    resizer = _FloatingDockResizer.for_dock(dock)
+    handle = dock.windowHandle()
+    monkeypatch.setattr(QWindow, "startSystemResize", lambda self, e: False)
+    before = dock.geometry()
+    start = dock.mapToGlobal(QPoint(dock.width() - 1, dock.height() // 2))
+    assert resizer.eventFilter(handle, _mouse(QEvent.Type.MouseButtonPress, start)) is True
+    resizer.eventFilter(handle, _mouse(QEvent.Type.MouseMove, start + QPoint(50, 30)))
+    assert dock.geometry().width() == before.width() + 50
+    assert dock.geometry().height() == before.height()  # right edge only
+    assert dock.geometry().left() == before.left()
+    resizer.eventFilter(handle, _mouse(QEvent.Type.MouseButtonRelease, start + QPoint(50, 30)))
+    assert resizer._drag is None

@@ -22,6 +22,7 @@ All notable changes to Crush will be documented in this file.
 
 - An MMKV store whose `.crc` holds an AES vector but whose recorded data size is 0, as MMKV leaves a store it clears, is no longer reported as AES-encrypted, or as decrypted when a key is given; it opens empty with its encryption shown as unknown.
 - A plaintext MMKV store whose `.crc` holds an AES vector, opened with a key, is read as plaintext with the key reported as ignored, instead of failing as a wrong key.
+- Floating panels (Filesystem, Properties, Log) can be resized by dragging their edges and corners; the resize border was a few pixels wide and hard to hit.
 - Opening a folder that no viewer recognises by its files, such as Android WebView's `HTTP Cache` (which holds the caches `Cache_Data` and `Code Cache/js`), shows a warning instead of only a status bar message.
 
 ## v0.25.0 - 2026-11-07
