@@ -331,15 +331,15 @@ def test_selection_keeps_each_path_from_the_source_root(qapp: Any, tmp_path: Pat
         names = zf.namelist()
         assert len(names) == len(set(names))
         assert set(names) == {
-            "case/", "case/private/", "case/private/var/", "case/private/var/mobile/",
-            "case/private/var/mobile/a.db",
-            "case/private/var/logs/", "case/private/var/logs/x.log",
-            "case/top.txt",
-            "crush-export-hashes.txt",
+            "export/", "export/private/", "export/private/var/", "export/private/var/mobile/",
+            "export/private/var/mobile/a.db",
+            "export/private/var/logs/", "export/private/var/logs/x.log",
+            "export/top.txt",
+            "export/crush-export-hashes.txt",
         }
-        assert zf.read("case/private/var/mobile/a.db") == b"db"
-        hashes = zf.read("crush-export-hashes.txt").decode()
-        assert "case/private/var/logs/x.log" in hashes and "case/top.txt" in hashes
+        assert zf.read("export/private/var/mobile/a.db") == b"db"
+        hashes = zf.read("export/crush-export-hashes.txt").decode()
+        assert "export/private/var/logs/x.log" in hashes and "export/top.txt" in hashes
 
 
 def test_selection_added_twice_shares_folders_and_numbers_only_the_entries(
@@ -356,10 +356,12 @@ def test_selection_added_twice_shares_folders_and_numbers_only_the_entries(
     with zipfile.ZipFile(out) as zf:
         names = zf.namelist()
         assert len(names) == len(set(names))
-        assert names.count("case/private/var/mobile/") == 1  # the folders are shared
-        assert zf.read("case/private/var/mobile/a (2).db") == b"db"
-        assert zf.read("case/top (2).txt") == b"top"
-        assert {"crush-export-hashes.txt", "crush-export-hashes (2).txt"} <= set(names)
+        assert names.count("export/private/var/mobile/") == 1  # the folders are shared
+        assert zf.read("export/private/var/mobile/a (2).db") == b"db"
+        assert zf.read("export/top (2).txt") == b"top"
+        assert {
+            "export/crush-export-hashes.txt", "export/crush-export-hashes (2).txt"
+        } <= set(names)
 
 
 def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path: Path) -> None:
@@ -375,8 +377,9 @@ def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path:
 
     assert seen == [("finished", str(out), 1)]
     with zipfile.ZipFile(out) as zf:
-        assert "src/bad.bin" not in zf.namelist()
-        assert "bad.bin\tonly 4 of 9" in zf.read("crush-export-failed.txt").decode()
+        assert "export/bad.bin" not in zf.namelist()
+        assert zf.read("export/good.txt") == b"good"
+        assert "bad.bin\tonly 4 of 9" in zf.read("export/crush-export-failed.txt").decode()
 
 
 def test_tree_selection_collects_chains_and_drops_what_a_folder_brings(
@@ -421,3 +424,115 @@ def test_tree_selection_collects_chains_and_drops_what_a_folder_brings(
 
     paths = sorted("/".join(step.name for step in chain) for _n, _v, chain in items)
     assert paths == ["case/private/var/logs", "case/private/var/mobile/a.db"]
+
+
+def test_selection_from_several_sources_keeps_each_source_name(
+    qapp: Any, tmp_path: Path
+) -> None:
+    one = _deep_source(tmp_path / "one")
+    two_dir = tmp_path / "two" / "phone"
+    two_dir.mkdir(parents=True)
+    (two_dir / "top.txt").write_bytes(b"other")
+    two = DirectoryVFS(two_dir)
+    items = [_chain(one, "top.txt"), _chain(two, "top.txt")]
+    out = tmp_path / "sel.zip"
+
+    _run(_ExportZipSelectionWorker(items, str(out), "new", False))
+
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("export/case/top.txt") == b"top"
+        assert zf.read("export/phone/top.txt") == b"other"
+
+
+def test_selection_replace_swaps_the_entries_and_keeps_the_rest(
+    qapp: Any, tmp_path: Path
+) -> None:
+    vfs = _deep_source(tmp_path)
+    out = tmp_path / "sel.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("earlier.txt", b"keep me")
+        zf.writestr("export/top.txt", b"old top")
+        zf.writestr("export/private/var/logs/stale.log", b"gone with the folder")
+        zf.writestr("export/private/var/other.txt", b"beside, kept")
+    items = [_chain(vfs, "top.txt"), _chain(vfs, "private", "var", "logs")]
+
+    seen = _run(_ExportZipSelectionWorker(items, str(out), "add", False, on_clash="replace"))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert len(names) == len(set(names))
+        assert zf.read("earlier.txt") == b"keep me"
+        assert zf.read("export/private/var/other.txt") == b"beside, kept"
+        assert zf.read("export/top.txt") == b"top"
+        assert zf.read("export/private/var/logs/x.log") == b"log"
+        assert "export/private/var/logs/stale.log" not in names
+        assert not any("(2)" in name for name in names)
+
+
+def test_single_replace_swaps_a_file_and_its_hash_list(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    a = _child(vfs.root(), "a.txt")
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("a.txt", b"old")
+        zf.writestr("a.txt.crush-export-hashes.txt", b"old hashes")
+        zf.writestr("b.txt", b"keep")
+
+    _run(_ExportZipWorker(vfs, a, str(out), "add", True, on_clash="replace"))
+
+    with zipfile.ZipFile(out) as zf:
+        assert sorted(zf.namelist()) == ["a.txt", "a.txt.crush-export-hashes.txt", "b.txt"]
+        assert zf.read("a.txt") == b"alpha"
+        assert hashlib.sha256(b"alpha").hexdigest() in zf.read(
+            "a.txt.crush-export-hashes.txt").decode()
+
+
+def test_cancelled_replace_leaves_the_archive_unchanged(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("case/a.txt", b"old")
+    before = out.read_bytes()
+    worker = _ExportZipWorker(vfs, vfs.root(), str(out), "add", False, on_clash="replace")
+    worker.cancel()
+
+    assert _run(worker) == [("cancelled", str(out), "add")]
+    assert out.read_bytes() == before
+    assert _no_partials(tmp_path)
+
+
+@pytest.mark.parametrize("answer, expected", [("Replace", "alpha"), ("Add Beside", "old")])
+def test_menu_flow_asks_replace_or_beside_when_an_entry_is_there(
+    qapp: Any, qtbot: Any, tmp_path: Path, monkeypatch: Any, answer: str, expected: str
+) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("case/a.txt", b"old")
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "ZIP archives (*.zip)")
+    )
+    asked: list[str] = []
+
+    def fake_exec(box: QMessageBox) -> int:
+        asked.append(box.text())
+        labels = {b.text(): b for b in box.buttons()}
+        (labels["Add to Archive"] if len(asked) == 1 else labels[answer]).click()
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+
+    win = MainWindow()
+    try:
+        win._export_node_zip(vfs.root(), vfs)
+        assert len(asked) == 2 and "already in the archive" in asked[1]
+        qtbot.waitUntil(lambda: not win._thread_is_running(win._export_thread), timeout=10_000)
+        qapp.processEvents()
+    finally:
+        win.close()
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("case/a.txt") == (b"alpha" if answer == "Replace" else b"old")
+        if answer == "Add Beside":
+            assert zf.read("case (2)/a.txt") == b"alpha"

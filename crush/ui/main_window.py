@@ -856,14 +856,71 @@ def _zip_extended_timestamp(modified: float | None) -> bytes:
     return struct.pack("<HHBl", 0x5455, 5, 1, int(modified))
 
 
+ZipClashMode = Literal["number", "replace"]
+
+# The top folder of a selection exported into a ZIP archive.
+_ZIP_SELECTION_ROOT = "export"
+
+
+def _arcname_clashes(name: str, taken: set[str]) -> bool:
+    """Whether *name* is in the archive already: as a file, or as a folder
+    (its own entry or entries below it)."""
+    prefix = f"{name}/"
+    return name in taken or any(t.startswith(prefix) for t in taken)
+
+
+def _in_replaced(name: str, replaced: set[str]) -> bool:
+    """Whether the archive entry *name* is one of *replaced*, or inside one."""
+    return any(name == r or name.startswith(f"{r}/") for r in replaced)
+
+
+def _zip_single_root(node: VFSNode) -> tuple[str, bool]:
+    """Where a single exported file or folder goes in the archive: its own
+    (Windows-safe) name at the top. (name, whether it was sanitized)"""
+    return _safe_name(node.name or "export")
+
+
+@dataclass
+class _ZipSelectionEntry:
+    node: VFSNode
+    vfs: VFS
+    folders: list[tuple[str, float | None]]  # (folder path in the archive, mtime) on the way
+    arcname: str  # where the entry itself goes
+    sanitized: bool
+
+
+def _zip_selection_layout(
+    items: list[tuple[VFSNode, VFS, list[VFSNode]]],
+) -> list[_ZipSelectionEntry]:
+    """Where each selected entry goes in the archive: under `export/`, then
+    its path from the root of its source -- with the source's name first
+    when the selection spans several sources, so theirs don't mix."""
+    several_sources = len({id(vfs) for _node, vfs, _chain in items}) > 1
+    layout: list[_ZipSelectionEntry] = []
+    for node, vfs, chain in items:
+        if not chain or chain[-1] is not node:
+            chain = [*chain, node]
+        steps = chain if several_sources else chain[1:]
+        if not steps:  # the source's root itself
+            steps = [node]
+        parts = [_ZIP_SELECTION_ROOT]
+        modified: list[float | None] = [None]
+        sanitized = False
+        for step in steps:
+            safe, changed = _safe_name(step.name or "export")
+            parts.append(safe)
+            modified.append(step.modified)
+            sanitized = sanitized or changed
+        folders = [("/".join(parts[:depth]), modified[depth - 1]) for depth in range(1, len(parts))]
+        layout.append(_ZipSelectionEntry(node, vfs, folders, "/".join(parts), sanitized))
+    return layout
+
+
 def _unique_arcname(name: str, taken: set[str], is_dir: bool) -> str:
     """*name*, or `name (2)`, `name (3)` ... -- the first that names nothing
     in the archive yet (as a file, or as a folder with entries below it)."""
     def clashes(candidate: str) -> bool:
-        if candidate in taken or f"{candidate}/" in taken:
-            return True
-        prefix = f"{candidate}/"
-        return is_dir and any(t.startswith(prefix) for t in taken)
+        return _arcname_clashes(candidate, taken)
 
     if not clashes(name):
         return name
@@ -902,8 +959,10 @@ class _ExportZipWorker(QObject):
         mode: ZipExportMode,
         integrity: bool,
         window_id: str | None = None,
+        on_clash: ZipClashMode = "number",
     ) -> None:
         super().__init__()
+        self._on_clash = on_clash
         self._vfs = vfs
         self._node = node
         self._zip_path = Path(zip_path)
@@ -941,12 +1000,17 @@ class _ExportZipWorker(QObject):
             )
             os.close(fd)
             partial = Path(partial_name)
-            if self._mode == "add":
+            replacing = self._mode == "add" and self._on_clash == "replace"
+            if self._mode == "add" and not replacing:
                 self._copy_existing(partial)
-            zip_mode: Literal["a", "w"] = "a" if self._mode == "add" else "w"
+            zip_mode: Literal["a", "w"] = (
+                "a" if self._mode == "add" and not replacing else "w"
+            )
             with zipfile.ZipFile(
                 partial, zip_mode, compression=zipfile.ZIP_DEFLATED, allowZip64=True
             ) as zf:
+                if replacing:
+                    self._copy_existing_except(zf, self._replaced_targets())
                 self._taken = set(zf.namelist())
                 self._export(zf)
                 if self._single_file() and self._failed:
@@ -988,6 +1052,55 @@ class _ExportZipWorker(QObject):
         """One file asked for: its not being readable fails the export."""
         return not self._node.is_dir
 
+    def _planned_targets(self) -> list[str]:
+        """The paths in the archive the export itself is stored under."""
+        root, _ = _zip_single_root(self._node)
+        return [root]
+
+    def _replaced_targets(self) -> set[str]:
+        """What replacing takes out of the archive being added to: each
+        planned path (a folder with everything in it), and for a single
+        file the lists named after it."""
+        targets = set(self._planned_targets())
+        if not self._node.is_dir:
+            targets |= {
+                f"{t}.{name}" for t in list(targets)
+                for name in ("crush-export-hashes.txt", "crush-export-renames.txt")
+            }
+        return targets
+
+    def _copy_existing_except(self, zf: Any, replaced: set[str]) -> None:
+        """Copy the archive being added to into *zf*, leaving out the
+        entries being replaced. Entries keep their name, time, attributes
+        and compression method."""
+        import zipfile
+
+        removed: list[str] = []
+        with zipfile.ZipFile(self._zip_path) as src:
+            zf.comment = src.comment
+            for info in src.infolist():
+                self._check_cancel()
+                if _in_replaced(info.filename.rstrip("/"), replaced):
+                    removed.append(info.filename)
+                    continue
+                copy = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+                copy.compress_type = info.compress_type
+                copy.extra = info.extra
+                copy.comment = info.comment
+                copy.external_attr = info.external_attr
+                copy.create_system = info.create_system
+                if info.is_dir():
+                    zf.writestr(copy, b"")
+                    continue
+                with src.open(info) as entry, zf.open(
+                    copy, "w", force_zip64=info.file_size >= _ZIP64_FROM
+                ) as dst:
+                    while chunk := entry.read(_ZIP_CHUNK):
+                        self._check_cancel()
+                        dst.write(chunk)
+        for name in removed:
+            self._logger.warning("ZIP export: replaced in %s: %s", self._zip_path, name)
+
     def _copy_existing(self, partial: Path) -> None:
         with open(self._zip_path, "rb") as src, open(partial, "wb") as dst:
             while chunk := src.read(_ZIP_CHUNK):
@@ -1008,10 +1121,13 @@ class _ExportZipWorker(QObject):
         self._write_sidecars(zf, base, list_failed=self._node.is_dir)
 
     def _write_dir_entry(self, zf: Any, node: VFSNode, arcname: str) -> None:
+        self._write_folder(zf, arcname, node.modified)
+
+    def _write_folder(self, zf: Any, arcname: str, modified: float | None) -> None:
         import zipfile
 
-        info = zipfile.ZipInfo(f"{arcname}/", date_time=_zip_date_time(node.modified))
-        info.extra = _zip_extended_timestamp(node.modified)
+        info = zipfile.ZipInfo(f"{arcname}/", date_time=_zip_date_time(modified))
+        info.extra = _zip_extended_timestamp(modified)
         info.external_attr = (0o40755 << 16) | 0x10  # a folder, for unzip and Windows
         zf.writestr(info, b"")
         self._taken.add(info.filename)
@@ -1143,13 +1259,15 @@ class _ExportZipWorker(QObject):
 
 class _ExportZipSelectionWorker(_ExportZipWorker):
     """Export several selected files and folders into one ZIP archive, each
-    under its path from the root of its source (the source's own name
-    first), so entries from different levels keep where they came from.
+    under `export/` and its path from the root of its source
+    (_zip_selection_layout), so entries from different levels keep where
+    they came from.
 
     *items* are (node, vfs, chain): chain is the nodes from the source's
     root down to the node itself. Folders on the way are stored as folder
-    entries, shared with what the archive already holds; only a selected
-    entry whose path is already in the archive gets a number.
+    entries, shared with what the archive already holds; a selected entry
+    whose path is already in the archive replaces it or gets a number
+    (*on_clash*).
     """
 
     def __init__(
@@ -1159,41 +1277,40 @@ class _ExportZipSelectionWorker(_ExportZipWorker):
         mode: ZipExportMode,
         integrity: bool,
         window_id: str | None = None,
+        on_clash: ZipClashMode = "number",
     ) -> None:
         first_node, first_vfs, _ = items[0]
-        super().__init__(first_vfs, first_node, zip_path, mode, integrity, window_id)
-        self._items = items
+        super().__init__(
+            first_vfs, first_node, zip_path, mode, integrity, window_id, on_clash=on_clash
+        )
+        self._layout = _zip_selection_layout(items)
 
     def _single_file(self) -> bool:
         return False
 
     def _described(self) -> str:
-        return f"{len(self._items)} selected entries"
+        return f"{len(self._layout)} selected entries"
+
+    def _planned_targets(self) -> list[str]:
+        return [entry.arcname for entry in self._layout]
+
+    def _replaced_targets(self) -> set[str]:
+        return set(self._planned_targets())
 
     def _export(self, zf: Any) -> None:
-        for node, vfs, chain in self._items:
+        for entry in self._layout:
             self._check_cancel()
-            if not chain or chain[-1] is not node:
-                chain = [*chain, node]
-            parts: list[str] = []
-            changed_any = False
-            for step in chain:
-                safe, changed = _safe_name(step.name or "export")
-                parts.append(safe)
-                changed_any = changed_any or changed
-            for depth, folder in enumerate(chain[:-1], start=1):
-                arc_folder = "/".join(parts[:depth])
+            for arc_folder, modified in entry.folders:
                 if f"{arc_folder}/" not in self._taken:
-                    self._write_dir_entry(zf, folder, arc_folder)
-            wanted = "/".join(parts)
-            arcname = _unique_arcname(wanted, self._taken, node.is_dir)
-            if changed_any or arcname != wanted:
-                self._record_rename(node.path, arcname)
-            if node.is_dir:
-                self._export_dir(zf, vfs, node, arcname)
+                    self._write_folder(zf, arc_folder, modified)
+            arcname = _unique_arcname(entry.arcname, self._taken, entry.node.is_dir)
+            if entry.sanitized or arcname != entry.arcname:
+                self._record_rename(entry.node.path, arcname)
+            if entry.node.is_dir:
+                self._export_dir(zf, entry.vfs, entry.node, arcname)
             else:
-                self._export_file(zf, vfs, node, arcname)
-        self._write_sidecars(zf, "", list_failed=True)
+                self._export_file(zf, entry.vfs, entry.node, arcname)
+        self._write_sidecars(zf, f"{_ZIP_SELECTION_ROOT}/", list_failed=True)
 
 
 def _folder_formats(parser: object) -> list[Any]:
@@ -2435,9 +2552,13 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
 
-    def _ask_zip_export_target(self, default_name: str) -> tuple[str, ZipExportMode] | None:
+    def _ask_zip_export_target(
+        self, default_name: str, planned: list[str]
+    ) -> tuple[str, ZipExportMode, ZipClashMode] | None:
         """The archive to export into and how: a new one, added to the one
-        chosen, or replacing it. None when the analyst cancelled."""
+        chosen, or replacing it -- and, when adding, what to do with
+        *planned* paths the archive already holds. None when the analyst
+        cancelled."""
         import zipfile
 
         zip_path, _ = QFileDialog.getSaveFileName(
@@ -2453,7 +2574,7 @@ class MainWindow(QMainWindow):
         if target.suffix.lower() != ".zip":
             target = target.with_name(f"{target.name}.zip")
         if not target.exists():
-            return str(target), "new"
+            return str(target), "new", "number"
         if target.is_dir():
             QMessageBox.warning(
                 self,
@@ -2477,7 +2598,7 @@ class MainWindow(QMainWindow):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return None
-            return str(target), "replace"
+            return str(target), "replace", "number"
 
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
@@ -2488,8 +2609,8 @@ class MainWindow(QMainWindow):
         box.setInformativeText(
             translate(
                 "MainWindow",
-                "Add the export to this archive (its entries are kept; a name already in it "
-                "gets a number), or replace the archive with a new one?",
+                "Add the export to this archive (its other entries are kept), or replace the "
+                "archive with a new one?",
             )
         )
         add_button = box.addButton(
@@ -2502,10 +2623,69 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(add_button)
         box.exec()
         clicked = box.clickedButton()
-        if clicked is add_button:
-            return str(target), "add"
         if clicked is replace_button:
-            return str(target), "replace"
+            return str(target), "replace", "number"
+        if clicked is not add_button:
+            return None
+        on_clash = self._ask_zip_clash(target, planned)
+        if on_clash is None:
+            return None
+        return str(target), "add", on_clash
+
+    def _ask_zip_clash(self, target: Path, planned: list[str]) -> ZipClashMode | None:
+        """When adding to *target*: replace what it already holds under the
+        *planned* paths, or store the export beside it under a numbered
+        name. "number" without asking when nothing clashes; None when the
+        analyst cancelled."""
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(target) as zf:
+                taken = set(zf.namelist())
+        except Exception as exc:
+            QMessageBox.critical(
+                self, translate("MainWindow", "Export to ZIP archive"), i18n.exception_text(exc)
+            )
+            return None
+        clashing = [name for name in planned if _arcname_clashes(name, taken)]
+        if not clashing:
+            return "number"
+        shown = "\n".join(clashing[:10])
+        if len(clashing) > 10:
+            shown += "\n" + translate("MainWindow", "… and {n} more").format(
+                n=len(clashing) - 10
+            )
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(translate("MainWindow", "Export to ZIP archive"))
+        box.setText(
+            (
+                translate("MainWindow", "1 entry is already in the archive:")
+                if len(clashing) == 1
+                else translate("MainWindow", "{n} entries are already in the archive:")
+            ).format(n=len(clashing))
+        )
+        box.setInformativeText(
+            translate(
+                "MainWindow",
+                "{names}\n\nReplace them (a folder with everything in it), or add the "
+                "export beside them under a numbered name, e.g. \"name (2)\"?",
+            ).format(names=shown)
+        )
+        replace_button = box.addButton(
+            translate("MainWindow", "Replace"), QMessageBox.ButtonRole.DestructiveRole
+        )
+        beside_button = box.addButton(
+            translate("MainWindow", "Add Beside"), QMessageBox.ButtonRole.AcceptRole
+        )
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(beside_button)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is replace_button:
+            return "replace"
+        if clicked is beside_button:
+            return "number"
         return None
 
     def _export_node_zip(self, node: VFSNode, vfs: VFS) -> None:
@@ -2516,15 +2696,18 @@ class MainWindow(QMainWindow):
                 translate("MainWindow", "An export is already running."),
             )
             return
-        safe_root_name, _ = _safe_name(node.name or "export")
-        choice = self._ask_zip_export_target(f"{safe_root_name}.zip")
+        root_name, _ = _zip_single_root(node)
+        choice = self._ask_zip_export_target(f"{root_name}.zip", [root_name])
         if choice is None:
             return
-        zip_path, mode = choice
-        self._logger.info("ZIP export requested (%s): %s -> %s", mode, node.path, zip_path)
+        zip_path, mode, on_clash = choice
+        self._logger.info(
+            "ZIP export requested (%s, %s): %s -> %s", mode, on_clash, node.path, zip_path
+        )
         self._start_zip_export(
             _ExportZipWorker(
-                vfs, node, zip_path, mode, self.session.integrity_mode, window_id=self._window_id
+                vfs, node, zip_path, mode, self.session.integrity_mode,
+                window_id=self._window_id, on_clash=on_clash,
             ),
             translate("MainWindow", "Exporting…"),
         )
@@ -2542,18 +2725,20 @@ class MainWindow(QMainWindow):
             )
             return
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        choice = self._ask_zip_export_target(f"crush-export-{stamp}.zip")
+        planned = [entry.arcname for entry in _zip_selection_layout(items)]
+        choice = self._ask_zip_export_target(f"crush-export-{stamp}.zip", planned)
         if choice is None:
             return
-        zip_path, mode = choice
+        zip_path, mode, on_clash = choice
         n = len(items)
         self._logger.info(
-            "ZIP export requested (%s): %d selected entries -> %s: %s",
-            mode, n, zip_path, ", ".join(node.path for node, _vfs, _chain in items),
+            "ZIP export requested (%s, %s): %d selected entries -> %s: %s",
+            mode, on_clash, n, zip_path, ", ".join(node.path for node, _vfs, _chain in items),
         )
         self._start_zip_export(
             _ExportZipSelectionWorker(
-                items, zip_path, mode, self.session.integrity_mode, window_id=self._window_id
+                items, zip_path, mode, self.session.integrity_mode,
+                window_id=self._window_id, on_clash=on_clash,
             ),
             (
                 translate("MainWindow", "Exporting {n} entry…")

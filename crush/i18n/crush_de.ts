@@ -7207,6 +7207,10 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
         <translation>Exportiere...</translation>
     </message>
     <message>
+        <source>Add the export to this archive (its other entries are kept), or replace the archive with a new one?</source>
+        <translation>Den Export zu diesem Archiv hinzufügen (seine übrigen Einträge bleiben erhalten) oder das Archiv durch ein neues ersetzen?</translation>
+    </message>
+    <message>
         <source>Export filtered results to folder</source>
         <translation>Gefilterte Ergebnisse in einen Ordner exportieren</translation>
     </message>
@@ -7387,16 +7391,36 @@ Speicherort öffnen?</translation>
         <translation>{path} existiert bereits.</translation>
     </message>
     <message>
-        <source>Add the export to this archive (its entries are kept; a name already in it gets a number), or replace the archive with a new one?</source>
-        <translation>Den Export zu diesem Archiv hinzufügen (vorhandene Einträge bleiben erhalten; ein bereits vorhandener Name erhält eine Nummer) oder das Archiv durch ein neues ersetzen?</translation>
-    </message>
-    <message>
         <source>Add to Archive</source>
         <translation>Zum Archiv hinzufügen</translation>
     </message>
     <message>
         <source>Replace Archive</source>
         <translation>Archiv ersetzen</translation>
+    </message>
+    <message>
+        <source>… and {n} more</source>
+        <translation>… und {n} weitere</translation>
+    </message>
+    <message>
+        <source>1 entry is already in the archive:</source>
+        <translation>1 Eintrag ist bereits im Archiv:</translation>
+    </message>
+    <message>
+        <source>{n} entries are already in the archive:</source>
+        <translation>{n} Einträge sind bereits im Archiv:</translation>
+    </message>
+    <message>
+        <source>{names}
+
+Replace them (a folder with everything in it), or add the export beside them under a numbered name, e.g. &quot;name (2)&quot;?</source>
+        <translation>{names}
+
+Ersetzen (ein Ordner mit allem, was er enthält) oder den Export daneben unter einem nummerierten Namen einfügen, z. B. „name (2)“?</translation>
+    </message>
+    <message>
+        <source>Add Beside</source>
+        <translation>Daneben einfügen</translation>
     </message>
     <message>
         <source>Exporting {n} entry…</source>
