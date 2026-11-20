@@ -1477,6 +1477,11 @@ MESSAGES: dict[str, str] = {
         "Unexpected KTX mipmap count {count}; decoding first level",
         "ktx.unexpected_mipmaps",
     ),
+    "ktx.payload_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Texture data is {present} bytes; a {width}x{height} image needs {needed}",
+        "ktx.payload_short",
+    ),
     "ktx.lzfse_failed": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "LZFSE decompression failed: {detail}",

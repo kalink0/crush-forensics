@@ -12,6 +12,8 @@ All notable changes to Crush will be documented in this file.
 
 ### Changed
 
+- KTX textures in more pixel formats now decode to an image instead of showing as text: ASTC at every block size (previously only 4x4), ETC1/ETC2/EAC, PVRTC 1, BC1/BC3/BC4/BC5/BC7, and uncompressed 8-bit RGBA/BGRA/RGB/BGR/luminance/alpha. These cover textures shipped inside apps and system frameworks, which use the same `.ktx` extension as iOS snapshots. New dependency: [texture2ddecoder](https://github.com/K0lb3/texture2ddecoder). KTX files are now also matched by the Image type filter in the filesystem and search panels.
+- A KTX texture whose data is shorter than its declared dimensions need is no longer passed to the decoder, which would read past the end of the data; the reason is shown instead.
 - A LevelDB table block that can't be read, decompressed or read to its end is skipped and named with its offset and whether its stored checksum matches; the blocks after it are still read, as LevelDB reads on.
 - Bundled [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) updated to v0.6 (from v0.4), with [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) bundled from its own repository.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.78 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.

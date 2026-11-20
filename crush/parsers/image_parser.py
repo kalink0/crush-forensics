@@ -124,8 +124,9 @@ class ImageParser(AbstractParser):
         if result.key_values:
             meta["Key/value entries"] = ", ".join(result.key_values)
         if result.payload:
+            family = (result.header.pixel_family if result.header else None) or "texture data"
             meta.update({
-                "Payload": "LZFSE-compressed ASTC" if result.payload.compressed else "ASTC",
+                "Payload": f"LZFSE-compressed {family}" if result.payload.compressed else family,
                 "Payload bytes": f"{len(result.payload.data):,} B",
                 "Declared payload bytes": f"{result.payload.declared_size:,} B",
             })
