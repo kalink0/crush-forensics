@@ -820,6 +820,316 @@ class _ExportMultiWorker(QObject):
         )
 
 
+ZipExportMode = Literal["new", "add", "replace"]
+
+# ZIP stores no year before 1980 or after 2107 in its DOS date fields.
+_ZIP_MIN_DATE = (1980, 1, 1, 0, 0, 0)
+_ZIP_MAX_DATE = (2107, 12, 31, 23, 59, 58)
+# Above this a ZIP entry needs ZIP64 records; decided before the size is
+# written, so a little below zipfile's own limit.
+_ZIP64_FROM = 0x7FFFFFFF
+_ZIP_CHUNK = 1024 * 1024
+
+
+def _zip_date_time(modified: float | None) -> tuple[int, int, int, int, int, int]:
+    """A node's modification time as ZIP's DOS date and time, in UTC (the
+    format has no time zone); the time of the export when the source gives
+    none. Clamped to what the format can hold."""
+    when = datetime.now(timezone.utc)
+    if modified is not None:
+        try:
+            when = datetime.fromtimestamp(modified, timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            pass
+    stamp = (when.year, when.month, when.day, when.hour, when.minute, when.second)
+    return max(_ZIP_MIN_DATE, min(_ZIP_MAX_DATE, stamp))
+
+
+def _zip_extended_timestamp(modified: float | None) -> bytes:
+    """The Info-ZIP extended timestamp field (0x5455): the modification time
+    to the second in UTC, which unzip, 7-Zip and others prefer over the DOS
+    fields. Empty when there is none or it doesn't fit the field."""
+    import struct
+
+    if modified is None or not (-(2**31) <= int(modified) < 2**31):
+        return b""
+    return struct.pack("<HHBl", 0x5455, 5, 1, int(modified))
+
+
+def _unique_arcname(name: str, taken: set[str], is_dir: bool) -> str:
+    """*name*, or `name (2)`, `name (3)` ... -- the first that names nothing
+    in the archive yet (as a file, or as a folder with entries below it)."""
+    def clashes(candidate: str) -> bool:
+        if candidate in taken or f"{candidate}/" in taken:
+            return True
+        prefix = f"{candidate}/"
+        return is_dir and any(t.startswith(prefix) for t in taken)
+
+    if not clashes(name):
+        return name
+    parent, slash, leaf = name.rpartition("/")
+    stem, ext = leaf, ""
+    if not is_dir:
+        dot = leaf.rfind(".")
+        if dot > 0:
+            stem, ext = leaf[:dot], leaf[dot:]
+    n = 2
+    while clashes(f"{parent}{slash}{stem} ({n}){ext}"):
+        n += 1
+    return f"{parent}{slash}{stem} ({n}){ext}"
+
+
+class _ExportZipWorker(QObject):
+    """Export a file or folder into a ZIP archive: a new one, or added to
+    one that exists.
+
+    The archive is written to a temporary file next to it and moved into
+    place only once complete, so a cancel, an error or a crash never leaves
+    a half-written archive under its name, nor changes an archive being
+    added to. A file whose bytes can't be read is staged first and left
+    out, so no entry holds part of a file.
+    """
+
+    finished = Signal(str, int)  # (archive path, files not exported)
+    failed = Signal(str, str)  # (English for the log, shown in the UI language)
+    cancelled = Signal(str, str)  # (archive path, mode): nothing was written
+
+    def __init__(
+        self,
+        vfs: VFS,
+        node: VFSNode,
+        zip_path: str,
+        mode: ZipExportMode,
+        integrity: bool,
+        window_id: str | None = None,
+    ) -> None:
+        super().__init__()
+        self._vfs = vfs
+        self._node = node
+        self._zip_path = Path(zip_path)
+        self._mode = mode
+        self._integrity = integrity
+        self._hash_lines: list[str] = []
+        self._rename_lines: list[str] = []
+        self._failed: list[tuple[str, str]] = []
+        self._taken: set[str] = set()
+        self._exported = 0
+        self._cancel = threading.Event()
+        self._logger = logging.getLogger(__name__)
+        self._window_id = window_id
+
+    def cancel(self) -> None:
+        """Stop at the next chunk (from the UI thread)."""
+        self._cancel.set()
+
+    def run(self) -> None:
+        with window_log_scope(self._window_id):
+            self._run()
+
+    def _check_cancel(self) -> None:
+        if self._cancel.is_set():
+            raise _ExportCancelled()
+
+    def _run(self) -> None:
+        import zipfile
+
+        partial: Path | None = None
+        try:
+            fd, partial_name = tempfile.mkstemp(
+                prefix=f".{self._zip_path.name}.", suffix=".crush-partial",
+                dir=self._zip_path.parent,
+            )
+            os.close(fd)
+            partial = Path(partial_name)
+            if self._mode == "add":
+                self._copy_existing(partial)
+            zip_mode: Literal["a", "w"] = "a" if self._mode == "add" else "w"
+            with zipfile.ZipFile(
+                partial, zip_mode, compression=zipfile.ZIP_DEFLATED, allowZip64=True
+            ) as zf:
+                self._taken = set(zf.namelist())
+                self._export(zf)
+                if not self._node.is_dir and self._failed:
+                    path, reason = self._failed[0]
+                    self.failed.emit(
+                        f"{path} could not be read and was not exported: {reason}",
+                        translate(
+                            "MainWindow", "{path} could not be read and was not exported: {reason}"
+                        ).format(path=path, reason=reason),
+                    )
+                    return
+            os.replace(partial, self._zip_path)
+            partial = None
+            self._log_archive_hash()
+        except _ExportCancelled:
+            self._logger.info(
+                "ZIP export cancelled by the analyst: %s %s",
+                self._zip_path, "not written" if self._mode == "new" else "left unchanged",
+            )
+            self.cancelled.emit(str(self._zip_path), self._mode)
+            return
+        except Exception as exc:
+            self.failed.emit(str(exc), i18n.exception_text(exc))
+            return
+        finally:
+            if partial is not None:
+                partial.unlink(missing_ok=True)
+        self._logger.info(
+            "ZIP export: %d file(s) of %s %s %s",
+            self._exported, self._node.path,
+            "added to" if self._mode == "add" else "written to", self._zip_path,
+        )
+        self.finished.emit(str(self._zip_path), len(self._failed))
+
+    def _copy_existing(self, partial: Path) -> None:
+        with open(self._zip_path, "rb") as src, open(partial, "wb") as dst:
+            while chunk := src.read(_ZIP_CHUNK):
+                self._check_cancel()
+                dst.write(chunk)
+
+    def _export(self, zf: Any) -> None:
+        root_name, changed = _safe_name(self._node.name or "export")
+        arc_root = _unique_arcname(root_name, self._taken, self._node.is_dir)
+        if changed or arc_root != root_name:
+            self._record_rename(self._node.path, arc_root)
+        if self._node.is_dir:
+            self._export_dir(zf, self._node, arc_root)
+            base = f"{arc_root}/"
+        else:
+            self._export_file(zf, self._node, arc_root)
+            base = f"{arc_root}."
+        self._write_sidecars(zf, base)
+
+    def _export_dir(self, zf: Any, node: VFSNode, arcname: str) -> None:
+        import zipfile
+
+        self._check_cancel()
+        info = zipfile.ZipInfo(f"{arcname}/", date_time=_zip_date_time(node.modified))
+        info.extra = _zip_extended_timestamp(node.modified)
+        info.external_attr = (0o40755 << 16) | 0x10  # a folder, for unzip and Windows
+        zf.writestr(info, b"")
+        self._taken.add(info.filename)
+        for child in node.children:
+            self._check_cancel()
+            safe_child, changed = _safe_name(child.name)
+            child_arc = f"{arcname}/{safe_child}"
+            unique = _unique_arcname(child_arc, self._taken, child.is_dir)
+            if changed or unique != child_arc:
+                self._record_rename(child.path, unique)
+            if child.is_dir:
+                self._export_dir(zf, child, unique)
+            else:
+                self._export_file(zf, child, unique)
+
+    def _export_file(self, zf: Any, node: VFSNode, arcname: str) -> None:
+        import hashlib
+        import zipfile
+
+        # Staged first: a read error can come after the last bytes that
+        # could be read, and an entry can't be taken out of a ZIP again.
+        hasher = hashlib.sha256() if self._integrity else None
+        total = 0
+        with tempdir.spool_file(prefix="crush-zip-export-") as staged:
+            try:
+                try:
+                    src = self._vfs.open(node)
+                except Exception as exc:
+                    raise _SourceReadError(str(exc)) from exc
+                with src:
+                    while True:
+                        self._check_cancel()
+                        try:
+                            chunk = src.read(_ZIP_CHUNK)
+                        except Exception as exc:
+                            raise _SourceReadError(str(exc)) from exc
+                        if not chunk:
+                            break
+                        staged.write(chunk)
+                        if hasher is not None:
+                            hasher.update(chunk)
+                        total += len(chunk)
+            except _SourceReadError as exc:
+                self._failed.append((node.path, str(exc)))
+                self._logger.warning(
+                    "Export: not exported, could not be read: %s: %s", node.path, exc
+                )
+                return
+            staged.seek(0)
+            info = zipfile.ZipInfo(arcname, date_time=_zip_date_time(node.modified))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.extra = _zip_extended_timestamp(node.modified)
+            info.external_attr = 0o100644 << 16
+            with zf.open(info, "w", force_zip64=total >= _ZIP64_FROM) as dst:
+                while chunk := staged.read(_ZIP_CHUNK):
+                    self._check_cancel()
+                    dst.write(chunk)
+        self._taken.add(arcname)
+        self._exported += 1
+        if hasher is None:
+            return
+        digest = hasher.hexdigest()
+        self._hash_lines.append(f"{digest}  {total}  {arcname}")
+        self._logger.info(
+            "INTEGRITY export sha256=%s  size=%d  path=%s!/%s",
+            digest, total, self._zip_path, arcname,
+        )
+
+    def _record_rename(self, original_path: str, arcname: str) -> None:
+        self._rename_lines.append(f"{original_path}\t->\t{arcname}")
+        self._logger.warning(
+            "Export: renamed in the ZIP archive (Windows-safe name or name already in "
+            "the archive): %s -> %s",
+            original_path, arcname,
+        )
+
+    def _write_sidecars(self, zf: Any, base: str) -> None:
+        """The same lists a folder export writes, inside the archive: under
+        the exported folder, or beside the exported file named after it."""
+        files: list[tuple[str, str]] = []
+        if self._integrity and (self._hash_lines or self._failed):
+            note = (
+                [f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE})"]
+                if self._failed else []
+            )
+            files.append(("crush-export-hashes.txt", "\n".join(note + self._hash_lines) + "\n"))
+        if self._rename_lines:
+            files.append((
+                "crush-export-renames.txt",
+                "# Names below contained characters invalid on Windows filesystems\n"
+                "# (or were reserved device names), or were already in the archive,\n"
+                "# and were renamed for export.\n"
+                "# original evidence path -> path in the ZIP archive\n"
+                + "\n".join(self._rename_lines) + "\n",
+            ))
+        if self._failed and self._node.is_dir:
+            files.append((
+                _EXPORT_FAILED_FILE,
+                "# Files below could not be read from the evidence and were not exported.\n"
+                "# evidence path\treason\n"
+                + "\n".join(f"{path}\t{reason}" for path, reason in self._failed) + "\n",
+            ))
+        for name, text in files:
+            arcname = _unique_arcname(f"{base}{name}", self._taken, False)
+            zf.writestr(arcname, text.encode("utf-8"))
+            self._taken.add(arcname)
+
+    def _log_archive_hash(self) -> None:
+        if not self._integrity:
+            return
+        import hashlib
+
+        hasher = hashlib.sha256()
+        size = 0
+        with open(self._zip_path, "rb") as f:
+            while chunk := f.read(_ZIP_CHUNK):
+                hasher.update(chunk)
+                size += len(chunk)
+        self._logger.info(
+            "INTEGRITY export archive sha256=%s  size=%d  path=%s",
+            hasher.hexdigest(), size, self._zip_path,
+        )
+
+
 def _folder_formats(parser: object) -> list[Any]:
     """The formats.db entry of a folder format: a folder has no bytes of its
     own to match signatures against, so its format is that of the parser
@@ -1070,6 +1380,7 @@ class MainWindow(QMainWindow):
         self._fs_panel.open_requested.connect(self._open_node_mode)
         self._fs_panel.open_external_requested.connect(self._open_external_mode)
         self._fs_panel.export_requested.connect(self._export_node)
+        self._fs_panel.export_zip_requested.connect(self._export_node_zip)
         self._fs_panel.export_multi_requested.connect(self._export_multi_nodes)
         self._fs_panel.export_logarchive_requested.connect(self._export_logarchive_node)
         self._fs_panel.close_source_requested.connect(self._close_source)
@@ -2056,6 +2367,128 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(self._export_worker.deleteLater)
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
+
+    def _ask_zip_export_target(self, node: VFSNode) -> tuple[str, ZipExportMode] | None:
+        """The archive to export into and how: a new one, added to the one
+        chosen, or replacing it. None when the analyst cancelled."""
+        import zipfile
+
+        safe_root_name, _ = _safe_name(node.name or "export")
+        zip_path, _ = QFileDialog.getSaveFileName(
+            self,
+            translate("MainWindow", "Export to ZIP archive"),
+            f"{safe_root_name}.zip",  # i18n: keep -- default file name
+            translate("MainWindow", "ZIP archives (*.zip)"),
+            options=QFileDialog.Option.DontConfirmOverwrite,
+        )
+        if not zip_path:
+            return None
+        target = Path(zip_path)
+        if target.suffix.lower() != ".zip":
+            target = target.with_name(f"{target.name}.zip")
+        if not target.exists():
+            return str(target), "new"
+        if target.is_dir():
+            QMessageBox.warning(
+                self,
+                translate("MainWindow", "Export to ZIP archive"),
+                translate("MainWindow", "{path} is a folder, not a ZIP archive.").format(
+                    path=target
+                ),
+            )
+            return None
+        if not zipfile.is_zipfile(target):
+            reply = QMessageBox.question(
+                self,
+                translate("MainWindow", "Overwrite?"),
+                translate(
+                    "MainWindow",
+                    "{path} already exists and is not a ZIP archive, so nothing can be added "
+                    "to it. Overwrite it with a new archive?",
+                ).format(path=target),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return None
+            return str(target), "replace"
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(translate("MainWindow", "Export to ZIP archive"))
+        box.setText(
+            translate("MainWindow", "{path} already exists.").format(path=target)
+        )
+        box.setInformativeText(
+            translate(
+                "MainWindow",
+                "Add the export to this archive (its entries are kept; a name already in it "
+                "gets a number), or replace the archive with a new one?",
+            )
+        )
+        add_button = box.addButton(
+            translate("MainWindow", "Add to Archive"), QMessageBox.ButtonRole.AcceptRole
+        )
+        replace_button = box.addButton(
+            translate("MainWindow", "Replace Archive"), QMessageBox.ButtonRole.DestructiveRole
+        )
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(add_button)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is add_button:
+            return str(target), "add"
+        if clicked is replace_button:
+            return str(target), "replace"
+        return None
+
+    def _export_node_zip(self, node: VFSNode, vfs: VFS) -> None:
+        if self._thread_is_running(getattr(self, "_export_thread", None)):
+            QMessageBox.information(
+                self,
+                translate("MainWindow", "Export"),
+                translate("MainWindow", "An export is already running."),
+            )
+            return
+        choice = self._ask_zip_export_target(node)
+        if choice is None:
+            return
+        zip_path, mode = choice
+
+        self._status.showMessage(translate("MainWindow", "Exporting…"))
+        self._logger.info("ZIP export requested (%s): %s -> %s", mode, node.path, zip_path)
+        zip_worker = _ExportZipWorker(
+            vfs, node, zip_path, mode, self.session.integrity_mode, window_id=self._window_id
+        )
+        self._export_progress = _CancellableProgress(
+            translate("MainWindow", "Exporting…"), translate("MainWindow", "Export to ZIP archive"),
+            zip_worker.cancel, self,
+        )
+        self._export_progress.show()
+
+        self._export_thread = QThread(self)
+        self._export_worker = zip_worker
+        zip_worker.moveToThread(self._export_thread)
+        self._export_thread.started.connect(zip_worker.run)
+        zip_worker.finished.connect(self._on_export_finished)
+        zip_worker.failed.connect(self._on_export_failed)
+        zip_worker.cancelled.connect(self._on_zip_export_cancelled)
+        zip_worker.finished.connect(self._export_thread.quit)
+        zip_worker.failed.connect(self._export_thread.quit)
+        zip_worker.cancelled.connect(self._export_thread.quit)
+        self._export_thread.finished.connect(zip_worker.deleteLater)
+        self._export_thread.finished.connect(self._on_export_thread_finished)
+        self._export_thread.start()
+
+    def _on_zip_export_cancelled(self, dest: str, mode: str) -> None:
+        if hasattr(self, "_export_progress"):
+            self._export_progress.close()
+        text = (
+            translate("MainWindow", "Export cancelled: {dest} was not written")
+            if mode == "new"
+            else translate("MainWindow", "Export cancelled: {dest} was left unchanged")
+        ).format(dest=dest)
+        self._status.showMessage(text)
 
     def _export_multi_nodes(self, entries: list, filter_text: str) -> None:
         if not entries:

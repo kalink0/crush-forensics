@@ -318,6 +318,7 @@ The left panel shows the loaded archive or folder as a tree.
   - **Open External (Choose App…)** — pick an application
   - **Show Format Info** — opens a popup showing the identified format name, category, platforms, parser support status, signatures, forensic relevance, reference links (opened in your browser) and the date of the last review. When the signatures match several formats equally, it lists those candidates instead of picking one. Also updates the Properties panel. Works for unsupported formats — useful for quickly understanding what a file is before deciding how to examine it
   - **Export…** — extract the file or folder to disk
+  - **Export to ZIP…** — export the file or folder into a new or an existing ZIP archive (see [Export to a ZIP archive](#export-to-a-zip-archive))
 
 **Column widths:** the **Name** column widens to fit the names shown as folders are expanded, scrolled or the panel is resized — up to the room the other columns leave, so Size, Files, Total Size and Type stay in view; widen the panel to give it more. It doesn't shrink again when a folder is collapsed. A name that still doesn't fit is shortened in the middle (`IMG_2024…_edited.jpg.exe`), so its start and extension stay visible; the full name is in the tooltip. Dragging the column by hand turns the automatic width off until the next source is loaded. The search results list does the same for **Name** and **Path**.
 
@@ -1237,6 +1238,18 @@ A file whose bytes can't be read from the evidence (for example, one a disk imag
 
 ---
 
+### Export to a ZIP archive
+
+Right-click a file or folder and choose **Export to ZIP…** to export it into a ZIP archive instead of a folder. Choose a file name; `.zip` is added if missing. If the archive doesn't exist yet, it is created. If it exists, you choose:
+
+- **Add to Archive** — the export is added and the archive's entries are kept. A name the archive already holds gets a number (`case (2)/`, `report (2).pdf`), so nothing is overwritten and no name appears twice; the rename is listed in `crush-export-renames.txt`.
+- **Replace Archive** — a new archive replaces it.
+
+A file that isn't a ZIP archive can only be replaced. A folder is stored with its structure under its own name; a single file is stored at the top of the archive. Entries are compressed (Deflate; ZIP64 for large files) and carry the source's modification time in UTC (also as an Info-ZIP extended timestamp). Names are made Windows-safe as for a folder export.
+
+The same lists as a folder export go into the archive: for a folder inside it (`case/crush-export-hashes.txt`, `case/crush-export-failed.txt`, `case/crush-export-renames.txt`), for a single file next to it, named after it (`report.pdf.crush-export-hashes.txt`). With integrity mode on, the hash list holds each file's SHA-256 with its path in the archive, and the log records the SHA-256 of the finished archive. A file that can't be read is left out — no entry holds part of it — and listed in `crush-export-failed.txt`; a single file that can't be read fails the export.
+
+The archive is written to a temporary file beside it and only moved into place when complete. **Cancel**, an error or a crash therefore never leaves a partly written archive under its name, and an archive you were adding to stays exactly as it was. Adding to an archive needs free space for a copy of it in the same folder.
 ## Value Inspector
 
 **Tools → Value Inspector…** opens a persistent, non-modal window that shows every plausible interpretation of a single value — numeric, timestamp, UUID, network address, or raw hex bytes.

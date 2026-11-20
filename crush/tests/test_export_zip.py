@@ -1,0 +1,292 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Export to a ZIP archive (right-click -> Export to ZIP…): into a new
+archive, added to one that exists, or replacing it.
+
+The archive is written beside its target and moved into place only when
+complete, so a cancel or an error never leaves a half archive under its
+name, nor changes an archive being added to.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import zipfile
+from pathlib import Path
+from typing import IO, Any
+
+import pytest
+from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+from crush.core.vfs import DirectoryVFS, VFSNode
+from crush.ui.main_window import (
+    MainWindow,
+    _ExportZipWorker,
+    _unique_arcname,
+    _zip_date_time,
+)
+
+
+def _source(tmp_path: Path) -> DirectoryVFS:
+    src = tmp_path / "case"
+    (src / "sub").mkdir(parents=True)
+    (src / "empty").mkdir()
+    (src / "a.txt").write_bytes(b"alpha")
+    (src / "sub" / "b.bin").write_bytes(b"\x00\x01\x02" * 1000)
+    return DirectoryVFS(src)
+
+
+def _run(worker: _ExportZipWorker) -> list[tuple[Any, ...]]:
+    seen: list[tuple[Any, ...]] = []
+    worker.finished.connect(lambda *a: seen.append(("finished", *a)))
+    worker.failed.connect(lambda *a: seen.append(("failed", *a)))
+    worker.cancelled.connect(lambda *a: seen.append(("cancelled", *a)))
+    worker.run()
+    return seen
+
+
+def _child(node: VFSNode, name: str) -> VFSNode:
+    return next(c for c in node.children if c.name == name)
+
+
+def _no_partials(folder: Path) -> bool:
+    return not list(folder.glob("*.crush-partial"))
+
+
+@pytest.mark.parametrize("integrity", [True, False])
+def test_folder_into_a_new_archive(qapp: Any, tmp_path: Path, integrity: bool) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+
+    seen = _run(_ExportZipWorker(vfs, vfs.root(), str(out), "new", integrity))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        assert zf.testzip() is None
+        names = set(zf.namelist())
+        assert {"case/", "case/a.txt", "case/sub/", "case/sub/b.bin", "case/empty/"} <= names
+        assert zf.read("case/a.txt") == b"alpha"
+        assert zf.read("case/sub/b.bin") == b"\x00\x01\x02" * 1000
+        if integrity:
+            hashes = zf.read("case/crush-export-hashes.txt").decode()
+            digest = hashlib.sha256(b"alpha").hexdigest()
+            assert f"{digest}  5  case/a.txt" in hashes.splitlines()
+        else:
+            assert "case/crush-export-hashes.txt" not in names
+    assert _no_partials(tmp_path)
+
+
+def test_single_file_into_a_new_archive(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "one.zip"
+
+    seen = _run(_ExportZipWorker(vfs, _child(vfs.root(), "a.txt"), str(out), "new", True))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        assert sorted(zf.namelist()) == ["a.txt", "a.txt.crush-export-hashes.txt"]
+        assert zf.read("a.txt") == b"alpha"
+
+
+def test_add_keeps_existing_entries_and_numbers_a_clash(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("earlier.txt", b"keep me")
+        zf.writestr("case/old.txt", b"older export")
+
+    seen = _run(_ExportZipWorker(vfs, vfs.root(), str(out), "add", False))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert len(names) == len(set(names))  # no duplicate entries
+        assert zf.read("earlier.txt") == b"keep me"
+        assert zf.read("case/old.txt") == b"older export"
+        assert zf.read("case (2)/a.txt") == b"alpha"
+        renames = zf.read("case (2)/crush-export-renames.txt").decode()
+        assert f"{vfs.root().path}\t->\tcase (2)" in renames
+
+
+def test_adding_the_same_file_twice(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    a = _child(vfs.root(), "a.txt")
+    out = tmp_path / "out.zip"
+
+    assert _run(_ExportZipWorker(vfs, a, str(out), "new", True))[0][0] == "finished"
+    assert _run(_ExportZipWorker(vfs, a, str(out), "add", True))[0][0] == "finished"
+
+    with zipfile.ZipFile(out) as zf:
+        names = set(zf.namelist())
+        assert {"a.txt", "a (2).txt", "a (2).txt.crush-export-hashes.txt"} <= names
+        assert zf.read("a (2).txt") == b"alpha"
+
+
+def test_replace_writes_a_new_archive(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    out.write_bytes(b"not a zip at all")
+
+    seen = _run(_ExportZipWorker(vfs, _child(vfs.root(), "a.txt"), str(out), "replace", False))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        assert zf.namelist() == ["a.txt"]
+
+
+class _FailingRead(io.BytesIO):
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self._given = False
+
+    def read(self, size: int | None = -1) -> bytes:
+        if self._given:
+            raise OSError("only 4 of 9 bytes can be read")
+        self._given = True
+        return super().read(size)
+
+
+class _OneUnreadable(DirectoryVFS):
+    def open(self, node: VFSNode) -> IO[bytes]:
+        if node.name == "bad.bin":
+            return _FailingRead(b"part")
+        return super().open(node)
+
+
+def test_an_unreadable_file_is_left_out_and_listed(qapp: Any, tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "bad.bin").write_bytes(b"part-and-rest")
+    (src / "good.txt").write_bytes(b"good")
+    vfs = _OneUnreadable(src)
+    out = tmp_path / "out.zip"
+
+    seen = _run(_ExportZipWorker(vfs, vfs.root(), str(out), "new", True))
+
+    assert seen == [("finished", str(out), 1)]
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert "src/bad.bin" not in names  # no entry holding part of the file
+        assert zf.read("src/good.txt") == b"good"
+        failed = zf.read("src/crush-export-failed.txt").decode()
+        assert "bad.bin\tonly 4 of 9 bytes can be read" in failed
+        hashes = zf.read("src/crush-export-hashes.txt").decode()
+        assert hashes.startswith("# not exported: 1 (see crush-export-failed.txt)")
+
+
+def test_a_single_unreadable_file_fails_and_writes_nothing(qapp: Any, tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "bad.bin").write_bytes(b"part-and-rest")
+    vfs = _OneUnreadable(src)
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    out = dest / "out.zip"
+
+    seen = _run(_ExportZipWorker(vfs, _child(vfs.root(), "bad.bin"), str(out), "new", True))
+
+    assert len(seen) == 1 and seen[0][0] == "failed"
+    assert "could not be read and was not exported" in seen[0][1]
+    assert list(dest.iterdir()) == []
+
+
+@pytest.mark.parametrize("mode", ["new", "add", "replace"])
+def test_cancel_leaves_the_target_as_it_was(qapp: Any, tmp_path: Path, mode: str) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    before = b""
+    if mode != "new":
+        with zipfile.ZipFile(out, "w") as zf:
+            zf.writestr("earlier.txt", b"keep me")
+        before = out.read_bytes()
+    worker = _ExportZipWorker(vfs, vfs.root(), str(out), mode, True)  # type: ignore[arg-type]
+    worker.cancel()
+
+    seen = _run(worker)
+
+    assert seen == [("cancelled", str(out), mode)]
+    if mode == "new":
+        assert not out.exists()
+    else:
+        assert out.read_bytes() == before
+    assert _no_partials(tmp_path)
+
+
+def test_windows_unsafe_names_are_sanitized_and_recorded(qapp: Any, tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a:b.txt").write_bytes(b"x")
+    vfs = DirectoryVFS(src)
+    out = tmp_path / "out.zip"
+
+    _run(_ExportZipWorker(vfs, vfs.root(), str(out), "new", False))
+
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("src/a_b.txt") == b"x"
+        assert "a:b.txt\t->\tsrc/a_b.txt" in zf.read("src/crush-export-renames.txt").decode()
+
+
+def test_unique_arcname() -> None:
+    taken = {"a.txt", "dir/", "dir/x", "nested.d/f.txt"}
+    assert _unique_arcname("b.txt", taken, False) == "b.txt"
+    assert _unique_arcname("a.txt", taken, False) == "a (2).txt"
+    assert _unique_arcname("dir", taken, True) == "dir (2)"
+    assert _unique_arcname("nested.d/f.txt", taken, False) == "nested.d/f (2).txt"
+    assert _unique_arcname("a.txt", taken | {"a (2).txt"}, False) == "a (3).txt"
+
+
+def test_zip_date_time_is_utc_and_clamped() -> None:
+    assert _zip_date_time(0.0) == (1980, 1, 1, 0, 0, 0)  # before ZIP's first year
+    assert _zip_date_time(1_700_000_000.0) == (2023, 11, 14, 22, 13, 20)
+
+
+def test_menu_flow_asks_before_adding_to_an_existing_archive(
+    qapp: Any, qtbot: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("earlier.txt", b"keep me")
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "ZIP archives (*.zip)")
+    )
+    asked: list[str] = []
+
+    def fake_exec(box: QMessageBox) -> int:
+        asked.append(box.text())
+        add = next(b for b in box.buttons() if box.buttonRole(b) == QMessageBox.ButtonRole.AcceptRole)
+        add.click()
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+
+    win = MainWindow()
+    try:
+        win._export_node_zip(vfs.root(), vfs)
+        assert len(asked) == 1 and str(out) in asked[0]
+        qtbot.waitUntil(lambda: not win._thread_is_running(win._export_thread), timeout=10_000)
+        qapp.processEvents()
+    finally:
+        win.close()
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("earlier.txt") == b"keep me"
+        assert zf.read("case/a.txt") == b"alpha"
+
+
+def test_menu_flow_adds_the_zip_suffix(
+    qapp: Any, qtbot: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    vfs = _source(tmp_path)
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "evidence"), "")
+    )
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+
+    win = MainWindow()
+    try:
+        win._export_node_zip(vfs.root(), vfs)
+        qtbot.waitUntil(lambda: not win._thread_is_running(win._export_thread), timeout=10_000)
+        qapp.processEvents()
+    finally:
+        win.close()
+    assert zipfile.is_zipfile(tmp_path / "evidence.zip")

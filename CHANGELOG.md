@@ -8,6 +8,7 @@ All notable changes to Crush will be documented in this file.
 
 - Added to opening sources, unlocking volumes, exports and `.logarchive` export -> Support for cancelling: a cancelled source is not opened, a cancelled export keeps what it wrote marked as incomplete in `crush-export-cancelled.txt`, and a cancelled hash in integrity mode is logged while the data still opens.
 - Added to the type indexing -> Support for stopping and resuming it from the status bar; the status bar says how far it got.
+- Added to exports -> Support for exporting a file or folder into a ZIP archive (right-click → **Export to ZIP…**), new or added to an existing one, with the hash, rename and failed-file lists inside the archive; a cancelled or failed export leaves the target archive unchanged.
 
 ## v0.25.0 - 2026-11-07
 

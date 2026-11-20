@@ -107,6 +107,7 @@ class FilesystemPanel(QWidget):
     open_requested = Signal(object, object, str)  # (VFSNode, VFS, mode)
     open_external_requested = Signal(object, object, str)  # (VFSNode, VFS, mode)
     export_requested = Signal(object, object)  # (VFSNode, VFS)
+    export_zip_requested = Signal(object, object)  # (VFSNode, VFS)
     export_multi_requested = Signal(object, str)  # (list[(VFSNode, VFS, str)], filter_text)
     export_logarchive_requested = Signal(object, object)  # (VFSNode, VFS)
     format_info_requested = Signal(object, object)  # (VFSNode, VFS)
@@ -699,6 +700,7 @@ class FilesystemPanel(QWidget):
         format_info_action = menu.addAction(translate("FilesystemPanel", "Show Format Info"))
         menu.addSeparator()
         export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
+        export_zip_action = menu.addAction(translate("FilesystemPanel", "Export to ZIP…"))
         unlock_volume_action = None
         if vfs.is_locked_volume(node):
             menu.addSeparator()
@@ -773,6 +775,8 @@ class FilesystemPanel(QWidget):
             self.format_info_requested.emit(node, vfs)
         elif action == export_action:
             self.export_requested.emit(node, vfs)
+        elif action == export_zip_action:
+            self.export_zip_requested.emit(node, vfs)
         elif action == export_logarchive_action:
             self.export_logarchive_requested.emit(node, vfs)
         elif action == verify_acquisition_action:

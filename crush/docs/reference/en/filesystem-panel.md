@@ -24,6 +24,7 @@ The left panel shows the loaded archive or folder as a tree.
   - **Open External (Choose App…)** — pick an application
   - **Show Format Info** — opens a popup showing the identified format name, category, platforms, parser support status, signatures, forensic relevance, reference links (opened in your browser) and the date of the last review. When the signatures match several formats equally, it lists those candidates instead of picking one. Also updates the Properties panel. Works for unsupported formats — useful for quickly understanding what a file is before deciding how to examine it
   - **Export…** — extract the file or folder to disk
+  - **Export to ZIP…** — export the file or folder into a new or an existing ZIP archive (see [Export to a ZIP archive](exporting-files.md#export-to-a-zip-archive))
 
 **Column widths:** the **Name** column widens to fit the names shown as folders are expanded, scrolled or the panel is resized — up to the room the other columns leave, so Size, Files, Total Size and Type stay in view; widen the panel to give it more. It doesn't shrink again when a folder is collapsed. A name that still doesn't fit is shortened in the middle (`IMG_2024…_edited.jpg.exe`), so its start and extension stay visible; the full name is in the tooltip. Dragging the column by hand turns the automatic width off until the next source is loaded. The search results list does the same for **Name** and **Path**.
 

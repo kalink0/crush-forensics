@@ -1087,6 +1087,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>Exportieren...</translation>
     </message>
     <message>
+        <source>Export to ZIP…</source>
+        <translation>Als ZIP exportieren...</translation>
+    </message>
+    <message>
         <source>Unlock Volume…</source>
         <translation>Volume entsperren...</translation>
     </message>
@@ -7357,6 +7361,46 @@ Speicherort öffnen?</translation>
     <message>
         <source>not hashed: hashing was cancelled</source>
         <translation>nicht gehasht: Hashen wurde abgebrochen</translation>
+    </message>
+    <message>
+        <source>Export to ZIP archive</source>
+        <translation>In ZIP-Archiv exportieren</translation>
+    </message>
+    <message>
+        <source>ZIP archives (*.zip)</source>
+        <translation>ZIP-Archive (*.zip)</translation>
+    </message>
+    <message>
+        <source>{path} is a folder, not a ZIP archive.</source>
+        <translation>{path} ist ein Ordner, kein ZIP-Archiv.</translation>
+    </message>
+    <message>
+        <source>{path} already exists and is not a ZIP archive, so nothing can be added to it. Overwrite it with a new archive?</source>
+        <translation>{path} existiert bereits und ist kein ZIP-Archiv, daher kann nichts hinzugefügt werden. Mit einem neuen Archiv überschreiben?</translation>
+    </message>
+    <message>
+        <source>{path} already exists.</source>
+        <translation>{path} existiert bereits.</translation>
+    </message>
+    <message>
+        <source>Add the export to this archive (its entries are kept; a name already in it gets a number), or replace the archive with a new one?</source>
+        <translation>Den Export zu diesem Archiv hinzufügen (vorhandene Einträge bleiben erhalten; ein bereits vorhandener Name erhält eine Nummer) oder das Archiv durch ein neues ersetzen?</translation>
+    </message>
+    <message>
+        <source>Add to Archive</source>
+        <translation>Zum Archiv hinzufügen</translation>
+    </message>
+    <message>
+        <source>Replace Archive</source>
+        <translation>Archiv ersetzen</translation>
+    </message>
+    <message>
+        <source>Export cancelled: {dest} was not written</source>
+        <translation>Export abgebrochen: {dest} wurde nicht geschrieben</translation>
+    </message>
+    <message>
+        <source>Export cancelled: {dest} was left unchanged</source>
+        <translation>Export abgebrochen: {dest} blieb unverändert</translation>
     </message>
     <message>
         <source>1 file could not be read and was not exported; it is listed with the reason in {name}.</source>
