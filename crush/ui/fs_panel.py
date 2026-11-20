@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 
+from crush.core import ios_containers
 from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
@@ -122,6 +123,7 @@ class FilesystemPanel(QWidget):
     _search_results_ready = Signal(object)  # internal: list of result dicts
     _prescan_activity = Signal(str, bool)   # internal: (activity_name, is_start)
     _prescan_count = Signal(int, int)       # internal: (files indexed, files to index)
+    _container_name_ready = Signal(object, object, int)  # internal: (key, identifier, gen)
 
     def __init__(
         self, session: Session, parent: QWidget | None = None, window_id: str | None = None
@@ -201,6 +203,19 @@ class FilesystemPanel(QWidget):
         self._ondemand_queue: queue.SimpleQueue[tuple[VFSNode, VFS, int]] = queue.SimpleQueue()
         self._ondemand_keys: set[tuple[int, str]] = set()
         self._ondemand_thread: threading.Thread | None = None
+        # iOS App / AppGroup container folders (named by a GUID) can be shown
+        # by the identifier in their metadata plist instead. The plists are
+        # read on a thread of their own; a folder shows its GUID until then.
+        self._show_container_names = True
+        self._container_gen = 0
+        self._container_names: dict[tuple[int, str], str | None] = {}
+        self._container_items: dict[tuple[int, str], list[QStandardItem]] = {}
+        self._container_requested: set[tuple[int, str]] = set()
+        self._container_queue: queue.SimpleQueue[
+            tuple[VFSNode, VFS, tuple[int, str], int]
+        ] = queue.SimpleQueue()
+        self._container_thread: threading.Thread | None = None
+        self._container_name_ready.connect(self._on_container_name_ready)
         self.background_status.emit("")
         self._build_ui()
 
@@ -285,6 +300,7 @@ class FilesystemPanel(QWidget):
         self._prescan_stopped = None
         self._ondemand_keys.clear()
         self._prescan_gen += 1
+        self._reset_container_names()
         self._emit_background_status()
 
         # Recreate model to avoid slow row-by-row clears on large trees.
@@ -373,6 +389,7 @@ class FilesystemPanel(QWidget):
         self._prescan_stopped = None
         self._ondemand_keys.clear()
         self._prescan_gen += 1
+        self._reset_container_names()
         self._emit_background_status()
 
         self._model = QStandardItemModel()
@@ -437,6 +454,8 @@ class FilesystemPanel(QWidget):
 
         if node.is_dir and node.children:
             self._add_placeholder(name_item)
+            if ios_containers.is_container(node):
+                self._register_container(name_item, node, vfs)
         if not node.is_dir:
             self._type_queue.append((type_item, node, vfs))
             if not self._type_timer.isActive():
@@ -858,14 +877,19 @@ class FilesystemPanel(QWidget):
         vfs_list = list(self._vfs_list)
         threading.Thread(
             target=self._search_worker,
-            args=(vfs_list, tokens, gen),
+            args=(vfs_list, tokens, gen, self._show_container_names),
             daemon=True,
         ).start()
 
-    def _search_worker(self, vfs_list: list[VFS], tokens: dict[str, str], gen: int) -> None:
+    def _search_worker(
+        self, vfs_list: list[VFS], tokens: dict[str, str], gen: int,
+        container_names: bool = False,
+    ) -> None:
         results: list[dict] = []
         for vfs in vfs_list:
-            self._collect_matches(vfs.root(), vfs, tokens, "", results, gen)
+            self._collect_matches(
+                vfs.root(), vfs, tokens, "", results, gen, container_names
+            )
             if self._search_gen != gen:
                 return
         if self._search_gen == gen:
@@ -874,6 +898,7 @@ class FilesystemPanel(QWidget):
     def _collect_matches(
         self, node: VFSNode, vfs: VFS, tokens: dict[str, str],
         parent_path: str, results: list[dict], gen: int,
+        container_names: bool = False,
     ) -> None:
         if self._search_gen != gen:
             return
@@ -884,9 +909,17 @@ class FilesystemPanel(QWidget):
         type_filter = tokens.get('type')
         type_exclude = tokens.get('-type')
 
+        # A container folder shown by its identifier is found by either name.
+        identifier = (
+            self._container_identifier_blocking(node, vfs)
+            if container_names and node.is_dir else None
+        )
+        names = [node.name.lower()]
+        if identifier:
+            names.append(identifier.lower())
         name_match = (
-            (name_filter is None or name_filter in node.name.lower())
-            and (name_exclude is None or name_exclude not in node.name.lower())
+            (name_filter is None or any(name_filter in n for n in names))
+            and (name_exclude is None or not any(name_exclude in n for n in names))
         )
 
         if type_filter is not None or type_exclude is not None:
@@ -909,10 +942,13 @@ class FilesystemPanel(QWidget):
             results.append({
                 'node': node, 'vfs': vfs,
                 'path': path, 'type_label': type_label,
+                'identifier': identifier,
             })
 
         for child in node.children:
-            self._collect_matches(child, vfs, tokens, path, results, gen)
+            self._collect_matches(
+                child, vfs, tokens, path, results, gen, container_names
+            )
 
     def _on_search_results_ready(self, results: list[dict]) -> None:
         self._type_queue.clear()
@@ -923,12 +959,15 @@ class FilesystemPanel(QWidget):
             vfs: VFS = r['vfs']
             type_label: str | None = r['type_label']
 
+            identifier: str | None = r.get('identifier')
             name_item = QStandardItem(node.name)
             name_item.setData(node, _ROLE_NODE)
             name_item.setData(vfs, _ROLE_VFS)
-            name_item.setData(node.name.lower(), _ROLE_SORT)
+            name_item.setData((identifier or node.name).lower(), _ROLE_SORT)
             name_item.setEditable(False)
             name_item.setToolTip(node.name)
+            if identifier:
+                self._apply_container_label(name_item, node, identifier)
 
             path_item = QStandardItem(r['path'])
             path_item.setData(r['path'].lower(), _ROLE_SORT)
@@ -1411,6 +1450,132 @@ class FilesystemPanel(QWidget):
         self.background_status.emit(
             translate("FilesystemPanel", "Background: {items}").format(items=items)
         )
+
+    # ------------------------------------------------------------------
+    # iOS container folders shown by their identifier
+    # ------------------------------------------------------------------
+
+    def show_container_names(self) -> bool:
+        return self._show_container_names
+
+    def set_show_container_names(self, enabled: bool) -> None:
+        """Show iOS App / AppGroup container folders by the identifier in
+        their metadata plist (True) or by their GUID folder name (False)."""
+        if enabled == self._show_container_names:
+            return
+        self._show_container_names = enabled
+        for key, items in self._container_items.items():
+            for item in items:
+                node: VFSNode | None = item.data(_ROLE_NODE)
+                vfs: VFS | None = item.data(_ROLE_VFS)
+                if node is None or vfs is None:
+                    continue
+                self._apply_container_label(item, node, self._container_names.get(key))
+                if enabled:
+                    self._request_container_name(node, vfs, key)
+        # Search results show (and match) names as the setting says: anew.
+        if self._stack.currentIndex() == 1 and self._pending_filter.strip():
+            self._populate_search_results(self._pending_filter.strip())
+
+    def _reset_container_names(self) -> None:
+        """Forget the container folders of the tree replaced (a name still
+        being read for one of them is dropped on arrival)."""
+        self._container_gen += 1
+        self._container_names.clear()
+        self._container_items.clear()
+        self._container_requested.clear()
+
+    def _register_container(self, item: QStandardItem, node: VFSNode, vfs: VFS) -> None:
+        key = (id(vfs), node.path)
+        self._container_items.setdefault(key, []).append(item)
+        if not self._show_container_names:
+            return
+        if key in self._container_names:
+            self._apply_container_label(item, node, self._container_names[key])
+        else:
+            self._request_container_name(node, vfs, key)
+
+    def _apply_container_label(
+        self, item: QStandardItem, node: VFSNode, identifier: str | None
+    ) -> None:
+        """The identifier as *item*'s text (italic: not the folder's real
+        name, which the tooltip keeps) while shown, else the folder name."""
+        shown = identifier if self._show_container_names and identifier else None
+        try:
+            item.setText(shown or node.name)
+            item.setToolTip(
+                translate("FilesystemPanel", "{identifier}\nFolder: {name}").format(
+                    identifier=shown, name=node.name
+                )
+                if shown else node.name
+            )
+            font = item.font()
+            font.setItalic(bool(shown))
+            item.setFont(font)
+        except RuntimeError:
+            pass  # item was deleted (e.g. search results refreshed)
+
+    def _request_container_name(
+        self, node: VFSNode, vfs: VFS, key: tuple[int, str]
+    ) -> None:
+        if key in self._container_names or key in self._container_requested:
+            return
+        self._container_requested.add(key)
+        self._container_queue.put((node, vfs, key, self._container_gen))
+        if self._container_thread is not None and self._container_thread.is_alive():
+            return
+        window_id = self._window_id
+
+        def _run() -> None:
+            with window_log_scope(window_id):
+                self._read_container_names()
+
+        self._container_thread = threading.Thread(target=_run, daemon=True)
+        self._container_thread.start()
+
+    def _read_container_names(self) -> None:
+        """Read the metadata plist of each container folder queued (runs on
+        a thread of its own: a disk image may keep a read waiting)."""
+        while True:
+            try:
+                node, vfs, key, gen = self._container_queue.get(timeout=5)
+            except queue.Empty:
+                return
+            if gen != self._container_gen:
+                continue  # the tree was replaced meanwhile
+            try:
+                with background_io():
+                    identifier = ios_containers.read_identifier(node, vfs)
+            except Exception as exc:  # noqa: BLE001 -- the folder keeps its name
+                self._logger.debug("Container metadata read failed for %s: %s", node.path, exc)
+                identifier = None
+            self._container_name_ready.emit(key, identifier, gen)
+
+    def _on_container_name_ready(
+        self, key: tuple[int, str], identifier: str | None, gen: int
+    ) -> None:
+        if gen != self._container_gen:
+            return
+        self._container_names[key] = identifier
+        if not identifier:
+            return
+        for item in self._container_items.get(key, []):
+            node: VFSNode | None = item.data(_ROLE_NODE)
+            if node is not None:
+                self._apply_container_label(item, node, identifier)
+
+    def _container_identifier_blocking(self, node: VFSNode, vfs: VFS) -> str | None:
+        """The identifier of container folder *node* (None for any other
+        folder), read from the source when not read yet: background only."""
+        known = self._container_names.get((id(vfs), node.path))
+        if known is not None:
+            return known
+        if not ios_containers.is_container(node):
+            return None
+        try:
+            return ios_containers.read_identifier(node, vfs)
+        except Exception:  # noqa: BLE001 -- the folder keeps its name
+            return None
 
     def _add_placeholder(self, parent_item: QStandardItem) -> None:
         if parent_item.rowCount() > 0:
