@@ -108,6 +108,8 @@ class FilesystemPanel(QWidget):
     open_external_requested = Signal(object, object, str)  # (VFSNode, VFS, mode)
     export_requested = Signal(object, object)  # (VFSNode, VFS)
     export_zip_requested = Signal(object, object)  # (VFSNode, VFS)
+    # list[(VFSNode, VFS, chain)]: chain = nodes from the source's root to it
+    export_zip_selection_requested = Signal(object)
     export_multi_requested = Signal(object, str)  # (list[(VFSNode, VFS, str)], filter_text)
     export_logarchive_requested = Signal(object, object)  # (VFSNode, VFS)
     format_info_requested = Signal(object, object)  # (VFSNode, VFS)
@@ -483,6 +485,37 @@ class FilesystemPanel(QWidget):
         if node and vfs:
             self._ensure_children_loaded(item, node, vfs)
 
+    def _collect_tree_selected_items(self) -> list[tuple[VFSNode, VFS, list[VFSNode]]]:
+        """(node, vfs, chain) for each selected file or folder in the main
+        tree, chain being the nodes from its source's root down to it (as
+        the tree shows them). An entry inside a selected folder is left out:
+        the folder brings it along."""
+        found: list[tuple[VFSNode, VFS, list[VFSNode]]] = []
+        for index in self._tree.selectionModel().selectedIndexes():
+            if index.column() != 0:
+                continue
+            item = self._model.itemFromIndex(self._proxy.mapToSource(index))
+            if item is None:
+                continue
+            node: VFSNode | None = item.data(_ROLE_NODE)
+            vfs: VFS | None = item.data(_ROLE_VFS)
+            if not node or not vfs:
+                continue
+            chain: list[VFSNode] = []
+            current: QStandardItem | None = item
+            while current is not None:
+                step = current.data(_ROLE_NODE)
+                if step is not None:
+                    chain.append(step)
+                current = current.parent()
+            chain.reverse()
+            found.append((node, vfs, chain))
+        selected = {id(node) for node, _vfs, _chain in found}
+        return [
+            (node, vfs, chain) for node, vfs, chain in found
+            if not any(id(step) in selected for step in chain[:-1])
+        ]
+
     def _collect_tree_selected_entries(self) -> list[tuple[VFSNode, VFS]]:
         """Return (node, vfs) for each selected file row in the main tree (skips dirs)."""
         entries: list[tuple[VFSNode, VFS]] = []
@@ -516,18 +549,29 @@ class FilesystemPanel(QWidget):
 
         global_pos = self._tree.viewport().mapToGlobal(pos)
         selected_entries = self._collect_tree_selected_entries()
-        if len(selected_entries) > 1 and self._tree.selectionModel().isSelected(proxy_index):
-            # Right-clicked inside an active multi-selection of 2+ files —
+        selected_items = self._collect_tree_selected_items()
+        if len(selected_items) > 1 and self._tree.selectionModel().isSelected(proxy_index):
+            # Right-clicked inside an active multi-selection of 2+ entries —
             # a minimal batch menu instead of the full single-node one,
             # same pattern as the search view's multi-select export menu.
             menu = QMenu(self)
-            send_action = menu.addAction(
-                translate("FilesystemPanel", "Send {selected_entries_count} files to Peach").format(
-                    selected_entries_count=len(selected_entries)
+            send_action = None
+            if len(selected_entries) > 1:
+                send_action = menu.addAction(
+                    translate(
+                        "FilesystemPanel", "Send {selected_entries_count} files to Peach"
+                    ).format(selected_entries_count=len(selected_entries))
                 )
+            export_zip_action = menu.addAction(
+                translate(
+                    "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
+                ).format(selected_items_count=len(selected_items))
             )
-            if menu.exec(global_pos) == send_action:
+            action = menu.exec(global_pos)
+            if send_action is not None and action == send_action:
                 self.send_to_peach_batch_requested.emit(selected_entries)
+            elif action == export_zip_action:
+                self.export_zip_selection_requested.emit(selected_items)
             return
 
         self._show_context_menu(node, vfs, global_pos)

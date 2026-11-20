@@ -15,11 +15,14 @@ from pathlib import Path
 from typing import IO, Any
 
 import pytest
+from PySide6.QtCore import QItemSelectionModel
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from crush.core.vfs import DirectoryVFS, VFSNode
+from crush.ui.fs_panel import _ROLE_NODE
 from crush.ui.main_window import (
     MainWindow,
+    _ExportZipSelectionWorker,
     _ExportZipWorker,
     _unique_arcname,
     _zip_date_time,
@@ -290,3 +293,131 @@ def test_menu_flow_adds_the_zip_suffix(
     finally:
         win.close()
     assert zipfile.is_zipfile(tmp_path / "evidence.zip")
+
+
+# -- Several selected entries (tree multi-selection) ----------------------------------
+
+
+def _deep_source(tmp_path: Path) -> DirectoryVFS:
+    src = tmp_path / "case"
+    (src / "private" / "var" / "mobile").mkdir(parents=True)
+    (src / "private" / "var" / "logs").mkdir(parents=True)
+    (src / "private" / "var" / "mobile" / "a.db").write_bytes(b"db")
+    (src / "private" / "var" / "logs" / "x.log").write_bytes(b"log")
+    (src / "top.txt").write_bytes(b"top")
+    return DirectoryVFS(src)
+
+
+def _chain(vfs: DirectoryVFS, *names: str) -> tuple[VFSNode, DirectoryVFS, list[VFSNode]]:
+    chain = [vfs.root()]
+    for name in names:
+        chain.append(_child(chain[-1], name))
+    return chain[-1], vfs, chain
+
+
+def test_selection_keeps_each_path_from_the_source_root(qapp: Any, tmp_path: Path) -> None:
+    vfs = _deep_source(tmp_path)
+    items = [
+        _chain(vfs, "private", "var", "mobile", "a.db"),  # a file, deep down
+        _chain(vfs, "private", "var", "logs"),  # a folder, a level higher
+        _chain(vfs, "top.txt"),  # a file at the top
+    ]
+    out = tmp_path / "sel.zip"
+
+    seen = _run(_ExportZipSelectionWorker(items, str(out), "new", True))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert len(names) == len(set(names))
+        assert set(names) == {
+            "case/", "case/private/", "case/private/var/", "case/private/var/mobile/",
+            "case/private/var/mobile/a.db",
+            "case/private/var/logs/", "case/private/var/logs/x.log",
+            "case/top.txt",
+            "crush-export-hashes.txt",
+        }
+        assert zf.read("case/private/var/mobile/a.db") == b"db"
+        hashes = zf.read("crush-export-hashes.txt").decode()
+        assert "case/private/var/logs/x.log" in hashes and "case/top.txt" in hashes
+
+
+def test_selection_added_twice_shares_folders_and_numbers_only_the_entries(
+    qapp: Any, tmp_path: Path
+) -> None:
+    vfs = _deep_source(tmp_path)
+    items = [_chain(vfs, "private", "var", "mobile", "a.db"), _chain(vfs, "top.txt")]
+    out = tmp_path / "sel.zip"
+
+    _run(_ExportZipSelectionWorker(items, str(out), "new", True))
+    seen = _run(_ExportZipSelectionWorker(items, str(out), "add", True))
+
+    assert seen == [("finished", str(out), 0)]
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert len(names) == len(set(names))
+        assert names.count("case/private/var/mobile/") == 1  # the folders are shared
+        assert zf.read("case/private/var/mobile/a (2).db") == b"db"
+        assert zf.read("case/top (2).txt") == b"top"
+        assert {"crush-export-hashes.txt", "crush-export-hashes (2).txt"} <= set(names)
+
+
+def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "bad.bin").write_bytes(b"part-and-rest")
+    (src / "good.txt").write_bytes(b"good")
+    vfs = _OneUnreadable(src)
+    items = [(c, vfs, [vfs.root(), c]) for c in vfs.root().children]
+    out = tmp_path / "sel.zip"
+
+    seen = _run(_ExportZipSelectionWorker(items, str(out), "new", False))
+
+    assert seen == [("finished", str(out), 1)]
+    with zipfile.ZipFile(out) as zf:
+        assert "src/bad.bin" not in zf.namelist()
+        assert "bad.bin\tonly 4 of 9" in zf.read("crush-export-failed.txt").decode()
+
+
+def test_tree_selection_collects_chains_and_drops_what_a_folder_brings(
+    qapp: Any, qtbot: Any, tmp_path: Path
+) -> None:
+    vfs = _deep_source(tmp_path)
+    win = MainWindow()
+    panel = win._fs_panel
+    try:
+        panel.load_vfs(vfs)
+
+        def child_item(parent: Any, name: str) -> Any:
+            panel._ensure_children_loaded(parent, parent.data(_ROLE_NODE), vfs)
+
+            def find() -> Any:
+                for r in range(parent.rowCount()):
+                    child = parent.child(r, 0)
+                    if child is not None and child.text() == name:
+                        return child
+                return None
+
+            qtbot.waitUntil(lambda: find() is not None, timeout=5_000)
+            return find()
+
+        def select(*names: str) -> None:
+            item = panel._model.item(0, 0)
+            for name in names:
+                item = child_item(item, name)
+            panel._tree.selectionModel().select(
+                panel._proxy.mapFromSource(item.index()),
+                QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+            )
+
+        select("private", "var", "logs")
+        select("private", "var", "logs", "x.log")  # inside a selected folder
+        select("private", "var", "mobile", "a.db")
+
+        items = panel._collect_tree_selected_items()
+    finally:
+        win.close()
+        qapp.processEvents()
+
+    paths = sorted("/".join(step.name for step in chain) for _n, _v, chain in items)
+    assert paths == ["case/private/var/logs", "case/private/var/mobile/a.db"]

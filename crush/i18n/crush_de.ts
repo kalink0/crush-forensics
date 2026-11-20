@@ -955,6 +955,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>{selected_entries_count} Dateien an Peach senden</translation>
     </message>
     <message>
+        <source>Export {selected_items_count} selected entries to ZIP…</source>
+        <translation>{selected_items_count} ausgewählte Einträge als ZIP exportieren...</translation>
+    </message>
+    <message>
         <source>Export {selected_entries_count} selected files…</source>
         <translation>{selected_entries_count} ausgewählte Dateien exportieren...</translation>
     </message>
@@ -7393,6 +7397,14 @@ Speicherort öffnen?</translation>
     <message>
         <source>Replace Archive</source>
         <translation>Archiv ersetzen</translation>
+    </message>
+    <message>
+        <source>Exporting {n} entry…</source>
+        <translation>{n} Eintrag wird exportiert…</translation>
+    </message>
+    <message>
+        <source>Exporting {n} entries…</source>
+        <translation>{n} Einträge werden exportiert…</translation>
     </message>
     <message>
         <source>Export cancelled: {dest} was not written</source>

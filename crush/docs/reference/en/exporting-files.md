@@ -20,3 +20,15 @@ A file that isn't a ZIP archive can only be replaced. A folder is stored with it
 The same lists as a folder export go into the archive: for a folder inside it (`case/crush-export-hashes.txt`, `case/crush-export-failed.txt`, `case/crush-export-renames.txt`), for a single file next to it, named after it (`report.pdf.crush-export-hashes.txt`). With integrity mode on, the hash list holds each file's SHA-256 with its path in the archive, and the log records the SHA-256 of the finished archive. A file that can't be read is left out — no entry holds part of it — and listed in `crush-export-failed.txt`; a single file that can't be read fails the export.
 
 The archive is written to a temporary file beside it and only moved into place when complete. **Cancel**, an error or a crash therefore never leaves a partly written archive under its name, and an archive you were adding to stays exactly as it was. Adding to an archive needs free space for a copy of it in the same folder.
+
+#### Several entries at once
+
+Select several files and folders in the tree (Ctrl/Shift-click), right-click one of them and choose **Export N selected entries to ZIP…**. Each entry is stored under its full path from the root of its source, starting with the source's own name, so entries from different levels keep where they came from:
+
+```
+case/private/var/mobile/a.db      ← a file, deep down
+case/private/var/logs/x.log       ← a folder, one level higher, with its content
+case/top.txt                      ← a file at the top
+```
+
+The folders on the way are stored as (empty) folder entries. An entry inside a selected folder is not stored twice: the folder brings it along. When adding to an archive, folders the archive already holds are shared; only a selected file or folder whose path is already in the archive gets a number (`case/top (2).txt`). The lists (`crush-export-hashes.txt`, `crush-export-failed.txt`, `crush-export-renames.txt`) go to the top of the archive, numbered too if the archive already has them. A file that can't be read is left out and listed; the export still completes.
