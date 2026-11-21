@@ -1059,15 +1059,9 @@ class _ExportZipWorker(QObject):
 
     def _replaced_targets(self) -> set[str]:
         """What replacing takes out of the archive being added to: each
-        planned path (a folder with everything in it), and for a single
-        file the lists named after it."""
-        targets = set(self._planned_targets())
-        if not self._node.is_dir:
-            targets |= {
-                f"{t}.{name}" for t in list(targets)
-                for name in ("crush-export-hashes.txt", "crush-export-renames.txt")
-            }
-        return targets
+        planned path (a folder with everything in it). The lists at the
+        top are not: they describe the archive's other entries too."""
+        return set(self._planned_targets())
 
     def _copy_existing_except(self, zf: Any, replaced: set[str]) -> None:
         """Copy the archive being added to into *zf*, leaving out the
@@ -1114,11 +1108,9 @@ class _ExportZipWorker(QObject):
             self._record_rename(self._node.path, arc_root)
         if self._node.is_dir:
             self._export_dir(zf, self._vfs, self._node, arc_root)
-            base = f"{arc_root}/"
         else:
             self._export_file(zf, self._vfs, self._node, arc_root)
-            base = f"{arc_root}."
-        self._write_sidecars(zf, base, list_failed=self._node.is_dir)
+        self._write_sidecars(zf, list_failed=self._node.is_dir)
 
     def _write_dir_entry(self, zf: Any, node: VFSNode, arcname: str) -> None:
         self._write_folder(zf, arcname, node.modified)
@@ -1208,10 +1200,10 @@ class _ExportZipWorker(QObject):
             original_path, arcname,
         )
 
-    def _write_sidecars(self, zf: Any, base: str, list_failed: bool) -> None:
-        """The same lists a folder export writes, inside the archive: under
-        the exported folder, beside the exported file named after it, or at
-        the top of the archive for a selection."""
+    def _write_sidecars(self, zf: Any, list_failed: bool) -> None:
+        """The same lists a folder export writes, at the top (root) of the
+        archive; numbered (`crush-export-hashes (2).txt`) when the archive
+        already holds one, so an earlier list stays with what it lists."""
         files: list[tuple[str, str]] = []
         if self._integrity and (self._hash_lines or self._failed):
             note = (
@@ -1236,7 +1228,7 @@ class _ExportZipWorker(QObject):
                 + "\n".join(f"{path}\t{reason}" for path, reason in self._failed) + "\n",
             ))
         for name, text in files:
-            arcname = _unique_arcname(f"{base}{name}", self._taken, False)
+            arcname = _unique_arcname(name, self._taken, False)
             zf.writestr(arcname, text.encode("utf-8"))
             self._taken.add(arcname)
 
@@ -1310,7 +1302,7 @@ class _ExportZipSelectionWorker(_ExportZipWorker):
                 self._export_dir(zf, entry.vfs, entry.node, arcname)
             else:
                 self._export_file(zf, entry.vfs, entry.node, arcname)
-        self._write_sidecars(zf, f"{_ZIP_SELECTION_ROOT}/", list_failed=True)
+        self._write_sidecars(zf, list_failed=True)
 
 
 def _folder_formats(parser: object) -> list[Any]:

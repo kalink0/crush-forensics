@@ -70,11 +70,11 @@ def test_folder_into_a_new_archive(qapp: Any, tmp_path: Path, integrity: bool) -
         assert zf.read("case/a.txt") == b"alpha"
         assert zf.read("case/sub/b.bin") == b"\x00\x01\x02" * 1000
         if integrity:
-            hashes = zf.read("case/crush-export-hashes.txt").decode()
+            hashes = zf.read("crush-export-hashes.txt").decode()
             digest = hashlib.sha256(b"alpha").hexdigest()
             assert f"{digest}  5  case/a.txt" in hashes.splitlines()
         else:
-            assert "case/crush-export-hashes.txt" not in names
+            assert "crush-export-hashes.txt" not in names
     assert _no_partials(tmp_path)
 
 
@@ -86,7 +86,7 @@ def test_single_file_into_a_new_archive(qapp: Any, tmp_path: Path) -> None:
 
     assert seen == [("finished", str(out), 0)]
     with zipfile.ZipFile(out) as zf:
-        assert sorted(zf.namelist()) == ["a.txt", "a.txt.crush-export-hashes.txt"]
+        assert sorted(zf.namelist()) == ["a.txt", "crush-export-hashes.txt"]
         assert zf.read("a.txt") == b"alpha"
 
 
@@ -106,7 +106,7 @@ def test_add_keeps_existing_entries_and_numbers_a_clash(qapp: Any, tmp_path: Pat
         assert zf.read("earlier.txt") == b"keep me"
         assert zf.read("case/old.txt") == b"older export"
         assert zf.read("case (2)/a.txt") == b"alpha"
-        renames = zf.read("case (2)/crush-export-renames.txt").decode()
+        renames = zf.read("crush-export-renames.txt").decode()
         assert f"{vfs.root().path}\t->\tcase (2)" in renames
 
 
@@ -120,7 +120,7 @@ def test_adding_the_same_file_twice(qapp: Any, tmp_path: Path) -> None:
 
     with zipfile.ZipFile(out) as zf:
         names = set(zf.namelist())
-        assert {"a.txt", "a (2).txt", "a (2).txt.crush-export-hashes.txt"} <= names
+        assert {"a.txt", "a (2).txt", "crush-export-hashes.txt", "crush-export-hashes (2).txt"} <= names
         assert zf.read("a (2).txt") == b"alpha"
 
 
@@ -170,9 +170,9 @@ def test_an_unreadable_file_is_left_out_and_listed(qapp: Any, tmp_path: Path) ->
         names = zf.namelist()
         assert "src/bad.bin" not in names  # no entry holding part of the file
         assert zf.read("src/good.txt") == b"good"
-        failed = zf.read("src/crush-export-failed.txt").decode()
+        failed = zf.read("crush-export-failed.txt").decode()
         assert "bad.bin\tonly 4 of 9 bytes can be read" in failed
-        hashes = zf.read("src/crush-export-hashes.txt").decode()
+        hashes = zf.read("crush-export-hashes.txt").decode()
         assert hashes.startswith("# not exported: 1 (see crush-export-failed.txt)")
 
 
@@ -225,7 +225,7 @@ def test_windows_unsafe_names_are_sanitized_and_recorded(qapp: Any, tmp_path: Pa
 
     with zipfile.ZipFile(out) as zf:
         assert zf.read("src/a_b.txt") == b"x"
-        assert "a:b.txt\t->\tsrc/a_b.txt" in zf.read("src/crush-export-renames.txt").decode()
+        assert "a:b.txt\t->\tsrc/a_b.txt" in zf.read("crush-export-renames.txt").decode()
 
 
 def test_unique_arcname() -> None:
@@ -335,10 +335,10 @@ def test_selection_keeps_each_path_from_the_source_root(qapp: Any, tmp_path: Pat
             "export/private/var/mobile/a.db",
             "export/private/var/logs/", "export/private/var/logs/x.log",
             "export/top.txt",
-            "export/crush-export-hashes.txt",
+            "crush-export-hashes.txt",
         }
         assert zf.read("export/private/var/mobile/a.db") == b"db"
-        hashes = zf.read("export/crush-export-hashes.txt").decode()
+        hashes = zf.read("crush-export-hashes.txt").decode()
         assert "export/private/var/logs/x.log" in hashes and "export/top.txt" in hashes
 
 
@@ -359,9 +359,7 @@ def test_selection_added_twice_shares_folders_and_numbers_only_the_entries(
         assert names.count("export/private/var/mobile/") == 1  # the folders are shared
         assert zf.read("export/private/var/mobile/a (2).db") == b"db"
         assert zf.read("export/top (2).txt") == b"top"
-        assert {
-            "export/crush-export-hashes.txt", "export/crush-export-hashes (2).txt"
-        } <= set(names)
+        assert {"crush-export-hashes.txt", "crush-export-hashes (2).txt"} <= set(names)
 
 
 def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path: Path) -> None:
@@ -379,7 +377,7 @@ def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path:
     with zipfile.ZipFile(out) as zf:
         assert "export/bad.bin" not in zf.namelist()
         assert zf.read("export/good.txt") == b"good"
-        assert "bad.bin\tonly 4 of 9" in zf.read("export/crush-export-failed.txt").decode()
+        assert "bad.bin\tonly 4 of 9" in zf.read("crush-export-failed.txt").decode()
 
 
 def test_tree_selection_collects_chains_and_drops_what_a_folder_brings(
@@ -470,22 +468,25 @@ def test_selection_replace_swaps_the_entries_and_keeps_the_rest(
         assert not any("(2)" in name for name in names)
 
 
-def test_single_replace_swaps_a_file_and_its_hash_list(qapp: Any, tmp_path: Path) -> None:
+def test_single_replace_swaps_the_file_and_numbers_the_list(qapp: Any, tmp_path: Path) -> None:
     vfs = _source(tmp_path)
     a = _child(vfs.root(), "a.txt")
     out = tmp_path / "out.zip"
     with zipfile.ZipFile(out, "w") as zf:
         zf.writestr("a.txt", b"old")
-        zf.writestr("a.txt.crush-export-hashes.txt", b"old hashes")
+        zf.writestr("crush-export-hashes.txt", b"earlier list")
         zf.writestr("b.txt", b"keep")
 
     _run(_ExportZipWorker(vfs, a, str(out), "add", True, on_clash="replace"))
 
     with zipfile.ZipFile(out) as zf:
-        assert sorted(zf.namelist()) == ["a.txt", "a.txt.crush-export-hashes.txt", "b.txt"]
+        assert sorted(zf.namelist()) == [
+            "a.txt", "b.txt", "crush-export-hashes (2).txt", "crush-export-hashes.txt"
+        ]
         assert zf.read("a.txt") == b"alpha"
+        assert zf.read("crush-export-hashes.txt") == b"earlier list"
         assert hashlib.sha256(b"alpha").hexdigest() in zf.read(
-            "a.txt.crush-export-hashes.txt").decode()
+            "crush-export-hashes (2).txt").decode()
 
 
 def test_cancelled_replace_leaves_the_archive_unchanged(qapp: Any, tmp_path: Path) -> None:
