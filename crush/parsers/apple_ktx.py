@@ -97,6 +97,13 @@ class KtxHeader:
             return None
         return _RAW_FORMATS.get(self.gl_format)
 
+    @property
+    def display_note(self) -> ParseIssue | None:
+        """How the decoded image represents the stored values, when it
+        doesn't show them as the colours they are (e.g. alpha as greyscale)."""
+        raw = self.raw_format
+        return ParseIssue(raw.display_note) if raw is not None and raw.display_note else None
+
 
 @dataclass(frozen=True)
 class KtxPayload:
@@ -345,6 +352,9 @@ class _RawFormat:
     channels: int
     mode: str
     rawmode: str
+    # ParseIssue code saying how the decoded image represents the stored
+    # values, when it doesn't show them as the colours they are.
+    display_note: str | None = None
 
 
 def _astc_decoder(block_width: int, block_height: int) -> Callable[[bytes, int, int], "PILImage"]:
@@ -369,8 +379,27 @@ def _t2d_decoder(name: str, *extra: object) -> Callable[[bytes, int, int], "PILI
         import texture2ddecoder
         from PIL import Image
 
-        bgra = getattr(texture2ddecoder, name)(data, width, height, *extra)
+        try:
+            bgra = getattr(texture2ddecoder, name)(data, width, height, *extra)
+        except (RuntimeError, SystemError) as ex:
+            # texture2ddecoder signals a texture it can't decode (e.g. PVRTC
+            # with non-power-of-two block counts) with RuntimeError, older
+            # releases with SystemError (NULL returned without an exception).
+            raise ParseIssueError(ParseIssue(
+                "ktx.decoder_rejected", {"format": name.removeprefix("decode_")}, detail=str(ex),
+            )) from ex
         return Image.frombytes("RGBA", (width, height), bgra, "raw", "BGRA")
+
+    return decode
+
+
+def _pillow_bcn_decoder(n: int) -> Callable[[bytes, int, int], "PILImage"]:
+    """Pillow's own BCn decoder (the one its DDS plugin uses) for BC*n*."""
+
+    def decode(data: bytes, width: int, height: int) -> "PILImage":
+        from PIL import Image
+
+        return Image.frombytes("RGBA", (width, height), data, "bcn", (n,))
 
     return decode
 
@@ -429,7 +458,12 @@ def _build_block_formats() -> dict[int, _BlockFormat]:
         add(code, gl_name, label, "PVRTC", 8, "decode_pvrtc", two_bpp,
             bw=8 if two_bpp else 4, min_blocks=(2, 2))
     add(0x83F0, "GL_COMPRESSED_RGB_S3TC_DXT1_EXT", "BC1 (DXT1) RGB", "BC1", 8, "decode_bc1")
-    add(0x83F1, "GL_COMPRESSED_RGBA_S3TC_DXT1_EXT", "BC1 (DXT1) RGBA", "BC1", 8, "decode_bc1")
+    # BC1 RGBA through Pillow's BCn decoder: texture2ddecoder's decode_bc1
+    # always writes alpha 255, so 1-bit transparency would show as opaque
+    # black. (For BC1 RGB that opaque black is what the spec says.)
+    formats[0x83F1] = _BlockFormat(
+        "GL_COMPRESSED_RGBA_S3TC_DXT1_EXT", "BC1 (DXT1) RGBA", "BC1", 4, 4, 8, _pillow_bcn_decoder(1),
+    )
     add(0x83F3, "GL_COMPRESSED_RGBA_S3TC_DXT5_EXT", "BC3 (DXT5) RGBA", "BC3", 16, "decode_bc3")
     add(0x8DBB, "GL_COMPRESSED_RED_RGTC1", "BC4 R", "BC4", 8, "decode_bc4")
     add(0x8DBD, "GL_COMPRESSED_RG_RGTC2", "BC5 RG", "BC5", 16, "decode_bc5")
@@ -448,8 +482,14 @@ _RAW_FORMATS: dict[int, _RawFormat] = {
     0x80E0: _RawFormat("BGR8 (GL_BGR, GL_UNSIGNED_BYTE)", "BGR8", 3, "RGB", "BGR"),
     0x190A: _RawFormat("LA8 (GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE)", "LA8", 2, "LA", "LA"),
     0x1909: _RawFormat("L8 (GL_LUMINANCE, GL_UNSIGNED_BYTE)", "L8", 1, "L", "L"),
-    0x1903: _RawFormat("R8 (GL_RED, GL_UNSIGNED_BYTE)", "R8", 1, "L", "L"),
-    0x1906: _RawFormat("A8 (GL_ALPHA, GL_UNSIGNED_BYTE)", "A8", 1, "L", "L"),
+    # GL reads a red-only texel as (r, 0, 0, 1): shown red, as BC4 and EAC R11
+    # are (texture2ddecoder returns them that way).
+    0x1903: _RawFormat("R8 (GL_RED, GL_UNSIGNED_BYTE)", "R8", 1, "RGB", "R"),
+    # Alpha only, no colour: shown as greyscale so the mask's shape is
+    # visible, and labelled, so it isn't taken for image content.
+    0x1906: _RawFormat(
+        "A8 (GL_ALPHA, GL_UNSIGNED_BYTE)", "A8", 1, "L", "L", display_note="ktx.alpha_as_greyscale",
+    ),
 }
 
 

@@ -136,6 +136,8 @@ class ImageParser(AbstractParser):
             out = io.BytesIO()
             result.image.to_pil().save(out, "PNG")
             meta["Decode status"] = ParseIssue("ktx.decoded")
+            if result.header and result.header.display_note:
+                meta["Shown as"] = result.header.display_note
             return ParseResult(viewer_type="image", data=out.getvalue(), metadata=meta)
         meta["Decode status"] = ParseIssue("ktx.decode_unavailable")
         return ParseResult(

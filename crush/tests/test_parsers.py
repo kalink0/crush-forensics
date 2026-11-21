@@ -2220,6 +2220,63 @@ def test_image_parser_ktx_truncated_payload_is_not_decoded(tmp_path: Path) -> No
     assert "needs 32" in str(failure)
 
 
+def test_image_parser_ktx_texture_the_decoder_rejects_keeps_metadata(tmp_path: Path) -> None:
+    # PVRTC 1 needs power-of-two block counts; 12x8 at 4bpp is 3x2 blocks.
+    # texture2ddecoder refuses it, which must end as a reason, not a crash.
+    pytest.importorskip("texture2ddecoder")
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=12, height=8, gl_internal_format=0x8C00, payload=bytes(48),
+    ))
+
+    assert result.viewer_type == "text"
+    assert result.metadata["Pixel format"] == "PVRTC RGB 4bpp (GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG)"
+    assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
+    failure = next(w for w in result.metadata["KTX warnings"] if w.code == "ktx.decode_failed")
+    assert failure.params["reason"].code == "ktx.decoder_rejected"
+
+
+def test_image_parser_ktx_bc1_rgba_keeps_transparency(tmp_path: Path) -> None:
+    # c0 (black) <= c1 (red) selects BC1's 3-colour mode, where index 3 is
+    # transparent black. Pixel (0, 0) uses index 1 (red), all others index 3.
+    block = struct.pack("<HHI", 0x0000, 0xF800, 0xFFFFFFFD)
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=4, gl_internal_format=0x83F1, payload=block,
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "BC1 (DXT1) RGBA (GL_COMPRESSED_RGBA_S3TC_DXT1_EXT)"
+    assert _decoded_pixel(result, (0, 0)) == (255, 0, 0, 255)
+    assert _decoded_pixel(result, (3, 3)) == (0, 0, 0, 0)
+
+
+def test_image_parser_ktx_alpha_only_is_greyscale_and_labelled(tmp_path: Path) -> None:
+    # GL_ALPHA has no colour: shown as greyscale, with a row saying so, so an
+    # alpha mask isn't taken for image content. 4x1 needs no row padding.
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=1, gl_internal_format=0x803C, gl_type=0x1401, gl_format=0x1906,
+        payload=bytes([0, 85, 170, 255]),
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "A8 (GL_ALPHA, GL_UNSIGNED_BYTE)"
+    assert result.metadata["Shown as"].code == "ktx.alpha_as_greyscale"
+    assert _decoded_pixel(result, (0, 0)) == (0, 0, 0, 255)
+    assert _decoded_pixel(result, (2, 0)) == (170, 170, 170, 255)
+
+
+def test_image_parser_ktx_red_only_is_red_like_bc4(tmp_path: Path) -> None:
+    # GL_RED reads as (r, 0, 0, 1), as BC4 and EAC R11 decode; not greyscale.
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=1, gl_internal_format=0x8229, gl_type=0x1401, gl_format=0x1903,
+        payload=bytes([0, 85, 170, 255]),
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "R8 (GL_RED, GL_UNSIGNED_BYTE)"
+    assert "Shown as" not in result.metadata
+    assert _decoded_pixel(result, (2, 0)) == (170, 0, 0, 255)
+
+
 def _tiny_jpeg() -> bytes:
     import io
     from PIL import Image

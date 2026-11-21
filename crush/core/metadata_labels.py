@@ -165,6 +165,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Segments"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Sequence"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Shared objects"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Shown as"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Signatures"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Size"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Source column"),
