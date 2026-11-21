@@ -22,7 +22,7 @@ import shutil
 import tempfile
 
 from PySide6.QtCore import (
-    QObject, QSize, QThread, Qt, Signal, QUrl, QSettings, QTimer,
+    QEvent, QObject, QPoint, QRect, QSize, QThread, Qt, Signal, QUrl, QSettings, QTimer,
 )
 from PySide6.QtGui import (
     QCloseEvent,
@@ -326,6 +326,142 @@ class _DockTitleBar(QWidget):
         mw = self._dock.parent()
         if hasattr(mw, "_dock_to_default"):
             mw._dock_to_default(self._dock)  # type: ignore[attr-defined]
+
+
+_NO_EDGE = Qt.Edge(0)
+_EDGE_CURSORS: dict[int, Qt.CursorShape] = {
+    Qt.Edge.LeftEdge.value: Qt.CursorShape.SizeHorCursor,
+    Qt.Edge.RightEdge.value: Qt.CursorShape.SizeHorCursor,
+    Qt.Edge.TopEdge.value: Qt.CursorShape.SizeVerCursor,
+    Qt.Edge.BottomEdge.value: Qt.CursorShape.SizeVerCursor,
+    (Qt.Edge.TopEdge | Qt.Edge.LeftEdge).value: Qt.CursorShape.SizeFDiagCursor,
+    (Qt.Edge.BottomEdge | Qt.Edge.RightEdge).value: Qt.CursorShape.SizeFDiagCursor,
+    (Qt.Edge.TopEdge | Qt.Edge.RightEdge).value: Qt.CursorShape.SizeBDiagCursor,
+    (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge).value: Qt.CursorShape.SizeBDiagCursor,
+}
+
+
+class _FloatingDockResizer(QObject):
+    """Resizes a floating panel from its edges and corners.
+
+    A floating panel with our title bar is a frameless window, so the
+    window system draws no resize border and Qt's own few-pixel frame is
+    hard to hit (and resizes by grabbing the mouse, which Wayland does not
+    allow). This filters the panel window's mouse events at the window
+    level, so it sees them whatever child is under the pointer, and hands
+    a press on an edge to the window system (startSystemResize), falling
+    back to resizing by the mouse delta where that is not supported.
+    Installed on the application only while the panel floats."""
+
+    MARGIN = 6
+
+    def __init__(self, dock: QDockWidget) -> None:
+        super().__init__(dock)
+        self._dock = dock
+        self._active = False
+        self._hover = _NO_EDGE
+        # Manual fallback: (edges, press position, geometry at press).
+        self._drag: tuple[Qt.Edge, QPoint, QRect] | None = None
+
+    @classmethod
+    def for_dock(cls, dock: QDockWidget) -> "_FloatingDockResizer":
+        found = dock.findChild(cls)
+        return found if found is not None else cls(dock)
+
+    def set_active(self, active: bool) -> None:
+        app = QApplication.instance()
+        if active == self._active or app is None:
+            return
+        self._active = active
+        if active:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
+            self._drag = None
+            self._set_hover(_NO_EDGE)
+
+    def edges_at(self, global_pos: QPoint) -> Qt.Edge:
+        pos = self._dock.mapFromGlobal(global_pos)
+        rect = self._dock.rect()
+        if not rect.contains(pos):
+            return _NO_EDGE
+        m = self.MARGIN
+        edges = _NO_EDGE
+        if pos.x() < m:
+            edges |= Qt.Edge.LeftEdge
+        elif pos.x() >= rect.width() - m:
+            edges |= Qt.Edge.RightEdge
+        if pos.y() < m:
+            edges |= Qt.Edge.TopEdge
+        elif pos.y() >= rect.height() - m:
+            edges |= Qt.Edge.BottomEdge
+        return edges
+
+    def _set_hover(self, edges: Qt.Edge) -> None:
+        if edges == self._hover:
+            return
+        self._hover = edges
+        shape = _EDGE_CURSORS.get(edges.value)
+        if shape is None:
+            self._dock.unsetCursor()
+        else:
+            self._dock.setCursor(shape)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        etype = event.type()
+        if etype not in (
+            QEvent.Type.MouseMove,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+            QEvent.Type.Leave,
+        ):
+            return False
+        if not self._dock.isFloating() or obj is not self._dock.windowHandle():
+            return False
+        if etype == QEvent.Type.Leave:
+            if self._drag is None:
+                self._set_hover(_NO_EDGE)
+            return False
+        global_pos = event.globalPosition().toPoint()  # type: ignore[attr-defined]
+        if etype == QEvent.Type.MouseMove:
+            if self._drag is not None:
+                self._drag_to(global_pos)
+                return True
+            if event.buttons() == Qt.MouseButton.NoButton:  # type: ignore[attr-defined]
+                self._set_hover(self.edges_at(global_pos))
+            return False
+        if etype == QEvent.Type.MouseButtonRelease:
+            if self._drag is not None:
+                self._drag = None
+                return True
+            return False
+        # MouseButtonPress
+        if event.button() != Qt.MouseButton.LeftButton:  # type: ignore[attr-defined]
+            return False
+        edges = self.edges_at(global_pos)
+        if edges == _NO_EDGE:
+            return False
+        handle = self._dock.windowHandle()
+        if handle is not None and handle.startSystemResize(edges):
+            return True
+        self._drag = (edges, global_pos, self._dock.geometry())
+        return True
+
+    def _drag_to(self, global_pos: QPoint) -> None:
+        assert self._drag is not None
+        edges, start, geo = self._drag
+        delta = global_pos - start
+        minimum = self._dock.minimumSizeHint().expandedTo(self._dock.minimumSize())
+        rect = QRect(geo)
+        if edges & Qt.Edge.LeftEdge:
+            rect.setLeft(min(geo.left() + delta.x(), geo.right() + 1 - minimum.width()))
+        if edges & Qt.Edge.RightEdge:
+            rect.setRight(max(geo.right() + delta.x(), geo.left() - 1 + minimum.width()))
+        if edges & Qt.Edge.TopEdge:
+            rect.setTop(min(geo.top() + delta.y(), geo.bottom() + 1 - minimum.height()))
+        if edges & Qt.Edge.BottomEdge:
+            rect.setBottom(max(geo.bottom() + delta.y(), geo.top() - 1 + minimum.height()))
+        self._dock.setGeometry(rect)
 
 
 class _RecentFileButton(QWidget):
@@ -4791,11 +4927,13 @@ class MainWindow(QMainWindow):
         # included: Qt's own drag of a floating dock grabs the mouse and
         # move()s the window, neither of which Wayland allows, so the panel
         # stuck after its first move. The title bar hands the move to the
-        # window system (_DockTitleBar.mousePressEvent).
+        # window system (_DockTitleBar.mousePressEvent). Being frameless, it
+        # also gets our edge resizing (_FloatingDockResizer).
         if floating:
             dock.setTitleBarWidget(_DockTitleBar(dock.windowTitle(), dock))
         else:
             dock.setTitleBarWidget(None)
+        _FloatingDockResizer.for_dock(dock).set_active(floating)
 
     def _dock_to_default(self, dock: QDockWidget) -> None:
         area = self._dock_defaults.get(dock, Qt.DockWidgetArea.LeftDockWidgetArea)
