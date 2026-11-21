@@ -270,7 +270,7 @@ Opening the ZIP on its own works as before: nothing is read from a `.ufd` beside
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-All panels are dockable and can be floated, resized, or hidden via **View** menu. Use **View → Reset Panel Layout** to restore defaults.
+To float a panel, double-click its title bar or drag it out of the window. A floating panel moves by its title bar, resizes from its edges and corners, and docks back with the **Dock** button in its title bar or **View → Dock … Panel**. Panels are shown or hidden via the **View** menu. Use **View → Reset Panel Layout** to restore defaults.
 
 ---
 
