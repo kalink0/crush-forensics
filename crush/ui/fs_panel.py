@@ -36,7 +36,7 @@ from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
-    "image", "heic", "heif", "avif", "jxl", "atx",
+    "image", "heic", "heif", "avif", "jxl", "atx", "ktx",
     "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif",
 })
 _MEDIA_TYPE_LABELS: frozenset[str] = frozenset({

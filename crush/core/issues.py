@@ -1477,6 +1477,21 @@ MESSAGES: dict[str, str] = {
         "Unexpected KTX mipmap count {count}; decoding first level",
         "ktx.unexpected_mipmaps",
     ),
+    "ktx.payload_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Texture data is {present} bytes; a {width}x{height} image needs {needed}",
+        "ktx.payload_short",
+    ),
+    "ktx.alpha_as_greyscale": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Alpha values shown as greyscale: black is transparent, white is opaque",
+        "ktx.alpha_as_greyscale",
+    ),
+    "ktx.decoder_rejected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The {format} decoder rejected the texture data: {detail}",
+        "ktx.decoder_rejected",
+    ),
     "ktx.lzfse_failed": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "LZFSE decompression failed: {detail}",

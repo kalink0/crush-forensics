@@ -12,6 +12,7 @@ All notable changes to Crush will be documented in this file.
 
 ### Changed
 
+- KTX textures in more pixel formats now decode to an image instead of showing as text: ASTC at every block size (previously only 4x4), ETC1/ETC2/EAC, PVRTC 1, BC1/BC3/BC4/BC5/BC7, and uncompressed 8-bit RGBA/BGRA/RGB/BGR/luminance/alpha. New dependency: [texture2ddecoder](https://github.com/K0lb3/texture2ddecoder). KTX files are now also matched by the Image type filter in the filesystem and search panels. ([@jensstigaard](https://github.com/jensstigaard), [#197](https://github.com/kalink0/crush-forensics/pull/197))
 - A LevelDB table block that can't be read, decompressed or read to its end is skipped and named with its offset and whether its stored checksum matches; the blocks after it are still read, as LevelDB reads on.
 - Bundled [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) updated to v0.6 (from v0.4), with [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) bundled from its own repository.
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.80 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
@@ -26,6 +27,7 @@ All notable changes to Crush will be documented in this file.
 - An MMKV store whose `.crc` holds an AES vector but whose recorded data size is 0, as MMKV leaves a store it clears, is no longer reported as AES-encrypted, or as decrypted when a key is given; it opens empty with its encryption shown as unknown.
 - A plaintext MMKV store whose `.crc` holds an AES vector, opened with a key, is read as plaintext with the key reported as ignored, instead of failing as a wrong key.
 - Opening a folder that no viewer recognises by its files, such as Android WebView's `HTTP Cache` (which holds the caches `Cache_Data` and `Code Cache/js`), shows a warning instead of only a status bar message.
+- A KTX texture whose data is shorter than its declared dimensions need is no longer passed to the decoder, which would read past the end of the data; the reason is shown instead. ([@jensstigaard](https://github.com/jensstigaard), [#197](https://github.com/kalink0/crush-forensics/pull/197))
 
 ## v0.25.0 - 2026-11-07
 

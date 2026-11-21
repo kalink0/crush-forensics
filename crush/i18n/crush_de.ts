@@ -8683,6 +8683,10 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Mehrfach referenzierte Objekte</translation>
     </message>
     <message>
+        <source>Shown as</source>
+        <translation>Dargestellt als</translation>
+    </message>
+    <message>
         <source>Signatures</source>
         <translation>Signaturen</translation>
     </message>
@@ -9899,6 +9903,21 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Unexpected KTX mipmap count {count}; decoding first level</source>
         <comment>ktx.unexpected_mipmaps</comment>
         <translation>Unerwartete KTX-Mipmap-Anzahl {count}; die erste Stufe wird dekodiert</translation>
+    </message>
+    <message>
+        <source>Texture data is {present} bytes; a {width}x{height} image needs {needed}</source>
+        <comment>ktx.payload_short</comment>
+        <translation>Texturdaten umfassen {present} Bytes; ein Bild mit {width}x{height} benötigt {needed}</translation>
+    </message>
+    <message>
+        <source>Alpha values shown as greyscale: black is transparent, white is opaque</source>
+        <comment>ktx.alpha_as_greyscale</comment>
+        <translation>Alphawerte als Graustufen dargestellt: Schwarz ist transparent, Weiß ist deckend</translation>
+    </message>
+    <message>
+        <source>The {format} decoder rejected the texture data: {detail}</source>
+        <comment>ktx.decoder_rejected</comment>
+        <translation>Der {format}-Decoder hat die Texturdaten abgelehnt: {detail}</translation>
     </message>
     <message>
         <source>LZFSE decompression failed: {detail}</source>
