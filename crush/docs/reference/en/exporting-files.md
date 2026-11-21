@@ -10,7 +10,15 @@ A file whose bytes can't be read from the evidence (for example, one a disk imag
 
 ### Export to a ZIP archive
 
-Right-click a file or folder and choose **Export to ZIP…** to export it into a ZIP archive instead of a folder. Choose a file name; `.zip` is added if missing. If the archive doesn't exist yet, it is created. If it exists, you choose:
+Right-click a file or folder and choose **Export to ZIP…** to export it into a ZIP archive instead of a folder. A dialog asks where the archive goes (`.zip` is added if missing) and how it is written:
+
+- **Compression** — *Deflate* (the standard; every tool opens it, Windows Explorer included), *No compression* (store), *BZIP2* or *LZMA* (smaller, but not opened by Windows Explorer). Deflate and BZIP2 take a **level** from 1 (fastest) to 9 (smallest).
+- **Encrypt with a password (AES-256)** — the files' contents are encrypted (WinZip AES, 256-bit key). The names of files and folders, their sizes and times stay readable: the ZIP format can't hide them. Folder entries hold no data and are left unencrypted. Opens in 7-Zip, WinRAR, WinZip and others; Windows Explorer can't reliably open AES-encrypted archives, nor can Info-ZIP's `unzip` 6. The password is typed twice and never written to the log; the log records only that the archive is encrypted.
+- **Split into parts of** N MB or GB — the archive is cut byte for byte into parts `name.zip.001`, `name.zip.002` …, each N in size but the last (1 MB = 1,000,000 bytes, so 4 GB parts fit on FAT32). 7-Zip opens `.001` directly; for other tools put the parts together first (`copy /b name.zip.001+name.zip.002 name.zip` on Windows, `cat name.zip.0* > name.zip` elsewhere). A split archive is always written new: if parts by that name are already there, you're asked before they are all replaced (left-over parts beyond the new last one are removed, so none reads as part of the new archive). Splitting and encryption can be combined.
+
+The options are kept for the next ZIP export in the same window, but not the password.
+
+If the archive doesn't exist yet, it is created. If it exists (and isn't split), you choose:
 
 - **Add to Archive** — the export is added and the archive's other entries are kept.
 - **Replace Archive** — a new archive replaces it.
@@ -20,11 +28,11 @@ When adding, and the archive already holds an entry under the same path, you're 
 - **Replace** — the entry in the archive is taken out and the export takes its place; for a folder, the folder with everything in it, so no file from the earlier export stays mixed in. Each replaced entry is named in the log.
 - **Add Beside** — the export is stored next to it under a numbered name (`case (2)/`, `report (2).pdf`), so nothing is overwritten and no name appears twice; the new name is listed in `crush-export-renames.txt`.
 
-Replacing rebuilds the archive (its other entries are copied over unchanged in name, time and attributes), so it takes longer for a large archive. An entry the archive holds encrypted can't be copied: replacing then fails, and the archive stays as it was.
+Replacing rebuilds the archive: its other entries are copied over as they are stored — still compressed, still encrypted, byte for byte — so it needs no password, even for entries encrypted with another one. Entries added to an existing archive are compressed and encrypted as the dialog says; the archive's other entries keep theirs, so an archive can end up with encrypted and unencrypted entries side by side.
 
 A file that isn't a ZIP archive can only be replaced. A folder is stored with its structure under its own name; a single file is stored at the top of the archive. Entries are compressed (Deflate; ZIP64 for large files) and carry the source's modification time in UTC (also as an Info-ZIP extended timestamp). Names are made Windows-safe as for a folder export.
 
-The same lists as a folder export go into the archive, always at its top (root): `crush-export-hashes.txt`, `crush-export-failed.txt`, `crush-export-renames.txt`. If the archive already holds one, the new list is numbered (`crush-export-hashes (2).txt`) rather than replacing it, so the earlier list stays with what it describes — also when entries are replaced. With integrity mode on, the hash list holds each file's SHA-256 with its path in the archive, and the log records the SHA-256 of the finished archive. A file that can't be read is left out — no entry holds part of it — and listed in `crush-export-failed.txt`; a single file that can't be read fails the export.
+The same lists as a folder export go into the archive, always at its top (root): `crush-export-hashes.txt`, `crush-export-failed.txt`, `crush-export-renames.txt`. If the archive already holds one, the new list is numbered (`crush-export-hashes (2).txt`) rather than replacing it, so the earlier list stays with what it describes — also when entries are replaced. With integrity mode on, the hash list holds each file's SHA-256 with its path in the archive, and the log records the SHA-256 of the finished archive — for a split one, of each part and of the parts put together. A file that can't be read is left out — no entry holds part of it — and listed in `crush-export-failed.txt`; a single file that can't be read fails the export.
 
 The archive is written to a temporary file beside it and only moved into place when complete. **Cancel**, an error or a crash therefore never leaves a partly written archive under its name, and an archive you were adding to (or replacing entries in) stays exactly as it was. Adding to an archive needs free space for a copy of it in the same folder.
 

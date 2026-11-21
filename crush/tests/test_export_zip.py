@@ -16,9 +16,10 @@ from typing import IO, Any
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from crush.core.vfs import DirectoryVFS, VFSNode
+from crush.core.zip_writer import ZipOptions
 from crush.ui.fs_panel import _ROLE_NODE
 from crush.ui.main_window import (
     MainWindow,
@@ -49,6 +50,16 @@ def _run(worker: _ExportZipWorker) -> list[tuple[Any, ...]]:
 
 def _child(node: VFSNode, name: str) -> VFSNode:
     return next(c for c in node.children if c.name == name)
+
+
+def _choose_in_dialog(
+    monkeypatch: Any, path: Path, options: ZipOptions | None = None
+) -> None:
+    """The ZIP export dialog answered with *path* and *options*."""
+    monkeypatch.setattr(
+        MainWindow, "_zip_export_dialog",
+        lambda self, default_name: (path, options or ZipOptions()),
+    )
 
 
 def _no_partials(folder: Path) -> bool:
@@ -249,9 +260,7 @@ def test_menu_flow_asks_before_adding_to_an_existing_archive(
     out = tmp_path / "out.zip"
     with zipfile.ZipFile(out, "w") as zf:
         zf.writestr("earlier.txt", b"keep me")
-    monkeypatch.setattr(
-        QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "ZIP archives (*.zip)")
-    )
+    _choose_in_dialog(monkeypatch, out)
     asked: list[str] = []
 
     def fake_exec(box: QMessageBox) -> int:
@@ -280,9 +289,9 @@ def test_menu_flow_adds_the_zip_suffix(
     qapp: Any, qtbot: Any, tmp_path: Path, monkeypatch: Any
 ) -> None:
     vfs = _source(tmp_path)
-    monkeypatch.setattr(
-        QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "evidence"), "")
-    )
+    from crush.ui.zip_export_dialog import with_zip_suffix
+
+    _choose_in_dialog(monkeypatch, with_zip_suffix(str(tmp_path / "evidence")))
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
 
     win = MainWindow()
@@ -511,9 +520,7 @@ def test_menu_flow_asks_replace_or_beside_when_an_entry_is_there(
     out = tmp_path / "out.zip"
     with zipfile.ZipFile(out, "w") as zf:
         zf.writestr("case/a.txt", b"old")
-    monkeypatch.setattr(
-        QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "ZIP archives (*.zip)")
-    )
+    _choose_in_dialog(monkeypatch, out)
     asked: list[str] = []
 
     def fake_exec(box: QMessageBox) -> int:

@@ -7375,10 +7375,6 @@ Speicherort öffnen?</translation>
         <translation>In ZIP-Archiv exportieren</translation>
     </message>
     <message>
-        <source>ZIP archives (*.zip)</source>
-        <translation>ZIP-Archive (*.zip)</translation>
-    </message>
-    <message>
         <source>{path} is a folder, not a ZIP archive.</source>
         <translation>{path} ist ein Ordner, kein ZIP-Archiv.</translation>
     </message>
@@ -7397,6 +7393,26 @@ Speicherort öffnen?</translation>
     <message>
         <source>Replace Archive</source>
         <translation>Archiv ersetzen</translation>
+    </message>
+    <message>
+        <source>A part of a split archive by that name is already there:
+{first}
+
+Replace it with the new archive&apos;s parts?</source>
+        <translation>Ein Teil eines geteilten Archivs mit diesem Namen ist bereits vorhanden:
+{first}
+
+Durch die Teile des neuen Archivs ersetzen?</translation>
+    </message>
+    <message>
+        <source>{n} parts of a split archive by that name are already there:
+{first} … {last}
+
+Replace them all with the new archive&apos;s parts?</source>
+        <translation>{n} Teile eines geteilten Archivs mit diesem Namen sind bereits vorhanden:
+{first} … {last}
+
+Alle durch die Teile des neuen Archivs ersetzen?</translation>
     </message>
     <message>
         <source>… and {n} more</source>
@@ -15071,6 +15087,97 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>Some texts on this page are not translated yet and are shown in the English original.</source>
         <translation>Einige Texte auf dieser Seite sind noch nicht übersetzt und werden im englischen Original angezeigt.</translation>
+    </message>
+</context>
+<context>
+    <name>ZipExportDialog</name>
+    <message>
+        <source>Export to ZIP archive</source>
+        <translation>In ZIP-Archiv exportieren</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>Durchsuchen…</translation>
+    </message>
+    <message>
+        <source>Deflate (standard, opens everywhere)</source>
+        <translation>Deflate (Standard, überall lesbar)</translation>
+    </message>
+    <message>
+        <source>No compression (store)</source>
+        <translation>Ohne Kompression (nur speichern)</translation>
+    </message>
+    <message>
+        <source>BZIP2 (smaller; not in Windows Explorer)</source>
+        <translation>BZIP2 (kleiner; nicht im Windows-Explorer)</translation>
+    </message>
+    <message>
+        <source>LZMA (smallest; not in Windows Explorer)</source>
+        <translation>LZMA (am kleinsten; nicht im Windows-Explorer)</translation>
+    </message>
+    <message>
+        <source>Level:</source>
+        <translation>Stufe:</translation>
+    </message>
+    <message>
+        <source>1 = fastest, 9 = smallest</source>
+        <translation>1 = am schnellsten, 9 = am kleinsten</translation>
+    </message>
+    <message>
+        <source>Encrypt with a password (AES-256)</source>
+        <translation>Mit Passwort verschlüsseln (AES-256)</translation>
+    </message>
+    <message>
+        <source>Password</source>
+        <translation>Passwort</translation>
+    </message>
+    <message>
+        <source>Repeat password</source>
+        <translation>Passwort wiederholen</translation>
+    </message>
+    <message>
+        <source>The contents are encrypted, not the names of files and folders. Opens in 7-Zip, WinRAR, WinZip and others; Windows Explorer can&apos;t reliably open AES-encrypted ZIP archives.</source>
+        <translation>Verschlüsselt werden die Inhalte, nicht die Namen der Dateien und Ordner. Öffnen mit 7-Zip, WinRAR, WinZip u. a.; der Windows-Explorer kann AES-verschlüsselte ZIP-Archive nicht zuverlässig öffnen.</translation>
+    </message>
+    <message>
+        <source>Split into parts of</source>
+        <translation>In Teile aufteilen zu je</translation>
+    </message>
+    <message>
+        <source>Parts are named {name}.001, .002 …, cut byte for byte (1 MB = 1,000,000 bytes). 7-Zip opens .001 directly; other tools need the parts joined first (copy /b, cat). A split archive can&apos;t be added to later.</source>
+        <translation>Die Teile heißen {name}.001, .002 … und sind Byte für Byte zerschnitten (1 MB = 1.000.000 Bytes). 7-Zip öffnet .001 direkt; andere Programme brauchen die Teile zuerst zusammengefügt (copy /b, cat). Zu einem geteilten Archiv kann später nichts hinzugefügt werden.</translation>
+    </message>
+    <message>
+        <source>Archive:</source>
+        <translation>Archiv:</translation>
+    </message>
+    <message>
+        <source>Compression:</source>
+        <translation>Kompression:</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Exportieren</translation>
+    </message>
+    <message>
+        <source>ZIP archives (*.zip)</source>
+        <translation>ZIP-Archive (*.zip)</translation>
+    </message>
+    <message>
+        <source>Choose where the archive goes.</source>
+        <translation>Wählen Sie, wohin das Archiv gespeichert wird.</translation>
+    </message>
+    <message>
+        <source>The folder {folder} doesn&apos;t exist.</source>
+        <translation>Der Ordner {folder} existiert nicht.</translation>
+    </message>
+    <message>
+        <source>Enter a password.</source>
+        <translation>Geben Sie ein Passwort ein.</translation>
+    </message>
+    <message>
+        <source>The passwords don&apos;t match.</source>
+        <translation>Die Passwörter stimmen nicht überein.</translation>
     </message>
 </context>
 <context>

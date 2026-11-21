@@ -16,7 +16,7 @@ from pathlib import Path
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 import logging
 import shutil
 import tempfile
@@ -820,6 +820,10 @@ class _ExportMultiWorker(QObject):
         )
 
 
+if TYPE_CHECKING:
+    from crush.core import zip_writer
+    from crush.core.zip_writer import ZipOptions
+
 ZipExportMode = Literal["new", "add", "replace"]
 
 # ZIP stores no year before 1980 or after 2107 in its DOS date fields.
@@ -938,13 +942,14 @@ def _unique_arcname(name: str, taken: set[str], is_dir: bool) -> str:
 
 class _ExportZipWorker(QObject):
     """Export a file or folder into a ZIP archive: a new one, or added to
-    one that exists.
+    one that exists; compressed, encrypted and split as *options* say
+    (crush.core.zip_writer).
 
-    The archive is written to a temporary file next to it and moved into
-    place only once complete, so a cancel, an error or a crash never leaves
-    a half-written archive under its name, nor changes an archive being
-    added to. A file whose bytes can't be read is staged first and left
-    out, so no entry holds part of a file.
+    The archive (or each part of a split one) is written to a temporary
+    file next to it and moved into place only once complete, so a cancel,
+    an error or a crash never leaves a half-written archive under its name,
+    nor changes an archive being added to. A file whose bytes can't be read
+    is staged first and left out, so no entry holds part of a file.
     """
 
     finished = Signal(str, int)  # (archive path, files not exported)
@@ -960,9 +965,15 @@ class _ExportZipWorker(QObject):
         integrity: bool,
         window_id: str | None = None,
         on_clash: ZipClashMode = "number",
+        options: ZipOptions | None = None,
     ) -> None:
         super().__init__()
         self._on_clash = on_clash
+        from crush.core.zip_writer import ZipOptions
+
+        self._options = options or ZipOptions()
+        if self._options.split_size and mode == "add":
+            raise ValueError("a split archive can't be added to")
         self._vfs = vfs
         self._node = node
         self._zip_path = Path(zip_path)
@@ -990,27 +1001,41 @@ class _ExportZipWorker(QObject):
             raise _ExportCancelled()
 
     def _run(self) -> None:
-        import zipfile
+        from crush.core import zip_writer
 
         partial: Path | None = None
+        split: zip_writer.SplitWriter | None = None
+        dest = str(self._zip_path)
         try:
-            fd, partial_name = tempfile.mkstemp(
-                prefix=f".{self._zip_path.name}.", suffix=".crush-partial",
-                dir=self._zip_path.parent,
-            )
-            os.close(fd)
-            partial = Path(partial_name)
             replacing = self._mode == "add" and self._on_clash == "replace"
-            if self._mode == "add" and not replacing:
-                self._copy_existing(partial)
-            zip_mode: Literal["a", "w"] = (
-                "a" if self._mode == "add" and not replacing else "w"
-            )
-            with zipfile.ZipFile(
-                partial, zip_mode, compression=zipfile.ZIP_DEFLATED, allowZip64=True
-            ) as zf:
+            appending = self._mode == "add" and not replacing
+            target: Any
+            if self._options.split_size:
+                split = zip_writer.SplitWriter(self._partial_part, self._options.split_size)
+                target = split
+            else:
+                fd, partial_name = tempfile.mkstemp(
+                    prefix=f".{self._zip_path.name}.", suffix=".crush-partial",
+                    dir=self._zip_path.parent,
+                )
+                os.close(fd)
+                partial = Path(partial_name)
+                if appending:
+                    self._copy_existing(partial)
+                target = partial
+            self._logger.info("ZIP export: writing %s (%s)", self._zip_path, self._options.describe())
+            with zip_writer.open_archive(target, "a" if appending else "w", self._options) as zf:
                 if replacing:
-                    self._copy_existing_except(zf, self._replaced_targets())
+                    replaced = self._replaced_targets()
+                    removed = zip_writer.copy_entries_raw(
+                        self._zip_path, zf,
+                        lambda name: _in_replaced(name.rstrip("/"), replaced),
+                        self._check_cancel,
+                    )
+                    for name in removed:
+                        self._logger.warning(
+                            "ZIP export: replaced in %s: %s", self._zip_path, name
+                        )
                 self._taken = set(zf.namelist())
                 self._export(zf)
                 if self._single_file() and self._failed:
@@ -1022,9 +1047,14 @@ class _ExportZipWorker(QObject):
                         ).format(path=path, reason=reason),
                     )
                     return
-            os.replace(partial, self._zip_path)
-            partial = None
-            self._log_archive_hash()
+            if split is not None:
+                dest = str(self._finish_parts(split))
+                split = None
+            else:
+                assert partial is not None
+                os.replace(partial, self._zip_path)
+                partial = None
+                self._log_archive_hash([self._zip_path])
         except _ExportCancelled:
             self._logger.info(
                 "ZIP export cancelled by the analyst: %s %s",
@@ -1038,12 +1068,56 @@ class _ExportZipWorker(QObject):
         finally:
             if partial is not None:
                 partial.unlink(missing_ok=True)
+            if split is not None:
+                self._discard_parts(split)
         self._logger.info(
             "ZIP export: %d file(s) of %s %s %s",
             self._exported, self._described(),
-            "added to" if self._mode == "add" else "written to", self._zip_path,
+            "added to" if self._mode == "add" else "written to", dest,
         )
-        self.finished.emit(str(self._zip_path), len(self._failed))
+        self.finished.emit(dest, len(self._failed))
+
+    def _partial_part(self, number: int) -> Path:
+        from crush.core import zip_writer
+
+        final = zip_writer.part_path(self._zip_path, number)
+        return final.with_name(f".{final.name}.crush-partial")
+
+    def _finish_parts(self, split: zip_writer.SplitWriter) -> Path:
+        """Move the finished parts into place and take away parts of an
+        earlier archive of that name beyond the new last one (the analyst
+        agreed to replace them), so no stale part reads as part of this one."""
+        from crush.core import zip_writer
+
+        written = split.parts()
+        split.close()
+        finals = [zip_writer.part_path(self._zip_path, n) for n in range(1, len(written) + 1)]
+        for temp, final in zip(written, finals):
+            os.replace(temp, final)
+        for stale in zip_writer.existing_parts(self._zip_path):
+            if stale not in finals:
+                stale.unlink()
+                self._logger.warning("ZIP export: removed part of the replaced archive: %s", stale)
+        self._logger.info(
+            "ZIP export: %s split into %d part(s) of up to %d B: %s ... %s",
+            self._zip_path, len(finals), self._options.split_size, finals[0].name, finals[-1].name,
+        )
+        self._log_archive_hash(finals)
+        return finals[0]
+
+    def _discard_parts(self, split: zip_writer.SplitWriter) -> None:
+        try:
+            written = split.parts() if not split.closed else []
+        except OSError:
+            written = []
+        split.close()
+        number = 1
+        while True:
+            temp = self._partial_part(number)
+            if not temp.exists() and temp not in written:
+                break
+            temp.unlink(missing_ok=True)
+            number += 1
 
     def _described(self) -> str:
         return self._node.path
@@ -1062,38 +1136,6 @@ class _ExportZipWorker(QObject):
         planned path (a folder with everything in it). The lists at the
         top are not: they describe the archive's other entries too."""
         return set(self._planned_targets())
-
-    def _copy_existing_except(self, zf: Any, replaced: set[str]) -> None:
-        """Copy the archive being added to into *zf*, leaving out the
-        entries being replaced. Entries keep their name, time, attributes
-        and compression method."""
-        import zipfile
-
-        removed: list[str] = []
-        with zipfile.ZipFile(self._zip_path) as src:
-            zf.comment = src.comment
-            for info in src.infolist():
-                self._check_cancel()
-                if _in_replaced(info.filename.rstrip("/"), replaced):
-                    removed.append(info.filename)
-                    continue
-                copy = zipfile.ZipInfo(info.filename, date_time=info.date_time)
-                copy.compress_type = info.compress_type
-                copy.extra = info.extra
-                copy.comment = info.comment
-                copy.external_attr = info.external_attr
-                copy.create_system = info.create_system
-                if info.is_dir():
-                    zf.writestr(copy, b"")
-                    continue
-                with src.open(info) as entry, zf.open(
-                    copy, "w", force_zip64=info.file_size >= _ZIP64_FROM
-                ) as dst:
-                    while chunk := entry.read(_ZIP_CHUNK):
-                        self._check_cancel()
-                        dst.write(chunk)
-        for name in removed:
-            self._logger.warning("ZIP export: replaced in %s: %s", self._zip_path, name)
 
     def _copy_existing(self, partial: Path) -> None:
         with open(self._zip_path, "rb") as src, open(partial, "wb") as dst:
@@ -1116,12 +1158,20 @@ class _ExportZipWorker(QObject):
         self._write_folder(zf, arcname, node.modified)
 
     def _write_folder(self, zf: Any, arcname: str, modified: float | None) -> None:
-        import zipfile
+        from crush.core import zip_writer
 
-        info = zipfile.ZipInfo(f"{arcname}/", date_time=_zip_date_time(modified))
+        info = zip_writer.new_info(f"{arcname}/", _zip_date_time(modified))
         info.extra = _zip_extended_timestamp(modified)
         info.external_attr = (0o40755 << 16) | 0x10  # a folder, for unzip and Windows
-        zf.writestr(info, b"")
+        info.compress_type = zip_writer.METHODS["stored"]
+        # A folder holds no bytes to protect; left unencrypted, as 7-Zip and
+        # WinZip do, so no tool asks a password just to list it.
+        encryption, password = zf.encryption, zf.pwd
+        zf.encryption, zf.pwd = None, None
+        try:
+            zf.writestr(info, b"")
+        finally:
+            zf.encryption, zf.pwd = encryption, password
         self._taken.add(info.filename)
 
     def _export_dir(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> None:
@@ -1140,8 +1190,9 @@ class _ExportZipWorker(QObject):
                 self._export_file(zf, vfs, child, unique)
 
     def _export_file(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> None:
+        from crush.core import zip_writer
+
         import hashlib
-        import zipfile
 
         # Staged first: a read error can come after the last bytes that
         # could be read, and an entry can't be taken out of a ZIP again.
@@ -1173,10 +1224,12 @@ class _ExportZipWorker(QObject):
                 )
                 return
             staged.seek(0)
-            info = zipfile.ZipInfo(arcname, date_time=_zip_date_time(node.modified))
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info = zip_writer.new_info(arcname, _zip_date_time(node.modified))
+            info.compress_type = zip_writer.METHODS[self._options.method]
+            info._compresslevel = self._options.effective_level
             info.extra = _zip_extended_timestamp(node.modified)
             info.external_attr = 0o100644 << 16
+            info.file_size = total  # so zipfile knows up front whether ZIP64 is needed
             with zf.open(info, "w", force_zip64=total >= _ZIP64_FROM) as dst:
                 while chunk := staged.read(_ZIP_CHUNK):
                     self._check_cancel()
@@ -1232,20 +1285,33 @@ class _ExportZipWorker(QObject):
             zf.writestr(arcname, text.encode("utf-8"))
             self._taken.add(arcname)
 
-    def _log_archive_hash(self) -> None:
+    def _log_archive_hash(self, files: list[Path]) -> None:
+        """SHA-256 of the finished archive in the log -- of each part too
+        when it is split, and of the parts put together (the archive)."""
         if not self._integrity:
             return
         import hashlib
 
-        hasher = hashlib.sha256()
-        size = 0
-        with open(self._zip_path, "rb") as f:
-            while chunk := f.read(_ZIP_CHUNK):
-                hasher.update(chunk)
-                size += len(chunk)
+        whole = hashlib.sha256()
+        whole_size = 0
+        for path in files:
+            hasher = hashlib.sha256()
+            size = 0
+            with open(path, "rb") as f:
+                while chunk := f.read(_ZIP_CHUNK):
+                    hasher.update(chunk)
+                    whole.update(chunk)
+                    size += len(chunk)
+            whole_size += size
+            if len(files) > 1:
+                self._logger.info(
+                    "INTEGRITY export archive part sha256=%s  size=%d  path=%s",
+                    hasher.hexdigest(), size, path,
+                )
         self._logger.info(
-            "INTEGRITY export archive sha256=%s  size=%d  path=%s",
-            hasher.hexdigest(), size, self._zip_path,
+            "INTEGRITY export archive sha256=%s  size=%d  path=%s%s",
+            whole.hexdigest(), whole_size, self._zip_path,
+            f" (parts {files[0].name} ... {files[-1].name} put together)" if len(files) > 1 else "",
         )
 
 
@@ -1270,10 +1336,12 @@ class _ExportZipSelectionWorker(_ExportZipWorker):
         integrity: bool,
         window_id: str | None = None,
         on_clash: ZipClashMode = "number",
+        options: ZipOptions | None = None,
     ) -> None:
         first_node, first_vfs, _ = items[0]
         super().__init__(
-            first_vfs, first_node, zip_path, mode, integrity, window_id, on_clash=on_clash
+            first_vfs, first_node, zip_path, mode, integrity, window_id,
+            on_clash=on_clash, options=options,
         )
         self._layout = _zip_selection_layout(items)
 
@@ -2544,29 +2612,35 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
 
+    def _zip_export_dialog(self, default_name: str) -> tuple[Path, ZipOptions] | None:
+        """The archive and its options from the ZIP export dialog, preset
+        with the last options used (not the password); None if cancelled."""
+        from crush.ui.zip_export_dialog import ZipExportDialog
+
+        dialog = ZipExportDialog(self, default_name, getattr(self, "_last_zip_options", None))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        options = dialog.options()
+        self._last_zip_options = ZipExportDialog.remembered(options)
+        return dialog.archive_path(), options
+
     def _ask_zip_export_target(
         self, default_name: str, planned: list[str]
-    ) -> tuple[str, ZipExportMode, ZipClashMode] | None:
-        """The archive to export into and how: a new one, added to the one
-        chosen, or replacing it -- and, when adding, what to do with
-        *planned* paths the archive already holds. None when the analyst
-        cancelled."""
+    ) -> tuple[str, ZipExportMode, ZipClashMode, ZipOptions] | None:
+        """The archive to export into, its options and how: a new one,
+        added to the one chosen, or replacing it -- and, when adding, what
+        to do with *planned* paths the archive already holds. None when the
+        analyst cancelled."""
         import zipfile
 
-        zip_path, _ = QFileDialog.getSaveFileName(
-            self,
-            translate("MainWindow", "Export to ZIP archive"),
-            default_name,
-            translate("MainWindow", "ZIP archives (*.zip)"),
-            options=QFileDialog.Option.DontConfirmOverwrite,
-        )
-        if not zip_path:
+        chosen = self._zip_export_dialog(default_name)
+        if chosen is None:
             return None
-        target = Path(zip_path)
-        if target.suffix.lower() != ".zip":
-            target = target.with_name(f"{target.name}.zip")
+        target, options = chosen
+        if options.split_size:
+            return self._ask_split_target(target, options)
         if not target.exists():
-            return str(target), "new", "number"
+            return str(target), "new", "number", options
         if target.is_dir():
             QMessageBox.warning(
                 self,
@@ -2590,7 +2664,7 @@ class MainWindow(QMainWindow):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return None
-            return str(target), "replace", "number"
+            return str(target), "replace", "number", options
 
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
@@ -2616,13 +2690,46 @@ class MainWindow(QMainWindow):
         box.exec()
         clicked = box.clickedButton()
         if clicked is replace_button:
-            return str(target), "replace", "number"
+            return str(target), "replace", "number", options
         if clicked is not add_button:
             return None
         on_clash = self._ask_zip_clash(target, planned)
         if on_clash is None:
             return None
-        return str(target), "add", on_clash
+        return str(target), "add", on_clash, options
+
+    def _ask_split_target(
+        self, target: Path, options: ZipOptions
+    ) -> tuple[str, ZipExportMode, ZipClashMode, ZipOptions] | None:
+        """A split archive is always written new: if parts of one by that
+        name are there, ask before replacing them all."""
+        from crush.core import zip_writer
+
+        parts = zip_writer.existing_parts(target)
+        if not parts:
+            return str(target), "new", "number", options
+        reply = QMessageBox.question(
+            self,
+            translate("MainWindow", "Overwrite?"),
+            (
+                translate(
+                    "MainWindow",
+                    "A part of a split archive by that name is already there:\n{first}\n\n"
+                    "Replace it with the new archive's parts?",
+                )
+                if len(parts) == 1
+                else translate(
+                    "MainWindow",
+                    "{n} parts of a split archive by that name are already there:\n"
+                    "{first} … {last}\n\nReplace them all with the new archive's parts?",
+                )
+            ).format(n=len(parts), first=parts[0], last=parts[-1].name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return None
+        return str(target), "replace", "number", options
 
     def _ask_zip_clash(self, target: Path, planned: list[str]) -> ZipClashMode | None:
         """When adding to *target*: replace what it already holds under the
@@ -2692,14 +2799,15 @@ class MainWindow(QMainWindow):
         choice = self._ask_zip_export_target(f"{root_name}.zip", [root_name])
         if choice is None:
             return
-        zip_path, mode, on_clash = choice
+        zip_path, mode, on_clash, options = choice
         self._logger.info(
-            "ZIP export requested (%s, %s): %s -> %s", mode, on_clash, node.path, zip_path
+            "ZIP export requested (%s, %s; %s): %s -> %s",
+            mode, on_clash, options.describe(), node.path, zip_path,
         )
         self._start_zip_export(
             _ExportZipWorker(
                 vfs, node, zip_path, mode, self.session.integrity_mode,
-                window_id=self._window_id, on_clash=on_clash,
+                window_id=self._window_id, on_clash=on_clash, options=options,
             ),
             translate("MainWindow", "Exporting…"),
         )
@@ -2721,16 +2829,17 @@ class MainWindow(QMainWindow):
         choice = self._ask_zip_export_target(f"crush-export-{stamp}.zip", planned)
         if choice is None:
             return
-        zip_path, mode, on_clash = choice
+        zip_path, mode, on_clash, options = choice
         n = len(items)
         self._logger.info(
-            "ZIP export requested (%s, %s): %d selected entries -> %s: %s",
-            mode, on_clash, n, zip_path, ", ".join(node.path for node, _vfs, _chain in items),
+            "ZIP export requested (%s, %s; %s): %d selected entries -> %s: %s",
+            mode, on_clash, options.describe(), n, zip_path,
+            ", ".join(node.path for node, _vfs, _chain in items),
         )
         self._start_zip_export(
             _ExportZipSelectionWorker(
                 items, zip_path, mode, self.session.integrity_mode,
-                window_id=self._window_id, on_clash=on_clash,
+                window_id=self._window_id, on_clash=on_clash, options=options,
             ),
             (
                 translate("MainWindow", "Exporting {n} entry…")
