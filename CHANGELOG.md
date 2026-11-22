@@ -9,22 +9,28 @@ All notable changes to Crush will be documented in this file.
 - Added to opening sources, unlocking volumes, exports and `.logarchive` export -> Support for cancelling: a cancelled source is not opened, a cancelled export keeps what it wrote marked as incomplete in `crush-export-cancelled.txt`, and a cancelled hash in integrity mode is logged while the data still opens.
 - Added to the type indexing -> Support for stopping and resuming it from the status bar; the status bar says how far it got.
 - Added to raw disk images -> Support for the Accessed, Changed and Birth times of ext2/3/4, APFS, HFS+ and Btrfs entries in the Properties panel, and HFS+'s Backup date where set.
+- Added to the Filesystem and Properties panels -> Support for hashing files and folders with MD5, SHA-1 and/or SHA-256 (Compute Hash), shown in the Properties panel while the source is open and searchable with the filter's `hash:` token.
 
 ### Changed
 
 - KTX textures in more pixel formats now decode to an image instead of showing as text: ASTC at every block size (previously only 4x4), ETC1/ETC2/EAC, PVRTC 1, BC1/BC3/BC4/BC5/BC7, and uncompressed 8-bit RGBA/BGRA/RGB/BGR/luminance/alpha. New dependency: [texture2ddecoder](https://github.com/K0lb3/texture2ddecoder). KTX files are now also matched by the Image type filter in the filesystem and search panels. ([@jensstigaard](https://github.com/jensstigaard), [#197](https://github.com/kalink0/crush-forensics/pull/197))
 - A LevelDB table block that can't be read, decompressed or read to its end is skipped and named with its offset and whether its stored checksum matches; the blocks after it are still read, as LevelDB reads on.
 - Bundled [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) updated to v0.6 (from v0.4), with [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) bundled from its own repository.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.78 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.80 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.15.1 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
 - Bundled [mmkv-parser](https://github.com/abrignoni/mmkv-parser) updated to v1.3.0 (from v1.1.0).
 - An MMKV store with an AES vector that doesn't read as plaintext is reported as encrypted or damaged, as the two can't be told apart without the key.
 
 ### Bug Fixes
 
+- A QNX6 volume with 8, 16 or 32 KiB blocks in a raw disk image listed no files; it now lists them.
+- A QNX6 volume whose superblocks were written before any clock was set (ctime and atime outside 1995 to 2050) was left out of a raw disk image; it is now read when its checksum holds.
+- An extended partition of a raw disk image is no longer listed as a QNX6 volume of its own when its last logical volume ends where it ends.
 - An MMKV store whose `.crc` holds an AES vector but whose recorded data size is 0, as MMKV leaves a store it clears, is no longer reported as AES-encrypted, or as decrypted when a key is given; it opens empty with its encryption shown as unknown.
 - A plaintext MMKV store whose `.crc` holds an AES vector, opened with a key, is read as plaintext with the key reported as ignored, instead of failing as a wrong key.
+- Floating panels (Filesystem, Properties, Log) can be resized by dragging their edges and corners; the resize border was a few pixels wide and hard to hit. ([@jensstigaard](https://github.com/jensstigaard), [#198](https://github.com/kalink0/crush-forensics/pull/198))
 - Opening a folder that no viewer recognises by its files, such as Android WebView's `HTTP Cache` (which holds the caches `Cache_Data` and `Code Cache/js`), shows a warning instead of only a status bar message.
 - A KTX texture whose data is shorter than its declared dimensions need is no longer passed to the decoder, which would read past the end of the data; the reason is shown instead. ([@jensstigaard](https://github.com/jensstigaard), [#197](https://github.com/kalink0/crush-forensics/pull/197))
+- In integrity mode, an entry with no content read or stored (e.g. a FIFO or device file) is no longer logged and listed in `crush-export-hashes.txt` with the SHA-256 of empty data; it is marked as not hashed.
 
 ## v0.25.0 - 2026-11-07
 

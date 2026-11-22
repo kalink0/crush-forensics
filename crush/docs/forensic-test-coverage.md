@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-303 checks in total.
+304 checks in total.
 
 ### Sources
 
@@ -64,7 +64,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [XFS](#xfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [Btrfs](#btrfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [ReFS](#refs) | not tested | not tested | not tested | 1 | not tested | not tested |
-| [QNX6](#qnx6) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [QNX6](#qnx6) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [QNX4](#qnx4) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [QNX IFS](#qnx-ifs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [ETFS](#etfs) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -392,7 +392,8 @@ No forensic checks.
 
 #### QNX6
 
-No forensic checks.
+- **Known-output Verification** — A QNX6 volume with 4, 8, 16 or 32 KiB blocks must list its files and read back the bytes written, through one and two levels of block pointers ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_files_are_listed_and_read_back`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### QNX4
 

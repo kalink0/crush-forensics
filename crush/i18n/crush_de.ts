@@ -947,12 +947,36 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>Pfad</translation>
     </message>
     <message>
-        <source>Filter… (name:x  type:x)</source>
-        <translation>Filtern… (Name:x  Typ:x)</translation>
+        <source>-hash: is not supported: a file without a computed hash would read as not matching. Nothing is listed.</source>
+        <translation>-hash: wird nicht unterstützt: Eine Datei ohne berechneten Hash würde als Nicht-Treffer erscheinen. Es wird nichts aufgelistet.</translation>
+    </message>
+    <message>
+        <source>hash: takes hexadecimal digits (0-9, a-f). Nothing is listed.</source>
+        <translation>hash: erwartet Hexadezimalziffern (0-9, a-f). Es wird nichts aufgelistet.</translation>
+    </message>
+    <message>
+        <source>hash: takes at most 64 hexadecimal digits (a SHA-256). Nothing is listed.</source>
+        <translation>hash: erwartet höchstens 64 Hexadezimalziffern (ein SHA-256). Es wird nichts aufgelistet.</translation>
+    </message>
+    <message>
+        <source>Matched against computed {algorithm} hashes: {hashed} of {checked} files have one — files without one can&apos;t match.</source>
+        <translation>Abgeglichen mit berechneten {algorithm}-Hashes: {hashed} von {checked} Dateien haben einen — Dateien ohne können nicht treffen.</translation>
+    </message>
+    <message>
+        <source>Matched against computed hashes (prefix, any algorithm): {hashed} of {checked} files hashed — files without a hash can&apos;t match.</source>
+        <translation>Abgeglichen mit berechneten Hashes (Präfix, jeder Algorithmus): {hashed} von {checked} Dateien gehasht — Dateien ohne Hash können nicht treffen.</translation>
+    </message>
+    <message>
+        <source>Filter… (name:x  type:x  hash:x)</source>
+        <translation>Filtern… (name:x  type:x  hash:x)</translation>
     </message>
     <message>
         <source>Send {selected_entries_count} files to Peach</source>
         <translation>{selected_entries_count} Dateien an Peach senden</translation>
+    </message>
+    <message>
+        <source>Compute Hash of {count} selected entries</source>
+        <translation>Hash der {count} ausgewählten Einträge berechnen</translation>
     </message>
     <message>
         <source>Export {selected_entries_count} selected files…</source>
@@ -6298,6 +6322,149 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>not set (0)</source>
         <translation>nicht gesetzt (0)</translation>
+    </message>
+</context>
+<context>
+    <name>HashDialog</name>
+    <message>
+        <source>All</source>
+        <translation>Alle</translation>
+    </message>
+    <message>
+        <source>Compute Hash</source>
+        <translation>Hash berechnen</translation>
+    </message>
+    <message>
+        <source>Hashing file {done} of {total}
+{bytes_done} of {bytes_total}</source>
+        <translation>Datei {done} von {total} wird gehasht
+{bytes_done} von {bytes_total}</translation>
+    </message>
+    <message>
+        <source>Hashing…</source>
+        <translation>Wird gehasht…</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <source>Computed over the entry&apos;s content as Crush reads it (for an archive member: its unpacked content).</source>
+        <translation>Berechnet über den Inhalt des Eintrags, wie Crush ihn liest (bei einem Archiveintrag: über seinen entpackten Inhalt).</translation>
+    </message>
+    <message>
+        <source>Hashed — differs from a value computed earlier</source>
+        <translation>Gehasht — weicht von einem früher berechneten Wert ab</translation>
+    </message>
+    <message>
+        <source>Hashed</source>
+        <translation>Gehasht</translation>
+    </message>
+    <message>
+        <source>Not hashed: could not be read: {reason}</source>
+        <translation>Nicht gehasht: konnte nicht gelesen werden: {reason}</translation>
+    </message>
+    <message>
+        <source>Not hashed: no content read (see Entry status)</source>
+        <translation>Nicht gehasht: kein Inhalt gelesen (siehe Eintragstatus)</translation>
+    </message>
+    <message>
+        <source>Folder with an entry status: see Entry status</source>
+        <translation>Ordner mit Eintragstatus: siehe Eintragstatus</translation>
+    </message>
+    <message>
+        <source>Source</source>
+        <translation>Quelle</translation>
+    </message>
+    <message>
+        <source>Path</source>
+        <translation>Pfad</translation>
+    </message>
+    <message>
+        <source>Bytes read</source>
+        <translation>Gelesene Bytes</translation>
+    </message>
+    <message>
+        <source>Result</source>
+        <translation>Ergebnis</translation>
+    </message>
+    <message>
+        <source>Entry status</source>
+        <translation>Eintragstatus</translation>
+    </message>
+    <message>
+        <source>{hashed} of {total} files hashed.</source>
+        <translation>{hashed} von {total} Dateien gehasht.</translation>
+    </message>
+    <message>
+        <source>{n} could not be read.</source>
+        <translation>{n} konnten nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <source>{n} not hashed: no content is read or stored for them (see Entry status).</source>
+        <translation>{n} nicht gehasht: Für sie wird kein Inhalt gelesen oder ist keiner gespeichert (siehe Eintragstatus).</translation>
+    </message>
+    <message>
+        <source>{n} folder(s) with an entry status (for one that couldn&apos;t be listed, its files are missing here).</source>
+        <translation>{n} Ordner mit Eintragstatus (bei einem Ordner, der nicht aufgelistet werden konnte, fehlen seine Dateien hier).</translation>
+    </message>
+    <message>
+        <source>{n} differ from a value computed earlier for the same entry.</source>
+        <translation>{n} weichen von einem früher für denselben Eintrag berechneten Wert ab.</translation>
+    </message>
+    <message>
+        <source>Hashing was cancelled: this list is incomplete.</source>
+        <translation>Das Hashen wurde abgebrochen: Diese Liste ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>Hashing stopped on an error: this list is incomplete. {error}</source>
+        <translation>Das Hashen wurde wegen eines Fehlers beendet: Diese Liste ist unvollständig. {error}</translation>
+    </message>
+    <message>
+        <source>Computed Hashes</source>
+        <translation>Berechnete Hashes</translation>
+    </message>
+    <message>
+        <source>Copy All</source>
+        <translation>Alles kopieren</translation>
+    </message>
+    <message>
+        <source>Save As…</source>
+        <translation>Speichern unter…</translation>
+    </message>
+    <message>
+        <source>Copy cell</source>
+        <translation>Zelle kopieren</translation>
+    </message>
+    <message>
+        <source>Copy row (TSV)</source>
+        <translation>Zeile kopieren (TSV)</translation>
+    </message>
+    <message>
+        <source>Copy selection (TSV)</source>
+        <translation>Auswahl kopieren (TSV)</translation>
+    </message>
+    <message>
+        <source>Preparing the list…</source>
+        <translation>Liste wird vorbereitet…</translation>
+    </message>
+    <message>
+        <source>CSV (*.csv)</source>
+        <translation>CSV (*.csv)</translation>
+    </message>
+    <message>
+        <source>Tab-separated text (*.txt)</source>
+        <translation>Tabulatorgetrennter Text (*.txt)</translation>
+    </message>
+    <message>
+        <source>Save Hashes</source>
+        <translation>Hashes speichern</translation>
+    </message>
+    <message>
+        <source>The list could not be saved:
+{error}</source>
+        <translation>Die Liste konnte nicht gespeichert werden:
+{error}</translation>
     </message>
 </context>
 <context>
@@ -13227,6 +13394,10 @@ YnBsaXN0MDA…       (Base64)
         <translation>Formatinformationen öffnen...</translation>
     </message>
     <message>
+        <source>Compute Hash…</source>
+        <translation>Hash berechnen…</translation>
+    </message>
+    <message>
         <source>Only the modification time is read from this source. Accessed, Changed, and Birth are not available.</source>
         <translation>Aus dieser Quelle wird lediglich der Änderungszeitpunkt ausgelesen. Die Angaben &apos;Zugriff&apos;, &apos;Geändert&apos; und &apos;Erstellt&apos; sind nicht verfügbar.</translation>
     </message>
@@ -13285,6 +13456,14 @@ YnBsaXN0MDA…       (Base64)
     <message>
         <source>Warnings</source>
         <translation>Warnungen</translation>
+    </message>
+    <message>
+        <source>{algorithm} (computed):</source>
+        <translation>{algorithm} (berechnet):</translation>
+    </message>
+    <message>
+        <source>Different values were computed for this entry: its content as read changed between computations.</source>
+        <translation>Für diesen Eintrag wurden unterschiedliche Werte berechnet: Sein gelesener Inhalt hat sich zwischen den Berechnungen geändert.</translation>
     </message>
     <message>
         <source>Backup</source>
