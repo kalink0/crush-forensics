@@ -1069,13 +1069,16 @@ class FilesystemPanel(QWidget):
         if self._search_gen != gen:
             return
         path = f"{parent_path}/{node.name}" if parent_path else node.name
-        self._match_node(node, vfs, tokens, path, results, hash_info)
+        self._match_node(node, vfs, tokens, path, results, hash_info, container_names)
         for child in node.children:
-            self._collect_matches(child, vfs, tokens, path, results, gen, hash_info)
+            self._collect_matches(
+                child, vfs, tokens, path, results, gen, container_names, hash_info
+            )
 
     def _match_node(
         self, node: VFSNode, vfs: VFS, tokens: dict[str, str], path: str,
         results: list[dict], hash_info: _HashSearch | None,
+        container_names: bool = False,
     ) -> None:
 
         name_filter = tokens.get('name')
@@ -1112,19 +1115,6 @@ class FilesystemPanel(QWidget):
             type_label = None
             type_match = True
 
-        if name_match and type_match:
-            results.append({
-                'node': node, 'vfs': vfs,
-                'path': path, 'type_label': type_label,
-                'identifier': identifier,
-            })
-
-        for child in node.children:
-            self._collect_matches(
-                child, vfs, tokens, path, results, gen, container_names
-            )
-
-    def _on_search_results_ready(self, results: list[dict]) -> None:
         if not (name_match and type_match):
             return
         if hash_info is not None:
@@ -1142,6 +1132,7 @@ class FilesystemPanel(QWidget):
         results.append({
             'node': node, 'vfs': vfs,
             'path': path, 'type_label': type_label,
+            'identifier': identifier,
         })
 
     def _show_search_note(self, hash_info: _HashSearch | None) -> None:
