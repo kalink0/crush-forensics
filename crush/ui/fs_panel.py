@@ -203,11 +203,14 @@ class FilesystemPanel(QWidget):
         self._ondemand_queue: queue.SimpleQueue[tuple[VFSNode, VFS, int]] = queue.SimpleQueue()
         self._ondemand_keys: set[tuple[int, str]] = set()
         self._ondemand_thread: threading.Thread | None = None
-        # iOS App / AppGroup container folders (named by a GUID) can be shown
-        # by the identifier in their metadata plist instead. The plists are
-        # read on a thread of their own; a folder shows its GUID until then.
+        # iOS container folders (named by a GUID) can be shown by the
+        # identifier in their metadata plist instead. The plists are read on
+        # a thread of their own; a folder shows its GUID until then.
+        # _container_names keeps each plist read (None: read, no identifier),
+        # written from the UI thread and from search threads under the lock.
         self._show_container_names = True
         self._container_gen = 0
+        self._container_lock = threading.Lock()
         self._container_names: dict[tuple[int, str], str | None] = {}
         self._container_items: dict[tuple[int, str], list[QStandardItem]] = {}
         self._container_requested: set[tuple[int, str]] = set()
@@ -1459,7 +1462,7 @@ class FilesystemPanel(QWidget):
         return self._show_container_names
 
     def set_show_container_names(self, enabled: bool) -> None:
-        """Show iOS App / AppGroup container folders by the identifier in
+        """Show iOS container folders by the identifier in
         their metadata plist (True) or by their GUID folder name (False)."""
         if enabled == self._show_container_names:
             return
@@ -1480,8 +1483,9 @@ class FilesystemPanel(QWidget):
     def _reset_container_names(self) -> None:
         """Forget the container folders of the tree replaced (a name still
         being read for one of them is dropped on arrival)."""
-        self._container_gen += 1
-        self._container_names.clear()
+        with self._container_lock:
+            self._container_gen += 1
+            self._container_names.clear()
         self._container_items.clear()
         self._container_requested.clear()
 
@@ -1554,9 +1558,10 @@ class FilesystemPanel(QWidget):
     def _on_container_name_ready(
         self, key: tuple[int, str], identifier: str | None, gen: int
     ) -> None:
-        if gen != self._container_gen:
-            return
-        self._container_names[key] = identifier
+        with self._container_lock:
+            if gen != self._container_gen:
+                return
+            self._container_names[key] = identifier
         if not identifier:
             return
         for item in self._container_items.get(key, []):
@@ -1566,16 +1571,23 @@ class FilesystemPanel(QWidget):
 
     def _container_identifier_blocking(self, node: VFSNode, vfs: VFS) -> str | None:
         """The identifier of container folder *node* (None for any other
-        folder), read from the source when not read yet: background only."""
-        known = self._container_names.get((id(vfs), node.path))
-        if known is not None:
-            return known
+        folder), read from the source when not read yet and kept for the
+        next search: background only."""
+        key = (id(vfs), node.path)
+        with self._container_lock:
+            gen = self._container_gen
+            if key in self._container_names:
+                return self._container_names[key]
         if not ios_containers.is_container(node):
             return None
         try:
-            return ios_containers.read_identifier(node, vfs)
+            identifier = ios_containers.read_identifier(node, vfs)
         except Exception:  # noqa: BLE001 -- the folder keeps its name
-            return None
+            identifier = None
+        with self._container_lock:
+            if gen == self._container_gen:  # else the tree was replaced meanwhile
+                self._container_names.setdefault(key, identifier)
+        return identifier
 
     def _add_placeholder(self, parent_item: QStandardItem) -> None:
         if parent_item.rowCount() > 0:

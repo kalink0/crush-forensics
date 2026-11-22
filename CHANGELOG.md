@@ -9,7 +9,7 @@ All notable changes to Crush will be documented in this file.
 - Added to opening sources, unlocking volumes, exports and `.logarchive` export -> Support for cancelling: a cancelled source is not opened, a cancelled export keeps what it wrote marked as incomplete in `crush-export-cancelled.txt`, and a cancelled hash in integrity mode is logged while the data still opens.
 - Added to the type indexing -> Support for stopping and resuming it from the status bar; the status bar says how far it got.
 - Added to raw disk images -> Support for the Accessed, Changed and Birth times of ext2/3/4, APFS, HFS+ and Btrfs entries in the Properties panel, and HFS+'s Backup date where set.
-- Added to the filesystem panel -> Support for showing iOS App and AppGroup container folders (`Containers/Data/Application/<GUID>`, `Containers/Shared/AppGroup/<GUID>`) by the identifier in their `.com.apple.mobile_container_manager.metadata.plist` (`MCMMetadataIdentifier`) instead of their GUID, in italics with the GUID in the tooltip; the name filter finds them by either. Toggled under View → Show iOS App Identifiers for Container Folders (on by default).
+- Added to the filesystem panel -> Support for showing iOS container folders (any folder holding a `.com.apple.mobile_container_manager.metadata.plist`: app data, app groups, extensions, app bundles, system groups and system containers) by the identifier of their owner in that plist (`MCMMetadataIdentifier`) instead of their GUID, in italics with the GUID in the tooltip; the name filter finds them by either. Toggled under View → Show iOS Container Identifiers (on by default).
 
 ### Changed
 

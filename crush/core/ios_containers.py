@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
-"""iOS data containers: the folders an app's data (or an app group's
-shared data) lives in are named by a GUID; the app's bundle identifier
-(or the group identifier) is in the folder's metadata plist written by
-the mobile container manager, under MCMMetadataIdentifier.
+"""iOS containers: the folders the mobile container manager creates are
+named by a GUID, and each holds a metadata plist whose
+MCMMetadataIdentifier names the container's owner: an app's bundle
+identifier, an app group's or system group's identifier, an extension's
+(PluginKit plugin's) identifier, or a system service's.
 
     …/Containers/Data/Application/<GUID>/.com.apple.mobile_container_manager.metadata.plist
-    …/Containers/Shared/AppGroup/<GUID>/.com.apple.mobile_container_manager.metadata.plist
+    …/Containers/Shared/AppGroup/<GUID>/…
+    …/Containers/Data/PluginKitPlugin/<GUID>/…
+    …/Containers/Bundle/Application/<GUID>/…
+    …/containers/Shared/SystemGroup/<GUID>/…  (and Data/System, Data/InternalDaemon)
+
+Any folder that directly holds that plist is taken for a container,
+wherever it is: the kinds of container differ between iOS versions.
 """
 from __future__ import annotations
 
@@ -16,23 +23,15 @@ from crush.core.vfs import VFS, VFSNode
 METADATA_PLIST = ".com.apple.mobile_container_manager.metadata.plist"
 IDENTIFIER_KEY = "MCMMetadataIdentifier"
 
-# The folders whose child folders are containers (compared case-insensitively).
-_CONTAINER_PARENTS: tuple[tuple[str, str, str], ...] = (
-    ("containers", "data", "application"),
-    ("containers", "shared", "appgroup"),
-)
-
 # A metadata plist is a few hundred bytes; anything far larger isn't one.
 _MAX_PLIST_SIZE = 1024 * 1024
 
 
 def metadata_plist(node: VFSNode) -> VFSNode | None:
-    """The metadata plist of *node* when *node* is an App or AppGroup
-    container folder, else None."""
+    """The metadata plist of *node* when *node* is a container folder (one
+    that directly holds the mobile container manager's metadata plist),
+    else None."""
     if not node.is_dir:
-        return None
-    parts = [p for p in node.path.replace("\\", "/").split("/") if p]
-    if len(parts) < 4 or tuple(p.lower() for p in parts[-4:-1]) not in _CONTAINER_PARENTS:
         return None
     for child in node.children:
         if not child.is_dir and child.name == METADATA_PLIST:
@@ -45,8 +44,9 @@ def is_container(node: VFSNode) -> bool:
 
 
 def read_identifier(node: VFSNode, vfs: VFS) -> str | None:
-    """MCMMetadataIdentifier of the container folder *node* (the app's
-    bundle identifier or the app group's identifier), or None when *node*
+    """MCMMetadataIdentifier of the container folder *node* (the identifier
+    of the container's owner: app, group, extension or system service), or
+    None when *node*
     is no container or its plist doesn't give one. Reads from the source:
     not for the UI thread."""
     plist_node = metadata_plist(node)
