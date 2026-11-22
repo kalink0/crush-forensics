@@ -955,6 +955,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>{selected_entries_count} Dateien an Peach senden</translation>
     </message>
     <message>
+        <source>Compute Hash of {count} selected entries</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Export {selected_entries_count} selected files…</source>
         <translation>{selected_entries_count} ausgewählte Dateien exportieren...</translation>
     </message>
@@ -6298,6 +6302,123 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <message>
         <source>not set (0)</source>
         <translation>nicht gesetzt (0)</translation>
+    </message>
+</context>
+<context>
+    <name>HashDialog</name>
+    <message>
+        <source>All</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Compute Hash</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hashing file {done} of {total}
+{bytes_done} of {bytes_total}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hashing…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Computed over the entry&apos;s content as Crush reads it (for an archive member: its unpacked content).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hashed — differs from a value computed earlier</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hashed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not hashed: could not be read: {reason}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Folder with an entry status: see Entry status</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Path</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bytes read</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Result</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Entry status</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{hashed} of {total} files hashed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{n} could not be read.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{n} folder(s) with an entry status (for one that couldn&apos;t be listed, its files are missing here).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>{n} differ from a value computed earlier for the same entry.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hashing was cancelled: this list is incomplete.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hashing stopped on an error: this list is incomplete. {error}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Computed Hashes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Copy All</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save As…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preparing the list…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>CSV (*.csv)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Tab-separated text (*.txt)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save Hashes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The list could not be saved:
+{error}</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -13208,6 +13329,10 @@ YnBsaXN0MDA…       (Base64)
         <translation>Formatinformationen öffnen...</translation>
     </message>
     <message>
+        <source>Compute Hash…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Only the modification time is read from this source. Accessed, Changed, and Birth are not available.</source>
         <translation>Aus dieser Quelle wird lediglich der Änderungszeitpunkt ausgelesen. Die Angaben &apos;Zugriff&apos;, &apos;Geändert&apos; und &apos;Erstellt&apos; sind nicht verfügbar.</translation>
     </message>
@@ -13266,6 +13391,14 @@ YnBsaXN0MDA…       (Base64)
     <message>
         <source>Warnings</source>
         <translation>Warnungen</translation>
+    </message>
+    <message>
+        <source>{algorithm} (computed):</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Different values were computed for this entry: its content as read changed between computations.</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Backup</source>

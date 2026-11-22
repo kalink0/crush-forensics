@@ -31,6 +31,7 @@ from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
 from crush.ui.column_fit import ColumnFitter
+from crush.ui.hash_dialog import add_hash_menu
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
@@ -114,6 +115,8 @@ class FilesystemPanel(QWidget):
     open_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
     open_disk_image_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
     send_to_peach_batch_requested = Signal(object)  # list[(VFSNode, VFS)]
+    # (list[(VFSNode, VFS)], algorithms) -- folders are hashed all the way down
+    hash_requested = Signal(object, object)
     load_finished = Signal()
     background_status = Signal(str)
     # The type indexing: "running", "stopped" (by the analyst, not finished)
@@ -482,8 +485,11 @@ class FilesystemPanel(QWidget):
         if node and vfs:
             self._ensure_children_loaded(item, node, vfs)
 
-    def _collect_tree_selected_entries(self) -> list[tuple[VFSNode, VFS]]:
-        """Return (node, vfs) for each selected file row in the main tree (skips dirs)."""
+    def _collect_tree_selected_entries(
+        self, include_dirs: bool = False,
+    ) -> list[tuple[VFSNode, VFS]]:
+        """Return (node, vfs) for each selected row in the main tree; folders
+        only with *include_dirs*."""
         entries: list[tuple[VFSNode, VFS]] = []
         for index in self._tree.selectionModel().selectedIndexes():
             if index.column() != 0:
@@ -494,7 +500,7 @@ class FilesystemPanel(QWidget):
                 continue
             node: VFSNode | None = item.data(_ROLE_NODE)
             vfs: VFS | None = item.data(_ROLE_VFS)
-            if not node or not vfs or node.is_dir:
+            if not node or not vfs or (node.is_dir and not include_dirs):
                 continue
             entries.append((node, vfs))
         return entries
@@ -519,20 +525,34 @@ class FilesystemPanel(QWidget):
             # Right-clicked inside an active multi-selection of 2+ files —
             # a minimal batch menu instead of the full single-node one,
             # same pattern as the search view's multi-select export menu.
+            # Compute Hash takes the selected folders along.
+            selected_all = self._collect_tree_selected_entries(include_dirs=True)
             menu = QMenu(self)
             send_action = menu.addAction(
                 translate("FilesystemPanel", "Send {selected_entries_count} files to Peach").format(
                     selected_entries_count=len(selected_entries)
                 )
             )
-            if menu.exec(global_pos) == send_action:
+            hash_actions = add_hash_menu(
+                menu,
+                translate("FilesystemPanel", "Compute Hash of {count} selected entries").format(
+                    count=len(selected_all)
+                ),
+            )
+            action = menu.exec(global_pos)
+            if action == send_action:
                 self.send_to_peach_batch_requested.emit(selected_entries)
+            elif action in hash_actions:
+                self.hash_requested.emit(selected_all, hash_actions[action])
             return
 
         self._show_context_menu(node, vfs, global_pos)
 
-    def _collect_result_entries(self, rows: object) -> list[tuple[VFSNode, VFS, str]]:
-        """Return (node, vfs, virtual_path) for each file row in rows (skips dirs)."""
+    def _collect_result_entries(
+        self, rows: object, include_dirs: bool = False,
+    ) -> list[tuple[VFSNode, VFS, str]]:
+        """Return (node, vfs, virtual_path) for each row in rows; folders
+        only with *include_dirs*."""
         entries: list[tuple[VFSNode, VFS, str]] = []
         for row in rows:
             name_item = self._search_model.item(row, 0)
@@ -541,7 +561,7 @@ class FilesystemPanel(QWidget):
                 continue
             node: VFSNode | None = name_item.data(_ROLE_NODE)
             vfs: VFS | None = name_item.data(_ROLE_VFS)
-            if not node or not vfs or node.is_dir:
+            if not node or not vfs or (node.is_dir and not include_dirs):
                 continue
             virtual_path = path_item.text() if path_item else node.name
             entries.append((node, vfs, virtual_path))
@@ -570,12 +590,26 @@ class FilesystemPanel(QWidget):
                         all_entries_count=len(all_entries)
                     )
                 )
+            menu.addSeparator()
+            selected_all = [
+                (node, vfs) for node, vfs, _ in self._collect_result_entries(
+                    selected_rows, include_dirs=True
+                )
+            ]
+            hash_actions = add_hash_menu(
+                menu,
+                translate("FilesystemPanel", "Compute Hash of {count} selected entries").format(
+                    count=len(selected_all)
+                ),
+            )
             action = menu.exec(global_pos)
             filter_text = self._filter.text().strip()
             if action == export_sel:
                 self.export_multi_requested.emit(selected_entries, filter_text)
             elif export_all is not None and action == export_all:
                 self.export_multi_requested.emit(all_entries, filter_text)
+            elif action in hash_actions:
+                self.hash_requested.emit(selected_all, hash_actions[action])
             return
 
         if not index.isValid():
@@ -697,6 +731,7 @@ class FilesystemPanel(QWidget):
         copy_name_action = copy_menu.addAction(translate("FilesystemPanel", "Copy File Name"))
         menu.addSeparator()
         format_info_action = menu.addAction(translate("FilesystemPanel", "Show Format Info"))
+        hash_actions = add_hash_menu(menu)
         menu.addSeparator()
         export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
         unlock_volume_action = None
@@ -771,6 +806,8 @@ class FilesystemPanel(QWidget):
             QGuiApplication.clipboard().setText(node.name)
         elif action == format_info_action:
             self.format_info_requested.emit(node, vfs)
+        elif action in hash_actions:
+            self.hash_requested.emit([(node, vfs)], hash_actions[action])
         elif action == export_action:
             self.export_requested.emit(node, vfs)
         elif action == export_logarchive_action:

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from crush.core.hashing import HashStore
 from crush.core.vfs import VFS, VFSNode, open_vfs
 
 
@@ -26,6 +27,8 @@ class Session:
         self.integrity_mode: bool = False
         self.sources: list[VFS] = []
         self.open_artifacts: list[OpenArtifact] = []
+        # Hashes computed in this window, per source; kept while the source is open.
+        self.hashes = HashStore()
         self._db = sqlite3.connect(":memory:")
         self._init_db()
 
@@ -60,14 +63,17 @@ class Session:
 
     def detach_source(self, vfs: VFS) -> VFS:
         """Hand an open source to another session (another window) without
-        closing it."""
+        closing it. Its computed hashes stay with this window's store and
+        are dropped: the other window starts without them."""
         self.sources = [item for item in self.sources if item is not vfs]
+        self.hashes.forget(vfs)
         return vfs
 
     def replace_source(self, old: VFS, new: VFS) -> None:
         """Put *new* in *old*'s place and close *old* (the same source read
         again, e.g. with an encrypted volume opened)."""
         self.sources = [new if item is old else item for item in self.sources]
+        self.hashes.forget(old)
         try:
             old.close()
         except Exception:
@@ -76,6 +82,7 @@ class Session:
     def remove_source(self, vfs: VFS) -> None:
         if vfs in self.sources:
             self.sources = [item for item in self.sources if item is not vfs]
+        self.hashes.forget(vfs)
         try:
             vfs.close()
         except Exception:
@@ -106,6 +113,7 @@ class Session:
         return [{"path": r[0], "type": r[1], "snippet": r[2]} for r in rows]
 
     def close(self) -> None:
+        self.hashes.clear()
         self._db.close()
         for vfs in self.sources:
             vfs.close()

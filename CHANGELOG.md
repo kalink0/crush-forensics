@@ -9,6 +9,7 @@ All notable changes to Crush will be documented in this file.
 - Added to opening sources, unlocking volumes, exports and `.logarchive` export -> Support for cancelling: a cancelled source is not opened, a cancelled export keeps what it wrote marked as incomplete in `crush-export-cancelled.txt`, and a cancelled hash in integrity mode is logged while the data still opens.
 - Added to the type indexing -> Support for stopping and resuming it from the status bar; the status bar says how far it got.
 - Added to raw disk images -> Support for the Accessed, Changed and Birth times of ext2/3/4, APFS, HFS+ and Btrfs entries in the Properties panel, and HFS+'s Backup date where set.
+- Added to the Filesystem and Properties panels -> Support for hashing files and folders with MD5, SHA-1 and/or SHA-256 (Compute Hash), shown in the Properties panel while the source is open.
 
 ### Changed
 

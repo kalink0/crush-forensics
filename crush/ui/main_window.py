@@ -66,6 +66,7 @@ from PySide6.QtWidgets import (
 
 import crush
 from crush.core import tempdir
+from crush.core.hashing import HashStore
 from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
 from crush.core.vfs_stream import CopyCancelledError
 from crush.parsers.hex_fallback import HexFallbackParser
@@ -600,13 +601,15 @@ class _ExportWorker(QObject):
     cancelled = Signal(str, int)
 
     def __init__(
-        self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None
+        self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None,
+        hashes: HashStore | None = None,
     ) -> None:
         super().__init__()
         self._vfs = vfs
         self._node = node
         self._dest_dir = Path(dest_dir)
         self._integrity = integrity
+        self._hashes = hashes  # the window's store: integrity hashes are kept there
         self._hash_lines: list[str] = []
         self._hash_base: Path | None = None
         self._rename_lines: list[str] = []
@@ -730,6 +733,8 @@ class _ExportWorker(QObject):
         self._exported += 1
         if digest is None:
             return
+        if self._hashes is not None:
+            self._hashes.record(self._vfs, node, {"sha256": bytes.fromhex(digest)})
         rel_path = target.name
         if self._hash_base is not None:
             try:
@@ -833,11 +838,13 @@ class _ExportMultiWorker(QObject):
         integrity: bool,
         filter_text: str,
         window_id: str | None = None,
+        hashes: HashStore | None = None,
     ) -> None:
         super().__init__()
         self._entries = entries
         self._dest_dir = Path(dest_dir)
         self._integrity = integrity
+        self._hashes = hashes  # as _ExportWorker._hashes
         self._filter_text = filter_text
         self._hash_lines: list[str] = []
         self._rename_lines: list[str] = []
@@ -934,6 +941,8 @@ class _ExportMultiWorker(QObject):
         self._exported += 1
         if digest is None:
             return
+        if self._hashes is not None:
+            self._hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
@@ -1219,6 +1228,7 @@ class MainWindow(QMainWindow):
             lambda node, vfs: self._open_in_new_window(node, vfs, as_disk_image=True)
         )
         self._fs_panel.send_to_peach_batch_requested.connect(self._send_to_peach_batch)
+        self._fs_panel.hash_requested.connect(self._compute_hashes)
         self._fs_dock = QDockWidget(translate("MainWindow", "Filesystem"), self)
         self._fs_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._fs_dock.setFeatures(
@@ -1237,6 +1247,10 @@ class MainWindow(QMainWindow):
         # Right dock: properties panel
         self._props_panel = PropertiesPanel(self)
         self._props_panel.format_info_requested.connect(self._show_format_info)
+        self._props_panel.hash_requested.connect(
+            lambda node, vfs, algorithms: self._compute_hashes([(node, vfs)], algorithms)
+        )
+        self._props_panel.set_hash_lookup(self.session.hashes.get)
         self._props_dock = QDockWidget(translate("MainWindow", "Properties"), self)
         self._props_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._props_dock.setFeatures(
@@ -2171,7 +2185,8 @@ class MainWindow(QMainWindow):
         self._status.showMessage(translate("MainWindow", "Exporting…"))
         self._logger.info("Export requested: %s -> %s", node.path, dest_dir)
         export_worker = _ExportWorker(
-            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id
+            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id,
+            hashes=self.session.hashes,
         )
         self._export_progress = _CancellableProgress(
             translate("MainWindow", "Exporting…"), translate("MainWindow", "Export"),
@@ -2218,7 +2233,7 @@ class MainWindow(QMainWindow):
         self._logger.info("Multi-export: %d files, filter=%r -> %s", n, filter_text, dest_dir)
         multi_worker = _ExportMultiWorker(
             entries, dest_dir, self.session.integrity_mode, filter_text,
-            window_id=self._window_id,
+            window_id=self._window_id, hashes=self.session.hashes,
         )
         self._export_progress = _CancellableProgress(
             exporting, translate("MainWindow", "Export filtered results"),
@@ -3576,6 +3591,7 @@ class MainWindow(QMainWindow):
                     "INTEGRITY sha256=%s  size=%d  path=%s",
                     outcome.sha256, outcome.bytes_copied, node.path,
                 )
+                self._record_integrity_hash(vfs, node, outcome.sha256)
             self._external_temp_paths.append(tmp_path)
             return tmp_path
         except Exception as exc:
@@ -5130,6 +5146,7 @@ class MainWindow(QMainWindow):
 
     def _on_export_thread_finished(self) -> None:
         self._export_thread = None
+        self._props_panel.refresh_hashes()  # integrity hashes of exported files
 
     def _setup_logging(self) -> None:
         self._raw_logger = logging.getLogger("crush")
@@ -5503,6 +5520,35 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_logger"):
             self._logger.info("Integrity mode %s", state)
 
+    def _compute_hashes(self, entries: list, algorithms: object) -> None:
+        """Compute Hash: hash *entries* (folders all the way down) with the
+        analyst's *algorithms*, keep the values, show the result."""
+        from crush.ui.hash_dialog import HashResultDialog, compute_hashes_with_progress
+
+        entries = [(node, vfs) for node, vfs in entries if node is not None and vfs is not None]
+        if not entries:
+            return
+        algs = tuple(algorithms)  # type: ignore[call-overload]
+        self._logger.info(
+            "HASH requested (%s): %s", ", ".join(algs),
+            entries[0][0].path if len(entries) == 1 else f"{len(entries)} entries",
+        )
+        run = compute_hashes_with_progress(
+            self, entries, algs, self.session.hashes, window_id=self._window_id
+        )
+        self._props_panel.refresh_hashes()
+        dialog = HashResultDialog(run, self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _record_integrity_hash(self, vfs: VFS, node: VFSNode, digest: str | None) -> None:
+        """An integrity SHA-256 covers the same bytes as Compute Hash: keep
+        it, so the Properties panel shows it and it isn't computed again."""
+        if not digest:
+            return
+        self.session.hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})
+        self._props_panel.refresh_hashes()
+
     def _hash_node_if_integrity(self, node: VFSNode, vfs: VFS) -> None:
         if not self.session.integrity_mode or node.is_dir:
             return
@@ -5532,6 +5578,7 @@ class MainWindow(QMainWindow):
             else:
                 digest, total = _hash()
             self._logger.info("INTEGRITY sha256=%s  size=%d  path=%s", digest, total, node.path)
+            self._record_integrity_hash(vfs, node, digest)
         except LoadCancelled:
             # As for a source: the file opens, only its hash is missing.
             self._logger.warning(
