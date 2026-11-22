@@ -3,12 +3,15 @@
 """Properties panel — right dock, shows file metadata for the selected artifact."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
+    QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -25,10 +28,12 @@ from crush.core.stored_times import (
     MODIFIED,
     StoredTime,
 )
+from crush.core.hashing import ALGORITHMS, DISPLAY_NAMES
 from crush.core.ts_decode import unix_to_utc
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
 from crush.core.issues import CatalogText, ParseIssue, render_value
 from crush.ui import open_url
+from crush.ui.hash_dialog import add_hash_actions, content_note
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
 from crush.ui.knowledge_toggle import follow_knowledge_original, knowledge_original_checkbox
@@ -45,6 +50,8 @@ class PropertiesPanel(QScrollArea):
     # connects this (see MainWindow._show_format_info, which also already
     # handles the "no format identified" case gracefully).
     format_info_requested = Signal(object, object)
+    # (node, vfs, algorithms) -- "Compute Hash…"; MainWindow runs it.
+    hash_requested = Signal(object, object, object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,6 +64,20 @@ class PropertiesPanel(QScrollArea):
         install_horizontal_wheel_scroll(self, smooth_item_scroll=False)
         self._current_node: VFSNode | None = None
         self._current_vfs: VFS | None = None
+        self._current_metadata: dict[str, Any] = {}
+        # (vfs, node) -> algorithm -> every value computed (see HashStore.get)
+        self._hash_lookup: Callable[[VFS, VFSNode], dict[str, list[bytes]]] | None = None
+
+    def set_hash_lookup(
+        self, lookup: Callable[[VFS, VFSNode], dict[str, list[bytes]]] | None,
+    ) -> None:
+        """Where the computed hashes of the shown entry come from."""
+        self._hash_lookup = lookup
+
+    def refresh_hashes(self) -> None:
+        """Show the entry again, with hashes computed since it was shown."""
+        if self._current_node is not None and self._current_vfs is not None:
+            self.update_properties(self._current_node, self._current_metadata, self._current_vfs)
 
     def clear(self) -> None:
         while self._layout.rowCount():
@@ -75,6 +96,7 @@ class PropertiesPanel(QScrollArea):
         self.clear()
         self._current_node = node
         self._current_vfs = vfs
+        self._current_metadata = metadata
 
         # File name as header
         header = QLabel(f"<b>{node.name}</b>")  # i18n: keep -- markup/layout only
@@ -100,14 +122,32 @@ class PropertiesPanel(QScrollArea):
                 orig_label.setTextInteractionFlags(_SELECTABLE)
                 self._layout.addRow(translate("PropertiesPanel", "Backup File ID:"), orig_label)
 
-        # Fixed position (not after the parser metadata, whose length varies)
-        # and only shown once a format was actually identified.
-        if vfs is not None and "Format" in metadata:
-            info_btn = QPushButton(translate("PropertiesPanel", "Open Format Info…"))
-            info_btn.clicked.connect(
-                lambda: self.format_info_requested.emit(self._current_node, self._current_vfs)
-            )
-            self._layout.addRow(info_btn)
+        # Fixed position (not after the parser metadata, whose length varies).
+        # Format Info only once a format was actually identified; Compute
+        # Hash for every entry.
+        if vfs is not None:
+            buttons = QWidget()
+            row = QHBoxLayout(buttons)
+            row.setContentsMargins(0, 0, 0, 0)
+            if "Format" in metadata:
+                info_btn = QPushButton(translate("PropertiesPanel", "Open Format Info…"))
+                info_btn.clicked.connect(
+                    lambda: self.format_info_requested.emit(self._current_node, self._current_vfs)
+                )
+                row.addWidget(info_btn)
+            hash_btn = QPushButton(translate("PropertiesPanel", "Compute Hash…"))
+            hash_menu = QMenu(hash_btn)
+            for action, algorithms in add_hash_actions(hash_menu).items():
+                action.triggered.connect(
+                    lambda _=False, algs=algorithms: self.hash_requested.emit(
+                        self._current_node, self._current_vfs, algs
+                    )
+                )
+            hash_btn.setMenu(hash_menu)
+            row.addWidget(hash_btn)
+            row.addStretch(1)
+            self._layout.addRow(buttons)
+            self._add_computed_hashes(vfs, node)
 
         # Timestamps (MACB) — always show all four, mark unavailable ones clearly
         stored = vfs.stored_times(node) if vfs is not None else node.stored_times
@@ -286,6 +326,43 @@ class PropertiesPanel(QScrollArea):
         warnings = result.get("warnings", [])
         if warnings:
             _row(translate("PropertiesPanel", "Warnings"), str(len(warnings)))
+
+    def _add_computed_hashes(self, vfs: VFS, node: VFSNode) -> None:
+        """One row per algorithm computed for the entry in this window; a
+        second value (the content read differed) is shown, not dropped."""
+        if self._hash_lookup is None or node.is_dir:
+            return
+        computed = self._hash_lookup(vfs, node)
+        if not computed:
+            return
+        differs = False
+        for alg in ALGORITHMS:
+            values = computed.get(alg)
+            if not values:
+                continue
+            differs = differs or len(values) > 1
+            lbl = QLabel("\n".join(v.hex() for v in values))
+            lbl.setTextFormat(Qt.TextFormat.PlainText)
+            lbl.setWordWrap(True)
+            lbl.setTextInteractionFlags(_SELECTABLE)
+            lbl.setStyleSheet("font-family: monospace;")
+            self._layout.addRow(
+                translate("PropertiesPanel", "{algorithm} (computed):").format(
+                    algorithm=DISPLAY_NAMES[alg]
+                ),
+                lbl,
+            )
+        if differs:
+            warn = QLabel(translate(
+                "PropertiesPanel",
+                "Different values were computed for this entry: its content as read "
+                "changed between computations.",
+            ))
+            warn.setTextFormat(Qt.TextFormat.PlainText)
+            warn.setWordWrap(True)
+            warn.setStyleSheet("color: #b02a37; font-weight: bold;")
+            self._layout.addRow(warn)
+        self._add_note(content_note())
 
     def _follow(self, label: QLabel, text: CatalogText) -> None:
         follow_knowledge_original(label, lambda: label.setText(text.localized()))
