@@ -326,6 +326,37 @@ def test_progress_path_runs_on_a_worker_thread_and_returns(qapp, widgets, tree: 
     assert dialog.model.rowCount() == 2
 
 
+def test_result_cells_rows_and_selection_can_be_copied(qapp, widgets, tree: Path) -> None:
+    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtGui import QGuiApplication
+
+    from crush.ui.hash_dialog import HashResultDialog
+
+    vfs = DirectoryVFS(tree)
+    run = _run([(vfs.root(), vfs)], ("md5", "sha256"), HashStore())
+    dialog = widgets(HashResultDialog(run))
+    md5_col = dialog.model.headers.index("MD5")
+    b_row = next(i for i, r in enumerate(run.rows) if r.node.name == "b.txt")
+    menu, actions = dialog.cell_menu(dialog.model.index(b_row, md5_col))
+    by_text = {a.text(): fn for a, fn in actions.items()}
+    assert list(by_text) == ["Copy cell", "Copy row (TSV)", "Copy selection (TSV)"]
+
+    by_text["Copy cell"]()
+    assert QGuiApplication.clipboard().text() == hashlib.md5(b"beta" * 1000).hexdigest()
+    by_text["Copy row (TSV)"]()
+    assert QGuiApplication.clipboard().text() == "\t".join(dialog.model.cells(run.rows[b_row]))
+
+    flags = (QItemSelectionModel.SelectionFlag.Select
+             | QItemSelectionModel.SelectionFlag.Rows)
+    for r in range(len(run.rows)):
+        dialog.table.selectionModel().select(dialog.model.index(r, 0), flags)
+    by_text["Copy selection (TSV)"]()
+    assert QGuiApplication.clipboard().text().splitlines() == [
+        "\t".join(dialog.model.cells(r)) for r in run.rows
+    ]
+    menu.deleteLater()
+
+
 # --- menus and the Properties panel ------------------------------------------------
 
 def test_hash_menu_offers_each_algorithm_and_all(qapp, widgets) -> None:

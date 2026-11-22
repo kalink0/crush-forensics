@@ -486,6 +486,8 @@ class HashResultDialog(QDialog):
         for i, alg in enumerate(run.algorithms, start=3):
             hex_chars = 2 * hashlib.new(alg).digest_size
             self.table.setColumnWidth(i, metrics.horizontalAdvance("f" * (hex_chars + 2)))
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.table)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
@@ -499,6 +501,54 @@ class HashResultDialog(QDialog):
         save_btn.clicked.connect(self.save_as)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _on_context_menu(self, pos: Any) -> None:
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        menu, actions = self.cell_menu(index)
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen in actions:
+            actions[chosen]()
+        menu.deleteLater()
+
+    def cell_menu(
+        self, index: QModelIndex | QPersistentModelIndex,
+    ) -> tuple[QMenu, dict[QAction, Any]]:
+        """Copy cell / row / selection, as in the table viewers. The cell's
+        own text is copied (a full hash, a full path), not what fits the
+        column."""
+        menu = QMenu(self)
+        row = self._run.rows[index.row()]
+        actions: dict[QAction, Any] = {
+            menu.addAction(translate("HashDialog", "Copy cell")): lambda: self._copy(
+                self.model.cells(row)[index.column()]
+            ),
+            menu.addAction(translate("HashDialog", "Copy row (TSV)")): lambda: self._copy(
+                "\t".join(self.model.cells(row))
+            ),
+            menu.addAction(translate("HashDialog", "Copy selection (TSV)")): self._copy_selection,
+        }
+        return menu, actions
+
+    def _copy_selection(self) -> None:
+        rows = sorted({i.row() for i in self.table.selectionModel().selectedIndexes()})
+        if not rows:
+            return
+
+        def build() -> str:
+            return "\n".join("\t".join(self.model.cells(self._run.rows[r])) for r in rows)
+
+        if len(rows) < 10_000:
+            self._copy(build())
+            return
+        from crush.ui.busy_dialog import busy_call
+
+        self._copy(str(busy_call(self, translate("HashDialog", "Preparing the list…"), build)))
+
+    @staticmethod
+    def _copy(text: str) -> None:
+        QGuiApplication.clipboard().setText(text)
 
     def _text(self, fmt: str) -> str:
         if len(self._run.rows) < 10_000:

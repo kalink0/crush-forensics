@@ -6433,6 +6433,18 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>Speichern unter…</translation>
     </message>
     <message>
+        <source>Copy cell</source>
+        <translation>Zelle kopieren</translation>
+    </message>
+    <message>
+        <source>Copy row (TSV)</source>
+        <translation>Zeile kopieren (TSV)</translation>
+    </message>
+    <message>
+        <source>Copy selection (TSV)</source>
+        <translation>Auswahl kopieren (TSV)</translation>
+    </message>
+    <message>
         <source>Preparing the list…</source>
         <translation>Liste wird vorbereitet…</translation>
     </message>
