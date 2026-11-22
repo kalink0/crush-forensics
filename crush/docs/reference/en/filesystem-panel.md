@@ -47,8 +47,12 @@ While the filter is active, the tree is replaced by a **flat search results list
 | `type:opus` | Matches Opus voice notes (WhatsApp `.opus`, Telegram `.ogg`) detected by codec header |
 | `type:ogg` | Matches OGG Vorbis audio files |
 | `name:rubin type:sqlite` | AND — only files whose name contains `rubin` **and** whose type is SQLite |
+| `hash:2c1743a391305fbf367df8e4f069f9f9` | Files with this hash among those already computed in this window — the length says the algorithm: 32 hex digits MD5, 40 SHA-1, 64 SHA-256 |
+| `hash:2c17` | Shorter: files with a computed hash (any algorithm) that starts with `2c17` |
 
 Multiple tokens are always AND-combined. The `type:` token matches against the format label in the Type column, which is detected from file content (magic bytes) — not from the file extension. This means a HEIC image named `photo.jpeg` will still match `type:heic`.
+
+The `hash:` token matches only hashes already computed in this window — by **Compute Hash**, or the SHA-256 of [integrity mode](integrity-mode.md) — every value of an entry, including a differing later one; the filter itself hashes nothing. It is case-insensitive and lists files only. With every `hash:` search, a line above the results says what it was matched against, e.g. `Matched against computed MD5 hashes: 1,204 of 12,500 files have one — files without one can't match.` (the files counted are those the other filter terms let through). A file without a computed hash — never hashed, unreadable, or with no content read — is counted there and never treated as not matching. `-hash:` (negation) is not supported, as a file without a computed hash would read as not matching; it lists nothing and says so, as does a value that isn't hexadecimal or is longer than 64 digits.
 
 **Interacting with results**
 

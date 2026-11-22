@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -39,6 +40,60 @@ for _alg in ALGORITHMS:
     _pos += _DIGEST_SIZES[_alg]
 _RECORD_SIZE = _pos
 _CHUNK = 1024 * 1024
+
+
+_HEX = frozenset("0123456789abcdef")
+# Full digest length in hex digits -> the one algorithm it can be.
+_FULL_LENGTHS = {2 * size: alg for alg, size in _DIGEST_SIZES.items()}
+_MAX_HEX = max(_FULL_LENGTHS)
+
+# HashQuery.problem values (plain facts; the UI words them).
+QUERY_NOT_HEX = "not_hex"
+QUERY_TOO_LONG = "too_long"
+
+
+@dataclass(frozen=True)
+class HashQuery:
+    """A hash the analyst searches for (the filter's hash: token).
+
+    *algorithm* is set when the length is a full digest (32 MD5, 40 SHA-1,
+    64 SHA-256): the value must equal a computed one of that algorithm.
+    Otherwise (shorter) it is a prefix matched against every computed
+    value, any algorithm. *problem* says why nothing can match."""
+
+    hex: str
+    algorithm: str | None
+    problem: str = ""
+
+
+def parse_hash_query(value: str) -> HashQuery:
+    text = value.strip().lower()
+    if not text or any(c not in _HEX for c in text):
+        return HashQuery(text, None, QUERY_NOT_HEX)
+    if len(text) > _MAX_HEX:
+        return HashQuery(text, None, QUERY_TOO_LONG)
+    return HashQuery(text, _FULL_LENGTHS.get(len(text)))
+
+
+def query_can_match(query: HashQuery, computed: dict[str, list[bytes]]) -> bool:
+    """Whether *computed* holds a value *query* is matched against: one of
+    its algorithm for a full digest, any for a prefix. An entry for which
+    this is False is not a non-match -- it has nothing to compare."""
+    if query.problem:
+        return False
+    if query.algorithm is not None:
+        return bool(computed.get(query.algorithm))
+    return any(computed.values())
+
+
+def query_matches(query: HashQuery, computed: dict[str, list[bytes]]) -> bool:
+    """Whether any computed value (every value per algorithm, also a
+    differing later one) equals *query*, or starts with it for a prefix."""
+    if query.problem:
+        return False
+    if query.algorithm is not None:
+        return any(v.hex() == query.hex for v in computed.get(query.algorithm, []))
+    return any(v.hex().startswith(query.hex) for values in computed.values() for v in values)
 
 
 class HashCancelled(Exception):

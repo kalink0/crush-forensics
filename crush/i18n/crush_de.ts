@@ -947,8 +947,28 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>Pfad</translation>
     </message>
     <message>
-        <source>Filter… (name:x  type:x)</source>
-        <translation>Filtern… (Name:x  Typ:x)</translation>
+        <source>-hash: is not supported: a file without a computed hash would read as not matching. Nothing is listed.</source>
+        <translation>-hash: wird nicht unterstützt: Eine Datei ohne berechneten Hash würde als Nicht-Treffer erscheinen. Es wird nichts aufgelistet.</translation>
+    </message>
+    <message>
+        <source>hash: takes hexadecimal digits (0-9, a-f). Nothing is listed.</source>
+        <translation>hash: erwartet Hexadezimalziffern (0-9, a-f). Es wird nichts aufgelistet.</translation>
+    </message>
+    <message>
+        <source>hash: takes at most 64 hexadecimal digits (a SHA-256). Nothing is listed.</source>
+        <translation>hash: erwartet höchstens 64 Hexadezimalziffern (ein SHA-256). Es wird nichts aufgelistet.</translation>
+    </message>
+    <message>
+        <source>Matched against computed {algorithm} hashes: {hashed} of {checked} files have one — files without one can&apos;t match.</source>
+        <translation>Abgeglichen mit berechneten {algorithm}-Hashes: {hashed} von {checked} Dateien haben einen — Dateien ohne können nicht treffen.</translation>
+    </message>
+    <message>
+        <source>Matched against computed hashes (prefix, any algorithm): {hashed} of {checked} files hashed — files without a hash can&apos;t match.</source>
+        <translation>Abgeglichen mit berechneten Hashes (Präfix, jeder Algorithmus): {hashed} von {checked} Dateien gehasht — Dateien ohne Hash können nicht treffen.</translation>
+    </message>
+    <message>
+        <source>Filter… (name:x  type:x  hash:x)</source>
+        <translation>Filtern… (name:x  type:x  hash:x)</translation>
     </message>
     <message>
         <source>Send {selected_entries_count} files to Peach</source>

@@ -9,7 +9,7 @@ All notable changes to Crush will be documented in this file.
 - Added to opening sources, unlocking volumes, exports and `.logarchive` export -> Support for cancelling: a cancelled source is not opened, a cancelled export keeps what it wrote marked as incomplete in `crush-export-cancelled.txt`, and a cancelled hash in integrity mode is logged while the data still opens.
 - Added to the type indexing -> Support for stopping and resuming it from the status bar; the status bar says how far it got.
 - Added to raw disk images -> Support for the Accessed, Changed and Birth times of ext2/3/4, APFS, HFS+ and Btrfs entries in the Properties panel, and HFS+'s Backup date where set.
-- Added to the Filesystem and Properties panels -> Support for hashing files and folders with MD5, SHA-1 and/or SHA-256 (Compute Hash), shown in the Properties panel while the source is open.
+- Added to the Filesystem and Properties panels -> Support for hashing files and folders with MD5, SHA-1 and/or SHA-256 (Compute Hash), shown in the Properties panel while the source is open and searchable with the filter's `hash:` token.
 
 ### Changed
 
@@ -28,6 +28,7 @@ All notable changes to Crush will be documented in this file.
 - A plaintext MMKV store whose `.crc` holds an AES vector, opened with a key, is read as plaintext with the key reported as ignored, instead of failing as a wrong key.
 - Floating panels (Filesystem, Properties, Log) can be resized by dragging their edges and corners; the resize border was a few pixels wide and hard to hit. ([@jensstigaard](https://github.com/jensstigaard), [#198](https://github.com/kalink0/crush-forensics/pull/198))
 - Opening a folder that no viewer recognises by its files, such as Android WebView's `HTTP Cache` (which holds the caches `Cache_Data` and `Code Cache/js`), shows a warning instead of only a status bar message.
+- In integrity mode, an entry with no content read or stored (e.g. a FIFO or device file) is no longer logged and listed in `crush-export-hashes.txt` with the SHA-256 of empty data; it is marked as not hashed.
 
 ## v0.25.0 - 2026-11-07
 

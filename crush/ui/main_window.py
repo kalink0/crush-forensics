@@ -67,7 +67,7 @@ from PySide6.QtWidgets import (
 import crush
 from crush.core import tempdir
 from crush.core.hashing import HashStore
-from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
+from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS, has_no_content
 from crush.core.vfs_stream import CopyCancelledError
 from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog, i18n, relaunch
@@ -578,6 +578,14 @@ def _copy_export_file(
     return (hasher.hexdigest() if hasher is not None else None), total
 
 
+def _no_content_hash_field(node: VFSNode) -> str:
+    """What crush-export-hashes.txt holds instead of a digest for an entry
+    whose status says no content is read or stored (vfs.has_no_content):
+    its file is exported (empty), but the SHA-256 of no bytes would pass
+    for the hash of real content. English, as the rest of the file."""
+    return f"not hashed: no content read ({node.status})"
+
+
 def _write_export_failed_file(base: Path, failed: list[tuple[str, str]]) -> None:
     """The files an export could not read, beside its hash list: one line
     each, evidence path and reason."""
@@ -733,14 +741,18 @@ class _ExportWorker(QObject):
         self._exported += 1
         if digest is None:
             return
-        if self._hashes is not None:
-            self._hashes.record(self._vfs, node, {"sha256": bytes.fromhex(digest)})
         rel_path = target.name
         if self._hash_base is not None:
             try:
                 rel_path = str(target.relative_to(self._hash_base))
             except Exception:
                 rel_path = target.name
+        if has_no_content(node):
+            self._hash_lines.append(f"{_no_content_hash_field(node)}  {total}  {rel_path}")
+            self._logger.info("INTEGRITY export not hashed: no content read  path=%s", target)
+            return
+        if self._hashes is not None:
+            self._hashes.record(self._vfs, node, {"sha256": bytes.fromhex(digest)})
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
@@ -940,6 +952,10 @@ class _ExportMultiWorker(QObject):
             return
         self._exported += 1
         if digest is None:
+            return
+        if has_no_content(node):
+            self._hash_lines.append(f"{_no_content_hash_field(node)}  {total}  {rel_path}")
+            self._logger.info("INTEGRITY export not hashed: no content read  path=%s", target)
             return
         if self._hashes is not None:
             self._hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})
@@ -3586,7 +3602,9 @@ class MainWindow(QMainWindow):
                 return None
             if outcome.status != "ok":
                 raise OSError(outcome.message or "copy failed")
-            if self.session.integrity_mode:
+            if self.session.integrity_mode and has_no_content(node):
+                self._logger.info("INTEGRITY not hashed: no content read  path=%s", node.path)
+            elif self.session.integrity_mode:
                 self._logger.info(
                     "INTEGRITY sha256=%s  size=%d  path=%s",
                     outcome.sha256, outcome.bytes_copied, node.path,
@@ -5554,6 +5572,10 @@ class MainWindow(QMainWindow):
 
     def _hash_node_if_integrity(self, node: VFSNode, vfs: VFS) -> None:
         if not self.session.integrity_mode or node.is_dir:
+            return
+        if has_no_content(node):
+            # The SHA-256 of no bytes would pass for the hash of real content.
+            self._logger.info("INTEGRITY not hashed: no content read  path=%s", node.path)
             return
         import hashlib
 

@@ -11,6 +11,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
@@ -18,6 +19,7 @@ from PySide6.QtGui import QAction, QGuiApplication, QStandardItem, QStandardItem
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCompleter,
+    QLabel,
     QLineEdit,
     QMenu,
     QStackedWidget,
@@ -27,6 +29,15 @@ from PySide6.QtWidgets import (
 )
 
 
+from crush.core.hashing import (
+    DISPLAY_NAMES,
+    QUERY_NOT_HEX,
+    QUERY_TOO_LONG,
+    HashQuery,
+    parse_hash_query,
+    query_can_match,
+    query_matches,
+)
 from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
@@ -54,6 +65,66 @@ def _type_matches(type_filter: str, type_label: str) -> bool:
     if type_filter == "media":
         return label_lower in _MEDIA_TYPE_LABELS
     return type_filter in label_lower
+
+
+_HASH_NEGATED = "negated"  # -hash: -- not supported (see _hash_search_info)
+
+
+@dataclass
+class _HashSearch:
+    """A hash: search and what it could be matched against: *checked*
+    files passed the other filter terms, *hashed* of them have a computed
+    value the query is compared with (see hashing.query_can_match)."""
+
+    query: HashQuery
+    problem: str = ""
+    checked: int = 0
+    hashed: int = 0
+
+
+def _hash_search_info(tokens: dict[str, str]) -> _HashSearch | None:
+    if "-hash" in tokens:
+        # A file without a computed hash would read as "doesn't match".
+        return _HashSearch(parse_hash_query(tokens["-hash"]), _HASH_NEGATED)
+    if "hash" not in tokens:
+        return None
+    query = parse_hash_query(tokens["hash"])
+    return _HashSearch(query, query.problem)
+
+
+def _hash_search_text(info: _HashSearch) -> str:
+    """The note shown with every hash: search: what it was matched against
+    or why nothing could match."""
+    if info.problem == _HASH_NEGATED:
+        return translate(
+            "FilesystemPanel",
+            "-hash: is not supported: a file without a computed hash would read as not "
+            "matching. Nothing is listed.",
+        )
+    if info.problem == QUERY_NOT_HEX:
+        return translate(
+            "FilesystemPanel", "hash: takes hexadecimal digits (0-9, a-f). Nothing is listed."
+        )
+    if info.problem == QUERY_TOO_LONG:
+        return translate(
+            "FilesystemPanel",
+            "hash: takes at most 64 hexadecimal digits (a SHA-256). Nothing is listed.",
+        )
+    if info.query.algorithm is not None:
+        return translate(
+            "FilesystemPanel",
+            "Matched against computed {algorithm} hashes: {hashed} of {checked} files have "
+            "one — files without one can't match.",
+        ).format(
+            algorithm=DISPLAY_NAMES[info.query.algorithm],
+            hashed=f"{info.hashed:,}", checked=f"{info.checked:,}",
+        )
+    return translate(
+        "FilesystemPanel",
+        "Matched against computed hashes (prefix, any algorithm): {hashed} of {checked} "
+        "files hashed — files without a hash can't match.",
+    ).format(hashed=f"{info.hashed:,}", checked=f"{info.checked:,}")
+
 
 # Shown in the Type column until the background type scan has read the head
 # of an entry that can't be read without waiting on its source.
@@ -123,7 +194,7 @@ class FilesystemPanel(QWidget):
     # The type indexing: "running", "stopped" (by the analyst, not finished)
     # or "idle" (finished, or nothing to index), for the stop/resume button.
     type_indexing_state = Signal(str)
-    _search_results_ready = Signal(object)  # internal: list of result dicts
+    _search_results_ready = Signal(object)  # internal: (list of result dicts, _HashSearch | None)
     _prescan_activity = Signal(str, bool)   # internal: (activity_name, is_start)
     _prescan_count = Signal(int, int)       # internal: (files indexed, files to index)
 
@@ -214,7 +285,9 @@ class FilesystemPanel(QWidget):
         layout.setSpacing(0)
 
         self._filter = _FilterLineEdit()
-        self._filter.setPlaceholderText(translate("FilesystemPanel", "Filter… (name:x  type:x)"))
+        self._filter.setPlaceholderText(
+            translate("FilesystemPanel", "Filter… (name:x  type:x  hash:x)")
+        )
         self._filter.setClearButtonEnabled(True)
         self._filter.textChanged.connect(self._on_filter_text_changed)
         self._filter.returnPressed.connect(self._on_filter_return)
@@ -254,7 +327,19 @@ class FilesystemPanel(QWidget):
         self._tree.expanded.connect(self._on_expanded)
         self._stack.addWidget(self._tree)
 
-        # Page 1: flat search results view
+        # Page 1: flat search results view, below a note on what a hash:
+        # search could be matched against (shown only for one).
+        search_page = QWidget()
+        search_layout = QVBoxLayout(search_page)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(0)
+        self._search_note = QLabel()
+        self._search_note.setTextFormat(Qt.TextFormat.PlainText)
+        self._search_note.setWordWrap(True)
+        self._search_note.setContentsMargins(4, 3, 4, 3)
+        self._search_note.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._search_note.setVisible(False)
+        search_layout.addWidget(self._search_note)
         self._search_view = QTreeView()
         self._search_view.setModel(self._search_model)
         self._search_view.setRootIsDecorated(False)
@@ -270,7 +355,8 @@ class FilesystemPanel(QWidget):
         self._search_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._search_view.customContextMenuRequested.connect(self._on_search_context_menu)
         self._search_view.selectionModel().selectionChanged.connect(self._on_search_selection_changed)
-        self._stack.addWidget(self._search_view)
+        search_layout.addWidget(self._search_view)
+        self._stack.addWidget(search_page)
 
         layout.addWidget(self._stack)
 
@@ -936,20 +1022,35 @@ class FilesystemPanel(QWidget):
 
     def _search_worker(self, vfs_list: list[VFS], tokens: dict[str, str], gen: int) -> None:
         results: list[dict] = []
+        hash_info = _hash_search_info(tokens)
+        if hash_info is not None and hash_info.problem:
+            # Nothing can match: say why instead of showing an empty list.
+            if self._search_gen == gen:
+                self._search_results_ready.emit((results, hash_info))
+            return
         for vfs in vfs_list:
-            self._collect_matches(vfs.root(), vfs, tokens, "", results, gen)
+            self._collect_matches(vfs.root(), vfs, tokens, "", results, gen, hash_info)
             if self._search_gen != gen:
                 return
         if self._search_gen == gen:
-            self._search_results_ready.emit(results)
+            self._search_results_ready.emit((results, hash_info))
 
     def _collect_matches(
         self, node: VFSNode, vfs: VFS, tokens: dict[str, str],
         parent_path: str, results: list[dict], gen: int,
+        hash_info: _HashSearch | None = None,
     ) -> None:
         if self._search_gen != gen:
             return
         path = f"{parent_path}/{node.name}" if parent_path else node.name
+        self._match_node(node, vfs, tokens, path, results, hash_info)
+        for child in node.children:
+            self._collect_matches(child, vfs, tokens, path, results, gen, hash_info)
+
+    def _match_node(
+        self, node: VFSNode, vfs: VFS, tokens: dict[str, str], path: str,
+        results: list[dict], hash_info: _HashSearch | None,
+    ) -> None:
 
         name_filter = tokens.get('name')
         name_exclude = tokens.get('-name')
@@ -977,16 +1078,33 @@ class FilesystemPanel(QWidget):
             type_label = None
             type_match = True
 
-        if name_match and type_match:
-            results.append({
-                'node': node, 'vfs': vfs,
-                'path': path, 'type_label': type_label,
-            })
+        if not (name_match and type_match):
+            return
+        if hash_info is not None:
+            # Files only, and only against hashes already computed in this
+            # window: a file without one is counted, never a non-match.
+            if node.is_dir:
+                return
+            hash_info.checked += 1
+            computed = self._session.hashes.get(vfs, node)
+            if not query_can_match(hash_info.query, computed):
+                return
+            hash_info.hashed += 1
+            if not query_matches(hash_info.query, computed):
+                return
+        results.append({
+            'node': node, 'vfs': vfs,
+            'path': path, 'type_label': type_label,
+        })
 
-        for child in node.children:
-            self._collect_matches(child, vfs, tokens, path, results, gen)
+    def _show_search_note(self, hash_info: _HashSearch | None) -> None:
+        text = _hash_search_text(hash_info) if hash_info is not None else ""
+        self._search_note.setText(text)
+        self._search_note.setVisible(bool(text))
 
-    def _on_search_results_ready(self, results: list[dict]) -> None:
+    def _on_search_results_ready(self, payload: object) -> None:
+        results, hash_info = payload  # type: ignore[misc]
+        self._show_search_note(hash_info)
         self._type_queue.clear()
         self._search_model.setRowCount(0)
         self._search_fit.clear_content()

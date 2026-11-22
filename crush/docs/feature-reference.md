@@ -341,8 +341,12 @@ While the filter is active, the tree is replaced by a **flat search results list
 | `type:opus` | Matches Opus voice notes (WhatsApp `.opus`, Telegram `.ogg`) detected by codec header |
 | `type:ogg` | Matches OGG Vorbis audio files |
 | `name:rubin type:sqlite` | AND — only files whose name contains `rubin` **and** whose type is SQLite |
+| `hash:2c1743a391305fbf367df8e4f069f9f9` | Files with this hash among those already computed in this window — the length says the algorithm: 32 hex digits MD5, 40 SHA-1, 64 SHA-256 |
+| `hash:2c17` | Shorter: files with a computed hash (any algorithm) that starts with `2c17` |
 
 Multiple tokens are always AND-combined. The `type:` token matches against the format label in the Type column, which is detected from file content (magic bytes) — not from the file extension. This means a HEIC image named `photo.jpeg` will still match `type:heic`.
+
+The `hash:` token matches only hashes already computed in this window — by **Compute Hash**, or the SHA-256 of [integrity mode](#integrity-mode) — every value of an entry, including a differing later one; the filter itself hashes nothing. It is case-insensitive and lists files only. With every `hash:` search, a line above the results says what it was matched against, e.g. `Matched against computed MD5 hashes: 1,204 of 12,500 files have one — files without one can't match.` (the files counted are those the other filter terms let through). A file without a computed hash — never hashed, unreadable, or with no content read — is counted there and never treated as not matching. `-hash:` (negation) is not supported, as a file without a computed hash would read as not matching; it lists nothing and says so, as does a value that isn't hexadecimal or is longer than 64 digits.
 
 **Interacting with results**
 
@@ -1284,6 +1288,7 @@ Integrity mode adds hashing and traceability to file access:
 - Opening a folder does not hash the full directory.
 - **Open in New Window** hashes the member while it is being extracted (one pass) and logs it.
 - Exports also create a `crush-export-hashes.txt` file next to the exported data.
+- An entry whose entry status says no content is read or stored (a special file such as a FIFO or device, a link whose target isn't decoded, an entry with no content in a backup …) is not hashed: the SHA-256 of no bytes would pass for the hash of real content. On open and extraction the log records `INTEGRITY not hashed: no content read  path=…`; an export still writes its (empty) file, so the exported structure stays complete, and lists it in `crush-export-hashes.txt` as `not hashed: no content read (<entry status>)` instead of a digest, logging `INTEGRITY export not hashed: no content read`.
 - The SHA-256 of a file opened, extracted or exported is also shown in the Properties panel as **SHA-256 (computed)** while its source is open. A later **Compute Hash** reads the file again and is compared against it: a different value is shown next to the first, with a warning. The hash of a source file itself (on open) is in the log only.
 - Hashing a source or a file being opened can be cancelled in its dialog. The data still opens; the log records `INTEGRITY ... not hashed: hashing cancelled by the analyst` and the status bar says it was not hashed. A later export hashes what it writes as usual.
 - The bottom-right status badge shows the current mode. Click the badge to toggle it, or right-click it for a quick menu and a short explanation.
