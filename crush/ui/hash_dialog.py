@@ -57,7 +57,7 @@ from crush.core.hashing import (
     iter_files,
 )
 from crush.core.issues import render_value
-from crush.core.vfs import VFS, VFSNode
+from crush.core.vfs import VFS, VFSNode, has_no_content
 from crush.ui.extract_dialog import format_size
 from crush.ui.i18n import translate
 from crush.ui.log_scope import window_log_scope
@@ -69,6 +69,7 @@ _logger = logging.getLogger(__name__)
 # Outcomes of one row (plain facts; the dialog words them).
 OK = "ok"
 NOT_READ = "not_read"
+NO_CONTENT = "no_content"  # the entry's status says no content is read or stored
 FOLDER = "folder"
 
 
@@ -84,8 +85,11 @@ def add_hash_actions(menu: QMenu) -> dict[QAction, tuple[str, ...]]:
 
 
 def add_hash_menu(menu: QMenu, title: str | None = None) -> dict[QAction, tuple[str, ...]]:
-    """A "Compute Hash" submenu in *menu*; see add_hash_actions."""
-    sub = menu.addMenu(title or translate("HashDialog", "Compute Hash"))
+    """A "Compute Hash" submenu in *menu*; see add_hash_actions. The
+    submenu is parented to *menu*, so it lives as long as *menu* does, not
+    only as long as this call holds a reference to it."""
+    sub = QMenu(title or translate("HashDialog", "Compute Hash"), menu)
+    menu.addMenu(sub)
     return add_hash_actions(sub)
 
 
@@ -93,7 +97,8 @@ def add_hash_menu(menu: QMenu, title: str | None = None) -> dict[QAction, tuple[
 class HashRow:
     node: VFSNode
     vfs: VFS
-    outcome: str  # OK, NOT_READ or FOLDER
+    outcome: str  # OK, NOT_READ, NO_CONTENT or FOLDER
+    source: str = ""  # the source the entry belongs to (paths are relative to it)
     digests: dict[str, bytes] = field(default_factory=dict)
     bytes_read: int | None = None
     reason: str = ""  # why it was not read
@@ -121,6 +126,7 @@ class _HashWorker(QObject):
         store: HashStore,
         cancel: threading.Event,
         window_id: str | None,
+        source_names: dict[int, str] | None = None,
     ) -> None:
         super().__init__()
         self._entries = entries
@@ -128,6 +134,10 @@ class _HashWorker(QObject):
         self._store = store
         self._cancel = cancel
         self._window_id = window_id
+        self._source_names = source_names or {}
+
+    def _source(self, vfs: VFS) -> str:
+        return self._source_names.get(id(vfs)) or vfs.root().name
 
     def run(self) -> None:
         with window_log_scope(self._window_id):
@@ -167,21 +177,31 @@ class _HashWorker(QObject):
             for node, vfs in nodes:
                 if self._cancel.is_set():
                     raise HashCancelled()
+                source = self._source(vfs)
                 if node.is_dir:
-                    rows.append(HashRow(node, vfs, FOLDER))
+                    rows.append(HashRow(node, vfs, FOLDER, source))
+                    continue
+                if has_no_content(node):
+                    rows.append(HashRow(node, vfs, NO_CONTENT, source))
+                    _logger.info(
+                        "HASH not computed, no content is read or stored: %s (%s)",
+                        node.path, node.status,
+                    )
+                    files_done += 1
+                    bytes_before += node.size
                     continue
                 try:
                     digests, read = hash_node(
                         vfs, node, self._algorithms, cancelled=self._cancel.is_set, progress=report
                     )
                 except HashReadError as exc:
-                    rows.append(HashRow(node, vfs, NOT_READ, reason=str(exc)))
+                    rows.append(HashRow(node, vfs, NOT_READ, source, reason=str(exc)))
                     _logger.warning("HASH not computed, could not be read: %s: %s", node.path, exc)
                 else:
                     self._store.record(vfs, node, digests)
                     known = self._store.get(vfs, node)
                     differs = any(len(known.get(alg, [])) > 1 for alg in digests)
-                    rows.append(HashRow(node, vfs, OK, digests, read, differs=differs))
+                    rows.append(HashRow(node, vfs, OK, source, digests, read, differs=differs))
                     _logger.info(
                         "HASH %s  size=%d  path=%s",
                         "  ".join(f"{alg}={digests[alg].hex()}" for alg in self._algorithms),
@@ -245,9 +265,12 @@ def compute_hashes_with_progress(
     algorithms: tuple[str, ...],
     store: HashStore,
     window_id: str | None = None,
+    source_names: dict[int, str] | None = None,
 ) -> HashRun:
     """Hash *entries* (folders all the way down) behind a modal progress
-    dialog with Cancel; the UI keeps repainting (nested event loop)."""
+    dialog with Cancel; the UI keeps repainting (nested event loop).
+    *source_names*: id(vfs) -> what the source was opened from, for the
+    Source column (else the source's root name)."""
     cancel = threading.Event()
     dialog = QProgressDialog(
         translate("HashDialog", "Hashing…"),
@@ -266,7 +289,7 @@ def compute_hashes_with_progress(
 
     loop = QEventLoop(parent)
     thread = QThread(parent)
-    worker = _HashWorker(entries, algorithms, store, cancel, window_id)
+    worker = _HashWorker(entries, algorithms, store, cancel, window_id, source_names)
     controller = _HashController(parent, dialog, loop)
     worker.moveToThread(thread)
     thread.started.connect(worker.run)
@@ -306,6 +329,8 @@ def outcome_text(row: HashRow) -> str:
         return translate("HashDialog", "Not hashed: could not be read: {reason}").format(
             reason=row.reason
         )
+    if row.outcome == NO_CONTENT:
+        return translate("HashDialog", "Not hashed: no content read (see Entry status)")
     return translate("HashDialog", "Folder with an entry status: see Entry status")
 
 
@@ -320,6 +345,7 @@ class HashResultModel(QAbstractTableModel):
         super().__init__(parent)
         self._run = run
         self._headers = [
+            translate("HashDialog", "Source"),
             translate("HashDialog", "Path"),
             translate("HashDialog", "Bytes read"),
             *(DISPLAY_NAMES[alg] for alg in run.algorithms),  # i18n: keep -- algorithm names
@@ -351,6 +377,7 @@ class HashResultModel(QAbstractTableModel):
 
     def cells(self, row: HashRow) -> list[str]:
         return [
+            row.source,
             row.node.path,
             f"{row.bytes_read:,}" if row.bytes_read is not None else "",
             *(row.digests[alg].hex() if alg in row.digests else "" for alg in self._run.algorithms),
@@ -374,6 +401,11 @@ def summary_lines(run: HashRun) -> list[str]:
     ]
     if not_read:
         lines.append(translate("HashDialog", "{n} could not be read.").format(n=f"{not_read:,}"))
+    no_content = sum(1 for r in run.rows if r.outcome == NO_CONTENT)
+    if no_content:
+        lines.append(translate(
+            "HashDialog", "{n} not hashed: no content is read or stored for them (see Entry status)."
+        ).format(n=f"{no_content:,}"))
     if folders:
         lines.append(translate(
             "HashDialog",
@@ -448,9 +480,10 @@ class HashResultDialog(QDialog):
         header.setStretchLastSection(True)
         # Fixed widths, not ResizeToContents: that measures every row.
         metrics = self.table.fontMetrics()
-        self.table.setColumnWidth(0, 380)
-        self.table.setColumnWidth(1, metrics.horizontalAdvance("0" * 16))
-        for i, alg in enumerate(run.algorithms, start=2):
+        self.table.setColumnWidth(0, 220)
+        self.table.setColumnWidth(1, 380)
+        self.table.setColumnWidth(2, metrics.horizontalAdvance("0" * 16))
+        for i, alg in enumerate(run.algorithms, start=3):
             hex_chars = 2 * hashlib.new(alg).digest_size
             self.table.setColumnWidth(i, metrics.horizontalAdvance("f" * (hex_chars + 2)))
         layout.addWidget(self.table)

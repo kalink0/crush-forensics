@@ -57,6 +57,66 @@ def test_hash_node_matches_hashlib_for_every_algorithm(tree: Path) -> None:
         assert digests[alg] == hashlib.new(alg, b"alpha").digest()
 
 
+def test_hash_node_gives_the_published_reference_digests(tmp_path: Path) -> None:
+    # FIPS 180-2 / RFC 1321 test vectors: "abc" and one million "a".
+    (tmp_path / "abc").write_bytes(b"abc")
+    (tmp_path / "million_a").write_bytes(b"a" * 1_000_000)
+    vfs = DirectoryVFS(tmp_path)
+    abc, _ = hash_node(vfs, _child(vfs, "abc"), ALGORITHMS)
+    assert abc["md5"].hex() == "900150983cd24fb0d6963f7d28e17f72"
+    assert abc["sha1"].hex() == "a9993e364706816aba3e25717850c26c9cd0d89d"
+    assert abc["sha256"].hex() == (
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    )
+    million, read = hash_node(vfs, _child(vfs, "million_a"), ALGORITHMS)
+    assert read == 1_000_000
+    assert million["md5"].hex() == "7707d6ae4e027c70eea2a935c2296f21"
+    assert million["sha1"].hex() == "34aa973cd4c4daa4f61eeb2bdbad27316534016f"
+    assert million["sha256"].hex() == (
+        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+    )
+
+
+def test_hash_node_reads_a_file_larger_than_one_chunk(tmp_path: Path) -> None:
+    size = 3 * 1024 * 1024 + 123  # three full 1 MiB reads and a short one
+    data = bytes(range(256)) * (size // 256) + bytes(range(size % 256))
+    (tmp_path / "big.bin").write_bytes(data)
+    vfs = DirectoryVFS(tmp_path)
+    seen: list[int] = []
+    digests, read = hash_node(vfs, _child(vfs, "big.bin"), ALGORITHMS, progress=seen.append)
+    assert read == size
+    assert seen == [1024 * 1024, 2 * 1024 * 1024, 3 * 1024 * 1024, size]
+    for alg in ALGORITHMS:
+        assert digests[alg] == hashlib.new(alg, data).digest()
+
+
+def test_run_progress_counts_bytes_across_chunks(qapp, tmp_path: Path) -> None:
+    from crush.ui import hash_dialog
+
+    (tmp_path / "big.bin").write_bytes(b"\x5a" * (2 * 1024 * 1024 + 1))
+    (tmp_path / "small.bin").write_bytes(b"x")
+    vfs = DirectoryVFS(tmp_path)
+    worker = hash_dialog._HashWorker(
+        [(vfs.root(), vfs)], ("sha256",), HashStore(), threading.Event(), None
+    )
+    reports: list[tuple] = []
+    worker.progress.connect(lambda *args: reports.append(args))
+    interval = hash_dialog._PROGRESS_INTERVAL
+    hash_dialog._PROGRESS_INTERVAL = 0.0  # every chunk reported
+    try:
+        got: list = []
+        worker.finished.connect(got.append)
+        worker._run()
+    finally:
+        hash_dialog._PROGRESS_INTERVAL = interval
+        worker.deleteLater()
+    bytes_done = [r[2] for r in reports]
+    assert bytes_done == sorted(bytes_done)
+    assert bytes_done[-1] == 2 * 1024 * 1024 + 2
+    assert all(r[3] == 2 * 1024 * 1024 + 2 for r in reports)
+    assert len(got[0].rows) == 2
+
+
 def test_hash_node_only_the_chosen_algorithm(tree: Path) -> None:
     vfs = DirectoryVFS(tree)
     digests, _ = hash_node(vfs, _child(vfs, "a.txt"), ("sha1",))
@@ -247,9 +307,9 @@ def test_saved_list_has_one_column_per_chosen_algorithm(qapp, tree: Path) -> Non
     lines = [ln for ln in export_text(HashResultModel(run), run, "txt").splitlines()
              if not ln.startswith("#")]
     header, row = lines[0].split("\t"), lines[1].split("\t")
-    assert header[2:4] == ["MD5", "SHA-256"]
-    assert row[2] == hashlib.md5(b"alpha").hexdigest()
-    assert row[3] == hashlib.sha256(b"alpha").hexdigest()
+    assert header[3:5] == ["MD5", "SHA-256"]
+    assert row[3] == "2c1743a391305fbf367df8e4f069f9f9"  # MD5 of b"alpha"
+    assert row[4] == hashlib.sha256(b"alpha").hexdigest()
 
 
 def test_progress_path_runs_on_a_worker_thread_and_returns(qapp, widgets, tree: Path) -> None:
@@ -275,6 +335,9 @@ def test_hash_menu_offers_each_algorithm_and_all(qapp, widgets) -> None:
 
     menu = widgets(QMenu())
     actions = add_hash_menu(menu)
+    import gc
+
+    gc.collect()  # the submenu must outlive the call that built it
     assert [(a.text(), algs) for a, algs in actions.items()] == [
         ("MD5", ("md5",)), ("SHA-1", ("sha1",)), ("SHA-256", ("sha256",)), ("All", ALGORITHMS),
     ]
@@ -352,6 +415,174 @@ def test_panel_hash_button_requests_the_chosen_algorithm(qapp, widgets, tree: Pa
     sha1 = next(a for a in button.menu().actions() if a.text() == "SHA-1")
     sha1.trigger()
     assert got == [(node, vfs, ("sha1",))]
+
+
+# --- entries with no content ---------------------------------------------------------
+
+def test_has_no_content_follows_the_status_also_when_joined() -> None:
+    from crush.core.vfs import has_no_content, join_notes
+
+    special = ParseIssue("entry.special_stored", {"kind": "FIFO"})
+    duplicate = ParseIssue("entry.duplicate", {"count": 2, "k": 1})
+    assert has_no_content(VFSNode("f", "/f", False, status=special))
+    assert has_no_content(VFSNode("f", "/f", False, status=join_notes([duplicate, special])))
+    assert not has_no_content(VFSNode("f", "/f", False, status=duplicate))
+    assert not has_no_content(VFSNode("f", "/f", False))
+    link = ParseIssue("entry.symlink_folder", {"target": "x"})  # its content is the target text
+    assert not has_no_content(VFSNode("l", "/l", False, status=link))
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="needs a FIFO")
+def test_a_special_file_is_listed_as_not_hashed_and_not_kept(qapp, tree: Path) -> None:
+    import os
+
+    from crush.ui.hash_dialog import NO_CONTENT, outcome_text, summary_lines
+
+    os.mkfifo(tree / "pipe")
+    vfs = DirectoryVFS(tree)
+    pipe = _child(vfs, "pipe")
+    store = HashStore()
+    run = _run([(vfs.root(), vfs)], ALGORITHMS, store)
+    row = next(r for r in run.rows if r.node is pipe)
+    assert row.outcome == NO_CONTENT
+    assert row.digests == {}
+    assert outcome_text(row) == "Not hashed: no content read (see Entry status)"
+    assert any("no content is read or stored" in line for line in summary_lines(run))
+    assert store.get(vfs, pipe) == {}
+    # An integrity hash of it (the digest of no bytes) is not kept either.
+    store.record(vfs, pipe, {"md5": bytes.fromhex("d41d8cd98f00b204e9800998ecf8427e")})
+    assert store.get(vfs, pipe) == {}
+
+
+# --- the source of each row ----------------------------------------------------------
+
+def test_rows_and_the_saved_list_name_their_source(qapp, tree: Path, tmp_path_factory) -> None:
+    from crush.ui.hash_dialog import HashResultModel, export_text
+
+    other_dir = tmp_path_factory.mktemp("other")
+    (other_dir / "a.txt").write_bytes(b"other")
+    session = Session()
+    first = session.add_source(tree)
+    second = session.add_source(other_dir)
+    entries = [(_child(first, "a.txt"), first), (_child(second, "a.txt"), second)]
+    names = {id(v): session.source_label(v) for _, v in entries}
+    run = _run_with_sources(entries, ("md5",), HashStore(), names)
+    assert [r.source for r in run.rows] == [str(tree), str(other_dir)]
+    rows = [ln.split("\t") for ln in export_text(HashResultModel(run), run, "txt").splitlines()
+            if not ln.startswith("#")]
+    assert rows[0][0] == "Source"
+    assert [r[0] for r in rows[1:]] == [str(tree), str(other_dir)]
+    session.close()
+
+
+def test_source_label_follows_a_source_read_again_and_falls_back_to_its_name(
+    tree: Path,
+) -> None:
+    session = Session()
+    vfs = session.add_source(tree)
+    again = DirectoryVFS(tree)
+    session.replace_source(vfs, again)
+    assert session.source_label(again) == str(tree)
+    unknown = DirectoryVFS(tree)
+    assert session.source_label(unknown) == unknown.root().name
+    session.close()
+
+
+def _run_with_sources(entries: list, algorithms: tuple[str, ...], store: HashStore, names):  # noqa: ANN001, ANN202
+    from crush.ui.hash_dialog import _HashWorker
+
+    worker = _HashWorker(entries, algorithms, store, threading.Event(), None, names)
+    got: list = []
+    worker.finished.connect(got.append)
+    worker._run()
+    worker.deleteLater()
+    return got[0]
+
+
+# --- batch menus: folders count as entries ---------------------------------------------
+
+def _menu_texts(menu) -> list[str]:  # noqa: ANN001
+    return [a.text() for a in menu.actions() if a.text()]
+
+
+def _trigger(menu, actions, title: str, algorithm: str) -> None:  # noqa: ANN001
+    sub = next(a.menu() for a in menu.actions() if a.text() == title)
+    chosen = next(a for a in sub.actions() if a.text() == algorithm)
+    actions[chosen]()
+
+
+def test_tree_batch_menu_hashes_two_folders(qapp, widgets, tree: Path) -> None:
+    from crush.ui.fs_panel import FilesystemPanel
+
+    (tree / "sub2").mkdir()
+    vfs = DirectoryVFS(tree)
+    folders = [(_child(vfs, "sub"), vfs), (_child(vfs, "sub2"), vfs)]
+    panel = widgets(FilesystemPanel(Session()))
+    got: list = []
+    panel.hash_requested.connect(lambda entries, algs: got.append((entries, algs)))
+    batch = panel._tree_batch_menu([], folders, True)
+    assert batch is not None
+    menu, actions = batch
+    assert _menu_texts(menu) == ["Compute Hash of 2 selected entries"]  # no Peach: no files
+    _trigger(menu, actions, "Compute Hash of 2 selected entries", "SHA-1")
+    assert got == [(folders, ("sha1",))]
+    menu.deleteLater()
+
+
+def test_tree_batch_menu_for_a_file_and_a_folder(qapp, widgets, tree: Path) -> None:
+    from crush.ui.fs_panel import FilesystemPanel
+
+    vfs = DirectoryVFS(tree)
+    file_entry = (_child(vfs, "a.txt"), vfs)
+    mixed = [(_child(vfs, "sub"), vfs), file_entry]
+    panel = widgets(FilesystemPanel(Session()))
+    batch = panel._tree_batch_menu([file_entry], mixed, True)
+    assert batch is not None
+    assert _menu_texts(batch[0]) == ["Compute Hash of 2 selected entries"]
+    batch[0].deleteLater()
+    # Outside the selection, or one entry only: the single-entry menu.
+    assert panel._tree_batch_menu([file_entry], mixed, False) is None
+    assert panel._tree_batch_menu([file_entry], [file_entry], True) is None
+
+
+def test_tree_batch_menu_keeps_send_to_peach_for_two_files(qapp, widgets, tree: Path) -> None:
+    from crush.ui.fs_panel import FilesystemPanel
+
+    (tree / "c.txt").write_bytes(b"c")
+    vfs = DirectoryVFS(tree)
+    files = [(_child(vfs, "a.txt"), vfs), (_child(vfs, "c.txt"), vfs)]
+    panel = widgets(FilesystemPanel(Session()))
+    batch = panel._tree_batch_menu(files, [*files, (_child(vfs, "sub"), vfs)], True)
+    assert batch is not None
+    assert _menu_texts(batch[0]) == [
+        "Send 2 files to Peach", "Compute Hash of 3 selected entries",
+    ]
+    batch[0].deleteLater()
+
+
+def test_search_batch_menu_hashes_folders_and_exports_files_only(
+    qapp, widgets, tree: Path,
+) -> None:
+    from crush.ui.fs_panel import FilesystemPanel
+
+    (tree / "sub2").mkdir()
+    (tree / "c.txt").write_bytes(b"c")
+    vfs = DirectoryVFS(tree)
+    panel = widgets(FilesystemPanel(Session()))
+    folders = [(_child(vfs, "sub"), vfs), (_child(vfs, "sub2"), vfs)]
+    batch = panel._search_batch_menu([], folders, lambda: [])
+    assert batch is not None
+    assert _menu_texts(batch[0]) == ["Compute Hash of 2 selected entries"]
+    batch[0].deleteLater()
+
+    files = [(_child(vfs, n), vfs, f"/{n}") for n in ("a.txt", "c.txt")]
+    batch = panel._search_batch_menu(files, [(n, v) for n, v, _ in files], lambda: files)
+    assert batch is not None
+    assert _menu_texts(batch[0]) == [
+        "Export 2 selected files…", "Compute Hash of 2 selected entries",
+    ]
+    batch[0].deleteLater()
+    assert panel._search_batch_menu([], folders[:1], lambda: []) is None
 
 
 # --- integrity hashes go to the store ----------------------------------------------

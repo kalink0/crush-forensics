@@ -956,7 +956,7 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
     </message>
     <message>
         <source>Compute Hash of {count} selected entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Hash der {count} ausgewählten Einträge berechnen</translation>
     </message>
     <message>
         <source>Export {selected_entries_count} selected files…</source>
@@ -6308,117 +6308,131 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
     <name>HashDialog</name>
     <message>
         <source>All</source>
-        <translation type="unfinished"></translation>
+        <translation>Alle</translation>
     </message>
     <message>
         <source>Compute Hash</source>
-        <translation type="unfinished"></translation>
+        <translation>Hash berechnen</translation>
     </message>
     <message>
         <source>Hashing file {done} of {total}
 {bytes_done} of {bytes_total}</source>
-        <translation type="unfinished"></translation>
+        <translation>Datei {done} von {total} wird gehasht
+{bytes_done} von {bytes_total}</translation>
     </message>
     <message>
         <source>Hashing…</source>
-        <translation type="unfinished"></translation>
+        <translation>Wird gehasht…</translation>
     </message>
     <message>
         <source>Cancel</source>
-        <translation type="unfinished"></translation>
+        <translation>Abbrechen</translation>
     </message>
     <message>
         <source>Computed over the entry&apos;s content as Crush reads it (for an archive member: its unpacked content).</source>
-        <translation type="unfinished"></translation>
+        <translation>Berechnet über den Inhalt des Eintrags, wie Crush ihn liest (bei einem Archiveintrag: über seinen entpackten Inhalt).</translation>
     </message>
     <message>
         <source>Hashed — differs from a value computed earlier</source>
-        <translation type="unfinished"></translation>
+        <translation>Gehasht — weicht von einem früher berechneten Wert ab</translation>
     </message>
     <message>
         <source>Hashed</source>
-        <translation type="unfinished"></translation>
+        <translation>Gehasht</translation>
     </message>
     <message>
         <source>Not hashed: could not be read: {reason}</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht gehasht: konnte nicht gelesen werden: {reason}</translation>
+    </message>
+    <message>
+        <source>Not hashed: no content read (see Entry status)</source>
+        <translation>Nicht gehasht: kein Inhalt gelesen (siehe Eintragstatus)</translation>
     </message>
     <message>
         <source>Folder with an entry status: see Entry status</source>
-        <translation type="unfinished"></translation>
+        <translation>Ordner mit Eintragstatus: siehe Eintragstatus</translation>
+    </message>
+    <message>
+        <source>Source</source>
+        <translation>Quelle</translation>
     </message>
     <message>
         <source>Path</source>
-        <translation type="unfinished"></translation>
+        <translation>Pfad</translation>
     </message>
     <message>
         <source>Bytes read</source>
-        <translation type="unfinished"></translation>
+        <translation>Gelesene Bytes</translation>
     </message>
     <message>
         <source>Result</source>
-        <translation type="unfinished"></translation>
+        <translation>Ergebnis</translation>
     </message>
     <message>
         <source>Entry status</source>
-        <translation type="unfinished"></translation>
+        <translation>Eintragstatus</translation>
     </message>
     <message>
         <source>{hashed} of {total} files hashed.</source>
-        <translation type="unfinished"></translation>
+        <translation>{hashed} von {total} Dateien gehasht.</translation>
     </message>
     <message>
         <source>{n} could not be read.</source>
-        <translation type="unfinished"></translation>
+        <translation>{n} konnten nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <source>{n} not hashed: no content is read or stored for them (see Entry status).</source>
+        <translation>{n} nicht gehasht: Für sie wird kein Inhalt gelesen oder ist keiner gespeichert (siehe Eintragstatus).</translation>
     </message>
     <message>
         <source>{n} folder(s) with an entry status (for one that couldn&apos;t be listed, its files are missing here).</source>
-        <translation type="unfinished"></translation>
+        <translation>{n} Ordner mit Eintragstatus (bei einem Ordner, der nicht aufgelistet werden konnte, fehlen seine Dateien hier).</translation>
     </message>
     <message>
         <source>{n} differ from a value computed earlier for the same entry.</source>
-        <translation type="unfinished"></translation>
+        <translation>{n} weichen von einem früher für denselben Eintrag berechneten Wert ab.</translation>
     </message>
     <message>
         <source>Hashing was cancelled: this list is incomplete.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Hashen wurde abgebrochen: Diese Liste ist unvollständig.</translation>
     </message>
     <message>
         <source>Hashing stopped on an error: this list is incomplete. {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Hashen wurde wegen eines Fehlers beendet: Diese Liste ist unvollständig. {error}</translation>
     </message>
     <message>
         <source>Computed Hashes</source>
-        <translation type="unfinished"></translation>
+        <translation>Berechnete Hashes</translation>
     </message>
     <message>
         <source>Copy All</source>
-        <translation type="unfinished"></translation>
+        <translation>Alles kopieren</translation>
     </message>
     <message>
         <source>Save As…</source>
-        <translation type="unfinished"></translation>
+        <translation>Speichern unter…</translation>
     </message>
     <message>
         <source>Preparing the list…</source>
-        <translation type="unfinished"></translation>
+        <translation>Liste wird vorbereitet…</translation>
     </message>
     <message>
         <source>CSV (*.csv)</source>
-        <translation type="unfinished"></translation>
+        <translation>CSV (*.csv)</translation>
     </message>
     <message>
         <source>Tab-separated text (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabulatorgetrennter Text (*.txt)</translation>
     </message>
     <message>
         <source>Save Hashes</source>
-        <translation type="unfinished"></translation>
+        <translation>Hashes speichern</translation>
     </message>
     <message>
         <source>The list could not be saved:
 {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Liste konnte nicht gespeichert werden:
+{error}</translation>
     </message>
 </context>
 <context>
@@ -13330,7 +13344,7 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>Compute Hash…</source>
-        <translation type="unfinished"></translation>
+        <translation>Hash berechnen…</translation>
     </message>
     <message>
         <source>Only the modification time is read from this source. Accessed, Changed, and Birth are not available.</source>
@@ -13394,11 +13408,11 @@ YnBsaXN0MDA…       (Base64)
     </message>
     <message>
         <source>{algorithm} (computed):</source>
-        <translation type="unfinished"></translation>
+        <translation>{algorithm} (berechnet):</translation>
     </message>
     <message>
         <source>Different values were computed for this entry: its content as read changed between computations.</source>
-        <translation type="unfinished"></translation>
+        <translation>Für diesen Eintrag wurden unterschiedliche Werte berechnet: Sein gelesener Inhalt hat sich zwischen den Berechnungen geändert.</translation>
     </message>
     <message>
         <source>Backup</source>

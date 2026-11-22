@@ -10,10 +10,11 @@ import os
 import queue
 import threading
 import time
+from collections.abc import Callable
 from typing import overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
-from PySide6.QtGui import QGuiApplication, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QAction, QGuiApplication, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCompleter,
@@ -520,33 +521,95 @@ class FilesystemPanel(QWidget):
             return
 
         global_pos = self._tree.viewport().mapToGlobal(pos)
-        selected_entries = self._collect_tree_selected_entries()
-        if len(selected_entries) > 1 and self._tree.selectionModel().isSelected(proxy_index):
-            # Right-clicked inside an active multi-selection of 2+ files —
-            # a minimal batch menu instead of the full single-node one,
-            # same pattern as the search view's multi-select export menu.
-            # Compute Hash takes the selected folders along.
-            selected_all = self._collect_tree_selected_entries(include_dirs=True)
-            menu = QMenu(self)
-            send_action = menu.addAction(
-                translate("FilesystemPanel", "Send {selected_entries_count} files to Peach").format(
-                    selected_entries_count=len(selected_entries)
-                )
-            )
-            hash_actions = add_hash_menu(
-                menu,
-                translate("FilesystemPanel", "Compute Hash of {count} selected entries").format(
-                    count=len(selected_all)
-                ),
-            )
-            action = menu.exec(global_pos)
-            if action == send_action:
-                self.send_to_peach_batch_requested.emit(selected_entries)
-            elif action in hash_actions:
-                self.hash_requested.emit(selected_all, hash_actions[action])
+        batch = self._tree_batch_menu(
+            self._collect_tree_selected_entries(),
+            self._collect_tree_selected_entries(include_dirs=True),
+            self._tree.selectionModel().isSelected(proxy_index),
+        )
+        if batch is not None:
+            menu, actions = batch
+            chosen = menu.exec(global_pos)
+            if chosen in actions:
+                actions[chosen]()
             return
 
         self._show_context_menu(node, vfs, global_pos)
+
+    def _tree_batch_menu(
+        self,
+        files: list[tuple[VFSNode, VFS]],
+        entries: list[tuple[VFSNode, VFS]],
+        clicked_selected: bool,
+    ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
+        """The batch menu for a right-click inside a selection of 2+ entries
+        (files and folders), or None for the single-entry menu. Send to
+        Peach takes files only and is offered for 2+ of them; Compute Hash
+        takes every selected entry, folders all the way down."""
+        if len(entries) < 2 or not clicked_selected:
+            return None
+        menu = QMenu(self)
+        actions: dict[QAction, Callable[[], None]] = {}
+        if len(files) > 1:
+            send_action = menu.addAction(
+                translate("FilesystemPanel", "Send {selected_entries_count} files to Peach").format(
+                    selected_entries_count=len(files)
+                )
+            )
+            actions[send_action] = lambda: self.send_to_peach_batch_requested.emit(files)
+        self._add_batch_hash_menu(menu, actions, entries)
+        return menu, actions
+
+    def _add_batch_hash_menu(
+        self,
+        menu: QMenu,
+        actions: dict[QAction, Callable[[], None]],
+        entries: list[tuple[VFSNode, VFS]],
+    ) -> None:
+        hash_actions = add_hash_menu(
+            menu,
+            translate("FilesystemPanel", "Compute Hash of {count} selected entries").format(
+                count=len(entries)
+            ),
+        )
+        for action, algorithms in hash_actions.items():
+            actions[action] = lambda algs=algorithms: self.hash_requested.emit(entries, algs)
+
+    def _search_batch_menu(
+        self,
+        files: list[tuple[VFSNode, VFS, str]],
+        entries: list[tuple[VFSNode, VFS]],
+        all_files: Callable[[], list[tuple[VFSNode, VFS, str]]],
+    ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
+        """The search results' batch menu for 2+ selected entries, or None.
+        Export takes files only and is offered for 2+ of them, as before;
+        Compute Hash takes every selected entry."""
+        if len(entries) < 2:
+            return None
+        menu = QMenu(self)
+        actions: dict[QAction, Callable[[], None]] = {}
+        if len(files) > 1:
+            every = all_files()
+            export_sel = menu.addAction(
+                translate(
+                    "FilesystemPanel", "Export {selected_entries_count} selected files…"
+                ).format(selected_entries_count=len(files))
+            )
+            actions[export_sel] = lambda: self.export_multi_requested.emit(
+                files, self._filter.text().strip()
+            )
+            if len(every) > len(files):
+                menu.addSeparator()
+                export_all = menu.addAction(
+                    translate("FilesystemPanel", "Export all {all_entries_count} results…").format(
+                        all_entries_count=len(every)
+                    )
+                )
+                actions[export_all] = lambda: self.export_multi_requested.emit(
+                    every, self._filter.text().strip()
+                )
+            menu.addSeparator()
+        self._add_batch_hash_menu(menu, actions, entries)
+        return menu, actions
 
     def _collect_result_entries(
         self, rows: object, include_dirs: bool = False,
@@ -572,44 +635,16 @@ class FilesystemPanel(QWidget):
         global_pos = self._search_view.viewport().mapToGlobal(pos)
 
         selected_rows = sorted({idx.row() for idx in self._search_view.selectedIndexes()})
-        selected_entries = self._collect_result_entries(selected_rows)
-
-        if len(selected_entries) > 1:
-            all_entries = self._collect_result_entries(range(self._search_model.rowCount()))
-            menu = QMenu(self)
-            export_sel = menu.addAction(
-                translate(
-                    "FilesystemPanel", "Export {selected_entries_count} selected files…"
-                ).format(selected_entries_count=len(selected_entries))
-            )
-            export_all = None
-            if len(all_entries) > len(selected_entries):
-                menu.addSeparator()
-                export_all = menu.addAction(
-                    translate("FilesystemPanel", "Export all {all_entries_count} results…").format(
-                        all_entries_count=len(all_entries)
-                    )
-                )
-            menu.addSeparator()
-            selected_all = [
-                (node, vfs) for node, vfs, _ in self._collect_result_entries(
-                    selected_rows, include_dirs=True
-                )
-            ]
-            hash_actions = add_hash_menu(
-                menu,
-                translate("FilesystemPanel", "Compute Hash of {count} selected entries").format(
-                    count=len(selected_all)
-                ),
-            )
-            action = menu.exec(global_pos)
-            filter_text = self._filter.text().strip()
-            if action == export_sel:
-                self.export_multi_requested.emit(selected_entries, filter_text)
-            elif export_all is not None and action == export_all:
-                self.export_multi_requested.emit(all_entries, filter_text)
-            elif action in hash_actions:
-                self.hash_requested.emit(selected_all, hash_actions[action])
+        batch = self._search_batch_menu(
+            self._collect_result_entries(selected_rows),
+            [(n, v) for n, v, _ in self._collect_result_entries(selected_rows, include_dirs=True)],
+            lambda: self._collect_result_entries(range(self._search_model.rowCount())),
+        )
+        if batch is not None:
+            menu, actions = batch
+            chosen = menu.exec(global_pos)
+            if chosen in actions:
+                actions[chosen]()
             return
 
         if not index.isValid():

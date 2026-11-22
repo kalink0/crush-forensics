@@ -390,6 +390,41 @@ def join_notes(notes: list[Any]) -> str | ParseIssue:
     ]})
 
 
+# Statuses of an entry whose content is not read or not stored: its VFS
+# serves no bytes for it (empty bytes, or a read error), so a hash or copy of
+# it never stands for content. Kept next to where the codes are given.
+NO_CONTENT_STATUSES: frozenset[str] = frozenset({
+    "entry.unreadable",            # DirectoryVFS: lstat failed
+    "entry.symlink_unreadable",    # DirectoryVFS: link target unreadable
+    "entry.special_not_read",      # DirectoryVFS: FIFO/device/socket, never read
+    "entry.special_stored",        # TAR: device/FIFO member, no content stored
+    "entry.symlink_no_target",     # iTunes backup: link without a target
+    "entry.no_backup_content",     # iTunes backup: no file in the backup
+    "entry.raw_entry_unreadable",  # disk image: entry metadata unreadable
+    "entry.symlink_raw",           # disk image: link target not decoded
+    "entry.special_raw",           # disk image: special file
+    "entry.streams_unlisted",      # disk image: streams could not be named
+    "entry.stream_nothing_stored", # disk image: stream is all hole
+    "entry.stream_no_reader",      # disk image: stream listed, not read
+})
+
+
+def has_no_content(node: VFSNode) -> bool:
+    """True when *node*'s status (or one of its joined notes) says its
+    content is not read or not stored -- see NO_CONTENT_STATUSES."""
+    pending: list[Any] = [node.status]
+    while pending:
+        status = pending.pop()
+        if not isinstance(status, ParseIssue):
+            continue
+        if status.code in NO_CONTENT_STATUSES:
+            return True
+        notes = status.params.get("notes") if status.code == "common.notes" else None
+        if isinstance(notes, list):
+            pending.extend(notes)
+    return False
+
+
 def _member_parts(name: str) -> list[str]:
     """Path components of an archive member name as stored: empty and "."
     components are dropped (a leading "./" or "/"), ".." and the leading

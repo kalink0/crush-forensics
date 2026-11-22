@@ -152,7 +152,7 @@ class _LoadSourceWorker(QObject):
                 from crush.core.mounted import ZipWithITunesBackupVFS
 
                 vfs = self._session.add_source_vfs(
-                    ZipWithITunesBackupVFS(self._path, password=self._password)
+                    ZipWithITunesBackupVFS(self._path, password=self._password), self._path,
                 )
             else:
                 vfs = self._session.add_source(
@@ -1941,7 +1941,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Show a source another window loaded (_hand_over_to_new_window)
         as if this window had loaded it."""
-        self.session.add_source_vfs(vfs)
+        self.session.add_source_vfs(vfs, path)
         self._logger.info("Loading source: %s", path)
         if source_hash is not None:
             # Hashed while loading, in the window that loaded it; said here
@@ -5533,8 +5533,10 @@ class MainWindow(QMainWindow):
             "HASH requested (%s): %s", ", ".join(algs),
             entries[0][0].path if len(entries) == 1 else f"{len(entries)} entries",
         )
+        source_names = {id(vfs): self.session.source_label(vfs) for _, vfs in entries}
         run = compute_hashes_with_progress(
-            self, entries, algs, self.session.hashes, window_id=self._window_id
+            self, entries, algs, self.session.hashes, window_id=self._window_id,
+            source_names=source_names,
         )
         self._props_panel.refresh_hashes()
         dialog = HashResultDialog(run, self)
@@ -5543,7 +5545,8 @@ class MainWindow(QMainWindow):
 
     def _record_integrity_hash(self, vfs: VFS, node: VFSNode, digest: str | None) -> None:
         """An integrity SHA-256 covers the same bytes as Compute Hash: keep
-        it, so the Properties panel shows it and it isn't computed again."""
+        it, so the Properties panel shows it; a later Compute Hash reads the
+        entry again and is compared against it."""
         if not digest:
             return
         self.session.hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})

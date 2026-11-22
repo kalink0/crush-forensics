@@ -7,6 +7,11 @@ bytes the integrity hashes (on open, on export) cover, so the values can be
 compared with those in the log and in crush-export-hashes.txt. For an
 archive member that is its unpacked content.
 
+An entry whose status says its content is not read or not stored (a
+special file, a link whose target isn't decoded ...; see
+crush.core.vfs.NO_CONTENT_STATUSES) is not hashed: it has no content to
+hash, and the digest of no bytes would pass for one.
+
 The store keeps every value computed in a window for as long as the source
 it belongs to is open (:class:`crush.core.session.Session` forgets a
 source's values when it is closed or read again). It holds nothing on disk.
@@ -113,6 +118,13 @@ class HashStore:
         self._differing: dict[tuple[int, int], dict[str, list[bytes]]] = {}
 
     def record(self, vfs: VFS, node: VFSNode, digests: dict[str, bytes]) -> None:
+        """Keep *digests* for *node*. Nothing is kept for an entry whose
+        content is not read or not stored (vfs.has_no_content): the digest of
+        no bytes would read like the hash of real content."""
+        from crush.core.vfs import has_no_content
+
+        if has_no_content(node):
+            return
         with self._lock:
             entries = self._sources.setdefault(id(vfs), (vfs, {}))[1]
             held = entries.get(id(node))
