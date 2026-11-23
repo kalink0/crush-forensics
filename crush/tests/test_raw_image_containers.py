@@ -232,7 +232,7 @@ class TestAff4:
 class TestAppleDiskImage:
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="dmg-udzo.dmg (hdiutil, UDZO) must open as an Apple disk image whose disk reads "
              "back to the SHA-256 of the source disk it was made from",
     )
@@ -241,7 +241,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="The five-file segmented dmg-gpt-segmented.dmg (hdiutil) must be joined from its "
              ".dmgpart files, say so, and read back to the SHA-256 of its GPT source disk",
     )
@@ -252,7 +252,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="Verify Acquisition Hash on dmg-udzo.dmg must recompute the image's own data, "
              "block table and master checksums and find every one matching",
     )
@@ -270,7 +270,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="The encrypted dmg-enc-sparse-aes128.sparseimage (hdiutil, AES-128) must ask for "
              "its password, refuse a wrong one, and with the right one read back to the "
              "SHA-256 of its source disk, saying it was decrypted",
@@ -287,7 +287,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="dmg-cert-only-udzo-aes256.dmg, sealed by hdiutil to a certificate only, must ask "
              "for a private key (not a password), and with its key read back to the SHA-256 "
              "of its source disk, saying it was opened with the key",
@@ -316,7 +316,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Source Immutability",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="Reading the whole disk of the segmented dmg-gpt-segmented.dmg and of the "
              "encrypted dmg-enc-sparse-aes128.sparseimage and verifying them must leave every "
              "file byte-identical, with an unchanged mtime",
@@ -332,7 +332,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="The sparse bundle dmg-sparsebundle.sparsebundle (hdiutil) must open as a disk "
              "image from its folder and from any file in it (Info.plist, a band), say it is "
              "read from the bundle's band files, and read back to the SHA-256 of its source "
@@ -356,7 +356,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Known-output Verification",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="The encrypted sparse bundle dmg-enc-sparsebundle-aes256.sparsebundle (hdiutil, "
              "AES-256) must ask for its password and with it read back to the SHA-256 of the "
              "disk hdiutil attach read from it",
@@ -392,7 +392,7 @@ class TestAppleDiskImage:
 
     @pytest.mark.forensic(
         category="Source Immutability",
-        subject="Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)",
+        subject="Apple disk image (.dmg/.sparseimage/.sparsebundle)",
         desc="Reading the whole disk of the sparse bundle dmg-sparsebundle.sparsebundle and "
              "verifying it must leave every file of the bundle byte-identical, with an "
              "unchanged mtime",

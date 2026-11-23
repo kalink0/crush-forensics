@@ -43,7 +43,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [AFF4 acquisition (.aff4)](#aff4-acquisition-aff4) | 1 | not tested | not tested | 1 | not tested | not tested |
 | [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 2 | 1 |
 | [FTK Imager logical evidence (.ad1)](#ftk-imager-logical-evidence-ad1) | 2 | 1 | 1 | 2 | 1 | 1 |
-| [Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)](#apple-disk-image-dmgsparseimageasifsparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
+| [Apple disk image (.dmg/.sparseimage/.sparsebundle)](#apple-disk-image-dmgsparseimagesparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
 | [VHD/VHDX virtual disk](#vhdvhdx-virtual-disk) | 1 | not tested | not tested | 4 | not tested | not tested |
 | [VMDK virtual disk](#vmdk-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [QCOW virtual disk](#qcow-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
@@ -283,7 +283,7 @@ No forensic checks.
 - **Completeness** — An AD1 set in four files opens whole from any of its files, every file matching the manifest of the folder imaged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_set_opens_whole_from_any_file`)
 - **Reproducibility** — Opening an AD1 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_reproducible`)
 
-#### Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)
+#### Apple disk image (.dmg/.sparseimage/.sparsebundle)
 
 - **Source Immutability** — Reading the whole disk of the segmented dmg-gpt-segmented.dmg and of the encrypted dmg-enc-sparse-aes128.sparseimage and verifying them must leave every file byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
 - **Source Immutability** — Reading the whole disk of the sparse bundle dmg-sparsebundle.sparsebundle and verifying it must leave every file of the bundle byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_sparse_bundle_source_unmodified`)

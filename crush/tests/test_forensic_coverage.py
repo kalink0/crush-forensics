@@ -56,7 +56,7 @@ VFS_SUBJECTS: dict[str, tuple[str, ...]] = {
     "RawImageVFS": (
         "Raw disk image", "EWF acquisition (.E01)", "SMART acquisition (.s01)",
         "EWF2 acquisition (.Ex01)", "AFF acquisition (.aff/.afd)", "AFF4 acquisition (.aff4)",
-        "Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)", "VHD/VHDX virtual disk",
+        "Apple disk image (.dmg/.sparseimage/.sparsebundle)", "VHD/VHDX virtual disk",
         "VMDK virtual disk",
         "QCOW virtual disk",
     ),
