@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-304 checks in total.
+305 checks in total.
 
 ### Sources
 
@@ -41,9 +41,9 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [AFF4 acquisition (.aff4)](#aff4-acquisition-aff4) | 1 | not tested | not tested | 1 | not tested | not tested |
-| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 1 | 1 |
+| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 2 | 1 |
 | [FTK Imager logical evidence (.ad1)](#ftk-imager-logical-evidence-ad1) | 2 | 1 | 1 | 2 | 1 | 1 |
-| [Apple disk image (.dmg/.sparseimage/.sparsebundle)](#apple-disk-image-dmgsparseimagesparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
+| [Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)](#apple-disk-image-dmgsparseimageasifsparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
 | [VHD/VHDX virtual disk](#vhdvhdx-virtual-disk) | 1 | not tested | not tested | 4 | not tested | not tested |
 | [VMDK virtual disk](#vmdk-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [QCOW virtual disk](#qcow-virtual-disk) | 1 | not tested | not tested | 2 | not tested | not tested |
@@ -269,6 +269,7 @@ No forensic checks.
 - **Read-only Media** — An L01 opens, reads and verifies when its file is chmod 0o444 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_works_on_readonly_media`)
 - **Known-output Verification** — Every MD5 EnCase recorded for a file of the L01 matches the file as read ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_recorded_md5s_match`)
 - **Completeness** — Every entry of the L01 that holds data is in the tree exactly once, an entry with data and entries beneath it as well ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_every_entry_with_data_is_shown_once`)
+- **Completeness** — An L01 with an unreadable chunk verifies to the end: every unreadable file is listed, also those with no recorded hash, and the result is never a clean pass ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_damaged_l01_reports_every_unreadable_entry`)
 - **Reproducibility** — Opening an L01 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_reproducible`)
 
 #### FTK Imager logical evidence (.ad1)
@@ -282,7 +283,7 @@ No forensic checks.
 - **Completeness** — An AD1 set in four files opens whole from any of its files, every file matching the manifest of the folder imaged ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_set_opens_whole_from_any_file`)
 - **Reproducibility** — Opening an AD1 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_ad1_reproducible`)
 
-#### Apple disk image (.dmg/.sparseimage/.sparsebundle)
+#### Apple disk image (.dmg/.sparseimage/.asif/.sparsebundle)
 
 - **Source Immutability** — Reading the whole disk of the segmented dmg-gpt-segmented.dmg and of the encrypted dmg-enc-sparse-aes128.sparseimage and verifying them must leave every file byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_source_unmodified`)
 - **Source Immutability** — Reading the whole disk of the sparse bundle dmg-sparsebundle.sparsebundle and verifying it must leave every file of the bundle byte-identical, with an unchanged mtime ([test_raw_image_containers.py](../../crush/tests/test_raw_image_containers.py), `test_sparse_bundle_source_unmodified`)

@@ -455,8 +455,9 @@ FORMATS: list[dict[str, Any]] = [
             "certificate; an encrypted image begins 'encrcdsa' (version 2) or ends with "
             "'cdsaencr' (version 1), and the 'koly' trailer is then inside the encrypted "
             "data. Variants: segmented UDIF (.dmgpart), sparse image (.sparseimage, header "
-            "'sprs', blocks allocated as written), sparse bundle (.sparsebundle, a folder "
-            "of band files). Common as a software installer (Downloads folders), as "
+            "'sprs', blocks allocated as written), Apple Sparse Image Format (.asif, macOS 26 "
+            "and later, header 'shdw' followed by a big-endian version, chunks allocated as "
+            "written), sparse bundle (.sparsebundle, a folder of band files). Common as a software installer (Downloads folders), as "
             "user-created encrypted containers, as the storage of Time Machine backups to "
             "network destinations (sparse bundle), and as a preferred acquisition format "
             "for macOS devices (SWGDE).",
@@ -505,8 +506,18 @@ FORMATS: list[dict[str, Any]] = [
                     "Apple Disk Image (DMG)",
                 ),
             },
+            {
+                "offset": 0,
+                "value": b"shdw\x00\x00\x00\x01",
+                #: Format knowledge: optional, doesn't count towards the 90 % for View → Language
+                "description": QT_TRANSLATE_NOOP(
+                    "FormatKnowledge",
+                    "Apple Sparse Image Format (.asif) header, version 1",
+                    "Apple Disk Image (DMG)",
+                ),
+            },
         ],
-        "extensions": [".dmg", ".sparseimage", ".sparsebundle"],
+        "extensions": [".dmg", ".sparseimage", ".asif", ".sparsebundle"],
         "links": [
             (
                 "Mac OS disk image types — format documentation (libyal/libmodi)",
@@ -515,6 +526,10 @@ FORMATS: list[dict[str, Any]] = [
             (
                 "DMG format reverse-engineered (newosxbook.com)",
                 "https://newosxbook.com/DMG.html",
+            ),
+            (
+                "Apple Sparse Image Format (ASIF) — community specification (huven/asif-format)",
+                "https://github.com/huven/asif-format",
             ),
             (
                 "Encrypted DMG header versions — dmg2john (John the Ripper)",
@@ -1465,9 +1480,11 @@ FORMATS: list[dict[str, Any]] = [
             "the release; the Safari thumbnails in every tested image were this container "
             "and not ATX. A snapshot is the "
             "image the system captured of an app's screen when it was last backgrounded, so "
-            "decoding one can show on-screen content at that moment. The same extension is "
-            "also used by textures shipped inside system frameworks and apps, which carry "
-            "other pixel formats and are not user content.",
+            "decoding one can show on-screen content at that moment. Textures shipped inside "
+            "system frameworks and apps use the same container, with other pixel formats. "
+            "Apps also write it to their own caches: observed as map overlay tiles in ASTC "
+            "8x8 at 512x512, stored without a file extension under an app's Library/Caches "
+            "(in a MapOverlays/fsCachedData folder).",
             "Khronos KTX 1.1 Texture",
         ),
         "platforms": ALL_PLATFORMS,

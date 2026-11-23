@@ -5,6 +5,7 @@ from __future__ import annotations
 import plistlib
 import sqlite3
 import struct
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -2154,6 +2155,134 @@ def test_image_parser_ktx_astc_6x6_decode(tmp_path: Path) -> None:
     assert result.metadata["Pixel format"] == "ASTC 6x6 (GL_COMPRESSED_RGBA_ASTC_6x6_KHR)"
     assert result.metadata["Payload"] == "ASTC"
     assert _decoded_pixel(result, (11, 5)) == _KTX_VOID_EXTENT_RGBA8
+
+
+_GRID_COLOURS = ((255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255), (255, 255, 255, 128))
+
+
+def _grid_payload(block_for: Callable[[tuple[int, int, int, int]], bytes]) -> bytes:
+    """Four blocks, two by two in row order, each one colour of _GRID_COLOURS."""
+    return b"".join(block_for(c) for c in _GRID_COLOURS)
+
+
+def _assert_grid(tmp_path: Path, data: bytes, size: tuple[int, int], block: tuple[int, int],
+                 colours: tuple[tuple[int, ...], ...] = _GRID_COLOURS) -> None:
+    """Every pixel of the decoded texture is the colour of the block it lies
+    in, and the image is the texture's own size."""
+    import io
+    from PIL import Image
+
+    result = _parse_ktx_file(tmp_path, data)
+    assert result.viewer_type == "image", result.metadata.get("KTX warnings")
+    with Image.open(io.BytesIO(result.data)) as image:
+        rgba = image.convert("RGBA")
+        assert rgba.size == size
+        for y in range(size[1]):
+            for x in range(size[0]):
+                quadrant = (y >= block[1]) * 2 + (x >= block[0])
+                assert rgba.getpixel((x, y)) == colours[quadrant], (x, y)
+
+
+def _astc_void_extent(rgba: tuple[int, int, int, int]) -> bytes:
+    return bytes.fromhex("fcfdffffffffffff") + struct.pack("<4H", *(v * 257 for v in rgba))
+
+
+@pytest.mark.parametrize("bw,bh", [
+    (4, 4), (5, 4), (5, 5), (6, 5), (6, 6), (8, 5), (8, 6), (8, 8),
+    (10, 5), (10, 6), (10, 8), (10, 10), (12, 10), (12, 12),
+])
+def test_image_parser_ktx_astc_size_not_a_block_multiple(
+    tmp_path: Path, bw: int, bh: int
+) -> None:
+    """A texture whose width and height aren't multiples of the ASTC block
+    size: two by two blocks of known constant colours (void-extent) must
+    land each in its own quadrant, cut to the texture's size."""
+    pytest.importorskip("astc_decomp_faster")
+    from crush.parsers.apple_ktx import _ASTC_BLOCK_SIZES
+
+    size = (bw + bw // 2 + 1, bh + bh // 2 + 1)
+    code = 0x93B0 + _ASTC_BLOCK_SIZES.index((bw, bh))
+    _assert_grid(tmp_path, _make_ktx_bytes(
+        width=size[0], height=size[1], gl_internal_format=code,
+        payload=_grid_payload(_astc_void_extent),
+    ), size, (bw, bh))
+
+
+def _rgb565(rgba: tuple[int, int, int, int]) -> int:
+    r, g, b, _a = rgba
+    return (r >> 3) << 11 | (g >> 2) << 5 | b >> 3
+
+
+@pytest.mark.parametrize("code,block_for,opaque,red_only", [
+    # BC1 (texture2ddecoder): both endpoints the colour, every index 0.
+    (0x83F0, lambda c: struct.pack("<HHI", _rgb565(c), _rgb565(c), 0), True, False),
+    # BC1 RGBA (Pillow's bcn decoder): the same.
+    (0x83F1, lambda c: struct.pack("<HHI", _rgb565(c), _rgb565(c), 0), True, False),
+    # BC3: an alpha block of one value, then the BC1 colour block.
+    (0x83F3, lambda c: bytes([c[3], c[3]]) + bytes(6)
+     + struct.pack("<HHI", _rgb565(c), _rgb565(c), 0), False, False),
+    # BC4: both red endpoints the value, every index 0.
+    (0x8DBB, lambda c: bytes([c[0], c[0]]) + bytes(6), True, True),
+])
+def test_image_parser_ktx_bc_size_not_a_block_multiple(
+    tmp_path: Path, code: int, block_for: Callable[[tuple[int, int, int, int]], bytes],
+    opaque: bool, red_only: bool,
+) -> None:
+    """The BC decoders at a size that isn't a multiple of their 4x4 block:
+    constant-colour blocks each in their own quadrant."""
+    pytest.importorskip("texture2ddecoder")
+    colours = tuple(
+        (c[0], 0, 0, 255) if red_only else (c[0], c[1], c[2], 255) if opaque else c
+        for c in _GRID_COLOURS
+    )
+    _assert_grid(tmp_path, _make_ktx_bytes(
+        width=7, height=5, gl_internal_format=code, payload=_grid_payload(block_for),
+    ), (7, 5), (4, 4), colours)
+
+
+def _block_formats_but_astc() -> list[int]:
+    from crush.parsers.apple_ktx import _BLOCK_FORMATS
+
+    return [code for code, fmt in sorted(_BLOCK_FORMATS.items()) if fmt.family != "ASTC"]
+
+
+@pytest.mark.parametrize("code", _block_formats_but_astc())
+def test_image_parser_ktx_every_block_format_crops_from_the_padded_texture(
+    tmp_path: Path, code: int
+) -> None:
+    """Every other block format at a size that isn't a multiple of its
+    block (for PVRTC 2bpp, also below its minimum of two blocks a side):
+    the same stored blocks show as the top-left corner of the texture they
+    pad to. Deterministic pseudo-random blocks; ASTC is left out, as an
+    arbitrary ASTC block may be an invalid encoding, which doesn't decode
+    the same way twice on every platform (see _KTX_VOID_EXTENT_BLOCK)."""
+    import io
+    import random
+
+    from PIL import Image
+
+    from crush.parsers.apple_ktx import _BLOCK_FORMATS
+
+    pytest.importorskip("texture2ddecoder")
+    fmt = _BLOCK_FORMATS[code]
+    width, height = 6, 6
+    padded = fmt.padded_size(width, height)
+    assert padded != (width, height)
+    payload = random.Random(code).randbytes(fmt.data_size(width, height))
+
+    def pixels(w: int, h: int, name: str) -> Image.Image:
+        (tmp_path / name).mkdir()
+        result = _parse_ktx_file(tmp_path / name, _make_ktx_bytes(
+            width=w, height=h, gl_internal_format=code, payload=payload,
+        ))
+        assert result.viewer_type == "image", result.metadata.get("KTX warnings")
+        with Image.open(io.BytesIO(result.data)) as image:
+            return image.convert("RGBA")
+
+    small = pixels(width, height, "small")
+    whole = pixels(*padded, "whole")
+    assert small.size == (width, height)
+    assert small.tobytes() == whole.crop((0, 0, width, height)).tobytes()
 
 
 def test_image_parser_ktx_bc1_decode_is_rgba_not_bgra(tmp_path: Path) -> None:

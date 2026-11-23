@@ -1091,7 +1091,7 @@ class TestOnlyOpenedWhenAskedFor:
     @pytest.mark.parametrize("name", [
         "disk.img", "disk.dd", "disk.raw", "case.001", "case.002", "case.E01",
         "flash.nand", "rootfs.ubi", "data.ubifs", "fw.squashfs", "fw.sqsh", "cfg.jffs2",
-        "data.yaffs2",
+        "data.yaffs2", "disk.sparseimage", "disk.asif",
     ])
     def test_image_name_gets_a_hint(self, tmp_path: Path, name: str) -> None:
         dst = tmp_path / name
@@ -1144,6 +1144,48 @@ class TestOnlyOpenedWhenAskedFor:
             assert "EWF container" in str(vfs.fallback_note)
         finally:
             vfs.close()
+
+    # Synthetic: no real ASIF image is available (one is made only on macOS
+    # 26); these headers are the signature and a version, nothing more. They
+    # show the hint's recognition, not that an ASIF reads.
+    _ASIF_HEAD = b"shdw\x00\x00\x00\x01" + bytes(4088)
+    _SHDW_NO_VERSION = b"shdw\x00\x00\x00\x00" + bytes(4088)
+
+    def test_asif_header_gets_its_label_whatever_the_name(self, tmp_path: Path) -> None:
+        """Synthetic ASIF header, on disk, with no extension: the reader's
+        own recognition names it."""
+        dst = tmp_path / "image_no_extension"
+        dst.write_bytes(self._ASIF_HEAD)
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "Apple Sparse Image Format (ASIF)" in str(vfs.fallback_note)
+        finally:
+            vfs.close()
+
+    def test_asif_signature_without_a_version_gets_no_hint(self, tmp_path: Path) -> None:
+        """Synthetic: a file that starts with the four signature bytes and
+        version 0 is a raw file to the reader, so it gets no hint."""
+        dst = tmp_path / "image_no_extension"
+        dst.write_bytes(self._SHDW_NO_VERSION)
+        vfs = open_vfs(dst)
+        try:
+            assert str(vfs.fallback_note) == ""
+        finally:
+            vfs.close()
+
+    def test_asif_head_in_an_archive_follows_the_readers_rule(self) -> None:
+        """Synthetic: an archive member is judged by its first bytes -- the
+        signature with a version from 1 to 255, as the reader decides."""
+        from crush.core.raw_image import is_asif_head
+        from crush.core.vfs import looks_like_disk_image
+
+        hint = looks_like_disk_image("member", self._ASIF_HEAD)
+        assert hint is not None and hint.code == "vfs.disk_image_hint_acquisition"
+        assert looks_like_disk_image("member", self._SHDW_NO_VERSION) is None
+        assert is_asif_head(b"shdw\x00\x00\x00\xff")
+        assert not is_asif_head(b"shdw\x00\x00\x01\x00")  # version 256
+        assert not is_asif_head(b"shdw")  # too short to hold a version
 
     def test_normal_open_never_calls_the_image_reader(
         self, raw_ntfs_image: Path, monkeypatch: pytest.MonkeyPatch

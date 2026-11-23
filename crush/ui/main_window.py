@@ -2975,100 +2975,11 @@ class MainWindow(QMainWindow):
             if "recorded_files" in result:  # type: ignore[operator]
                 _on_recorded_files_done(result)  # type: ignore[arg-type]
                 return
-            stored: dict[str, str] = result.get("stored") or {}  # type: ignore[attr-defined]
-            match = result.get("match")  # type: ignore[attr-defined]
-            checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
-            missing_pages = result.get("missing_page_count") or 0  # type: ignore[attr-defined]
-            padded = result.get("padded_chunks") or []  # type: ignore[attr-defined]
-            # Found while reading, whether or not a hash was stored: chunks whose
-            # own checksum fails, pages the acquisition declares but doesn't hold.
-            findings = []
-            if checksum_errors:
-                findings.append(translate(
-                    "MainWindow", "{count} chunk(s) fail their own checksum."
-                ).format(count=f"{len(checksum_errors):,}"))
-            if padded:
-                findings.append(translate(
-                    "MainWindow",
-                    "{count} chunk(s) hold less data than the bytes they cover; zeros are "
-                    "read in their place.",
-                ).format(count=f"{len(padded):,}"))
-            if missing_pages:
-                findings.append(translate(
-                    "MainWindow",
-                    "{count} page(s) are not in the acquisition's files; they read as the "
-                    "bad-sector marker.",
-                ).format(count=f"{missing_pages:,}"))
-            # What a container records about its own data besides a hash of
-            # the disk (a UDIF image's checksums, an AFF4's stream, chunk and
-            # map hashes), recomputed by the reader -- every one listed.
-            container_checks: list[dict[str, Any]] = (
-                result.get("container_checks") or []  # type: ignore[attr-defined]
+            # Found while reading, whether or not a hash was stored.
+            findings = verify_findings(result)  # type: ignore[arg-type]
+            self._status.showMessage(
+                verify_status_tag(result).format(path=node.path)  # type: ignore[arg-type]
             )
-            container_bad = [c for c in container_checks if not c.get("match")]
-            if container_bad:
-                findings.append(translate(
-                    "MainWindow", "{count} of the container's own checks do not match."
-                ).format(count=f"{len(container_bad):,}"))
-            # Logical evidence also records a hash of each file it holds.
-            files_checked = (
-                (result.get("entry_md5_checked") or 0)  # type: ignore[attr-defined]
-                + (result.get("entry_sha1_checked") or 0)  # type: ignore[attr-defined]
-            )
-            files_bad = sorted(set(
-                list(result.get("entry_md5_mismatched") or [])  # type: ignore[attr-defined]
-                + list(result.get("entry_sha1_mismatched") or [])  # type: ignore[attr-defined]
-            ))
-            if files_bad:
-                findings.append(translate(
-                    "MainWindow", "{count} file(s) do not match their recorded hash."
-                ).format(count=f"{len(files_bad):,}"))
-            if files_checked:
-                if not stored:
-                    tag = (
-                        translate("MainWindow", "{path}  [verify: no stored hash, file hash "
-                                  "MISMATCH]")
-                        if files_bad else
-                        translate("MainWindow", "{path}  [verify: no stored hash, file hashes "
-                                  "match]")
-                    )
-                elif match:
-                    tag = (
-                        translate("MainWindow", "{path}  [verify: MATCH, file hash MISMATCH]")
-                        if files_bad else
-                        translate("MainWindow", "{path}  [verify: MATCH, file hashes match]")
-                    )
-                else:
-                    tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
-                # "match" must not read as "all checked".
-                not_checked = int(
-                    result.get("entry_md5_missing") or 0  # type: ignore[attr-defined]
-                )
-                if not_checked:
-                    tag = translate(
-                        "MainWindow", "{tag} [{count} file(s) without a recorded MD5, not checked]"
-                    ).format(tag=tag, count=f"{not_checked:,}")
-            elif not stored:
-                if container_checks:
-                    tag = (
-                        translate("MainWindow", "{path}  [verify: no stored hash, container "
-                                  "check MISMATCH]")
-                        if container_bad else
-                        translate("MainWindow", "{path}  [verify: no stored hash, container "
-                                  "checks match]")
-                    )
-                else:
-                    tag = translate("MainWindow", "{path}  [verify: no stored hash]")
-            elif match:
-                tag = (
-                    translate("MainWindow", "{path}  [verify: MATCH, container check "
-                              "MISMATCH]")
-                    if container_bad else
-                    translate("MainWindow", "{path}  [verify: MATCH]")
-                )
-            else:
-                tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
-            self._status.showMessage(tag.format(path=node.path))
             # One block per check, stored and recomputed value on lines of
             # their own; "no hash recorded" is said plainly, never shown as
             # a silent success.
@@ -6329,6 +6240,128 @@ def _regular_file_path(node: VFSNode, vfs: VFS) -> Path | None:
         return path if stat.S_ISREG(path.lstat().st_mode) else None
     except OSError:
         return None
+
+
+def verify_findings(result: dict[str, Any]) -> list[str]:
+    """What the reader found while verifying, beside the hashes, worded for
+    the top of the report: chunks whose own checksum fails or that hold less
+    data than they cover, pages the acquisition declares but doesn't hold,
+    container checks and file hashes that don't match. The damage
+    verify_report_html() lists item by item is not repeated here."""
+    checksum_errors = result.get("checksum_errors") or []
+    missing_pages = result.get("missing_page_count") or 0
+    padded = result.get("padded_chunks") or []
+    findings = []
+    if checksum_errors:
+        findings.append(translate(
+            "MainWindow", "{count} chunk(s) fail their own checksum."
+        ).format(count=f"{len(checksum_errors):,}"))
+    if padded:
+        findings.append(translate(
+            "MainWindow",
+            "{count} chunk(s) hold less data than the bytes they cover; zeros are "
+            "read in their place.",
+        ).format(count=f"{len(padded):,}"))
+    if missing_pages:
+        findings.append(translate(
+            "MainWindow",
+            "{count} page(s) are not in the acquisition's files; they read as the "
+            "bad-sector marker.",
+        ).format(count=f"{missing_pages:,}"))
+    # What a container records about its own data besides a hash of the
+    # disk (a UDIF image's checksums, an AFF4's stream, chunk and map
+    # hashes), recomputed by the reader -- every one listed.
+    container_bad = [c for c in result.get("container_checks") or [] if not c.get("match")]
+    if container_bad:
+        findings.append(translate(
+            "MainWindow", "{count} of the container's own checks do not match."
+        ).format(count=f"{len(container_bad):,}"))
+    files_bad = _verify_files_bad(result)
+    if files_bad:
+        findings.append(translate(
+            "MainWindow", "{count} file(s) do not match their recorded hash."
+        ).format(count=f"{len(files_bad):,}"))
+    return findings
+
+
+def _verify_files_bad(result: dict[str, Any]) -> list[str]:
+    """Every file of logical evidence whose recorded hash doesn't match."""
+    return sorted(set(
+        list(result.get("entry_md5_mismatched") or [])
+        + list(result.get("entry_sha1_mismatched") or [])
+    ))
+
+
+def verify_status_tag(result: dict[str, Any]) -> str:
+    """The status bar's summary of ewfprobe's verify() *result*, with a
+    "{path}" placeholder for the source. Never a clean "MATCH" while
+    anything was left unchecked or damage was found."""
+    from crush.ui.verify_result_dialog import verify_damage_found
+
+    stored = result.get("stored") or {}
+    match = result.get("match")
+    container_checks = result.get("container_checks") or []
+    container_bad = [c for c in container_checks if not c.get("match")]
+    # Logical evidence also records a hash of each file it holds.
+    files_checked = (result.get("entry_md5_checked") or 0) + (result.get("entry_sha1_checked") or 0)
+    files_bad = _verify_files_bad(result)
+    if files_checked:
+        if not stored:
+            tag = (
+                translate("MainWindow", "{path}  [verify: no stored hash, file hash "
+                          "MISMATCH]")
+                if files_bad else
+                translate("MainWindow", "{path}  [verify: no stored hash, file hashes "
+                          "match]")
+            )
+        elif match:
+            tag = (
+                translate("MainWindow", "{path}  [verify: MATCH, file hash MISMATCH]")
+                if files_bad else
+                translate("MainWindow", "{path}  [verify: MATCH, file hashes match]")
+            )
+        else:
+            tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+    elif not stored:
+        if container_checks:
+            tag = (
+                translate("MainWindow", "{path}  [verify: no stored hash, container "
+                          "check MISMATCH]")
+                if container_bad else
+                translate("MainWindow", "{path}  [verify: no stored hash, container "
+                          "checks match]")
+            )
+        else:
+            tag = translate("MainWindow", "{path}  [verify: no stored hash]")
+    elif match:
+        tag = (
+            translate("MainWindow", "{path}  [verify: MATCH, container check "
+                      "MISMATCH]")
+            if container_bad else
+            translate("MainWindow", "{path}  [verify: MATCH]")
+        )
+    else:
+        tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+    if "entry_count" in result:
+        # "match" must not read as "all checked": for each hash, every file
+        # without one, and every file whose content wasn't collected.
+        for count, text in (
+            (result.get("entry_md5_missing"),
+             translate("MainWindow",
+                       "{tag} [{count} file(s) without a recorded MD5, not checked]")),
+            (result.get("entry_sha1_missing"),
+             translate("MainWindow",
+                       "{tag} [{count} file(s) without a recorded SHA-1, not checked]")),
+            (len(result.get("entry_content_not_collected") or []),
+             translate("MainWindow",
+                       "{tag} [{count} file(s) whose content was not collected, not checked]")),
+        ):
+            if count:
+                tag = text.format(tag=tag, count=f"{int(count):,}")
+    if verify_damage_found(result):
+        # Nor must "match" read as "undamaged".
+        tag = translate("MainWindow", "{tag} [damage found]").format(tag=tag)
+    return tag
 
 
 def _disk_image_hint(node: VFSNode, vfs: VFS) -> _SourceHint | None:

@@ -12,6 +12,8 @@ All notable changes to Crush will be documented in this file.
 - Added to the filesystem panel -> Support for showing iOS container folders (any folder holding a `.com.apple.mobile_container_manager.metadata.plist`: app data, app groups, extensions, app bundles, system groups and system containers) by the identifier of their owner in that plist (`MCMMetadataIdentifier`) instead of their GUID, in italics with the GUID in the tooltip; the name filter finds them by either. Toggled under View → Show iOS Container Identifiers (on by default). ([@jensstigaard](https://github.com/jensstigaard), [#196](https://github.com/kalink0/crush-forensics/pull/196))
 - Added to the Properties panel -> Support for the identifier of an iOS container folder, or the reason its metadata plist gives none.
 - Added to the Filesystem and Properties panels -> Support for hashing files and folders with MD5, SHA-1 and/or SHA-256 (Compute Hash), shown in the Properties panel while the source is open and searchable with the filter's `hash:` token.
+- Added to Verify Acquisition Hash -> Support for every finding of the image reader: files whose content wasn't collected, unreadable files and chunks, chunk tables failing their checksum, segments of another acquisition and AD1 bytes its item tree doesn't reach, in a full report instead of "Could not verify" for L01, AD1 and ASIF.
+- Added to disk image hints -> Support for ASIF (Apple Sparse Image Format): named by its type, recognised inside archives and images, and by the name `.asif`.
 
 ### Changed
 
@@ -32,6 +34,7 @@ All notable changes to Crush will be documented in this file.
 - Floating panels (Filesystem, Properties, Log) can be resized by dragging their edges and corners; the resize border was a few pixels wide and hard to hit. ([@jensstigaard](https://github.com/jensstigaard), [#198](https://github.com/kalink0/crush-forensics/pull/198))
 - Opening a folder that no viewer recognises by its files, such as Android WebView's `HTTP Cache` (which holds the caches `Cache_Data` and `Code Cache/js`), shows a warning instead of only a status bar message.
 - A KTX texture whose data is shorter than its declared dimensions need is no longer passed to the decoder, which would read past the end of the data; the reason is shown instead. ([@jensstigaard](https://github.com/jensstigaard), [#197](https://github.com/kalink0/crush-forensics/pull/197))
+- A KTX texture whose width or height isn't a multiple of its block size (ASTC, and PVRTC 2bpp below its minimum size) is no longer decoded scrambled.
 - In integrity mode, an entry with no content read or stored (e.g. a FIFO or device file) is no longer logged and listed in `crush-export-hashes.txt` with the SHA-256 of empty data; it is marked as not hashed.
 
 ## v0.25.0 - 2026-11-07
