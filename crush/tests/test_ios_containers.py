@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel
 
 from crush.core import ios_containers
+from crush.core.issues import ParseIssue
 from crush.core.session import Session
 from crush.core.vfs import DirectoryVFS, VFSNode
 
@@ -82,15 +85,145 @@ def test_folder_without_metadata_plist_is_no_container(tmp_path: Path) -> None:
     assert ios_containers.read_identifier(node, vfs) is None
 
 
-@pytest.mark.parametrize("content", [b"not a plist", plistlib.dumps({"Other": "x"})])
-def test_no_identifier_from_a_bad_plist(tmp_path: Path, content: bytes) -> None:
+def _one_container(tmp_path: Path, content: bytes) -> tuple[DirectoryVFS, VFSNode]:
     folder = tmp_path / "Containers/Data/Application" / APP_GUID
     folder.mkdir(parents=True)
     (folder / ios_containers.METADATA_PLIST).write_bytes(content)
     vfs = DirectoryVFS(tmp_path)
-    node = _find(vfs.root(), APP_GUID)
+    return vfs, _find(vfs.root(), APP_GUID)
+
+
+@pytest.mark.parametrize("content, code", [
+    (b"not a plist", "ios_container.not_a_plist"),
+    (plistlib.dumps({"Other": "x"}), "ios_container.no_identifier"),
+    (plistlib.dumps({ios_containers.IDENTIFIER_KEY: ""}), "ios_container.no_identifier"),
+    (plistlib.dumps({ios_containers.IDENTIFIER_KEY: 7}), "ios_container.no_identifier"),
+    (plistlib.dumps(["com.example.app"]), "ios_container.no_identifier"),
+])
+def test_bad_plist_says_why_there_is_no_identifier(
+    tmp_path: Path, content: bytes, code: str
+) -> None:
+    vfs, node = _one_container(tmp_path, content)
     assert ios_containers.is_container(node)
-    assert ios_containers.read_identifier(node, vfs) is None
+    result = ios_containers.read_identifier(node, vfs)
+    assert isinstance(result, ParseIssue)
+    assert result.code == code
+
+
+def test_plist_over_the_size_limit_is_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = plistlib.dumps({ios_containers.IDENTIFIER_KEY: "com.example.app"})
+    vfs, node = _one_container(tmp_path, content)
+    monkeypatch.setattr(ios_containers, "MAX_PLIST_SIZE", len(content))
+    assert ios_containers.read_identifier(node, vfs) == "com.example.app"
+
+    monkeypatch.setattr(ios_containers, "MAX_PLIST_SIZE", len(content) - 1)
+    result = ios_containers.read_identifier(node, vfs)
+    assert isinstance(result, ParseIssue)
+    assert result.code == "ios_container.plist_too_large"
+    assert f"{len(content):,} bytes" in str(result)
+
+
+def test_read_error_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vfs, node = _one_container(tmp_path, plistlib.dumps({ios_containers.IDENTIFIER_KEY: "x"}))
+
+    def failing_read(*_args: Any, **_kwargs: Any) -> bytes:
+        raise OSError("sector 42 unreadable")
+
+    monkeypatch.setattr(vfs, "read", failing_read)
+    result = ios_containers.read_identifier(node, vfs)
+    assert isinstance(result, ParseIssue)
+    assert result.code == "ios_container.read_failed"
+    assert "sector 42 unreadable" in str(result)
+
+
+def _field(panel: Any, label: str) -> QLabel | None:
+    """The value label of the Properties row *label*, None when there is none."""
+    from PySide6.QtWidgets import QFormLayout
+
+    for row in range(panel._layout.rowCount()):
+        item = panel._layout.itemAt(row, QFormLayout.ItemRole.LabelRole)
+        if item is not None and isinstance(item.widget(), QLabel) and item.widget().text() == label:
+            return panel._layout.itemAt(row, QFormLayout.ItemRole.FieldRole).widget()
+    return None
+
+
+def _row(panel: Any, label: str) -> str | None:
+    field = _field(panel, label)
+    return None if field is None else field.text()
+
+
+def test_properties_show_container_identifier(qapp: Any, widgets: Any, tmp_path: Path) -> None:
+    from crush.ui.props_panel import PropertiesPanel
+
+    vfs = DirectoryVFS(_device(tmp_path))
+    panel = widgets(PropertiesPanel())
+    panel.update_properties(_find(vfs.root(), PLUGIN_GUID), {}, vfs)
+    assert _row(panel, "Container Identifier:") == "com.example.app.widget"
+
+    panel.update_properties(_find(vfs.root(), PLAIN_GUID), {}, vfs)
+    assert _row(panel, "Container Identifier:") is None
+
+
+def test_properties_say_why_a_container_has_no_identifier(
+    qapp: Any, widgets: Any, tmp_path: Path
+) -> None:
+    from crush.ui.props_panel import PropertiesPanel
+
+    vfs, node = _one_container(tmp_path, plistlib.dumps({"Other": "x"}))
+    panel = widgets(PropertiesPanel())
+    panel.update_properties(node, {}, vfs)
+    assert _row(panel, "Container Identifier:") == str(
+        ParseIssue("ios_container.no_identifier", {"key": ios_containers.IDENTIFIER_KEY})
+    )
+
+
+def test_properties_show_identifier_as_plain_text(
+    qapp: Any, widgets: Any, tmp_path: Path
+) -> None:
+    from crush.ui.props_panel import PropertiesPanel
+
+    identifier = "<b>com.example</b>"
+    vfs, node = _one_container(
+        tmp_path, plistlib.dumps({ios_containers.IDENTIFIER_KEY: identifier})
+    )
+    panel = widgets(PropertiesPanel())
+    panel.update_properties(node, {}, vfs)
+    field = _field(panel, "Container Identifier:")
+    assert field is not None
+    assert field.text() == identifier
+    assert field.textFormat() == Qt.TextFormat.PlainText
+
+
+def test_worker_takes_an_item_put_while_its_thread_ends() -> None:
+    """An item put just as the idle thread gives up still runs (the old
+    is_alive() check could leave it in the queue)."""
+    import queue
+
+    from crush.ui.fs_panel import _OnDemandWorker
+
+    done: list[int] = []
+    worker: _OnDemandWorker[int] = _OnDemandWorker(done.append, None, idle=0.01)
+
+    class RacingQueue(queue.SimpleQueue):
+        """The second get() times out just as another item is put."""
+
+        calls = 0
+
+        def get(self, block: bool = True, timeout: float | None = None) -> int:
+            RacingQueue.calls += 1
+            if RacingQueue.calls == 2:
+                worker.put(1)  # the thread still runs: put() starts none
+                raise queue.Empty
+            return super().get(block, timeout)
+
+    worker._queue = RacingQueue()
+    worker.put(0)
+    deadline = time.monotonic() + 5
+    while len(done) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert done == [0, 1]
 
 
 def _wait(qapp: Any, condition: Any) -> None:

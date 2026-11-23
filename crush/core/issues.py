@@ -4128,6 +4128,28 @@ MESSAGES: dict[str, str] = {
         "database; shown with the general format's knowledge",
         "entry.format_entry_missing",
     ),
+    # -- iOS container folders (Properties: Container Identifier) ------------------
+    "ios_container.plist_too_large": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not read: the metadata plist is {size:,} bytes, larger than the "
+        "{limit:,} bytes read for it",
+        "ios_container.plist_too_large",
+    ),
+    "ios_container.read_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The metadata plist could not be read: {detail}",
+        "ios_container.read_failed",
+    ),
+    "ios_container.not_a_plist": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The metadata plist is not a valid plist: {detail}",
+        "ios_container.not_a_plist",
+    ),
+    "ios_container.no_identifier": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The metadata plist holds no {key} string",
+        "ios_container.no_identifier",
+    ),
     # -- UFDR ------------------------------------------------------------------------
     "ufdr.not_recorded": QT_TRANSLATE_NOOP("ParseIssue", "(not recorded)", "ufdr.not_recorded"),
     "logical.not_recorded": QT_TRANSLATE_NOOP(

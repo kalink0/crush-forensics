@@ -29,6 +29,7 @@ from crush.core.stored_times import (
     StoredTime,
 )
 from crush.core.hashing import ALGORITHMS, DISPLAY_NAMES
+from crush.core.ios_containers import read_identifier
 from crush.core.ts_decode import unix_to_utc
 from crush.core.vfs import VFS, ITunesBackupVFS, VFSNode
 from crush.core.issues import CatalogText, ParseIssue, render_value
@@ -121,6 +122,20 @@ class PropertiesPanel(QScrollArea):
                 orig_label.setWordWrap(True)
                 orig_label.setTextInteractionFlags(_SELECTABLE)
                 self._layout.addRow(translate("PropertiesPanel", "Backup File ID:"), orig_label)
+
+        # An iOS container folder (GUID-named): its owner's identifier from
+        # the metadata plist, or why the plist gives none.
+        if vfs is not None:
+            container = read_identifier(node, vfs)
+            if container is not None:
+                id_label = QLabel(render_value(container, localized=True))
+                # The identifier is text from the evidence, never markup.
+                id_label.setTextFormat(Qt.TextFormat.PlainText)
+                id_label.setWordWrap(True)
+                id_label.setTextInteractionFlags(_SELECTABLE)
+                self._layout.addRow(
+                    translate("PropertiesPanel", "Container Identifier:"), id_label
+                )
 
         # Fixed position (not after the parser metadata, whose length varies).
         # Format Info only once a format was actually identified; Compute

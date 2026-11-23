@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import plistlib
 
+from crush.core.issues import ParseIssue
 from crush.core.vfs import VFS, VFSNode
 
 METADATA_PLIST = ".com.apple.mobile_container_manager.metadata.plist"
 IDENTIFIER_KEY = "MCMMetadataIdentifier"
 
-# A metadata plist is a few hundred bytes; anything far larger isn't one.
-_MAX_PLIST_SIZE = 1024 * 1024
+# A metadata plist is a few hundred bytes (at most 755 in an iPhone's 1409);
+# a larger one is not read (the whole file would be loaded) and says so.
+MAX_PLIST_SIZE = 1024 * 1024
 
 
 def metadata_plist(node: VFSNode) -> VFSNode | None:
@@ -43,22 +45,29 @@ def is_container(node: VFSNode) -> bool:
     return metadata_plist(node) is not None
 
 
-def read_identifier(node: VFSNode, vfs: VFS) -> str | None:
+def read_identifier(node: VFSNode, vfs: VFS) -> str | ParseIssue | None:
     """MCMMetadataIdentifier of the container folder *node* (the identifier
-    of the container's owner: app, group, extension or system service), or
-    None when *node*
-    is no container or its plist doesn't give one. Reads from the source:
-    not for the UI thread."""
+    of the container's owner: app, group, extension or system service); a
+    ParseIssue saying why there is none when *node* is a container whose
+    plist doesn't give one; None when *node* is no container. Reads from
+    the source."""
     plist_node = metadata_plist(node)
-    if plist_node is None or plist_node.size > _MAX_PLIST_SIZE:
+    if plist_node is None:
         return None
+    if plist_node.size > MAX_PLIST_SIZE:
+        return ParseIssue(
+            "ios_container.plist_too_large",
+            {"size": plist_node.size, "limit": MAX_PLIST_SIZE},
+        )
     try:
-        data = plistlib.loads(vfs.read(plist_node))
-    except Exception:  # noqa: BLE001 -- unreadable or no plist: no identifier
-        return None
-    if not isinstance(data, dict):
-        return None
-    identifier = data.get(IDENTIFIER_KEY)
+        raw = vfs.read(plist_node)
+    except Exception as exc:  # noqa: BLE001 -- any source's read error is reported
+        return ParseIssue("ios_container.read_failed", detail=str(exc))
+    try:
+        data = plistlib.loads(raw)
+    except Exception as exc:  # noqa: BLE001 -- plistlib raises several types
+        return ParseIssue("ios_container.not_a_plist", detail=str(exc))
+    identifier = data.get(IDENTIFIER_KEY) if isinstance(data, dict) else None
     if not isinstance(identifier, str) or not identifier.strip():
-        return None
+        return ParseIssue("ios_container.no_identifier", {"key": IDENTIFIER_KEY})
     return identifier.strip()
