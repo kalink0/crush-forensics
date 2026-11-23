@@ -189,13 +189,6 @@ def verify_report_html(
                     "{missing} of {total} file(s) have no recorded {algorithm} and were not "
                     "checked against one.",
                 ).format(missing=f"{missing:,}", total=f"{total:,}", algorithm=algorithm))
-        unchecked_sha1 = int(result.get("entry_sha1_unchecked") or 0)
-        if unchecked_sha1:
-            not_checked.append(translate(
-                "VerifyResultDialog",
-                "{count} file(s) have a recorded SHA-1, which was not checked: the reader "
-                "checks an L01's recorded MD5 only.",
-            ).format(count=f"{unchecked_sha1:,}"))
         if not_checked:
             parts.append("<p><b>" + "<br>".join(_esc(t) for t in not_checked) + "</b></p>")
 

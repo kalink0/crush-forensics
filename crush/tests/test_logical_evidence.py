@@ -345,7 +345,9 @@ class TestL01:
         # files and the own data of 123 entries with entries beneath them).
         assert result["entry_count"] == 9342
         assert result["entry_md5_missing"] == 9342 - 108
-        assert result["entry_sha1_unchecked"] == 0
+        # The reader checks an L01's SHA-1 too; this one records none.
+        assert result["entry_sha1_checked"] == 0
+        assert result["entry_sha1_missing"] == 9342
 
     def test_sparse_entry_reads_from_its_duplicate(self, l01: Path) -> None:
         vfs = open_vfs(l01)

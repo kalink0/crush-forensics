@@ -2685,7 +2685,7 @@ class LogicalEvidenceVFS(VFS):
     ) -> dict[str, Any]:
         """Recompute the set's own recorded hashes: the image hash (an AD1's
         is FTK Imager's, over its structure and its entries) and every
-        entry's recorded MD5 (and an AD1's SHA-1).
+        entry's recorded MD5 and SHA-1.
 
         An AD1 doesn't hold its image hash: FTK Imager writes it to its log
         beside the image (<first file>.txt). "ad1_log" names the log the
@@ -2695,10 +2695,8 @@ class LogicalEvidenceVFS(VFS):
 
         What the reader doesn't check is counted here, over the entries with
         data shown in the tree, so "all match" is never read as "all
-        checked": "entry_count", "entry_md5_missing" (no recorded MD5),
-        for an AD1 "entry_sha1_missing", and for an L01
-        "entry_sha1_unchecked" (a recorded SHA-1, which the reader doesn't
-        check for an L01: it checks an L01's MD5 only)."""
+        checked": "entry_count", "entry_md5_missing" (no recorded MD5) and
+        "entry_sha1_missing" (no recorded SHA-1)."""
         with self._lock:
             result: dict[str, Any] = self._handle.image.verify(progress=progress)
             ad1 = getattr(self._handle.image, "ad1", None)
@@ -2708,10 +2706,7 @@ class LogicalEvidenceVFS(VFS):
         entries = list({id(e): e for e in self._handle.entries.values()}.values())
         result["entry_count"] = len(entries)
         result["entry_md5_missing"] = sum(1 for e in entries if not e.md5)
-        if self._handle.kind == "AD1":
-            result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
-        else:
-            result["entry_sha1_unchecked"] = sum(1 for e in entries if e.sha1)
+        result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
         return result
 
     def close(self) -> None:
