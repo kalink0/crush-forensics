@@ -2696,9 +2696,8 @@ class LogicalEvidenceVFS(VFS):
         What the reader doesn't check is counted here, over the entries with
         data shown in the tree, so "all match" is never read as "all
         checked": "entry_count", "entry_md5_missing" (no recorded MD5),
-        for an AD1 "entry_sha1_missing", and for an L01
-        "entry_sha1_unchecked" (a recorded SHA-1, which the reader doesn't
-        check for an L01: it checks an L01's MD5 only)."""
+        and for an AD1 "entry_sha1_missing". The reader checks an L01's
+        recorded SHA-1 as well as its MD5 ("entry_sha1_checked")."""
         with self._lock:
             result: dict[str, Any] = self._handle.image.verify(progress=progress)
             ad1 = getattr(self._handle.image, "ad1", None)
@@ -2710,8 +2709,6 @@ class LogicalEvidenceVFS(VFS):
         result["entry_md5_missing"] = sum(1 for e in entries if not e.md5)
         if self._handle.kind == "AD1":
             result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
-        else:
-            result["entry_sha1_unchecked"] = sum(1 for e in entries if e.sha1)
         return result
 
     def close(self) -> None:
