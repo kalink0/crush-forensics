@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-304 checks in total.
+305 checks in total.
 
 ### Sources
 
@@ -41,7 +41,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [AFF4 acquisition (.aff4)](#aff4-acquisition-aff4) | 1 | not tested | not tested | 1 | not tested | not tested |
-| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 1 | 1 |
+| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 2 | 1 |
 | [FTK Imager logical evidence (.ad1)](#ftk-imager-logical-evidence-ad1) | 2 | 1 | 1 | 2 | 1 | 1 |
 | [Apple disk image (.dmg/.sparseimage/.sparsebundle)](#apple-disk-image-dmgsparseimagesparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
 | [VHD/VHDX virtual disk](#vhdvhdx-virtual-disk) | 1 | not tested | not tested | 4 | not tested | not tested |
@@ -269,6 +269,7 @@ No forensic checks.
 - **Read-only Media** — An L01 opens, reads and verifies when its file is chmod 0o444 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_works_on_readonly_media`)
 - **Known-output Verification** — Every MD5 EnCase recorded for a file of the L01 matches the file as read ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_recorded_md5s_match`)
 - **Completeness** — Every entry of the L01 that holds data is in the tree exactly once, an entry with data and entries beneath it as well ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_every_entry_with_data_is_shown_once`)
+- **Completeness** — An L01 with an unreadable chunk verifies to the end: every unreadable file is listed, also those with no recorded hash, and the result is never a clean pass ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_damaged_l01_reports_every_unreadable_entry`)
 - **Reproducibility** — Opening an L01 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_reproducible`)
 
 #### FTK Imager logical evidence (.ad1)

@@ -2696,17 +2696,26 @@ class LogicalEvidenceVFS(VFS):
         What the reader doesn't check is counted here, over the entries with
         data shown in the tree, so "all match" is never read as "all
         checked": "entry_count", "entry_md5_missing" (no recorded MD5) and
-        "entry_sha1_missing" (no recorded SHA-1)."""
+        "entry_sha1_missing" (no recorded SHA-1). An entry whose content the
+        acquisition didn't collect (an EnCase folder recorded with its MD5
+        but not its content) is skipped by the reader: it is in the reader's
+        "entry_content_not_collected" and in neither missing count, so for
+        each algorithm checked + missing + not collected = entry_count."""
+        from crush.core.raw_image import verify_image
+
         with self._lock:
-            result: dict[str, Any] = self._handle.image.verify(progress=progress)
+            result = verify_image(self._handle.image, progress)
             ad1 = getattr(self._handle.image, "ad1", None)
         if self._handle.kind == "AD1" and ad1 is not None:
             result["ad1_log"] = ad1.get("log")
             result["ad1_log_expected"] = Path(self._handle.image.paths[0]).name + ".txt"
         entries = list({id(e): e for e in self._handle.entries.values()}.values())
+        # Only an L01 entry records whether its content was collected; an
+        # AD1 item always holds it.
+        collected = [e for e in entries if getattr(e, "content_collected", True)]
         result["entry_count"] = len(entries)
-        result["entry_md5_missing"] = sum(1 for e in entries if not e.md5)
-        result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
+        result["entry_md5_missing"] = sum(1 for e in collected if not e.md5)
+        result["entry_sha1_missing"] = sum(1 for e in collected if not e.sha1)
         return result
 
     def close(self) -> None:
@@ -3308,7 +3317,8 @@ def _tar_suffix(p: Path) -> str:
 # counts too.
 DISK_IMAGE_SUFFIXES = (
     ".img", ".dd", ".raw", ".e01", ".s01", ".ex01", ".aff", ".aff4",
-    ".dmg", ".dmgpart", ".sparseimage", ".vhd", ".vhdx", ".vmdk", ".qcow", ".qcow2",
+    ".dmg", ".dmgpart", ".sparseimage", ".asif", ".vhd", ".vhdx", ".vmdk", ".qcow",
+    ".qcow2",
     ".nand", ".ubi", ".ubifs", ".squashfs", ".sqsh", ".jffs2", ".yaffs2",
 )
 
@@ -3369,6 +3379,7 @@ def looks_like_disk_image(
         CONTAINER_HEAD_SIGNATURES,
         container_format,
         container_label,
+        is_asif_head,
         sparse_bundle_of,
     )
 
@@ -3385,7 +3396,9 @@ def looks_like_disk_image(
             return ParseIssue("vfs.disk_image_hint_bundle", {"bundle": bundle.name})
     elif head.startswith(AD_ENCRYPTED_SIGNATURE):
         return ParseIssue("vfs.disk_image_hint_ad_encrypted")
-    elif head.startswith(CONTAINER_HEAD_SIGNATURES):
+    elif head.startswith(CONTAINER_HEAD_SIGNATURES) or is_asif_head(head):
+        # An ASIF's four signature bytes alone aren't enough (a raw file may
+        # start with them): the reader's rule, with the header version, decides.
         return ParseIssue("vfs.disk_image_hint_acquisition")
     suffix = Path(name).suffix.lower()
     is_segment = len(suffix) == 4 and suffix[1:].isascii() and suffix[1:].isdigit()

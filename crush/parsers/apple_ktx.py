@@ -313,7 +313,16 @@ def _decode_image(header: KtxHeader, payload: KtxPayload, warnings: list[ParseIs
         }))
 
     if block is not None:
-        image = block.decode(pixel_data[:needed], width, height)
+        # The blocks cover whole block rows and columns past a width or
+        # height that isn't a multiple of the block size: decoded at that
+        # padded size, so each block lands where it is stored, then cut to
+        # the texture's own size (as apple_atx does). The ASTC decoder lays
+        # blocks out wrongly when given the unpadded size, and PVRTC's below
+        # its minimum block count.
+        padded_width, padded_height = block.padded_size(width, height)
+        image = block.decode(pixel_data[:needed], padded_width, padded_height)
+        if (padded_width, padded_height) != (width, height):
+            image = image.crop((0, 0, width, height))
     else:
         assert raw is not None
         image = _decode_raw(raw, pixel_data[:needed], width, height)
@@ -337,10 +346,19 @@ class _BlockFormat:
     # PVRTC 1 textures are never smaller than this many blocks per side.
     min_blocks: tuple[int, int] = (1, 1)
 
-    def data_size(self, width: int, height: int) -> int:
+    def padded_size(self, width: int, height: int) -> tuple[int, int]:
+        """The pixels the stored blocks cover: *width* x *height* rounded up
+        to whole blocks, and to the format's minimum block count."""
         blocks_x = max(-(-width // self.block_width), self.min_blocks[0])
         blocks_y = max(-(-height // self.block_height), self.min_blocks[1])
-        return blocks_x * blocks_y * self.block_bytes
+        return blocks_x * self.block_width, blocks_y * self.block_height
+
+    def data_size(self, width: int, height: int) -> int:
+        padded_width, padded_height = self.padded_size(width, height)
+        return (
+            (padded_width // self.block_width) * (padded_height // self.block_height)
+            * self.block_bytes
+        )
 
 
 @dataclass(frozen=True)

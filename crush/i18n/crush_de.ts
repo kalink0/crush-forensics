@@ -1507,12 +1507,6 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <translation>DEX-Magic (&apos;dex\n&apos;), gefolgt von einer dreistelligen Version und NUL</translation>
     </message>
     <message>
-        <source>Apple disk image format. A UDIF image consists of data blocks (raw or compressed with ADC, zlib, bzip2, LZFSE or LZMA), an XML property list holding the block map, and a 512-byte &apos;koly&apos; trailer at EOF instead of a file header; raw images can lack the trailer. Typically contains an HFS+, APFS, FAT32 or ExFAT filesystem. Can be AES-128 or AES-256 encrypted with a password or a certificate; an encrypted image begins &apos;encrcdsa&apos; (version 2) or ends with &apos;cdsaencr&apos; (version 1), and the &apos;koly&apos; trailer is then inside the encrypted data. Variants: segmented UDIF (.dmgpart), sparse image (.sparseimage, header &apos;sprs&apos;, blocks allocated as written), sparse bundle (.sparsebundle, a folder of band files). Common as a software installer (Downloads folders), as user-created encrypted containers, as the storage of Time Machine backups to network destinations (sparse bundle), and as a preferred acquisition format for macOS devices (SWGDE).</source>
-        <comment>Apple Disk Image (DMG)</comment>
-        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation>Disk-Image-Format von Apple. Ein UDIF-Image besteht aus Datenblöcken (roh oder komprimiert mit ADC, zlib, bzip2, LZFSE oder LZMA), einer XML-Property-List mit der Block-Map und einem 512-Byte-&apos;koly&apos;-Trailer am Dateiende statt eines Datei-Headers; rohe Images können ohne Trailer sein. Enthält typischerweise ein HFS+-, APFS-, FAT32- oder ExFAT-Dateisystem. Kann mit Passwort oder Zertifikat per AES-128 oder AES-256 verschlüsselt sein; ein verschlüsseltes Image beginnt mit &apos;encrcdsa&apos; (Version 2) oder endet mit &apos;cdsaencr&apos; (Version 1), und der &apos;koly&apos;-Trailer liegt dann innerhalb der verschlüsselten Daten. Varianten: segmentiertes UDIF (.dmgpart), Sparse Image (.sparseimage, Header &apos;sprs&apos;, Blöcke werden beim Schreiben belegt), Sparse Bundle (.sparsebundle, ein Ordner aus Band-Dateien). Verbreitet als Software-Installer (Downloads-Ordner), als vom Benutzer erstellter verschlüsselter Container, als Speicher von Time-Machine-Backups auf Netzwerkzielen (Sparse Bundle) und als bevorzugtes Sicherungsformat für macOS-Geräte (SWGDE).</translation>
-    </message>
-    <message>
         <source>UDIF &apos;koly&apos; trailer block at EOF-512 (no file header magic)</source>
         <comment>Apple Disk Image (DMG)</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
@@ -1775,12 +1769,6 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <comment>Apple ATX Texture Archive</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
         <translation>Apple-ATX-AAPL-Container-Signatur</translation>
-    </message>
-    <message>
-        <source>Khronos texture container. On iOS the payload is normally ASTC 4x4, optionally LZFSE-compressed, flagged by a Compression_APPLE entry in the key/value block. Observed holding application snapshots (Library/Caches/Snapshots and SplashBoard/Snapshots), Safari tab thumbnails (Library/Safari/Thumbnails) and, less often, Photos attachment previews. Snapshots appear in this container and in Apple&apos;s AAPL/ATX one depending on the release; the Safari thumbnails in every tested image were this container and not ATX. A snapshot is the image the system captured of an app&apos;s screen when it was last backgrounded, so decoding one can show on-screen content at that moment. The same extension is also used by textures shipped inside system frameworks and apps, which carry other pixel formats and are not user content.</source>
-        <comment>Khronos KTX 1.1 Texture</comment>
-        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
-        <translation>Khronos-Textur-Container. Unter iOS sind die Nutzdaten normalerweise ASTC 4x4, optional LZFSE-komprimiert, gekennzeichnet durch einen Compression_APPLE-Eintrag im Key/Value-Block. Beobachtet mit App-Snapshots (Library/Caches/Snapshots und SplashBoard/Snapshots), Safari-Tab-Thumbnails (Library/Safari/Thumbnails) und seltener mit Vorschauen von Fotos-Anhängen. Snapshots liegen je nach iOS-Version in diesem Container oder in Apples AAPL/ATX-Container. Die Safari-Thumbnails waren in allen getesteten Images dieser Container und nicht ATX. Ein Snapshot ist das Bild, das das System vom Bildschirm einer App aufgenommen hat, als sie zuletzt in den Hintergrund ging. Das Dekodieren kann daher zeigen, was zu diesem Zeitpunkt auf dem Bildschirm zu sehen war. Dieselbe Endung verwenden auch Texturen, die in System-Frameworks und Apps mitgeliefert werden. Diese haben andere Pixelformate und sind keine Nutzerinhalte.</translation>
     </message>
     <message>
         <source>Khronos KTX 1.1 file identifier</source>
@@ -2357,6 +2345,24 @@ Die Datei ist möglicherweise urheberrechtlich geschützt, verschlüsselt oder n
         <comment>SQLite Database</comment>
         <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
         <translation>Die vorherrschende eingebettete Datenbank unter iOS, Android, macOS und Windows. Von praktisch jeder App verwendet, für Nachrichten, Anruflisten, Kontakte, Browserverlauf, Standortdaten und App-Zustand. Erkennbar an einem 16-Byte-Magic-String (&apos;SQLite format 3\000&apos;) an Offset 0. Der 100-Byte-Datei-Header enthält: Page-Größe, Write-Version (rollback=1, WAL=2), Kodierung und Change Counter. Wichtige forensische Wiederherstellungsmechanismen: (1) Freelist: Gelöschte Pages bleiben in einer Liste freier Pages erhalten; Datensätze überdauern, bis sie durch neue Einfügungen überschrieben werden. (2) Freeblocks und Page-Slack: Gelöschte Datensätze in aktiven Pages können in Freeblocks oder teilweise im Unallocated-Bereich unterhalb des aktuellen Cell Pointer Arrays erhalten bleiben. (3) WAL (Write-Ahead Log): Im WAL-Modus enthält die -wal-Datei committete Page-Versionen, die noch nicht per Checkpoint in die Hauptdatei übernommen wurden, Frames einer Transaktion, die bei der Sicherung noch offen war, und kürzlich per Checkpoint übernommene Pages; sie muss zusammen mit der Hauptdatenbank analysiert werden. WAL slack: Nach einem Checkpoint bleiben alte Pages im WAL erhalten, bis sie vom Anfang her überschrieben werden, frühere Datenbankzustände sind wiederherstellbar. KRITISCH: Das Öffnen einer Datenbank im WAL-Modus mit einem Standard-SQLite-Treiber löst einen Checkpoint aus, der die Inhalte des WAL unumkehrbar in die Datenbank überträgt und den WAL leert. Nur forensische Tools mit Lesezugriff oder Low-Level-Parsing verwenden. Lücken in der Tabelle sqlite_sequence zeigen gelöschte AUTOINCREMENT-Zeilen.</translation>
+    </message>
+    <message>
+        <source>Apple disk image format. A UDIF image consists of data blocks (raw or compressed with ADC, zlib, bzip2, LZFSE or LZMA), an XML property list holding the block map, and a 512-byte &apos;koly&apos; trailer at EOF instead of a file header; raw images can lack the trailer. Typically contains an HFS+, APFS, FAT32 or ExFAT filesystem. Can be AES-128 or AES-256 encrypted with a password or a certificate; an encrypted image begins &apos;encrcdsa&apos; (version 2) or ends with &apos;cdsaencr&apos; (version 1), and the &apos;koly&apos; trailer is then inside the encrypted data. Variants: segmented UDIF (.dmgpart), sparse image (.sparseimage, header &apos;sprs&apos;, blocks allocated as written), Apple Sparse Image Format (.asif, macOS 26 and later, header &apos;shdw&apos; followed by a big-endian version, chunks allocated as written), sparse bundle (.sparsebundle, a folder of band files). Common as a software installer (Downloads folders), as user-created encrypted containers, as the storage of Time Machine backups to network destinations (sparse bundle), and as a preferred acquisition format for macOS devices (SWGDE).</source>
+        <comment>Apple Disk Image (DMG)</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation>Disk-Image-Format von Apple. Ein UDIF-Image besteht aus Datenblöcken (roh oder komprimiert mit ADC, zlib, bzip2, LZFSE oder LZMA), einer XML-Property-List mit der Block-Map und einem 512-Byte-&apos;koly&apos;-Trailer am Dateiende statt eines Datei-Headers; rohe Images können ohne Trailer sein. Enthält typischerweise ein HFS+-, APFS-, FAT32- oder ExFAT-Dateisystem. Kann mit Passwort oder Zertifikat per AES-128 oder AES-256 verschlüsselt sein; ein verschlüsseltes Image beginnt mit &apos;encrcdsa&apos; (Version 2) oder endet mit &apos;cdsaencr&apos; (Version 1), und der &apos;koly&apos;-Trailer liegt dann innerhalb der verschlüsselten Daten. Varianten: segmentiertes UDIF (.dmgpart), Sparse Image (.sparseimage, Header &apos;sprs&apos;, Blöcke werden beim Schreiben belegt), Apple Sparse Image Format (.asif, ab macOS 26, Header &apos;shdw&apos; gefolgt von einer Big-Endian-Version, Chunks werden beim Schreiben belegt), Sparse Bundle (.sparsebundle, ein Ordner aus Band-Dateien). Verbreitet als Software-Installer (Downloads-Ordner), als vom Benutzer erstellter verschlüsselter Container, als Speicher von Time-Machine-Backups auf Netzwerkzielen (Sparse Bundle) und als bevorzugtes Sicherungsformat für macOS-Geräte (SWGDE).</translation>
+    </message>
+    <message>
+        <source>Apple Sparse Image Format (.asif) header, version 1</source>
+        <comment>Apple Disk Image (DMG)</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation>Apple-Sparse-Image-Format-Header (.asif), Version 1</translation>
+    </message>
+    <message>
+        <source>Khronos texture container. On iOS the payload is normally ASTC 4x4, optionally LZFSE-compressed, flagged by a Compression_APPLE entry in the key/value block. Observed holding application snapshots (Library/Caches/Snapshots and SplashBoard/Snapshots), Safari tab thumbnails (Library/Safari/Thumbnails) and, less often, Photos attachment previews. Snapshots appear in this container and in Apple&apos;s AAPL/ATX one depending on the release; the Safari thumbnails in every tested image were this container and not ATX. A snapshot is the image the system captured of an app&apos;s screen when it was last backgrounded, so decoding one can show on-screen content at that moment. Textures shipped inside system frameworks and apps use the same container, with other pixel formats. Apps also write it to their own caches: observed as map overlay tiles in ASTC 8x8 at 512x512, stored without a file extension under an app&apos;s Library/Caches (in a MapOverlays/fsCachedData folder).</source>
+        <comment>Khronos KTX 1.1 Texture</comment>
+        <extracomment>Format knowledge: optional, doesn&apos;t count towards the 90 % for View → Language</extracomment>
+        <translation>Khronos-Textur-Container. Unter iOS sind die Nutzdaten normalerweise ASTC 4x4, optional LZFSE-komprimiert, gekennzeichnet durch einen Compression_APPLE-Eintrag im Key/Value-Block. Beobachtet mit App-Snapshots (Library/Caches/Snapshots und SplashBoard/Snapshots), Safari-Tab-Thumbnails (Library/Safari/Thumbnails) und seltener mit Vorschauen von Fotos-Anhängen. Snapshots liegen je nach iOS-Version in diesem Container oder in Apples AAPL/ATX-Container. Die Safari-Thumbnails waren in allen getesteten Images dieser Container und nicht ATX. Ein Snapshot ist das Bild, das das System vom Bildschirm einer App aufgenommen hat, als sie zuletzt in den Hintergrund ging. Das Dekodieren kann daher zeigen, was zu diesem Zeitpunkt auf dem Bildschirm zu sehen war. Texturen, die in System-Frameworks und Apps mitgeliefert werden, verwenden denselben Container mit anderen Pixelformaten. Apps schreiben ihn auch in ihre eigenen Caches: beobachtet als Kacheln von Kartenüberlagerungen in ASTC 8x8 mit 512x512, ohne Dateiendung gespeichert unter Library/Caches einer App (in einem Ordner MapOverlays/fsCachedData).</translation>
     </message>
     <message>
         <source>Google&apos;s zero-copy binary serialization format. Values are read in place through offsets instead of being parsed first. Uses include the object store of the ObjectBox database (object values are FlatBuffers), TensorFlow Lite models, and the storage format Facebook moved most of its Android app to (Meta engineering blog, 2015). No reliable magic bytes: a buffer starts with a 32-bit offset to its root table; an optional 4-character file_identifier at bytes 4-7 names the schema, and a size-prefixed buffer puts a 32-bit length in front. Each table points to a vtable that lists which fields are stored and where; field types and names are not stored, so without the schema (.fbs, or its binary form .bfbs) a field&apos;s width and meaning are open. Fields equal to their default are usually not written at all. Bytes that no table, vector or string references (padding, superseded data) can remain inside a buffer.</source>
@@ -8244,6 +8250,18 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
     <message>
         <source>contains a ZIP archive after {leading:,} leading bytes — right-click → Open in New Window to browse it</source>
         <translation>enthält ein ZIP-Archiv nach den führenden Bytes {leading:,} — mit der rechten Maustaste klicken → In neuem Fenster öffnen, um den Inhalt anzuzeigen</translation>
+    </message>
+    <message>
+        <source>{tag} [{count} file(s) without a recorded SHA-1, not checked]</source>
+        <translation>{tag} [{count} Datei(en) ohne gespeicherten SHA-1-Hash, nicht überprüft]</translation>
+    </message>
+    <message>
+        <source>{tag} [{count} file(s) whose content was not collected, not checked]</source>
+        <translation>{tag} [{count} Datei(en), deren Inhalt nicht mit aufgenommen wurde, nicht überprüft]</translation>
+    </message>
+    <message>
+        <source>{tag} [damage found]</source>
+        <translation>{tag} [Schäden gefunden]</translation>
     </message>
     <message>
         <source>EnCase Lx01 logical evidence — holds copies of files, not a disk; Crush doesn&apos;t read Lx01</source>
@@ -15003,6 +15021,50 @@ Gesamt: {total:.2f} s</translation>
 <context>
     <name>VerifyResultDialog</name>
     <message>
+        <source>{count} chunk(s) could not be read:</source>
+        <translation>{count} Chunk(s) konnten nicht gelesen werden:</translation>
+    </message>
+    <message>
+        <source>chunk {chunk} at byte {offset}: {error}</source>
+        <translation>Chunk {chunk} bei Byte {offset}: {error}</translation>
+    </message>
+    <message>
+        <source>{count} file(s) could not be read:</source>
+        <translation>{count} Datei(en) konnten nicht gelesen werden:</translation>
+    </message>
+    <message>
+        <source>{file}, chunk table at byte {offset}: its copy (table2) passes and was read in its place</source>
+        <translation>{file}, Chunk-Tabelle bei Byte {offset}: Ihre Kopie (table2) besteht die Prüfung und wurde an ihrer Stelle gelesen</translation>
+    </message>
+    <message>
+        <source>{file}, chunk table at byte {offset}: no copy passes; the table was read as stored</source>
+        <translation>{file}, Chunk-Tabelle bei Byte {offset}: Keine Kopie besteht die Prüfung; die Tabelle wurde so gelesen, wie sie gespeichert ist</translation>
+    </message>
+    <message>
+        <source>{count} chunk table(s) fail their checksum:</source>
+        <translation>{count} Chunk-Tabelle(n) bestehen ihre Prüfsumme nicht:</translation>
+    </message>
+    <message>
+        <source>{count} segment file(s) record a different acquisition:</source>
+        <translation>{count} Segmentdatei(en) verzeichnen eine andere Erfassung:</translation>
+    </message>
+    <message>
+        <source>{file} records a different acquisition than {expected}</source>
+        <translation>{file} verzeichnet eine andere Erfassung als {expected}</translation>
+    </message>
+    <message>
+        <source>{count} byte(s) of the AD1&apos;s logical space are not reached from its item tree.</source>
+        <translation>{count} Byte(s) des logischen Bereichs des AD1 werden von seinem Elementbaum aus nicht erreicht.</translation>
+    </message>
+    <message>
+        <source>Where (the reader lists at most 5 spans):</source>
+        <translation>Wo (der Reader listet höchstens 5 Bereiche auf):</translation>
+    </message>
+    <message>
+        <source>{length} byte(s) at byte {offset}</source>
+        <translation>{length} Byte(s) bei Byte {offset}</translation>
+    </message>
+    <message>
         <source>MISMATCH</source>
         <translation>NICHT ÜBEREINSTIMMEND</translation>
     </message>
@@ -15023,12 +15085,20 @@ Gesamt: {total:.2f} s</translation>
         <translation>Bei dieser Erfassung wurde kein Hash der gesamten Daten aufgezeichnet; die aufgezeichneten Hashes der Dateien wurden überprüft.</translation>
     </message>
     <message>
+        <source>This acquisition recorded no hash of its whole data; the files it recorded a hash of hold no collected content and were not checked.</source>
+        <translation>Bei dieser Erfassung wurde kein Hash der gesamten Daten aufgezeichnet; die Dateien, für die ein Hash aufgezeichnet wurde, enthalten keinen mit aufgenommenen Inhalt und wurden nicht überprüft.</translation>
+    </message>
+    <message>
         <source>This acquisition recorded no hash to verify against.</source>
         <translation>Bei dieser Erfassung wurde kein Hash zur Überprüfung erfasst.</translation>
     </message>
     <message>
         <source>This acquisition recorded no hash of the whole disk to verify against.</source>
         <translation>Bei dieser Erfassung wurde kein Hashwert der gesamten Disk zur Überprüfung aufgezeichnet.</translation>
+    </message>
+    <message>
+        <source>The acquisition&apos;s own recorded hash matches its data, but damage was found while reading it (see below)</source>
+        <translation>Der in der Erfassung selbst gespeicherte Hash-Wert stimmt mit den Daten überein, beim Lesen wurden aber Schäden gefunden (siehe unten)</translation>
     </message>
     <message>
         <source>MATCH — the acquisition&apos;s own recorded hash matches its data</source>
@@ -15045,6 +15115,10 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>An AD1 doesn&apos;t hold its image hash: FTK Imager writes it to its log beside the image ({log}), which was not found.</source>
         <translation>Ein AD1 speichert den Bild-Hash nicht: FTK Imager schreibt ihn in sein Log neben dem Image ({log}), das jedoch nicht gefunden wurde.</translation>
+    </message>
+    <message>
+        <source>Damage found while reading</source>
+        <translation>Beim Lesen gefundene Schäden</translation>
     </message>
     <message>
         <source>Hash of the whole image</source>
@@ -15067,8 +15141,8 @@ Gesamt: {total:.2f} s</translation>
         <translation>{missing} von {total} Datei(en) weisen keinen aufgezeichneten {algorithm} auf und wurden nicht anhand eines solchen überprüft.</translation>
     </message>
     <message>
-        <source>{count} file(s) have a recorded SHA-1, which was not checked: the reader checks an L01&apos;s recorded MD5 only.</source>
-        <translation>{count} Datei(en) verfügen über einen gespeicherten SHA-1-Hash, der nicht überprüft wurde: Der Reader überprüft lediglich den gespeicherten MD5-Hash einer L01-Datei.</translation>
+        <source>{count} of {total} file(s) were not checked against any recorded hash: the acquisition did not collect their content:</source>
+        <translation>{count} von {total} Datei(en) wurden gegen keinen aufgezeichneten Hash geprüft: Ihr Inhalt wurde bei der Erfassung nicht mit aufgenommen:</translation>
     </message>
     <message>
         <source>The container&apos;s own checks</source>

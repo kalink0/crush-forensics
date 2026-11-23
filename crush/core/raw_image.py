@@ -55,6 +55,7 @@ from crush.third_party.ewfprobe import ewfprobe as _ewfprobe
 sys.modules.setdefault("ewfprobe", _ewfprobe)
 from crush.third_party import qnxprobe  # noqa: E402
 from crush.third_party.qnxprobe.qnxprobe import (  # noqa: E402
+    ASIF_SIGNATURE,
     ApfsLock,
     ApfsWalker,
     BitLocker,
@@ -160,6 +161,23 @@ CONTAINER_HEAD_SIGNATURES: tuple[bytes, ...] = (
     qnxprobe.VMDK_DESCRIPTOR_START,
     qnxprobe.QCOW_MAGIC,
 )
+
+
+def is_asif_head(head: bytes) -> bool:
+    """True when *head* (a file's first bytes) starts an ASIF image (Apple
+    Sparse Image Format, macOS 26): its signature, then a big-endian header
+    version from 1 to 255. Mirrors the image reader's own rule, under which
+    a file that merely starts with the four signature bytes stays a raw
+    file (an hdiutil shadow file shares the signature and passes too, as it
+    does in the reader). Like CONTAINER_HEAD_SIGNATURES, only for the hint
+    on a file that can't be handed to the reader by path."""
+    return (
+        len(head) >= 8
+        and head[:4] == ASIF_SIGNATURE
+        and 1 <= int.from_bytes(head[4:8], "big") <= 255
+    )
+
+
 # FTK Imager's AD encryption: what it holds (a disk image or an AD1) shows
 # only once its password or key opened it.
 AD_ENCRYPTED_SIGNATURE: bytes = qnxprobe.ADCRYPT_SIGNATURE
@@ -185,6 +203,7 @@ _CONTAINER_LABELS = {
     "AFF4": "AFF4",
     "UDIF": "Apple disk image",
     "SPARSEIMAGE": "Apple sparse image",
+    "ASIF": "Apple Sparse Image Format (ASIF)",
     "SPARSEBUNDLE": "Apple sparse bundle",
     "DMG_ENCRYPTED": "encrypted Apple disk image",
     "AD_ENCRYPTED": "FTK Imager AD-encrypted",
@@ -248,7 +267,8 @@ class RawImageHandle:
     lvm_reports: dict[int, list[str]] = field(default_factory=dict)
     # ewfprobe's name for the container ("EWF-E01", "EWF-S01", "EWF2-Ex01",
     # "AFF", "AFD", "AFM", and since ewfprobe 0.12 "AFF4", "UDIF",
-    # "SPARSEIMAGE", "UDRW" (an encrypted read-write Apple disk image), "RAW"
+    # "SPARSEIMAGE", since 0.17 "ASIF", "UDRW" (an encrypted read-write Apple
+    # disk image), "RAW"
     # (an AD-encrypted raw set), "VHD", "VHDX", "VMDK", "QCOW"), None for a
     # raw image or split set.
     acquisition: str | None = None
@@ -290,14 +310,36 @@ def verify_acquisition(
 
     Returns ewfprobe's own result dict: `computed`, `stored`, `match` (True,
     False, or None when the acquisition recorded no hash to compare against),
-    `bytes`, `checksum_errors`, `missing_page_count`. Only valid for an
+    `bytes`, `checksum_errors`, `missing_page_count`, and what was found
+    damaged while reading (see verify_image()). Only valid for an
     acquisition -- raw images have no built-in hash of their own to verify
     against, which is exactly why this is separate from (and not a
     substitute for) that case.
     """
     if handle.acquisition is None:
         raise ValueError(f"{handle.path.name} is not a forensic acquisition")
-    return handle.image.verify(progress=progress)  # type: ignore[no-any-return]
+    return verify_image(handle.image, progress)
+
+
+def verify_image(
+    image: Any, progress: Callable[[int, int], None] | None = None
+) -> dict[str, Any]:
+    """ewfprobe's verify() of *image*, read to the end past damage.
+
+    With keep_going the reader returns its whole result even when it found
+    damage its older keys can't show (unreadable chunks or entries, a chunk
+    table failing its checksum, a segment of another acquisition, AD1 bytes
+    the item tree doesn't reach), so every finding reaches the report rather
+    than only the first. A format the reader can't read past an unreadable
+    chunk still raises, with no result: that error propagates. An error
+    that does carry a result is answered with that result."""
+    try:
+        return image.verify(progress=progress, keep_going=True)  # type: ignore[no-any-return]
+    except _ewfprobe.EwfError as exc:
+        result = getattr(exc, "result", None)
+        if not isinstance(result, dict):
+            raise
+        return result
 
 
 @dataclass
@@ -334,8 +376,8 @@ def open_raw_image(
 ) -> RawImageHandle:
     """Open `path` as a raw disk image, a forensic acquisition (EWF .E01,
     SMART .s01, EWF2 .Ex01, AFF/AFD, AFF4), an Apple disk image (.dmg,
-    .sparseimage, or a .sparsebundle folder) or a virtual disk (VHD, VHDX,
-    VMDK, QCOW), and list its
+    .sparseimage, .asif, or a .sparsebundle folder) or a virtual disk (VHD,
+    VHDX, VMDK, QCOW), and list its
     volumes. *password* opens an encrypted container (an encrypted Apple disk
     image, an AD-encrypted set, an encrypted AFF); *private_key* is the path
     of the key file that opens one sealed to a certificate. *secrets* are
