@@ -97,6 +97,9 @@ Format reference (Linux)
 iOS SEGB (Windows)
 ![iOS SEGB (Windows)](crush/docs/pictures/example_ios_win_segb.png)
 
+iOS container folders by their identifier (Linux)
+![iOS container folders by their identifier (Linux)](crush/docs/pictures/example_ios_container.png)
+
 Android ABX (Linux)
 ![Android ABX (Linux)](crush/docs/pictures/example_android_lin_abx.png)
 
