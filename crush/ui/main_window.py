@@ -1130,6 +1130,7 @@ class MainWindow(QMainWindow):
         self._apply_saved_theme()
         self._apply_saved_integrity_mode()
         self._apply_saved_prescan_workers()
+        self._apply_saved_container_names()
 
     # ------------------------------------------------------------------
     # Layout
@@ -1418,6 +1419,21 @@ class MainWindow(QMainWindow):
         )
         self._always_hex_action.toggled.connect(self._set_always_hex)
         view_menu.addAction(self._always_hex_action)
+        self._container_names_action = QAction(
+            translate("MainWindow", "Show iOS Container Identifiers"),
+            self,
+            checkable=True,
+        )
+        self._container_names_action.setToolTip(
+            translate(
+                "MainWindow",
+                "Show iOS container folders (apps, app groups, extensions, "
+                "system containers) by the identifier of their owner in their "
+                "metadata plist instead of their GUID folder name",
+            )
+        )
+        self._container_names_action.toggled.connect(self._set_show_container_names)
+        view_menu.addAction(self._container_names_action)
         view_menu.addAction(translate("MainWindow", "Close all tabs"), self._close_all_tabs)
         view_menu.addSeparator()
         theme_menu = view_menu.addMenu(translate("MainWindow", "Theme"))
@@ -5494,6 +5510,18 @@ class MainWindow(QMainWindow):
         self._apply_palette(self.style().standardPalette())
         self._settings.setValue("theme", "system")
         self._logger.info("Theme set to system default")
+
+    def _apply_saved_container_names(self) -> None:
+        enabled = self._settings.value("show_ios_container_names", True, type=bool)
+        self._container_names_action.setChecked(enabled)
+        # setChecked emits toggled only on a change: apply it either way.
+        self._fs_panel.set_show_container_names(enabled)
+
+    def _set_show_container_names(self, enabled: bool) -> None:
+        self._fs_panel.set_show_container_names(enabled)
+        self._settings.setValue("show_ios_container_names", enabled)
+        if hasattr(self, "_logger"):
+            self._logger.info("Show iOS container identifiers for container folders: %s", enabled)
 
     def _set_always_hex(self, enabled: bool) -> None:
         self._always_hex = enabled
