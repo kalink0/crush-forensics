@@ -2,7 +2,9 @@
 
 All notable changes to Crush will be documented in this file.
 
-## Unreleased
+## v0.26.0 - 2026-11-23
+
+**Focus: Compute Hash for files and folders; cancelling opening, unlocking, exports and type indexing; iOS container folders by their identifier; KTX textures in more formats; bundled qnxprobe v1.87 and ewfprobe v0.17.3 add ASIF images, L01 SHA-1 verification and a stricter Verify Acquisition Hash.**
 
 ### New Features
 
@@ -20,7 +22,7 @@ All notable changes to Crush will be documented in this file.
 - KTX textures in more pixel formats now decode to an image instead of showing as text: ASTC at every block size (previously only 4x4), ETC1/ETC2/EAC, PVRTC 1, BC1/BC3/BC4/BC5/BC7, and uncompressed 8-bit RGBA/BGRA/RGB/BGR/luminance/alpha. New dependency: [texture2ddecoder](https://github.com/K0lb3/texture2ddecoder). KTX files are now also matched by the Image type filter in the filesystem and search panels. ([@jensstigaard](https://github.com/jensstigaard), [#197](https://github.com/kalink0/crush-forensics/pull/197))
 - A LevelDB table block that can't be read, decompressed or read to its end is skipped and named with its offset and whether its stored checksum matches; the blocks after it are still read, as LevelDB reads on.
 - Bundled [ccl_leveldb](https://github.com/cclgroupltd/ccl_chromium_reader) updated to v0.6 (from v0.4), with [ccl_simplesnappy](https://github.com/cclgroupltd/ccl_simplesnappy) bundled from its own repository.
-- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.87 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.17.3 (from v0.15.0); files on FAT and exFAT are read only up to their recorded size.
+- Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.87 (from v1.75) and [ewfprobe](https://github.com/abrignoni/ewfprobe) to v0.17.3 (from v0.15.0). ([@abrignoni](https://github.com/abrignoni), [#195](https://github.com/kalink0/crush-forensics/pull/195), [#200](https://github.com/kalink0/crush-forensics/pull/200))
 - Bundled [mmkv-parser](https://github.com/abrignoni/mmkv-parser) updated to v1.3.0 (from v1.1.0).
 - An MMKV store with an AES vector that doesn't read as plaintext is reported as encrypted or damaged, as the two can't be told apart without the key.
 
