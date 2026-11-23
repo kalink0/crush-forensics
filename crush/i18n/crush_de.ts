@@ -1138,6 +1138,12 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <source>Background: {items}</source>
         <translation>Hintergrund: {items}</translation>
     </message>
+    <message>
+        <source>{identifier}
+Folder: {name}</source>
+        <translation>{identifier}
+Ordner: {name}</translation>
+    </message>
 </context>
 <context>
     <name>FlatBuffersTreeWidget</name>
@@ -7510,6 +7516,14 @@ Speicherort öffnen?</translation>
         <translation>Wird abgebrochen…</translation>
     </message>
     <message>
+        <source>Show iOS Container Identifiers</source>
+        <translation>iOS-Container-Kennungen anzeigen</translation>
+    </message>
+    <message>
+        <source>Show iOS container folders (apps, app groups, extensions, system containers) by the identifier of their owner in their metadata plist instead of their GUID folder name</source>
+        <translation>iOS-Container-Ordner (Apps, App-Gruppen, Erweiterungen, Systemcontainer) mit der Kennung ihres Eigentümers aus ihrer Metadaten-Plist statt mit ihrem GUID-Ordnernamen anzeigen</translation>
+    </message>
+    <message>
         <source>{path} opened in a new window</source>
         <translation>{path} wurde in einem neuen Fenster geöffnet</translation>
     </message>
@@ -13007,6 +13021,26 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Der Parser hat das Format {name} gefunden, das keinen Eintrag in der Formatdatenbank hat; mit dem Wissen des allgemeinen Formats angezeigt</translation>
     </message>
     <message>
+        <source>Not read: the metadata plist is {size:,} bytes, larger than the {limit:,} bytes read for it</source>
+        <comment>ios_container.plist_too_large</comment>
+        <translation>Nicht gelesen: Die Metadaten-Plist ist {size:,} Bytes groß, mehr als die {limit:,} Bytes, die dafür gelesen werden</translation>
+    </message>
+    <message>
+        <source>The metadata plist could not be read: {detail}</source>
+        <comment>ios_container.read_failed</comment>
+        <translation>Die Metadaten-Plist konnte nicht gelesen werden: {detail}</translation>
+    </message>
+    <message>
+        <source>The metadata plist is not a valid plist: {detail}</source>
+        <comment>ios_container.not_a_plist</comment>
+        <translation>Die Metadaten-Plist ist keine gültige Plist: {detail}</translation>
+    </message>
+    <message>
+        <source>The metadata plist holds no {key} string</source>
+        <comment>ios_container.no_identifier</comment>
+        <translation>Die Metadaten-Plist enthält keinen {key}-String</translation>
+    </message>
+    <message>
         <source>(not recorded)</source>
         <comment>ufdr.not_recorded</comment>
         <translation>(nicht erfasst)</translation>
@@ -13388,6 +13422,10 @@ YnBsaXN0MDA…       (Base64)
     <message>
         <source>Backup File ID:</source>
         <translation>Backup-Datei-ID:</translation>
+    </message>
+    <message>
+        <source>Container Identifier:</source>
+        <translation>Container-Kennung:</translation>
     </message>
     <message>
         <source>Open Format Info…</source>

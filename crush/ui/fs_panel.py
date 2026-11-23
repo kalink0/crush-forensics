@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import overload
+from typing import Generic, TypeVar, overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
 from PySide6.QtGui import QAction, QGuiApplication, QStandardItem, QStandardItemModel
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 
 from crush.core import ios_containers
+from crush.core.issues import ParseIssue
 from crush.core.hashing import (
     DISPLAY_NAMES,
     QUERY_NOT_HEX,
@@ -153,6 +154,52 @@ def _format_size(size: int) -> str:
     return f"{value:.1f} {_SIZE_UNITS[unit_index]}"
 
 
+_T = TypeVar("_T")
+
+
+class _OnDemandWorker(Generic[_T]):
+    """Runs *handle* for each item put, one at a time, on a thread started
+    when an item arrives and ended after *idle* seconds without one.
+
+    put() and the thread's end decide under one lock whether a thread runs,
+    so an item put while the thread is ending is never left in the queue.
+    """
+
+    def __init__(
+        self, handle: Callable[[_T], None], window_id: str | None, idle: float = 5.0,
+    ) -> None:
+        self._handle = handle
+        self._window_id = window_id
+        self._idle = idle
+        self._queue: queue.SimpleQueue[_T] = queue.SimpleQueue()
+        self._lock = threading.Lock()
+        self._running = False
+
+    def put(self, item: _T) -> None:
+        self._queue.put(item)
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        with window_log_scope(self._window_id):
+            while True:
+                try:
+                    item = self._queue.get(timeout=self._idle)
+                except queue.Empty:
+                    with self._lock:
+                        if self._queue.empty():
+                            self._running = False
+                            return
+                    continue
+                try:
+                    self._handle(item)
+                except Exception as exc:  # noqa: BLE001 -- the next item still runs
+                    _logger.debug("Background read failed: %s", exc)
+
+
 class _FilterLineEdit(QLineEdit):
     """QLineEdit that shows the completer dropdown on click/focus."""
 
@@ -171,6 +218,11 @@ def _activity_label(name: str) -> str:
         "Indexing types": translate("FilesystemPanel", "Indexing types"),
     }
     return labels.get(name, name)
+
+
+def _identifier_of(result: str | ParseIssue | None) -> str | None:
+    """The container identifier a plist read gave (a ParseIssue: none)."""
+    return result if isinstance(result, str) else None
 
 
 class FilesystemPanel(QWidget):
@@ -274,25 +326,26 @@ class FilesystemPanel(QWidget):
         self._prescan_stopped: tuple[int, int] | None = None
         self._indexing_state = "idle"
         # With the indexing stopped, the pending labels of rows shown are
-        # read one by one on a thread of their own (_read_pending_types).
-        self._ondemand_queue: queue.SimpleQueue[tuple[VFSNode, VFS, int]] = queue.SimpleQueue()
+        # read one by one on a thread of their own (_read_pending_type).
+        self._ondemand_worker: _OnDemandWorker[tuple[VFSNode, VFS, int]] = _OnDemandWorker(
+            self._read_pending_type, window_id
+        )
         self._ondemand_keys: set[tuple[int, str]] = set()
-        self._ondemand_thread: threading.Thread | None = None
         # iOS container folders (named by a GUID) can be shown by the
         # identifier in their metadata plist instead. The plists are read on
         # a thread of their own; a folder shows its GUID until then.
-        # _container_names keeps each plist read (None: read, no identifier),
-        # written from the UI thread and from search threads under the lock.
+        # _container_names keeps each plist read (a ParseIssue: read, no
+        # identifier), written from the UI thread and from search threads
+        # under the lock.
         self._show_container_names = True
         self._container_gen = 0
         self._container_lock = threading.Lock()
-        self._container_names: dict[tuple[int, str], str | None] = {}
+        self._container_names: dict[tuple[int, str], str | ParseIssue] = {}
         self._container_items: dict[tuple[int, str], list[QStandardItem]] = {}
         self._container_requested: set[tuple[int, str]] = set()
-        self._container_queue: queue.SimpleQueue[
+        self._container_worker: _OnDemandWorker[
             tuple[VFSNode, VFS, tuple[int, str], int]
-        ] = queue.SimpleQueue()
-        self._container_thread: threading.Thread | None = None
+        ] = _OnDemandWorker(self._read_container_name, window_id)
         self._container_name_ready.connect(self._on_container_name_ready)
         self.background_status.emit("")
         self._build_ui()
@@ -1341,8 +1394,7 @@ class FilesystemPanel(QWidget):
                 key = (id(vfs), node.path)
                 if key not in self._ondemand_keys:
                     self._ondemand_keys.add(key)
-                    self._ondemand_queue.put((node, vfs, self._prescan_gen))
-            self._ensure_ondemand_thread()
+                    self._ondemand_worker.put((node, vfs, self._prescan_gen))
         self._type_queue.extend(pending)
         if not self._type_timer.isActive():
             self._activity_start("Type detection")
@@ -1387,33 +1439,18 @@ class FilesystemPanel(QWidget):
         self._type_cache[cache_key] = label
         return label
 
-    def _ensure_ondemand_thread(self) -> None:
-        if self._ondemand_thread is not None and self._ondemand_thread.is_alive():
-            return
-        window_id = self._window_id
-
-        def _run() -> None:
-            with window_log_scope(window_id):
-                self._read_pending_types()
-
-        self._ondemand_thread = threading.Thread(target=_run, daemon=True)
-        self._ondemand_thread.start()
-
-    def _read_pending_types(self) -> None:
-        """Read the type label of each row queued while the indexing is
-        stopped (_retry_pending_types picks it up from the cache)."""
-        while True:
-            try:
-                node, vfs, gen = self._ondemand_queue.get(timeout=5)
-            except queue.Empty:
-                return
-            if gen != self._prescan_gen:
-                continue  # sources changed or indexing resumed meanwhile
-            try:
-                with background_io():
-                    self._detect_type_label(node, vfs)
-            except Exception as exc:  # noqa: BLE001 -- the label stays pending
-                self._logger.debug("Type read failed for %s: %s", node.path, exc)
+    def _read_pending_type(self, request: tuple[VFSNode, VFS, int]) -> None:
+        """Read the type label of a row queued while the indexing is
+        stopped (_retry_pending_types picks it up from the cache). Runs on
+        the on-demand worker's thread."""
+        node, vfs, gen = request
+        if gen != self._prescan_gen:
+            return  # sources changed or indexing resumed meanwhile
+        try:
+            with background_io():
+                self._detect_type_label(node, vfs)
+        except Exception as exc:  # noqa: BLE001 -- the label stays pending
+            self._logger.debug("Type read failed for %s: %s", node.path, exc)
 
     def has_running_activity(self) -> bool:
         """Something runs in the background (the status text may also only
@@ -1647,9 +1684,6 @@ class FilesystemPanel(QWidget):
     # iOS container folders shown by their identifier
     # ------------------------------------------------------------------
 
-    def show_container_names(self) -> bool:
-        return self._show_container_names
-
     def set_show_container_names(self, enabled: bool) -> None:
         """Show iOS container folders by the identifier in
         their metadata plist (True) or by their GUID folder name (False)."""
@@ -1662,7 +1696,9 @@ class FilesystemPanel(QWidget):
                 vfs: VFS | None = item.data(_ROLE_VFS)
                 if node is None or vfs is None:
                     continue
-                self._apply_container_label(item, node, self._container_names.get(key))
+                self._apply_container_label(
+                    item, node, _identifier_of(self._container_names.get(key))
+                )
                 if enabled:
                     self._request_container_name(node, vfs, key)
         # Search results show (and match) names as the setting says: anew.
@@ -1684,7 +1720,7 @@ class FilesystemPanel(QWidget):
         if not self._show_container_names:
             return
         if key in self._container_names:
-            self._apply_container_label(item, node, self._container_names[key])
+            self._apply_container_label(item, node, _identifier_of(self._container_names[key]))
         else:
             self._request_container_name(node, vfs, key)
 
@@ -1714,44 +1750,36 @@ class FilesystemPanel(QWidget):
         if key in self._container_names or key in self._container_requested:
             return
         self._container_requested.add(key)
-        self._container_queue.put((node, vfs, key, self._container_gen))
-        if self._container_thread is not None and self._container_thread.is_alive():
-            return
-        window_id = self._window_id
+        self._container_worker.put((node, vfs, key, self._container_gen))
 
-        def _run() -> None:
-            with window_log_scope(window_id):
-                self._read_container_names()
-
-        self._container_thread = threading.Thread(target=_run, daemon=True)
-        self._container_thread.start()
-
-    def _read_container_names(self) -> None:
-        """Read the metadata plist of each container folder queued (runs on
-        a thread of its own: a disk image may keep a read waiting)."""
-        while True:
-            try:
-                node, vfs, key, gen = self._container_queue.get(timeout=5)
-            except queue.Empty:
-                return
+    def _read_container_name(
+        self, request: tuple[VFSNode, VFS, tuple[int, str], int]
+    ) -> None:
+        """Read the metadata plist of a container folder queued, unless a
+        search read it already. Runs on the container worker's thread: a
+        disk image may keep a read waiting."""
+        node, vfs, key, gen = request
+        with self._container_lock:
             if gen != self._container_gen:
-                continue  # the tree was replaced meanwhile
-            try:
-                with background_io():
-                    identifier = ios_containers.read_identifier(node, vfs)
-            except Exception as exc:  # noqa: BLE001 -- the folder keeps its name
-                self._logger.debug("Container metadata read failed for %s: %s", node.path, exc)
-                identifier = None
-            self._container_name_ready.emit(key, identifier, gen)
+                return  # the tree was replaced meanwhile
+            cached = self._container_names.get(key)
+        if cached is None:
+            with background_io():
+                result = ios_containers.read_identifier(node, vfs)
+            if result is None:
+                return  # no container (any more): nothing to show
+            cached = result
+        self._container_name_ready.emit(key, cached, gen)
 
     def _on_container_name_ready(
-        self, key: tuple[int, str], identifier: str | None, gen: int
+        self, key: tuple[int, str], result: str | ParseIssue, gen: int
     ) -> None:
         with self._container_lock:
             if gen != self._container_gen:
                 return
-            self._container_names[key] = identifier
-        if not identifier:
+            self._container_names[key] = result
+        identifier = _identifier_of(result)
+        if identifier is None:
             return
         for item in self._container_items.get(key, []):
             node: VFSNode | None = item.data(_ROLE_NODE)
@@ -1760,23 +1788,22 @@ class FilesystemPanel(QWidget):
 
     def _container_identifier_blocking(self, node: VFSNode, vfs: VFS) -> str | None:
         """The identifier of container folder *node* (None for any other
-        folder), read from the source when not read yet and kept for the
-        next search: background only."""
+        folder or when its plist gives none), read from the source when not
+        read yet and kept for the next search: background only."""
         key = (id(vfs), node.path)
         with self._container_lock:
             gen = self._container_gen
             if key in self._container_names:
-                return self._container_names[key]
+                return _identifier_of(self._container_names[key])
         if not ios_containers.is_container(node):
             return None
-        try:
-            identifier = ios_containers.read_identifier(node, vfs)
-        except Exception:  # noqa: BLE001 -- the folder keeps its name
-            identifier = None
+        result = ios_containers.read_identifier(node, vfs)
+        if result is None:
+            return None
         with self._container_lock:
             if gen == self._container_gen:  # else the tree was replaced meanwhile
-                self._container_names.setdefault(key, identifier)
-        return identifier
+                self._container_names.setdefault(key, result)
+        return _identifier_of(result)
 
     def _add_placeholder(self, parent_item: QStandardItem) -> None:
         if parent_item.rowCount() > 0:
