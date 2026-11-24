@@ -11,7 +11,12 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Every job runs only in the upstream repo, so publishing a release in a
+  # fork builds nothing there. Each job carries the check itself:
+  # forensic-audit-publish (always()) and pages (!cancelled()) would
+  # otherwise still run after their skipped predecessors.
   build:
+    if: github.repository == 'kalink0/crush-forensics'
     strategy:
       fail-fast: false
       matrix:
@@ -337,6 +342,7 @@ jobs:
   # -- not reused from an earlier CI run, so the report attached to the
   # release describes exactly this tag. Only @pytest.mark.forensic tests.
   forensic-audit:
+    if: github.repository == 'kalink0/crush-forensics'
     strategy:
       fail-fast: false
       matrix:
@@ -399,7 +405,7 @@ jobs:
   # release notes, then this job goes red.
   forensic-audit-publish:
     needs: forensic-audit
-    if: always()
+    if: always() && github.repository == 'kalink0/crush-forensics'
     runs-on: ubuntu-latest
 
     steps:
@@ -447,7 +453,7 @@ jobs:
   # purpose but has attached the report), so the site and badge show it.
   pages:
     needs: forensic-audit-publish
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.repository == 'kalink0/crush-forensics' }}
     permissions:
       contents: read
       pages: write
