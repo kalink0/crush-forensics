@@ -324,7 +324,7 @@ No forensic checks.
 #### NTFS
 
 - **Known-output Verification** — raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_single_volume_content_matches`)
-- **Known-output Verification** — Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_recovers_known_deleted_files`)
+- **Known-output Verification** — Of two deliberately deleted NTFS test files, the resident one must recover to its reference hash, and the one whose clusters another deleted record also claims must be listed and refuse to read with the reason ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_deleted_files_recover_or_say_why`)
 - **Known-output Verification** — Every alternate data stream of raw_ntfs_streams.img.gz that stores data must be listed beside its file and read back to The Sleuth Kit's reference hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_every_stream_matches_the_sleuth_kit`)
 - **Known-output Verification** — Every file of raw_ntfs_windows.img.gz that Windows hashed and the reader decodes (sparse, NTFS-compressed, overlay-compressed with XPRESS) must read back to the SHA-256 Windows itself reported ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_content_matches_what_windows_hashed`)
 - **Known-output Verification** — The three online-only cloud placeholders of raw_ntfs_windows.img.gz, which Windows itself refused to read, must be listed at their recorded size and refuse to read with the reason, never read back as zeros ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_cloud_placeholders_are_listed_and_say_why_they_cannot_be_read`)
@@ -333,7 +333,7 @@ No forensic checks.
 
 #### FAT32
 
-- **Known-output Verification** — Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_recovers_content_with_first_character_lost`)
+- **Known-output Verification** — Three deliberately deleted FAT32 test files whose first cluster is ambiguous (zeroed high word on a volume with cluster numbers of 0x10000 or above) must be listed and refuse to read with the reason ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_deleted_files_with_an_ambiguous_first_cluster_are_refused`)
 - **Known-output Verification** — FAT32 entries show their stored date/time as stored, with no time zone ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_fat32`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
