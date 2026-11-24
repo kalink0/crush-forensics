@@ -4,12 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Automatic runs only in the upstream repo, so forks don't run (and fail)
+  # the whole matrix on every sync; a manual dispatch still works in a fork.
+  # PRs from a fork to upstream run in upstream and are not affected.
   lint:
+    if: github.repository == 'kalink0/crush-forensics' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -46,6 +51,7 @@ jobs:
         run: python scripts/i18n.py check
 
   test:
+    if: github.repository == 'kalink0/crush-forensics' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
