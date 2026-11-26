@@ -18,7 +18,7 @@ import pytest
 from PySide6.QtCore import QItemSelectionModel
 from PySide6.QtWidgets import QMessageBox
 
-from crush.core.vfs import DirectoryVFS, VFSNode
+from crush.core.vfs import VFS, DirectoryVFS, VFSNode
 from crush.core.zip_writer import ZipOptions
 from crush.ui.fs_panel import _ROLE_NODE, FilesystemPanel
 from crush.ui.main_window import (
@@ -240,11 +240,38 @@ def test_cancel_leaves_the_target_as_it_was(qapp: Any, tmp_path: Path, mode: str
     assert _no_partials(tmp_path)
 
 
+class _MemoryVFS(VFS):
+    """A source held in memory, not on the host filesystem: it can hold names
+    the host can't, such as "a:b.txt" on Windows (where the colon would name
+    an NTFS alternate data stream). Evidence names often aren't valid host
+    names either. *files* maps a name to its bytes, all under the root."""
+
+    def __init__(self, root_name: str, files: dict[str, bytes]) -> None:
+        self._contents = {f"/{root_name}/{name}": data for name, data in files.items()}
+        children = [
+            VFSNode(name=name, path=f"/{root_name}/{name}", is_dir=False, size=len(data))
+            for name, data in files.items()
+        ]
+        self._root = VFSNode(name=root_name, path=f"/{root_name}", is_dir=True, children=children)
+
+    def root(self) -> VFSNode:
+        return self._root
+
+    def read(self, node: VFSNode) -> bytes:
+        return self._contents[node.path]
+
+    def open(self, node: VFSNode) -> IO[bytes]:
+        return io.BytesIO(self._contents[node.path])
+
+    def file_count(self, node: VFSNode) -> int:
+        return len(node.children) if node.is_dir else 1
+
+    def total_size(self, node: VFSNode) -> int:
+        return sum(c.size for c in node.children) if node.is_dir else node.size
+
+
 def test_windows_unsafe_names_are_sanitized_and_recorded(qapp: Any, tmp_path: Path) -> None:
-    src = tmp_path / "src"
-    src.mkdir()
-    (src / "a:b.txt").write_bytes(b"x")
-    vfs = DirectoryVFS(src)
+    vfs = _MemoryVFS("src", {"a:b.txt": b"x"})
     out = tmp_path / "out.zip"
 
     _run(_ExportZipWorker([_zip_item(vfs.root(), vfs)], str(out), "new", False))
@@ -252,7 +279,7 @@ def test_windows_unsafe_names_are_sanitized_and_recorded(qapp: Any, tmp_path: Pa
     with zipfile.ZipFile(out) as zf:
         assert zf.read("src/a_b.txt") == b"x"
     renames = (tmp_path / "out.zip.crush-export-renames.txt").read_text(encoding="utf-8")
-    assert "a:b.txt\t->\tsrc/a_b.txt" in renames
+    assert "/src/a:b.txt\t->\tsrc/a_b.txt" in renames
 
 
 def test_unique_arcname() -> None:
@@ -590,11 +617,7 @@ def test_menu_flow_asks_replace_or_beside_when_an_entry_is_there(
 def test_lists_beside_are_appended_when_adding_and_replaced_with_the_archive(
     qapp: Any, tmp_path: Path
 ) -> None:
-    src = tmp_path / "src"
-    src.mkdir()
-    (src / "a:b.txt").write_bytes(b"x")
-    (src / "plain.txt").write_bytes(b"y")
-    vfs = DirectoryVFS(src)
+    vfs = _MemoryVFS("src", {"a:b.txt": b"x", "plain.txt": b"y"})
     odd = _child(vfs.root(), "a:b.txt")
     plain = _child(vfs.root(), "plain.txt")
     out = tmp_path / "out.zip"
