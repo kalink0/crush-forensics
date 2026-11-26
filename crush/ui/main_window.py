@@ -1081,22 +1081,48 @@ class _ZipEntry:
     sanitized: bool
 
 
+def _zip_source_folders(items: list[ZipSourceItem]) -> dict[int, str]:
+    """With entries from several sources: each source's folder at the top of
+    the archive, by id(vfs) -- its root's (Windows-safe) name, numbered
+    `name (2)`, `name (3)` ... in the order the sources first come when
+    another source already has it, so two sources both called `userdata`
+    never share a folder. Compared without case, as Windows extracts
+    `Userdata` and `userdata` into one folder. Empty with one source."""
+    order: list[tuple[int, str]] = []
+    for _node, vfs, source, _folders in items:
+        if all(key != id(vfs) for key, _name in order):
+            order.append((id(vfs), source))
+    if len(order) < 2:
+        return {}
+    folders: dict[int, str] = {}
+    taken: set[str] = set()
+    for key, source in order:
+        base, _changed = _safe_name(source or "export")
+        name, n = base, 2
+        while name.casefold() in taken:
+            name = f"{base} ({n})"
+            n += 1
+        taken.add(name.casefold())
+        folders[key] = name
+    return folders
+
+
 def _zip_layout(items: list[ZipSourceItem], source_path: bool) -> list[_ZipEntry]:
     """Where each entry goes in the archive: at the top under its own name,
     or (*source_path*) under its path from the root of its source -- with
-    the source's name first when the entries come from several sources, so
-    theirs don't mix."""
-    several_sources = len({id(vfs) for _node, vfs, _source, _folders in items}) > 1
+    the source's own folder first when the entries come from several
+    sources (_zip_source_folders), so theirs don't mix."""
+    source_folders = _zip_source_folders(items) if source_path else {}
     layout: list[_ZipEntry] = []
     for node, vfs, source, folders in items:
         steps: list[tuple[str, float | None]] = []
         if source_path:
-            if several_sources:
+            if source_folders:
                 try:
                     root_modified = vfs.root().modified
                 except Exception:
                     root_modified = None
-                steps.append((source, root_modified))
+                steps.append((source_folders[id(vfs)], root_modified))
             steps.extend(folders)
         parts: list[str] = []
         sanitized = False
@@ -1164,6 +1190,7 @@ class _ExportZipWorker(QObject):
         on_clash: ZipClashMode = "number",
         options: ZipOptions | None = None,
         hashes: HashStore | None = None,
+        source_labels: dict[int, str] | None = None,
     ) -> None:
         super().__init__()
         self._hashes = hashes  # the window's store: integrity hashes are kept there
@@ -1180,6 +1207,15 @@ class _ExportZipWorker(QObject):
         if self._options.split_size and mode == "add":
             raise ValueError("a split archive can't be added to")
         self._layout = _zip_layout(items, self._options.source_path)
+        # With several sources: (folder in the archive, what the source was
+        # opened from), for the list beside it; source_labels by id(vfs).
+        labels = source_labels or {}
+        self._source_lines = [
+            f"{folder}/\t{labels.get(key) or self._root_name(items, key)}"
+            for key, folder in (
+                _zip_source_folders(items) if self._options.source_path else {}
+            ).items()
+        ]
         self._zip_path = Path(zip_path)
         self._mode = mode
         self._integrity = integrity
@@ -1330,6 +1366,10 @@ class _ExportZipWorker(QObject):
                 break
             temp.unlink(missing_ok=True)
             number += 1
+
+    @staticmethod
+    def _root_name(items: list[ZipSourceItem], key: int) -> str:
+        return next(source for _n, vfs, source, _f in items if id(vfs) == key)
 
     def _described(self) -> str:
         if len(self._layout) == 1:
@@ -1549,6 +1589,16 @@ class _ExportZipWorker(QObject):
                     *self._rename_lines,
                 ]) + "\n"
                 if self._rename_lines else None
+            ),
+            "sources": (
+                "\n".join([
+                    header,
+                    "# The entries come from several sources: each source's own folder at the",
+                    "# top of the archive, numbered when sources share a name.",
+                    "# folder in the archive\tsource (what it was opened from)",
+                    *self._source_lines,
+                ]) + "\n"
+                if self._source_lines else None
             ),
             "times": (
                 "\n".join([
@@ -3148,6 +3198,9 @@ class MainWindow(QMainWindow):
                 items, zip_path, mode, self.session.integrity_mode,
                 window_id=self._window_id, on_clash=on_clash, options=options,
                 hashes=self.session.hashes,
+                source_labels={
+                    id(vfs): self.session.source_label(vfs) for _n, vfs, _s, _f in items
+                },
             ),
             translate("MainWindow", "Exporting…")
             if n == 1

@@ -298,3 +298,67 @@ def test_several_sources_their_folder_has_the_roots_own_time(qapp: Any, tmp_path
     times = _times(tmp_path)
     assert times["case/"][:2] == ("source", "2020-09-13T12:26:40Z")
     assert times["phone/"][:2] == ("source", "2022-04-15T05:20:00Z")
+
+
+# -- several sources of the same name ---------------------------------------------------
+
+
+def _userdata(tmp_path: Path, where: str, name: str, content: bytes) -> DirectoryVFS:
+    root = tmp_path / where / name
+    (root / "media").mkdir(parents=True)
+    (root / "media" / "x.jpg").write_bytes(content)
+    return DirectoryVFS(root)
+
+
+def test_sources_with_the_same_name_get_their_own_folders(qapp: Any, tmp_path: Path) -> None:
+    first = _userdata(tmp_path, "phone-a", "userdata", b"A")
+    second = _userdata(tmp_path, "phone-b", "userdata", b"B")
+    third = _userdata(tmp_path, "phone-c", "UserData", b"C")  # one folder on Windows too
+    out = tmp_path / "out.zip"
+    worker = _ExportZipWorker(
+        [_item(v, "media", "x.jpg") for v in (first, second, third)], str(out), "new", False,
+        options=ZipOptions(source_path=True),
+        source_labels={id(first): "/cases/a.zip", id(second): "/cases/b.zip"},
+    )
+    worker.run()
+
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("userdata/media/x.jpg") == b"A"
+        assert zf.read("userdata (2)/media/x.jpg") == b"B"
+        assert zf.read("UserData (3)/media/x.jpg") == b"C"
+        assert not any("x (2)" in name for name in zf.namelist())  # nothing numbered inside
+    sources = (tmp_path / "out.zip.crush-export-sources.txt").read_text(encoding="utf-8")
+    assert "userdata/\t/cases/a.zip" in sources
+    assert "userdata (2)/\t/cases/b.zip" in sources
+    assert "UserData (3)/\tUserData" in sources  # no label known: the root's name
+    assert not (tmp_path / "out.zip.crush-export-renames.txt").exists()
+
+
+def test_one_source_writes_no_source_list(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    _export(tmp_path, [_item(vfs, "var", "www", "index.html")], source_path=True)
+    assert not (tmp_path / "out.zip.crush-export-sources.txt").exists()
+
+
+def test_flow_labels_sources_with_what_they_were_opened_from(
+    qapp: Any, qtbot: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    first = _userdata(tmp_path, "phone-a", "userdata", b"A")
+    second = _userdata(tmp_path, "phone-b", "userdata", b"B")
+    out = tmp_path / "out.zip"
+    monkeypatch.setattr(
+        MainWindow, "_zip_export_dialog",
+        lambda self, default_name, items: (out, ZipOptions(source_path=True)),
+    )
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    win = MainWindow()
+    try:
+        win.session.add_source_vfs(first, tmp_path / "phone-a" / "userdata")
+        win.session.add_source_vfs(second, tmp_path / "phone-b" / "userdata")
+        win._export_selection_zip([_item(first, "media", "x.jpg"), _item(second, "media", "x.jpg")])
+        qtbot.waitUntil(lambda: not win._thread_is_running(win._export_thread), timeout=10_000)
+        qapp.processEvents()
+    finally:
+        win.close()
+    sources = (tmp_path / "out.zip.crush-export-sources.txt").read_text(encoding="utf-8")
+    assert f"userdata (2)/\t{tmp_path / 'phone-b' / 'userdata'}" in sources

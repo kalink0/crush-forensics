@@ -1321,7 +1321,7 @@ private/var/logs/x.log     ← a folder, one level higher, with its content
 top.txt                    ← a file at the top
 ```
 
-If the selection comes from several opened sources, each source's name comes first (`case/private/…`, `phone/…`), so their entries don't mix. An entry inside a selected folder is not stored twice: the folder brings it along. When adding to an archive, folders the archive already holds are shared; only a selected file or folder whose path is already in the archive is replaced or stored beside it, as you choose. A file that can't be read is left out and listed; the export still completes.
+If the selection comes from several opened sources, each source gets its own folder first (`case/private/…`, `phone/…`), so their entries don't mix. Sources with the same name are numbered in the order they come — `userdata/`, `userdata (2)/` — compared without case, as Windows would extract `Userdata` and `userdata` into one folder. Which folder holds which source is listed beside the archive in `www.zip.crush-export-sources.txt`, with what each source was opened from (the image, archive or folder path). An entry inside a selected folder is not stored twice: the folder brings it along. When adding to an archive, folders the archive already holds are shared; only a selected file or folder whose path is already in the archive is replaced or stored beside it, as you choose. A file that can't be read is left out and listed; the export still completes.
 ## Value Inspector
 
 **Tools → Value Inspector…** opens a persistent, non-modal window that shows every plausible interpretation of a single value — numeric, timestamp, UUID, network address, or raw hex bytes.
