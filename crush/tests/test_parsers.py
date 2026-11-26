@@ -2066,6 +2066,36 @@ def test_image_parser_atx_image_decode(tmp_path: Path) -> None:
     assert result.metadata["Decode status"].code == "atx.decoded"
 
 
+def _make_atx_raw_linear_bytes(format_words: tuple[int, int], gl_internal_format: int) -> bytes:
+    """An 8x4 ATX with an uppercase ASTC chunk holding one block per 4x4 pixels in raster order."""
+    head = bytearray(_make_atx_head_chunk(width=8, height=4)[8:])
+    struct.pack_into("<I", head, 0x10, gl_internal_format)
+    struct.pack_into("<2I", head, 0x4C, *format_words)
+    blocks = _KTX_VOID_EXTENT_BLOCK * 2
+    inner = struct.pack("<I", len(blocks)) + blocks
+    return (b"AAPL\r\n\x1a\n" + struct.pack("<I4s", len(head), b"HEAD") + bytes(head)
+            + struct.pack("<I4s", len(inner), b"ASTC") + inner)
+
+
+def test_image_parser_atx_raw_linear_with_gl_astc_format_decodes(tmp_path: Path) -> None:
+    pytest.importorskip("astc_decomp_faster")
+    from crush.parsers.apple_atx import decode_atx
+    result = decode_atx(_make_atx_raw_linear_bytes((1, 5), 0x93B0))
+    assert result.image is not None
+    assert (result.image.width, result.image.height) == (8, 4)
+    assert tuple(result.image.pixels[:4]) == _KTX_VOID_EXTENT_RGBA8
+    assert [w.code for w in result.warnings] == ["atx.pixel_format_inferred"]
+
+
+def test_image_parser_atx_unknown_format_without_gl_astc_is_refused() -> None:
+    from crush.parsers.apple_atx import decode_atx
+    result = decode_atx(_make_atx_raw_linear_bytes((1, 5), 0))
+    assert result.image is None
+    [warning] = result.warnings
+    assert warning.code == "atx.decode_failed"
+    assert warning.params["reason"].code == "atx.unsupported_pixel_format"
+
+
 def test_image_parser_can_parse_ktx_magic(tmp_path: Path) -> None:
     ktx_path = tmp_path / "snapshot.bin"
     ktx_path.write_bytes(_make_ktx_bytes())

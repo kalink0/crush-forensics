@@ -37,6 +37,9 @@ ASTC_UPPER_TAG = b"ASTC"
 LZFS_TAG = b"LZFS"
 ASTC_4X4_FORMAT = (3, 5)
 INFERRED_ASTC_4X4_FORMATS = {(1, 1), (3, 1)}
+# HEAD word 4 (offset 0x10) holds the GL internal format. 0x93B0 is the Khronos
+# GL_COMPRESSED_RGBA_ASTC_4x4_KHR value.
+GL_COMPRESSED_RGBA_ASTC_4X4 = 0x93B0
 ASTC_BLOCK_BYTES = 16
 ASTC_BLOCK_WIDTH = 4
 ASTC_BLOCK_HEIGHT = 4
@@ -67,6 +70,7 @@ class AtxHeader:
     texture_uuid: str
     pixel_format_a: int
     pixel_format_b: int
+    gl_internal_format: int = 0
 
     @property
     def pixel_format(self) -> str | ParseIssue:
@@ -217,6 +221,7 @@ def _parse_header(reader: _Reader, chunks: tuple[AtxChunk, ...], warnings: list[
         texture_uuid=texture_uuid,
         pixel_format_a=struct.unpack_from("<I", payload, 0x4C)[0],
         pixel_format_b=struct.unpack_from("<I", payload, 0x50)[0],
+        gl_internal_format=struct.unpack_from("<I", payload, 0x10)[0],
     )
 
 
@@ -255,17 +260,26 @@ def _decode_image(
     if header.mipmap_count not in (0, 1):
         warnings.append(ParseIssue("atx.unexpected_mipmaps", {"count": header.mipmap_count}))
     pixel_format = (header.pixel_format_a, header.pixel_format_b)
-    if pixel_format not in {ASTC_4X4_FORMAT, *INFERRED_ASTC_4X4_FORMATS}:
+    known_format = pixel_format in {ASTC_4X4_FORMAT, *INFERRED_ASTC_4X4_FORMATS}
+    if not known_format and header.gl_internal_format != GL_COMPRESSED_RGBA_ASTC_4X4:
         raise ParseIssueError(
             ParseIssue("atx.unsupported_pixel_format", {"format": header.pixel_format})
         )
-    if pixel_format in INFERRED_ASTC_4X4_FORMATS:
+    if pixel_format != ASTC_4X4_FORMAT:
         warnings.append(ParseIssue("atx.pixel_format_inferred", {"format": str(pixel_format)}))
 
     block_order = None
+    linear_width = _round_up(header.width, ASTC_BLOCK_WIDTH)
+    linear_height = _round_up(header.height, ASTC_BLOCK_HEIGHT)
     if payload.compressed:
         astc_data, padded_width, padded_height = _linear_lzfs_payload(header, payload)
         image = decode_astc_4x4(astc_data, padded_width, padded_height)
+    elif (len(payload.data) == _astc_byte_count(linear_width, linear_height)
+          and len(payload.data) < _macro_tiled_byte_count(header)):
+        # Exactly one block per 4x4 pixels, too short for the macro tile surface:
+        # stored in raster order. A size of whole macro tiles stays on the tiled path.
+        padded_width, padded_height = linear_width, linear_height
+        image = decode_astc_4x4(payload.data, padded_width, padded_height)
     else:
         image, padded_width, padded_height, block_order = _decode_macro_tiled_payload(
             header, payload,
@@ -393,6 +407,11 @@ def _decode_morton_5bit(index: int) -> tuple[int, int]:
         x |= ((index >> (bit * 2)) & 1) << bit
         y |= ((index >> (bit * 2 + 1)) & 1) << bit
     return x, y
+
+
+def _macro_tiled_byte_count(header: AtxHeader) -> int:
+    tile = DEFAULT_MACRO_BLOCKS * ASTC_BLOCK_WIDTH
+    return _astc_byte_count(_round_up(header.width, tile), _round_up(header.height, tile))
 
 
 def _round_up(value: int, multiple: int) -> int:
