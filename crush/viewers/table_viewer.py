@@ -1292,7 +1292,20 @@ class TableViewer(QWidget):
         self._page_table_problems: list[Any] = []
         self._injection_problems: list[Any] = []
         self._structure_table_columns: dict[str, list[str]] = {}
-        self._table_interaction_active = False
+        # Whether this viewer holds a foreground I/O claim (scrolling pauses
+        # the background type scan of every window). A one-item list so the
+        # destroyed hook below can release it without referencing self: a
+        # viewer deleted with its window gets no closeEvent of its own, and
+        # a claim left behind would stall background I/O for the session.
+        held = [False]
+        self._table_interaction_claim = held
+
+        def _release_claim_on_destroy() -> None:
+            if held[0]:
+                held[0] = False
+                release_foreground_io()
+
+        self.destroyed.connect(_release_claim_on_destroy)
         self._hex_pane_loaded = False
         self._hex_file_kind: str | None = None  # "base" or "wal" -- whichever is currently loaded
         self._syncing_hex_selection = False
@@ -6593,15 +6606,15 @@ class TableViewer(QWidget):
         return best, best_span
 
     def _on_table_scroll_activity(self, _value: int = 0) -> None:
-        if not self._table_interaction_active:
+        if not self._table_interaction_claim[0]:
             acquire_foreground_io()
-            self._table_interaction_active = True
+            self._table_interaction_claim[0] = True
         self._table_interaction_timer.start()
 
     def _end_table_interaction(self) -> None:
-        if not self._table_interaction_active:
+        if not self._table_interaction_claim[0]:
             return
-        self._table_interaction_active = False
+        self._table_interaction_claim[0] = False
         release_foreground_io()
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
