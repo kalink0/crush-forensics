@@ -1268,6 +1268,15 @@ A file whose bytes can't be read from the evidence (for example, one a disk imag
 
 Right-click a file or folder and choose **Export to ZIP…** to export it into a ZIP archive instead of a folder. A dialog asks where the archive goes (`.zip` is added if missing) and how it is written:
 
+- **Structure in the archive** — where each entry goes:
+  - *Only the file or folder itself, at the top* — `index.html`, or a folder as `www/…`.
+  - *With its source path* — under the folders above it, from the root of its source: `var/www/index.html`, `var/www/…`. Those folders are stored as (empty) folder entries.
+
+  and, for a folder, what happens with its contents:
+  - *Folder contents in their folder structure* — `www/css/style.css`, `www/img/logo.png`.
+  - *All files of a folder in one folder* — `www/style.css`, `www/logo.png`, from any depth; subfolders (empty ones too) aren't stored. A name the folder already holds gets a number (`style (2).css`), and each such file is listed in `crush-export-renames.txt` with its path in the evidence, so where it came from stays on record.
+
+  The dialog shows an example of where an entry goes with the choices made.
 - **Compression** — *Deflate* (the standard; every tool opens it, Windows Explorer included), *No compression* (store), *BZIP2* or *LZMA* (smaller, but not opened by Windows Explorer). Deflate and BZIP2 take a **level** from 1 (fastest) to 9 (smallest).
 - **Encrypt with a password (AES-256)** — the files' contents are encrypted (WinZip AES, 256-bit key). The names of files and folders, their sizes and times stay readable: the ZIP format can't hide them. Folder entries hold no data and are left unencrypted. Opens in 7-Zip, WinRAR, WinZip and others; Windows Explorer can't reliably open AES-encrypted archives, nor can Info-ZIP's `unzip` 6. The password is typed twice and never written to the log; the log records only that the archive is encrypted.
 - **Split into parts of** N MB or GB — the archive is cut byte for byte into parts `name.zip.001`, `name.zip.002` …, each N in size but the last (1 MB = 1,000,000 bytes, so 4 GB parts fit on FAT32). 7-Zip opens `.001` directly; for other tools put the parts together first (`copy /b name.zip.001+name.zip.002 name.zip` on Windows, `cat name.zip.0* > name.zip` elsewhere). A split archive is always written new: if parts by that name are already there, you're asked before they are all replaced (left-over parts beyond the new last one are removed, so none reads as part of the new archive). Splitting and encryption can be combined.
@@ -1286,7 +1295,7 @@ When adding, and the archive already holds an entry under the same path, you're 
 
 Replacing rebuilds the archive: its other entries are copied over as they are stored — still compressed, still encrypted, byte for byte — so it needs no password, even for entries encrypted with another one. Entries added to an existing archive are compressed and encrypted as the dialog says; the archive's other entries keep theirs, so an archive can end up with encrypted and unencrypted entries side by side.
 
-A file that isn't a ZIP archive can only be replaced. A folder is stored with its structure under its own name; a single file is stored at the top of the archive. Entries are compressed (Deflate; ZIP64 for large files) and carry the source's modification time in UTC (also as an Info-ZIP extended timestamp). Names are made Windows-safe as for a folder export.
+A file that isn't a ZIP archive can only be replaced. Whether an entry is already in the archive is checked where the chosen structure puts it. Entries are compressed (Deflate; ZIP64 for large files) and carry the source's modification time in UTC (also as an Info-ZIP extended timestamp). Names are made Windows-safe as for a folder export.
 
 The same lists as a folder export go into the archive, always at its top (root): `crush-export-hashes.txt`, `crush-export-failed.txt`, `crush-export-renames.txt`. If the archive already holds one, the new list is numbered (`crush-export-hashes (2).txt`) rather than replacing it, so the earlier list stays with what it describes — also when entries are replaced. With integrity mode on, the hash list holds each file's SHA-256 with its path in the archive, and the log records the SHA-256 of the finished archive — for a split one, of each part and of the parts put together. A file that can't be read is left out — no entry holds part of it — and listed in `crush-export-failed.txt`; a single file that can't be read fails the export.
 
@@ -1294,16 +1303,16 @@ The archive is written to a temporary file beside it and only moved into place w
 
 #### Several entries at once
 
-Select several files and folders in the tree (Ctrl/Shift-click), right-click one of them and choose **Export N selected entries to ZIP…**. Everything goes into a top folder `export/`; below it, each entry is stored under its full path from the root of its source, so entries from different levels keep where they came from:
+Select several files and folders in the tree (Ctrl/Shift-click), right-click one of them and choose **Export N selected entries to ZIP…**. The same dialog and choices apply to each entry. With the source path, entries from different levels keep where they came from:
 
 ```
-export/private/var/mobile/a.db    ← a file, deep down
-export/private/var/logs/x.log     ← a folder, one level higher, with its content
-export/top.txt                    ← a file at the top
-crush-export-hashes.txt           ← the lists, at the top of the archive
+private/var/mobile/a.db    ← a file, deep down
+private/var/logs/x.log     ← a folder, one level higher, with its content
+top.txt                    ← a file at the top
+crush-export-hashes.txt    ← the lists, at the top of the archive
 ```
 
-If the selection comes from several opened sources, each source's name comes first below `export/` (`export/case/…`, `export/phone/…`), so their entries don't mix. The folders on the way are stored as (empty) folder entries. An entry inside a selected folder is not stored twice: the folder brings it along. When adding to an archive, folders the archive already holds are shared; only a selected file or folder whose path is already in the archive is replaced or stored beside it, as you choose (`export/top (2).txt`). A file that can't be read is left out and listed; the export still completes.
+If the selection comes from several opened sources, each source's name comes first (`case/private/…`, `phone/…`), so their entries don't mix. An entry inside a selected folder is not stored twice: the folder brings it along. When adding to an archive, folders the archive already holds are shared; only a selected file or folder whose path is already in the archive is replaced or stored beside it, as you choose. A file that can't be read is left out and listed; the export still completes.
 ## Value Inspector
 
 **Tools → Value Inspector…** opens a persistent, non-modal window that shows every plausible interpretation of a single value — numeric, timestamp, UUID, network address, or raw hex bytes.

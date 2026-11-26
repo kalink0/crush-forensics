@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QMessageBox
 from crush.core import zip_writer
 from crush.core.vfs import DirectoryVFS
 from crush.core.zip_writer import SplitWriter, ZipOptions, existing_parts, part_path
-from crush.ui.main_window import MainWindow, _ExportZipWorker
+from crush.ui.main_window import MainWindow, _ExportZipWorker, _zip_item
 from crush.ui.zip_export_dialog import ZipExportDialog, with_zip_suffix
 
 
@@ -43,7 +43,7 @@ def _export(tmp_path: Path, out: Path, mode: str = "new", **options: Any) -> lis
     vfs = _source(tmp_path)
     on_clash = options.pop("on_clash", "number")
     return _run(_ExportZipWorker(
-        vfs, vfs.root(), str(out), mode, True,  # type: ignore[arg-type]
+        [_zip_item(vfs.root(), vfs)], str(out), mode, True,  # type: ignore[arg-type]
         on_clash=on_clash, options=ZipOptions(**options),
     ))
 
@@ -56,7 +56,7 @@ def test_options_validate_and_never_show_the_password() -> None:
     assert "s3cret" not in repr(options)
     assert "s3cret" not in options.describe()
     assert options.describe() == (
-        "deflate level 9, AES-256 encrypted, split into parts of 1000000000 B"
+        "deflate level 9, AES-256 encrypted, split into parts of 1000000000 B, at the top"
     )
     assert ZipOptions().effective_level == 6
     assert ZipOptions(method="lzma").effective_level is None
@@ -240,7 +240,8 @@ def test_cancelled_split_leaves_nothing(qapp: Any, tmp_path: Path) -> None:
     vfs = _source(tmp_path)
     out = tmp_path / "out.zip"
     worker = _ExportZipWorker(
-        vfs, vfs.root(), str(out), "new", False, options=ZipOptions(split_size=100_000)
+        [_zip_item(vfs.root(), vfs)], str(out), "new", False,
+        options=ZipOptions(split_size=100_000),
     )
     worker.cancel()
 
@@ -253,7 +254,7 @@ def test_a_split_archive_cant_be_added_to(qapp: Any, tmp_path: Path) -> None:
     vfs = _source(tmp_path)
     with pytest.raises(ValueError):
         _ExportZipWorker(
-            vfs, vfs.root(), str(tmp_path / "o.zip"), "add", False,
+            [_zip_item(vfs.root(), vfs)], str(tmp_path / "o.zip"), "add", False,
             options=ZipOptions(split_size=100_000),
         )
 
@@ -330,7 +331,7 @@ def test_flow_asks_before_replacing_parts(
         part_path(out, n).write_bytes(b"old part")
     options = ZipOptions(method="stored", split_size=10**6)
     monkeypatch.setattr(
-        MainWindow, "_zip_export_dialog", lambda self, default_name: (out, options)
+        MainWindow, "_zip_export_dialog", lambda self, default_name, items: (out, options)
     )
     asked: list[str] = []
 

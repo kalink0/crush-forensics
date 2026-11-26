@@ -52,6 +52,11 @@ class ZipOptions:
     level: int | None = None  # None: the method's default (LEVELS)
     password: str | None = field(default=None, repr=False)
     split_size: int | None = None  # bytes per part; None: one file
+    # Layout: each entry under its path from the root of its source rather
+    # than at the top; a folder's files all straight into it rather than in
+    # its structure.
+    source_path: bool = False
+    flatten: bool = False
 
     def __post_init__(self) -> None:
         if self.method not in METHODS:
@@ -80,6 +85,9 @@ class ZipOptions:
         parts.append("AES-256 encrypted" if self.password else "not encrypted")
         if self.split_size:
             parts.append(f"split into parts of {self.split_size} B")
+        parts.append("with source path" if self.source_path else "at the top")
+        if self.flatten:
+            parts.append("folders flattened")
         return ", ".join(parts)
 
 

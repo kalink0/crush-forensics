@@ -7622,10 +7622,6 @@ Ersetzen (ein Ordner mit allem, was er enthält) oder den Export daneben unter e
         <translation>Daneben einfügen</translation>
     </message>
     <message>
-        <source>Exporting {n} entry…</source>
-        <translation>{n} Eintrag wird exportiert…</translation>
-    </message>
-    <message>
         <source>Exporting {n} entries…</source>
         <translation>{n} Einträge werden exportiert…</translation>
     </message>
@@ -15626,6 +15622,26 @@ Gesamt: {total:.2f} s</translation>
         <translation>Die Teile heißen {name}.001, .002 … und sind Byte für Byte zerschnitten (1 MB = 1.000.000 Bytes). 7-Zip öffnet .001 direkt; andere Programme brauchen die Teile zuerst zusammengefügt (copy /b, cat). Zu einem geteilten Archiv kann später nichts hinzugefügt werden.</translation>
     </message>
     <message>
+        <source>Structure in the archive</source>
+        <translation>Struktur im Archiv</translation>
+    </message>
+    <message>
+        <source>Only the file or folder itself, at the top</source>
+        <translation>Nur die Datei bzw. der Ordner selbst, oben im Archiv</translation>
+    </message>
+    <message>
+        <source>With its source path (the folders above it)</source>
+        <translation>Mit Quellpfad (die Ordner darüber)</translation>
+    </message>
+    <message>
+        <source>Folder contents in their folder structure</source>
+        <translation>Ordnerinhalt in seiner Ordnerstruktur</translation>
+    </message>
+    <message>
+        <source>All files of a folder in one folder (same names numbered)</source>
+        <translation>Alle Dateien eines Ordners in einen Ordner (gleiche Namen nummeriert)</translation>
+    </message>
+    <message>
         <source>Archive:</source>
         <translation>Archiv:</translation>
     </message>
@@ -15636,6 +15652,18 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>Export</source>
         <translation>Exportieren</translation>
+    </message>
+    <message>
+        <source>file</source>
+        <translation>Datei</translation>
+    </message>
+    <message>
+        <source>subfolder</source>
+        <translation>Unterordner</translation>
+    </message>
+    <message>
+        <source>For example: {path}</source>
+        <translation>Zum Beispiel: {path}</translation>
     </message>
     <message>
         <source>ZIP archives (*.zip)</source>

@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """The dialog behind "Export to ZIP…": where the archive goes, and how it is
-written -- compression method and level, an AES-256 password, and splitting
-it into parts of a fixed size (crush.core.zip_writer)."""
+written -- the structure inside it, compression method and level, an AES-256
+password, and splitting it into parts of a fixed size (crush.core.zip_writer)."""
 from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
+    QGroupBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -41,15 +44,21 @@ def with_zip_suffix(path: str) -> Path:
 
 class ZipExportDialog(QDialog):
     """Ask for the archive and its options. *options* preset the fields
-    (the last ones used, say); their password is never shown."""
+    (the last ones used, say); their password is never shown. *example* is
+    (folders of its source path, name, is a folder) of an entry being
+    exported, shown as it would go into the archive; *has_folder* whether a
+    folder is among the entries (else there is no folder content to lay out)."""
 
     def __init__(
         self,
         parent: QWidget | None,
         default_path: str,
         options: ZipOptions | None = None,
+        example: tuple[list[str], str, bool] | None = None,
+        has_folder: bool = True,
     ) -> None:
         super().__init__(parent)
+        self._example = example or (["var", "www"], "index.html", False)  # i18n: keep -- sample path
         self.setWindowTitle(translate("ZipExportDialog", "Export to ZIP archive"))
         self.setMinimumWidth(600)
         options = options or ZipOptions()
@@ -128,6 +137,42 @@ class ZipExportDialog(QDialog):
         split_row.addWidget(self._split_unit)
         split_row.addStretch(1)
 
+        structure = QGroupBox(translate("ZipExportDialog", "Structure in the archive"))
+        self._only_name = QRadioButton(
+            translate("ZipExportDialog", "Only the file or folder itself, at the top")
+        )
+        self._with_path = QRadioButton(
+            translate("ZipExportDialog", "With its source path (the folders above it)")
+        )
+        self._keep_tree = QRadioButton(
+            translate("ZipExportDialog", "Folder contents in their folder structure")
+        )
+        self._flatten = QRadioButton(
+            translate("ZipExportDialog", "All files of a folder in one folder (same names numbered)")
+        )
+        self._path_group = QButtonGroup(self)
+        self._path_group.addButton(self._only_name)
+        self._path_group.addButton(self._with_path)
+        self._content_group = QButtonGroup(self)
+        self._content_group.addButton(self._keep_tree)
+        self._content_group.addButton(self._flatten)
+        (self._with_path if options.source_path else self._only_name).setChecked(True)
+        (self._flatten if options.flatten else self._keep_tree).setChecked(True)
+        self._keep_tree.setEnabled(has_folder)
+        self._flatten.setEnabled(has_folder)
+        self._preview = QLabel()
+        self._preview.setWordWrap(True)
+        for button in (self._only_name, self._with_path, self._keep_tree, self._flatten):
+            button.toggled.connect(self._update_preview)
+        structure_layout = QVBoxLayout(structure)
+        structure_layout.addWidget(self._only_name)
+        structure_layout.addWidget(self._with_path)
+        structure_layout.addSpacing(4)
+        structure_layout.addWidget(self._keep_tree)
+        structure_layout.addWidget(self._flatten)
+        structure_layout.addWidget(self._preview)
+        self._update_preview()
+
         form = QFormLayout()
         form.addRow(translate("ZipExportDialog", "Archive:"), path_row)
         form.addRow(translate("ZipExportDialog", "Compression:"), self._method)
@@ -139,6 +184,8 @@ class ZipExportDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addSpacing(4)
+        layout.addWidget(structure)
         layout.addSpacing(8)
         layout.addWidget(self._encrypt)
         layout.addWidget(self._password)
@@ -172,6 +219,8 @@ class ZipExportDialog(QDialog):
             level=self._level.value() if method in LEVELS else None,
             password=self._password.text() if self._encrypt.isChecked() else None,
             split_size=split_size,
+            source_path=self._with_path.isChecked(),
+            flatten=self._flatten.isChecked() and self._flatten.isEnabled(),
         )
 
     @staticmethod
@@ -180,6 +229,23 @@ class ZipExportDialog(QDialog):
         return replace(options, password=None)
 
     # -- behaviour --
+
+    def preview_path(self) -> str:
+        """The example entry's path in the archive with the choices made."""
+        folders, name, is_dir = self._example
+        top = "/".join([*folders, name]) if self._with_path.isChecked() else name
+        if not is_dir:
+            return top
+        file = translate("ZipExportDialog", "file")
+        if self._flatten.isChecked() and self._flatten.isEnabled():
+            return f"{top}/{file}"
+        subfolder = translate("ZipExportDialog", "subfolder")
+        return f"{top}/{subfolder}/{file}"
+
+    def _update_preview(self) -> None:
+        self._preview.setText(
+            translate("ZipExportDialog", "For example: {path}").format(path=self.preview_path())
+        )
 
     def _method_changed(self) -> None:
         method = self._method.currentData()
