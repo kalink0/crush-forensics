@@ -7,6 +7,8 @@ All notable changes to Crush will be documented in this file.
 ### Changed
 
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.88 (from v1.87). A deleted NTFS file whose clusters another deleted record also claims, and a deleted FAT32 file whose first cluster the entry no longer pins down, are listed as not recoverable instead of recovered.
+- A file flagged encrypted (fscrypt) on an ext4 or F2FS volume reads as its stored ciphertext through the end of its last block and says so; the volume's status counts such files.
+- A file whose block map or run list no longer reaches part of it is refused with that reason instead of as a file cut off by the end of the image.
 
 ## v0.26.0 - 2026-11-23
 

@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-305 checks in total.
+308 checks in total.
 
 ### Sources
 
@@ -57,7 +57,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [FAT16](#fat16) | not tested | not tested | not tested | 3 | not tested | not tested |
 | [FAT12](#fat12) | not tested | not tested | not tested | 2 | not tested | not tested |
 | [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
-| [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [ext2/3/4](#ext234) | not tested | not tested | not tested | 2 | 1 | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [HFS+](#hfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [APFS](#apfs) | not tested | not tested | not tested | 1 | not tested | not tested |
@@ -360,7 +360,10 @@ No forensic checks.
 
 #### ext2/3/4
 
-No forensic checks.
+- **Known-output Verification** — A file flagged encrypted (fscrypt) must read as the bytes stored through the end of its last block, matching the image's own blocks, and say on the file and the volume that it is ciphertext as stored ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_flagged_file_reads_as_stored_through_its_last_block`)
+- **Known-output Verification** — A file without the encrypt flag on the same volume must read at its recorded size, with no encryption status ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_unflagged_file_beside_it_reads_at_its_size`)
+- **Completeness** — A file whose block map points past the end of the volume, in an image that is whole, must be refused with the map's reason, never as an image that ends early ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_lost_block_map_is_named_not_put_down_to_the_image_end`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Reproducibility
 
 #### F2FS
 

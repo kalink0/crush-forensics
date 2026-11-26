@@ -2417,7 +2417,7 @@ class RawImageVFS(VFS):
                 # recognise at all) -- still fully readable as the raw bytes
                 # of that region, never hidden.
                 return read_raw_region(self._region_image(entry), entry.base, entry.size)
-            return read_walker_file(entry.walker, entry.node, entry.size)
+            return read_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
 
     def open(self, node: VFSNode) -> IO[bytes]:
         from crush.core.raw_image import (
@@ -2435,7 +2435,7 @@ class RawImageVFS(VFS):
                 return stream_deleted_file(entry.walker, entry.deleted, entry.size)
             if entry.walker is None:
                 return stream_raw_region(self._region_image(entry), entry.base, entry.size)
-            return stream_walker_file(entry.walker, entry.node, entry.size)
+            return stream_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
 
         return buffered(IterStream(make_iter, entry.size, lock=self._lock))
 
@@ -2506,6 +2506,11 @@ class RawImageVFS(VFS):
                 status = join_notes([
                     status, ParseIssue("entry.recovery_note", detail=str(recovery_note)),
                 ])
+            # An NTFS record whose data attribute is in an extension record
+            # that was not read holds no size (qnxprobe 1.88: size None); the
+            # node shows 0 bytes, which is not the file's size.
+            if getattr(deleted, "size", 0) is None:
+                status = join_notes([status, ParseIssue("entry.recovered_size_unknown")])
             info: dict[str, Any] = {"kind": "deleted file", "note": status}
             # Only the flash records name the folder the file was deleted
             # from: "" is the volume root, None a folder no longer present.

@@ -89,6 +89,13 @@ _ZERO_IS_NO_TIME = (
     NtfsWalker, RefsWalker, F2fsWalker, ApfsWalker, HfsPlusWalker, Fat32Walker, ExfatWalker,
 )
 
+# Walkers whose read_file() returns a file flagged encrypted (fscrypt) as
+# stored, through the end of the block that holds its last byte, and whose
+# valid_data_note() names such a file ENCRYPTED (qnxprobe 1.88). fscrypt
+# encrypts whole data units and zero-pads the last one, so ciphertext cut at
+# the recorded size could not be decrypted (Documentation/filesystems/fscrypt.rst).
+_STORED_THROUGH_LAST_BLOCK = (ExtWalker, F2fsWalker)
+
 # Walkers with times(): modified, accessed, changed and created (HFS+ also
 # backup) as (seconds, nanoseconds) since 1970 UTC, None where the record
 # holds none -- and where each is stored. Unlike entry(), times() gives an
@@ -368,6 +375,10 @@ class _Entry:
     # A region read from the image as stored (RawImageHandle.stored), not
     # through the decryption of the volumes opened inside it.
     as_stored: bool = False
+    # A file flagged encrypted (fscrypt) is read as stored ciphertext, which
+    # can run past `size` up to the end of the block holding its last byte:
+    # this is that end. None for every other file.
+    stored_up_to: int | None = None
 
 
 def open_raw_image(
@@ -922,14 +933,20 @@ def build_volume_node(
         notes.insert(0, ParseIssue("entry.raw_volume_note", detail=str(vol["note"])))
     if times_map is not None and type(walker) in _TIMES_SOURCE:
         times_map[path] = (walker, walker.root)
-    _walk_into(walker, walker.root, node, read_map, path, set(), times_map=times_map)
+    tally: dict[str, int] = {}
+    _walk_into(walker, walker.root, node, read_map, path, set(), times_map=times_map, tally=tally)
     # The root folder can carry named streams too; they sit beside its
     # entries as ":name", the way the root's own name is empty.
     _add_stream_nodes(walker, walker.root, "", path, node.children, read_map)
-    # A reader that skips a structure failing its check (XFS, Btrfs, ReFS)
-    # records it in the walker while listing, after volumes() wrote the note;
-    # without this the listing would look complete. APFS and HFS+ (qnxprobe
-    # 1.74) record a file that carries a compression attribute without the
+    if tally.get("encrypted"):
+        notes.append(ParseIssue("entry.raw_encrypted_files", {"count": f"{tally['encrypted']:,}"}))
+    # A reader records in the walker, while listing and after volumes() wrote
+    # the note, what it could not read or what failed its check: a structure
+    # it skipped (XFS, Btrfs, ReFS), a folder it could not list (from qnxprobe
+    # 1.88 every reader, e.g. a zstd SquashFS on a Python without zstd);
+    # without this the listing would look complete. The line names the cause,
+    # which need not be damage to the volume. APFS and HFS+ (qnxprobe 1.74)
+    # record a file that carries a compression attribute without the
     # compressed flag; that file is listed, read as stored, not skipped.
     count, damage = qnxprobe.damage_lines(walker, 1)  # type: ignore[no-untyped-call]
     if count and damage[0] not in str(vol.get("note") or ""):
@@ -1015,7 +1032,10 @@ def _walk_into(
     seen: set[Any],
     depth: int = 0,
     times_map: dict[str, tuple[Any, Any]] | None = None,
+    tally: dict[str, int] | None = None,
 ) -> None:
+    """List `wnode`'s entries into `vfs_node`, recursively. `tally` counts,
+    across the whole walk, the files flagged encrypted (key "encrypted")."""
     from crush.core.vfs import VFSNode
 
     if depth > _MAX_DEPTH:
@@ -1069,15 +1089,23 @@ def _walk_into(
             child_node = VFSNode(name=name, path=child_path, is_dir=True, modified=mtime,
                                  stored_times=times)
             children.append(child_node)
-            _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1, times_map)
+            _walk_into(walker, child, child_node, read_map, child_path, seen, depth + 1, times_map,
+                       tally)
             _add_stream_nodes(walker, child, name, base_path, children, read_map)
         elif (mode & 0o170000) == 0o100000:  # regular files only
+            stored_up_to = _encrypted_stored_end(walker, child, size or 0)
             child_node = VFSNode(
                 name=name, path=child_path, is_dir=False, size=size or 0, modified=mtime,
                 stored_times=times,
+                status=(ParseIssue("entry.raw_encrypted_as_stored")
+                        if stored_up_to is not None else ""),
             )
+            if stored_up_to is not None and tally is not None:
+                tally["encrypted"] = tally.get("encrypted", 0) + 1
             children.append(child_node)
-            read_map[child_path] = _Entry(walker=walker, node=child, size=size or 0)
+            read_map[child_path] = _Entry(
+                walker=walker, node=child, size=size or 0, stored_up_to=stored_up_to,
+            )
             _add_stream_nodes(walker, child, name, base_path, children, read_map)
         else:
             # Symbolic links and special files stay visible: the walkers
@@ -1167,8 +1195,77 @@ def _add_stream_nodes(
         read_map[stream_path] = _Entry(walker=None, node=None, size=0, stored=b"")
 
 
+def _encrypted_stored_end(walker: Any, node: Any, size: int) -> int | None:
+    """For a file the walker names ENCRYPTED (fscrypt), the end of the block
+    holding its last byte: its read returns the ciphertext as stored, which
+    can run that far past `size`. None for any other file.
+
+    qnxprobe's valid_data_note() is the only place that says a file is
+    flagged encrypted; it is asked the way qnxprobe's own export asks it. A
+    walker that fails to answer leaves the file unmarked, and a longer read
+    is then refused with its length (_check_read_length), never passed off
+    as the file.
+    """
+    if not isinstance(walker, _STORED_THROUGH_LAST_BLOCK):
+        return None
+    try:
+        rows = walker.valid_data_note(node, size)  # type: ignore[no-untyped-call]
+    except Exception:
+        return None
+    if isinstance(rows, tuple):  # ext gives one row, F2FS a list of them
+        rows = [rows]
+    if not any(row[0] == "ENCRYPTED" for row in rows or ()):
+        return None
+    block = int(walker.bs)
+    return -(-size // block) * block
+
+
+def _walker_reason(walker: Any, method: str, node: Any) -> Any:
+    """What `walker.method(node)` says about a short read, None when the
+    walker has no such method or fails to answer (qnxprobe's own export
+    asks these the same way)."""
+    report = getattr(walker, method, None)
+    if report is None or node is None:
+        return None
+    try:
+        return report(node)
+    except Exception:
+        return None
+
+
+def _raise_past_end(
+    walker: Any, node: Any, size: int, got: int, cut_by: int, owner: str = "the file",
+) -> None:
+    """Raise for a read that qnxprobe counted short in EOF_SHORTFALL.
+
+    From qnxprobe 1.88 that counter also takes bytes the image holds but the
+    file's map cannot reach: an ext or HFS+ block map that failed its check,
+    an NTFS run outside the volume. The walker names those (map_shortfall(),
+    short_reason()), and they are named here, in the order qnxprobe's own
+    export uses, before the read is put down to the image ending early.
+    `node` is None for a deleted file, which has no such report.
+    """
+    present = max(min(got, size - cut_by), 0)
+    why = (_walker_reason(walker, "map_shortfall", node)
+           or _walker_reason(walker, "short_reason", node))
+    if why:
+        raise RawImageFileUnreadableError(
+            f"only {present:,} of {size:,} bytes of {owner} can be read: {why}"
+        )
+    if owner == "the file":
+        raise RawImageTruncatedReadError(
+            f"only {present:,} of {size:,} bytes are in the image "
+            f"(the image ends before the file does)"
+        )
+    raise RawImageTruncatedReadError(
+        f"only {present:,} of {size:,} bytes of {owner} are in the image "
+        f"(the image ends before the file does)"
+    )
+
+
 def _check_read_length(
-    walker: Any, node: Any, size: int, got: int, owner: str = "the file"
+    walker: Any, node: Any, size: int, got: int, owner: str = "the file",
+    stored_up_to: int | None = None,
 ) -> None:
     """Raise when the reader returned another number of bytes than the
     recorded size, with nothing lost past the end of the image (that case is
@@ -1177,12 +1274,16 @@ def _check_read_length(
     The copy is refused rather than shown: a short or long copy would
     otherwise pass for the whole file in a hash or an export. Where the
     reason is known it is named -- a FAT or exFAT cluster chain that ends
-    before the size the directory entry records (`node` is None for a
-    deleted file, whose chain is not looked up).
+    before the size the directory entry records, a run list or extent map
+    that covers less than it (run_shortfall(); `node` is None for a deleted
+    file, whose chain is not looked up). A file flagged encrypted may run
+    past its size up to `stored_up_to`: it is the ciphertext as stored.
     """
     if got == size:
         return
     if got > size:
+        if stored_up_to is not None and got <= stored_up_to:
+            return
         raise RawImageFileUnreadableError(
             f"the reader returned {got:,} bytes, more than the {size:,} bytes {owner} records"
         )
@@ -1195,20 +1296,27 @@ def _check_read_length(
             f"only {got:,} of {size:,} bytes can be read: the volume's cluster chain "
             f"for this file ends after {cut[0]:,} of the {cut[1]:,} clusters its size needs"
         )
+    run = _walker_reason(walker, "run_shortfall", node)
+    if run:
+        raise RawImageFileUnreadableError(
+            f"only {got:,} of {size:,} bytes can be read: {run}"
+        )
     raise RawImageFileUnreadableError(
         f"only {got:,} of {size:,} bytes can be read: the reader returned fewer bytes "
         f"than {owner} records and gave no reason"
     )
 
 
-def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
+def read_walker_file(
+    walker: Any, node: Any, size: int, stored_up_to: int | None = None,
+) -> bytes:
     """Materialize one file's bytes via `walker.read_file(node, size)`.
 
     A read past the end of the image comes back zero-filled rather than
     raising, so the copy's length alone says nothing about whether the file
     was whole. qnxprobe counts every byte it fell short by in a module-level
     counter; sampling it before and after is how a cut-short file is told
-    from a whole one.
+    from a whole one. `stored_up_to`: see _check_read_length().
     """
     shortfall_before = qnxprobe.EOF_SHORTFALL["bytes"]
     chunks: list[bytes] = []
@@ -1222,12 +1330,8 @@ def read_walker_file(walker: Any, node: Any, size: int) -> bytes:
 
     cut_by = qnxprobe.EOF_SHORTFALL["bytes"] - shortfall_before
     if cut_by:
-        present = max(min(got, size - cut_by), 0)
-        raise RawImageTruncatedReadError(
-            f"only {present:,} of {size:,} bytes are in the image "
-            f"(the image ends before the file does)"
-        )
-    _check_read_length(walker, node, size, got)
+        _raise_past_end(walker, node, size, got, cut_by)
+    _check_read_length(walker, node, size, got, stored_up_to=stored_up_to)
     return b"".join(chunks)
 
 
@@ -1258,16 +1362,14 @@ def read_deleted_file(walker: Any, entry: Any, size: int) -> bytes:
 
     cut_by = qnxprobe.EOF_SHORTFALL["bytes"] - shortfall_before
     if cut_by:
-        present = max(min(got, size - cut_by), 0)
-        raise RawImageTruncatedReadError(
-            f"only {present:,} of {size:,} bytes of deleted file {entry.name!r} "
-            f"are in the image (the image ends before the file does)"
-        )
+        _raise_past_end(walker, None, size, got, cut_by, f"deleted file {entry.name!r}")
     _check_read_length(walker, None, size, got, f"deleted file {entry.name!r}")
     return b"".join(chunks)
 
 
-def stream_walker_file(walker: Any, node: Any, size: int) -> Iterator[bytes]:
+def stream_walker_file(
+    walker: Any, node: Any, size: int, stored_up_to: int | None = None,
+) -> Iterator[bytes]:
     """Yield one file's bytes chunk by chunk, with read_walker_file()'s
     failure semantics but without materializing the whole file.
 
@@ -1285,12 +1387,8 @@ def stream_walker_file(walker: Any, node: Any, size: int) -> Iterator[bytes]:
         raise RawImageFileUnreadableError(f"could not read file: {exc}") from exc
     cut_by = qnxprobe.EOF_SHORTFALL["bytes"] - shortfall_before
     if cut_by:
-        present = max(min(got, size - cut_by), 0)
-        raise RawImageTruncatedReadError(
-            f"only {present:,} of {size:,} bytes are in the image "
-            f"(the image ends before the file does)"
-        )
-    _check_read_length(walker, node, size, got)
+        _raise_past_end(walker, node, size, got, cut_by)
+    _check_read_length(walker, node, size, got, stored_up_to=stored_up_to)
 
 
 def stream_deleted_file(walker: Any, entry: Any, size: int) -> Iterator[bytes]:
@@ -1311,11 +1409,7 @@ def stream_deleted_file(walker: Any, entry: Any, size: int) -> Iterator[bytes]:
         ) from exc
     cut_by = qnxprobe.EOF_SHORTFALL["bytes"] - shortfall_before
     if cut_by:
-        present = max(min(got, size - cut_by), 0)
-        raise RawImageTruncatedReadError(
-            f"only {present:,} of {size:,} bytes of deleted file {entry.name!r} "
-            f"are in the image (the image ends before the file does)"
-        )
+        _raise_past_end(walker, None, size, got, cut_by, f"deleted file {entry.name!r}")
     _check_read_length(walker, None, size, got, f"deleted file {entry.name!r}")
 
 

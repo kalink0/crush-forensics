@@ -4033,6 +4033,12 @@ MESSAGES: dict[str, str] = {
         "not recoverable: {detail}",
         "entry.not_recoverable",
     ),
+    "entry.recovered_size_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "size not recorded: the record's data attribute is in an extension record that "
+        "was not read, so the 0 bytes shown are not the file's size",
+        "entry.recovered_size_unknown",
+    ),
     "entry.recovery_note": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "recovery note: {detail}",
@@ -4089,9 +4095,21 @@ MESSAGES: dict[str, str] = {
     ),
     "entry.raw_volume_damage": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "{count} damaged structure(s) recorded and skipped while the volume was listed, "
-        "first: {first}",
+        "{count} part(s) of the volume could not be read or failed a check while it was "
+        "listed, first: {first}",
         "entry.raw_volume_damage",
+    ),
+    "entry.raw_encrypted_files": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} file(s) are flagged encrypted (fscrypt) and are shown as the stored "
+        "ciphertext, not decrypted",
+        "entry.raw_encrypted_files",
+    ),
+    "entry.raw_encrypted_as_stored": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "flagged encrypted (fscrypt) and not decrypted: the content is the stored "
+        "ciphertext, which can run past the recorded size to the end of its last block",
+        "entry.raw_encrypted_as_stored",
     ),
     "entry.raw_volume_damage_listed": QT_TRANSLATE_NOOP(
         "ParseIssue",
