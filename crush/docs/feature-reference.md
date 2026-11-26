@@ -1313,7 +1313,7 @@ The archive — each part of a split one — and its lists are written to tempor
 
 #### Several entries at once
 
-Select several files and folders in the tree (Ctrl/Shift-click), right-click one of them and choose **Export N selected entries to ZIP…**. The same dialog and choices apply to each entry. With the source path, entries from different levels keep where they came from:
+Select several files and folders in the tree (Ctrl/Shift-click), right-click one of them and choose **Export N selected entries to ZIP…**. In the search results the same entry is there for the results selected, and **Export all N results to ZIP…** puts the whole filtered set into one archive; their source paths come from the source's own nodes, as from the tree. The same dialog and choices apply to each entry. With the source path, entries from different levels keep where they came from:
 
 ```
 private/var/mobile/a.db    ← a file, deep down

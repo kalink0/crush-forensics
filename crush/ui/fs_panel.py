@@ -691,6 +691,39 @@ class FilesystemPanel(QWidget):
             chain = [vfs.root(), node]
         return self._zip_item_from_chain(node, vfs, chain)
 
+    def _zip_items_from_search(
+        self, entries: list[tuple[VFSNode, VFS]]
+    ) -> list[tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]]:
+        """ZIP export items for search results, each with its source path
+        from the source's own nodes (as _zip_item_from_search), found in one
+        walk of each source rather than one per result. An entry inside a
+        folder that is among them is left out: the folder brings it along."""
+        chains: dict[int, list[VFSNode]] = {}
+        for vfs in {id(v): v for _n, v in entries}.values():
+            wanted = {id(n) for n, v in entries if v is vfs}
+            stack: list[tuple[VFSNode, list[VFSNode]]] = [(vfs.root(), [])]
+            while stack and len(chains) < len(entries):
+                node, above = stack.pop()
+                chain = [*above, node]
+                if id(node) in wanted:
+                    chains[id(node)] = chain
+                if node.is_dir:
+                    stack.extend((child, chain) for child in node.children)
+        items: list[tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]] = []
+        selected = {id(n) for n, _v in entries}
+        for node, vfs in entries:
+            chain = chains.get(id(node))
+            if chain is None:
+                logging.getLogger(__name__).warning(
+                    "ZIP export: %s not found below its source's root; exported without "
+                    "its source path", node.path,
+                )
+                chain = [vfs.root(), node]
+            elif any(id(step) in selected for step in chain[:-1]):
+                continue
+            items.append(self._zip_item_from_chain(node, vfs, chain))
+        return items
+
     def _collect_tree_selected_items(
         self,
     ) -> list[tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]]:
@@ -819,10 +852,12 @@ class FilesystemPanel(QWidget):
         files: list[tuple[VFSNode, VFS, str]],
         entries: list[tuple[VFSNode, VFS]],
         all_files: Callable[[], list[tuple[VFSNode, VFS, str]]],
+        all_entries: Callable[[], list[tuple[VFSNode, VFS]]] | None = None,
     ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
         """The search results' batch menu for 2+ selected entries, or None.
         Export takes files only and is offered for 2+ of them, as before;
-        Compute Hash takes every selected entry."""
+        Compute Hash takes every selected entry. Export to ZIP, as in the
+        tree's batch menu, takes every selected entry -- or every result."""
         if len(entries) < 2:
             return None
         menu = QMenu(self)
@@ -849,6 +884,24 @@ class FilesystemPanel(QWidget):
                 )
             menu.addSeparator()
         self._add_batch_hash_menu(menu, actions, entries)
+        zip_selected = menu.addAction(
+            translate(
+                "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
+            ).format(selected_items_count=len(entries))
+        )
+        actions[zip_selected] = lambda: self.export_zip_selection_requested.emit(
+            self._zip_items_from_search(entries)
+        )
+        every_entry = all_entries() if all_entries is not None else entries
+        if len(every_entry) > len(entries):
+            zip_all = menu.addAction(
+                translate(
+                    "FilesystemPanel", "Export all {all_entries_count} results to ZIP…"
+                ).format(all_entries_count=len(every_entry))
+            )
+            actions[zip_all] = lambda: self.export_zip_selection_requested.emit(
+                self._zip_items_from_search(every_entry)
+            )
         return menu, actions
 
     def _collect_result_entries(
@@ -879,6 +932,11 @@ class FilesystemPanel(QWidget):
             self._collect_result_entries(selected_rows),
             [(n, v) for n, v, _ in self._collect_result_entries(selected_rows, include_dirs=True)],
             lambda: self._collect_result_entries(range(self._search_model.rowCount())),
+            lambda: [
+                (n, v) for n, v, _ in self._collect_result_entries(
+                    range(self._search_model.rowCount()), include_dirs=True
+                )
+            ],
         )
         if batch is not None:
             menu, actions = batch

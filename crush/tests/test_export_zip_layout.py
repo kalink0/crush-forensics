@@ -394,3 +394,48 @@ def test_flattening_records_every_moved_files_evidence_path(qapp: Any, tmp_path:
     }
     assert moved["Mail/note.txt"] == ("Media/note.txt", "flattened")
     assert "cover.jpg" not in text
+
+
+# -- several search results -------------------------------------------------------------
+
+
+def test_search_batch_menu_exports_selected_or_all_results_to_zip(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    vfs = _source(tmp_path)
+    www = vfs.root().children[0].children[0]
+    index = next(c for c in www.children if c.name == "index.html")
+    css = next(c for c in www.children if c.name == "css")
+    style = css.children[0]
+    img_style = next(c for c in www.children if c.name == "img").children
+    emitted: list[Any] = []
+    monkeypatch.setattr(
+        MainWindow, "_export_selection_zip", lambda self, items: emitted.append(items)
+    )
+    win = MainWindow()
+    panel = win._fs_panel
+    try:
+        selected = [(index, vfs), (style, vfs)]
+        every = [*selected, (css, vfs), *((n, vfs) for n in img_style if not n.is_dir)]
+        menu, actions = panel._search_batch_menu(
+            [(index, vfs, "/var/www/index.html"), (style, vfs, "/var/www/css/style.css")],
+            selected, lambda: [], lambda: every,
+        )
+        texts = [a.text() for a in menu.actions() if not a.isSeparator()]
+        assert "Export 2 selected entries to ZIP…" in texts
+        assert f"Export all {len(every)} results to ZIP…" in texts
+        by_text = {a.text(): f for a, f in actions.items()}
+
+        by_text["Export 2 selected entries to ZIP…"]()
+        assert emitted[-1] == [
+            _item(vfs, "var", "www", "index.html"), _item(vfs, "var", "www", "css", "style.css"),
+        ]  # source paths from the source's nodes, as from the tree
+
+        by_text[f"Export all {len(every)} results to ZIP…"]()
+        paths = ["/".join([*(n for n, _m in f), node.name]) for node, _v, _s, f in emitted[-1]]
+        assert "var/www/css" in paths
+        assert "var/www/css/style.css" not in paths  # the folder brings it along
+        assert "var/www/index.html" in paths
+        menu.deleteLater()
+    finally:
+        win.close()

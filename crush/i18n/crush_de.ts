@@ -991,6 +991,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>Alle {all_entries_count} Ergebnisse exportieren...</translation>
     </message>
     <message>
+        <source>Export all {all_entries_count} results to ZIP…</source>
+        <translation>Alle {all_entries_count} Ergebnisse als ZIP exportieren...</translation>
+    </message>
+    <message>
         <source>Open</source>
         <translation>Öffnen</translation>
     </message>

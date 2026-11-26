@@ -608,7 +608,9 @@ def test_search_batch_menu_hashes_folders_and_exports_files_only(
     folders = [(_child(vfs, "sub"), vfs), (_child(vfs, "sub2"), vfs)]
     batch = panel._search_batch_menu([], folders, lambda: [])
     assert batch is not None
-    assert _menu_texts(batch[0]) == ["Compute Hash of 2 selected entries"]
+    assert _menu_texts(batch[0]) == [
+        "Compute Hash of 2 selected entries", "Export 2 selected entries to ZIP…",
+    ]
     batch[0].deleteLater()
 
     files = [(_child(vfs, n), vfs, f"/{n}") for n in ("a.txt", "c.txt")]
@@ -616,6 +618,7 @@ def test_search_batch_menu_hashes_folders_and_exports_files_only(
     assert batch is not None
     assert _menu_texts(batch[0]) == [
         "Export 2 selected files…", "Compute Hash of 2 selected entries",
+        "Export 2 selected entries to ZIP…",
     ]
     batch[0].deleteLater()
     assert panel._search_batch_menu([], folders[:1], lambda: []) is None
