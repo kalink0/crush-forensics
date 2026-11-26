@@ -750,16 +750,22 @@ class TestDeletedFileRecovery:
     @pytest.mark.forensic(
         category="Known-output Verification",
         subject="NTFS",
-        desc="Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes",
+        desc="Of two deliberately deleted NTFS test files, the resident one must recover to its reference hash, and the one whose clusters another deleted record also claims must be listed and refuse to read with the reason",
     )
-    def test_ntfs_recovers_known_deleted_files(self, raw_ntfs_image: Path) -> None:
+    def test_ntfs_deleted_files_recover_or_say_why(self, raw_ntfs_image: Path) -> None:
         """raw_ntfs.img.gz carries two deliberately deleted test files
         alongside a large amount of incidental deleted residue from the
         fixture's own construction history (thousands of leftover MFT
         records) -- all of it must be listed, per this project's rule that
         recoverable/uncertain content is never silently absent, but this
-        test only checks the two files independently verified by name."""
+        test only checks the two files independently verified by name.
+
+        recording.bin shares a cluster with another deleted record. The
+        volume does not record which of the two wrote it last, so qnxprobe
+        (from 1.88) recovers neither and names the other record."""
         import hashlib
+
+        from crush.core.raw_image import RawImageFileUnreadableError
 
         expected = _expected_from("raw_ntfs.deleted.sha256")
         assert set(expected) == {"resident-note.txt", "recording.bin"}
@@ -770,13 +776,23 @@ class TestDeletedFileRecovery:
             recovered = next(c for c in volume.children if c.name == "$Recovered")
             assert len(recovered.children) > 0
 
-            for name, digest in expected.items():
+            nodes = {}
+            for name in expected:
                 node = next((c for c in recovered.children if c.name == name), None)
                 assert node is not None, f"missing: {name}"
                 info = vfs.volume_info(node)
                 assert info is not None and info["kind"] == "deleted file"
-                assert str(info["note"]) == "recovered (content intact)"
-                assert hashlib.sha256(vfs.read(node)).hexdigest() == digest
+                nodes[name] = (node, str(info["note"]))
+
+            node, note = nodes["resident-note.txt"]
+            assert note == "recovered (content intact)"
+            assert hashlib.sha256(vfs.read(node)).hexdigest() == expected["resident-note.txt"]
+
+            node, note = nodes["recording.bin"]
+            assert note.startswith("not recoverable"), note
+            assert "also claimed by deleted record" in note, note
+            with pytest.raises(RawImageFileUnreadableError):
+                vfs.read(node)
         finally:
             vfs.close()
 
@@ -811,16 +827,22 @@ class TestDeletedFileRecovery:
     @pytest.mark.forensic(
         category="Known-output Verification",
         subject="FAT32",
-        desc="Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes",
+        desc="Three deliberately deleted FAT32 test files whose first cluster is ambiguous (zeroed high word on a volume with cluster numbers of 0x10000 or above) must be listed and refuse to read with the reason",
     )
-    def test_fat32_recovers_content_with_first_character_lost(self, tmp_path: Path) -> None:
+    def test_fat32_deleted_files_with_an_ambiguous_first_cluster_are_refused(
+        self, tmp_path: Path
+    ) -> None:
         """FAT32's delete mechanism overwrites the short-name entry's first
         byte, permanently destroying the name's first character -- qnxprobe
         marks this with the classic leading-underscore convention rather
-        than guessing. Content is still recovered exactly; only the name of
-        two of the three known files is affected (the third apparently
-        reconstructs cleanly from intact long-name fragments)."""
-        import hashlib
+        than guessing (the third name reconstructs cleanly from intact
+        long-name fragments).
+
+        A Windows delete also zeroes the high word of the first cluster.
+        This volume has cluster numbers of 0x10000 or above, so the low word
+        alone does not say where the file started, and qnxprobe (from 1.88)
+        refuses the file rather than return another file's bytes."""
+        from crush.core.raw_image import RawImageFileUnreadableError
 
         dst = tmp_path / "fat32.img"
         dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_fat32_deleted.img.gz").read_bytes()))
@@ -830,21 +852,15 @@ class TestDeletedFileRecovery:
         try:
             volume = vfs.root().children[0]
             recovered = next(c for c in volume.children if c.name == "$Recovered")
-            by_hash = {}
-            for c in recovered.children:
-                info = vfs.volume_info(c)
-                if info and str(info["note"]).startswith("recovered"):
-                    # FAT32 zeroes the chain on delete: every read here
-                    # rests on the file having been laid out in one run.
-                    assert str(info["note"]).startswith("recovered on an assumption"), c.name
-                    by_hash[hashlib.sha256(vfs.read(c)).hexdigest()] = c.name
-
-            for name, digest in expected.items():
-                assert digest in by_hash, f"content for {name} not recovered at all"
-                recovered_name = by_hash[digest]
-                assert recovered_name == name or recovered_name == "_" + name[1:], (
-                    f"unexpected recovered name for {name}: {recovered_name!r}"
-                )
+            by_name = {c.name: c for c in recovered.children}
+            for name in expected:
+                node = by_name.get(name) or by_name.get("_" + name[1:])
+                assert node is not None, f"missing: {name}"
+                note = str((vfs.volume_info(node) or {}).get("note", ""))
+                assert note.startswith("not recoverable"), (name, note)
+                assert "first cluster is ambiguous" in note, (name, note)
+                with pytest.raises(RawImageFileUnreadableError):
+                    vfs.read(node)
         finally:
             vfs.close()
 

@@ -128,7 +128,7 @@ def test_xfs_damage_found_while_listing_is_on_the_volume(tmp_path: Path) -> None
         hello_node = next(c for c in volume.children if c.name == "hello.txt")
         assert "could not be read" in render_value(hello_node.status)
         status = render_value(volume.status)
-        assert "damaged structure(s)" in status and "fails its CRC" in status
+        assert "failed a check while it was listed" in status and "fails its CRC" in status
     finally:
         vfs.close()
 

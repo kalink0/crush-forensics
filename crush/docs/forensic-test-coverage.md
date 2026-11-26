@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-305 checks in total.
+308 checks in total.
 
 ### Sources
 
@@ -57,7 +57,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [FAT16](#fat16) | not tested | not tested | not tested | 3 | not tested | not tested |
 | [FAT12](#fat12) | not tested | not tested | not tested | 2 | not tested | not tested |
 | [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
-| [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [ext2/3/4](#ext234) | not tested | not tested | not tested | 2 | 1 | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [HFS+](#hfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [APFS](#apfs) | not tested | not tested | not tested | 1 | not tested | not tested |
@@ -324,7 +324,7 @@ No forensic checks.
 #### NTFS
 
 - **Known-output Verification** — raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_single_volume_content_matches`)
-- **Known-output Verification** — Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_recovers_known_deleted_files`)
+- **Known-output Verification** — Of two deliberately deleted NTFS test files, the resident one must recover to its reference hash, and the one whose clusters another deleted record also claims must be listed and refuse to read with the reason ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_deleted_files_recover_or_say_why`)
 - **Known-output Verification** — Every alternate data stream of raw_ntfs_streams.img.gz that stores data must be listed beside its file and read back to The Sleuth Kit's reference hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_every_stream_matches_the_sleuth_kit`)
 - **Known-output Verification** — Every file of raw_ntfs_windows.img.gz that Windows hashed and the reader decodes (sparse, NTFS-compressed, overlay-compressed with XPRESS) must read back to the SHA-256 Windows itself reported ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_content_matches_what_windows_hashed`)
 - **Known-output Verification** — The three online-only cloud placeholders of raw_ntfs_windows.img.gz, which Windows itself refused to read, must be listed at their recorded size and refuse to read with the reason, never read back as zeros ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_cloud_placeholders_are_listed_and_say_why_they_cannot_be_read`)
@@ -333,7 +333,7 @@ No forensic checks.
 
 #### FAT32
 
-- **Known-output Verification** — Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_recovers_content_with_first_character_lost`)
+- **Known-output Verification** — Three deliberately deleted FAT32 test files whose first cluster is ambiguous (zeroed high word on a volume with cluster numbers of 0x10000 or above) must be listed and refuse to read with the reason ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_deleted_files_with_an_ambiguous_first_cluster_are_refused`)
 - **Known-output Verification** — FAT32 entries show their stored date/time as stored, with no time zone ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_fat32`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
@@ -360,7 +360,10 @@ No forensic checks.
 
 #### ext2/3/4
 
-No forensic checks.
+- **Known-output Verification** — A file flagged encrypted (fscrypt) must read as the bytes stored through the end of its last block, matching the image's own blocks, and say on the file and the volume that it is ciphertext as stored ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_flagged_file_reads_as_stored_through_its_last_block`)
+- **Known-output Verification** — A file without the encrypt flag on the same volume must read at its recorded size, with no encryption status ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_unflagged_file_beside_it_reads_at_its_size`)
+- **Completeness** — A file whose block map points past the end of the volume, in an image that is whole, must be refused with the map's reason, never as an image that ends early ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_lost_block_map_is_named_not_put_down_to_the_image_end`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Reproducibility
 
 #### F2FS
 

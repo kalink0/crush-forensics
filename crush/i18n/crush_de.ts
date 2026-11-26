@@ -11534,6 +11534,21 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Lesen nach {count:,} Datensätzen abgebrochen: {detail}</translation>
     </message>
     <message>
+        <source>{count} part(s) of the volume could not be read or failed a check while it was listed, first: {first}</source>
+        <comment>entry.raw_volume_damage</comment>
+        <translation>{count} Teil(e) des Volumes konnten beim Auflisten nicht gelesen werden oder haben eine Prüfung nicht bestanden, erster: {first}</translation>
+    </message>
+    <message>
+        <source>{count} file(s) are flagged encrypted (fscrypt) and are shown as the stored ciphertext, not decrypted</source>
+        <comment>entry.raw_encrypted_files</comment>
+        <translation>{count} Datei(en) sind als verschlüsselt (fscrypt) gekennzeichnet und werden als gespeicherter Chiffretext angezeigt, nicht entschlüsselt</translation>
+    </message>
+    <message>
+        <source>flagged encrypted (fscrypt) and not decrypted: the content is the stored ciphertext, which can run past the recorded size to the end of its last block</source>
+        <comment>entry.raw_encrypted_as_stored</comment>
+        <translation>als verschlüsselt (fscrypt) gekennzeichnet und nicht entschlüsselt: Der Inhalt ist der gespeicherte Chiffretext, der über die aufgezeichnete Größe hinaus bis zum Ende seines letzten Blocks reichen kann</translation>
+    </message>
+    <message>
         <source>PNG eXIf chunk not checked yet; tEXt chunks are shown under PNG text, zTXt and iTXt chunks are not read</source>
         <comment>exif.png_not_checked</comment>
         <translation>PNG-eXIf-Chunk noch nicht geprüft; tEXt-Chunks werden unter „PNG-Text“ angezeigt, zTXt- und iTXt-Chunks werden nicht gelesen</translation>
@@ -12954,6 +12969,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>nicht wiederherstellbar: {detail}</translation>
     </message>
     <message>
+        <source>size not recorded: the record&apos;s data attribute is in an extension record that was not read, so the 0 bytes shown are not the file&apos;s size</source>
+        <comment>entry.recovered_size_unknown</comment>
+        <translation>Größe nicht aufgezeichnet: Das Datenattribut des Datensatzes liegt in einem Extension Record, der nicht gelesen wurde; die angezeigten 0 Bytes sind nicht die Größe der Datei</translation>
+    </message>
+    <message>
         <source>recovery note: {detail}</source>
         <comment>entry.recovery_note</comment>
         <translation>Hinweis zur Wiederherstellung: {detail}</translation>
@@ -13002,11 +13022,6 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>image volume {image}: not read (missing, or marked as not to be read); its bytes are read from another copy or rebuilt from parity</source>
         <comment>entry.raw_lvm_raid_image_missing</comment>
         <translation>Image-Volume {image}: nicht gelesen (fehlt oder ist als nicht zu lesen markiert); seine Bytes werden aus einer anderen Kopie gelesen oder aus der Parität rekonstruiert</translation>
-    </message>
-    <message>
-        <source>{count} damaged structure(s) recorded and skipped while the volume was listed, first: {first}</source>
-        <comment>entry.raw_volume_damage</comment>
-        <translation>{count} beschädigte Struktur(en) beim Auflisten des Volumes erfasst und übersprungen, erste: {first}</translation>
     </message>
     <message>
         <source>{count} file(s) recorded as damage while the volume was listed, and listed as stored, first: {first}</source>
