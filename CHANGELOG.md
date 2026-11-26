@@ -2,6 +2,12 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- Type indexing no longer stays paused for the rest of the session when a window is closed right after scrolling a table in it.
+
 ## v0.26.0 - 2026-11-23
 
 **Focus: Compute Hash for files and folders; cancelling opening, unlocking, exports and type indexing; iOS container folders by their identifier; KTX textures in more formats; bundled qnxprobe v1.87 and ewfprobe v0.17.3 add ASIF images, L01 SHA-1 verification and a stricter Verify Acquisition Hash.**
