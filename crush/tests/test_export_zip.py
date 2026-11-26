@@ -81,7 +81,7 @@ def test_folder_into_a_new_archive(qapp: Any, tmp_path: Path, integrity: bool) -
         assert {"case/", "case/a.txt", "case/sub/", "case/sub/b.bin", "case/empty/"} <= names
         assert zf.read("case/a.txt") == b"alpha"
         assert zf.read("case/sub/b.bin") == b"\x00\x01\x02" * 1000
-        assert not any("crush-export-hashes" in name for name in names)  # beside it
+        assert not any("crush-export-" in name for name in names)  # only the files; lists beside
     beside = tmp_path / "out.zip.crush-export-hashes.txt"
     if integrity:
         hashes = beside.read_text(encoding="utf-8")
@@ -123,8 +123,10 @@ def test_add_keeps_existing_entries_and_numbers_a_clash(qapp: Any, tmp_path: Pat
         assert zf.read("earlier.txt") == b"keep me"
         assert zf.read("case/old.txt") == b"older export"
         assert zf.read("case (2)/a.txt") == b"alpha"
-        renames = zf.read("crush-export-renames.txt").decode()
-        assert f"{vfs.root().path}\t->\tcase (2)" in renames
+        assert not any("crush-export-" in name for name in names)
+    renames = (tmp_path / "out.zip.crush-export-renames.txt").read_text(encoding="utf-8")
+    assert f"{vfs.root().path}\t->\tcase (2)" in renames
+    assert renames.startswith("# Crush ZIP export ")
 
 
 def test_adding_the_same_file_twice(qapp: Any, tmp_path: Path) -> None:
@@ -136,7 +138,7 @@ def test_adding_the_same_file_twice(qapp: Any, tmp_path: Path) -> None:
     assert _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "add", True))[0][0] == "finished"
 
     with zipfile.ZipFile(out) as zf:
-        assert set(zf.namelist()) == {"a.txt", "a (2).txt", "crush-export-renames.txt"}
+        assert set(zf.namelist()) == {"a.txt", "a (2).txt"}
         assert zf.read("a (2).txt") == b"alpha"
     hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
     first, second = hashes.split("\n\n")  # one section per export, the earlier kept
@@ -193,10 +195,11 @@ def test_an_unreadable_file_is_left_out_and_listed(qapp: Any, tmp_path: Path) ->
         names = zf.namelist()
         assert "src/bad.bin" not in names  # no entry holding part of the file
         assert zf.read("src/good.txt") == b"good"
-        failed = zf.read("crush-export-failed.txt").decode()
-        assert "bad.bin\tonly 4 of 9 bytes can be read" in failed
+        assert set(names) == {"src/", "src/good.txt"}
+    failed = (tmp_path / "out.zip.crush-export-failed.txt").read_text(encoding="utf-8")
+    assert "bad.bin\tonly 4 of 9 bytes can be read" in failed
     hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
-    assert "# not exported: 1 (see crush-export-failed.txt in the archive)" in hashes
+    assert "# not exported: 1 (see out.zip.crush-export-failed.txt)" in hashes
 
 
 def test_a_single_unreadable_file_fails_and_writes_nothing(qapp: Any, tmp_path: Path) -> None:
@@ -248,7 +251,8 @@ def test_windows_unsafe_names_are_sanitized_and_recorded(qapp: Any, tmp_path: Pa
 
     with zipfile.ZipFile(out) as zf:
         assert zf.read("src/a_b.txt") == b"x"
-        assert "a:b.txt\t->\tsrc/a_b.txt" in zf.read("crush-export-renames.txt").decode()
+    renames = (tmp_path / "out.zip.crush-export-renames.txt").read_text(encoding="utf-8")
+    assert "a:b.txt\t->\tsrc/a_b.txt" in renames
 
 
 def test_unique_arcname() -> None:
@@ -400,7 +404,8 @@ def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path:
     with zipfile.ZipFile(out) as zf:
         assert "bad.bin" not in zf.namelist()
         assert zf.read("good.txt") == b"good"
-        assert "bad.bin\tonly 4 of 9" in zf.read("crush-export-failed.txt").decode()
+    failed = (tmp_path / "sel.zip.crush-export-failed.txt").read_text(encoding="utf-8")
+    assert "bad.bin\tonly 4 of 9" in failed
 
 
 def test_tree_selection_collects_chains_and_drops_what_a_folder_brings(
@@ -580,3 +585,29 @@ def test_menu_flow_asks_replace_or_beside_when_an_entry_is_there(
         assert zf.read("case/a.txt") == (b"alpha" if answer == "Replace" else b"old")
         if answer == "Add Beside":
             assert zf.read("case (2)/a.txt") == b"alpha"
+
+
+def test_lists_beside_are_appended_when_adding_and_replaced_with_the_archive(
+    qapp: Any, tmp_path: Path
+) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a:b.txt").write_bytes(b"x")
+    (src / "plain.txt").write_bytes(b"y")
+    vfs = DirectoryVFS(src)
+    odd = _child(vfs.root(), "a:b.txt")
+    plain = _child(vfs.root(), "plain.txt")
+    out = tmp_path / "out.zip"
+    renames = tmp_path / "out.zip.crush-export-renames.txt"
+
+    _run(_ExportZipWorker([_zip_item(odd, vfs)], str(out), "new", False))
+    _run(_ExportZipWorker([_zip_item(odd, vfs)], str(out), "add", False))
+    text = renames.read_text(encoding="utf-8")
+    assert text.count("# Crush ZIP export ") == 2  # one section per export
+    assert "->\ta_b.txt" in text and "->\ta_b (2).txt" in text
+
+    _run(_ExportZipWorker([_zip_item(plain, vfs)], str(out), "add", False))
+    assert renames.read_text(encoding="utf-8") == text  # nothing renamed: left as it was
+
+    _run(_ExportZipWorker([_zip_item(plain, vfs)], str(out), "replace", False))
+    assert not renames.exists()  # it listed the archive replaced

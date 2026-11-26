@@ -18,7 +18,7 @@ Right-click a file or folder and choose **Export to ZIP…** to export it into a
 
   and, for a folder, what happens with its contents:
   - *Folder contents in their folder structure* — `www/css/style.css`, `www/img/logo.png`.
-  - *All files of a folder in one folder* — `www/style.css`, `www/logo.png`, from any depth; subfolders (empty ones too) aren't stored. A name the folder already holds gets a number (`style (2).css`), and each such file is listed in `crush-export-renames.txt` with its path in the evidence, so where it came from stays on record.
+  - *All files of a folder in one folder* — `www/style.css`, `www/logo.png`, from any depth; subfolders (empty ones too) aren't stored. A name the folder already holds gets a number (`style (2).css`), and each such file is listed in the renames list beside the archive with its path in the evidence, so where it came from stays on record.
 
   The dialog shows an example of where an entry goes with the choices made.
 - **Compression** — *Deflate* (the standard; every tool opens it, Windows Explorer included), *No compression* (store), *BZIP2* or *LZMA* (smaller, but not opened by Windows Explorer). Deflate and BZIP2 take a **level** from 1 (fastest) to 9 (smallest).
@@ -35,7 +35,7 @@ If the archive doesn't exist yet, it is created. If it exists (and isn't split),
 When adding, and the archive already holds an entry under the same path, you're asked what to do with it (the dialog lists those entries):
 
 - **Replace** — the entry in the archive is taken out and the export takes its place; for a folder, the folder with everything in it, so no file from the earlier export stays mixed in. Each replaced entry is named in the log.
-- **Add Beside** — the export is stored next to it under a numbered name (`case (2)/`, `report (2).pdf`), so nothing is overwritten and no name appears twice; the new name is listed in `crush-export-renames.txt`.
+- **Add Beside** — the export is stored next to it under a numbered name (`case (2)/`, `report (2).pdf`), so nothing is overwritten and no name appears twice; the new name is listed in the renames list beside the archive.
 
 Replacing rebuilds the archive: its other entries are copied over as they are stored — still compressed, still encrypted, byte for byte — so it needs no password, even for entries encrypted with another one. Entries added to an existing archive are compressed and encrypted as the dialog says; the archive's other entries keep theirs, so an archive can end up with encrypted and unencrypted entries side by side.
 
@@ -43,7 +43,7 @@ A file that isn't a ZIP archive can only be replaced. Whether an entry is alread
 
 **How the export is documented.** With integrity mode on, a hash list goes **beside the archive**, named after it: `www.zip.crush-export-hashes.txt` (for a split archive too, after `www.zip`). It starts with the time (UTC), how many files were written or added, the options (never the password) and the SHA-256 and size of the finished archive — for a split one, of each part and of the parts put together, which a hash list inside the archive couldn't hold. Then follows each file's SHA-256, size and path in the archive. Adding to an archive appends a section for that export, with the archive's new hash and any entries replaced; the earlier sections stay, their archive hash being of the archive as it was then. Replacing the whole archive writes a new list. Without integrity mode no list is written; one already beside the archive gets a note that the files added weren't hashed, or is removed when the archive it described is replaced.
 
-Two lists go into the archive, at its top (root): `crush-export-renames.txt` (names changed: Windows-safe names, numbered clashes, files put into one folder) and `crush-export-failed.txt` (files that couldn't be read). If the archive already holds one, the new list is numbered (`crush-export-renames (2).txt`) rather than replacing it. A file that can't be read is left out — no entry holds part of it — and listed in `crush-export-failed.txt`; a single file that can't be read fails the export. The Crush log records the same: the options, each renamed, replaced or unreadable file, each file's SHA-256 and the archive's.
+**The archive holds only the exported files.** Two more lists go beside it, named after it, whenever there is something to list (with or without integrity mode): `www.zip.crush-export-renames.txt` (names changed: Windows-safe names, numbered clashes, files put into one folder — each with its path in the evidence) and `www.zip.crush-export-failed.txt` (files that couldn't be read, with the reason). Like the hash list, each starts with the time and the archive, gets a section appended when adding to the archive, and is replaced — or removed, if this export has nothing to list — when the archive is written anew. A file that can't be read is left out — no entry holds part of it; a single file that can't be read fails the export. The Crush log records the same: the options, each renamed, replaced or unreadable file, each file's SHA-256 and the archive's.
 
 The archive is written to a temporary file beside it and only moved into place when complete. **Cancel**, an error or a crash therefore never leaves a partly written archive under its name, and an archive you were adding to (or replacing entries in) stays exactly as it was. Adding to an archive needs free space for a copy of it in the same folder.
 
@@ -55,7 +55,6 @@ Select several files and folders in the tree (Ctrl/Shift-click), right-click one
 private/var/mobile/a.db    ← a file, deep down
 private/var/logs/x.log     ← a folder, one level higher, with its content
 top.txt                    ← a file at the top
-crush-export-renames.txt   ← lists, at the top (the hash list is beside the archive)
 ```
 
 If the selection comes from several opened sources, each source's name comes first (`case/private/…`, `phone/…`), so their entries don't mix. An entry inside a selected folder is not stored twice: the folder brings it along. When adding to an archive, folders the archive already holds are shared; only a selected file or folder whose path is already in the archive is replaced or stored beside it, as you choose. A file that can't be read is left out and listed; the export still completes.

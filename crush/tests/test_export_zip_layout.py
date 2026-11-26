@@ -49,7 +49,8 @@ def _export(tmp_path: Path, items: list[ZipSourceItem], **options: Any) -> dict[
 
 
 def _content(entries: dict[str, bytes]) -> set[str]:
-    return {name for name in entries if not name.startswith("crush-export-")}
+    assert not any("crush-export-" in name for name in entries)  # lists go beside it
+    return set(entries)
 
 
 def test_a_file_alone(qapp: Any, tmp_path: Path) -> None:
@@ -92,7 +93,7 @@ def test_a_folder_flattened_numbers_clashing_names_and_lists_them(
     assert sorted(
         entries[n] for n in ("www/style.css", "www/style (2).css", "www/style (3).css")
     ) == [b"css", b"oldest css", b"other css"]
-    renames = entries["crush-export-renames.txt"].decode()
+    renames = (tmp_path / "out.zip.crush-export-renames.txt").read_text(encoding="utf-8")
     assert renames.count("->\twww/style (") == 2
     root = str(tmp_path / "case" / "var" / "www")
     assert any(line.startswith(root) for line in renames.splitlines())

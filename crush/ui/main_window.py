@@ -1138,8 +1138,8 @@ class _ExportZipWorker(QObject):
         super().__init__()
         self._hashes = hashes  # the window's store: integrity hashes are kept there
         self._replaced_names: list[str] = []
-        self._pending_hash_list: Path | None = None
-        self._remove_stale_hash_list = False
+        self._pending_beside: list[Path] = []
+        self._stale_beside: list[Path] = []
         if not items:
             raise ValueError("nothing to export")
         self._on_clash = on_clash
@@ -1226,10 +1226,10 @@ class _ExportZipWorker(QObject):
                 split = None
             else:
                 assert partial is not None
-                pending = self._prepare_hash_list([partial], [self._zip_path])
+                pending = self._prepare_beside([partial], [self._zip_path])
                 os.replace(partial, self._zip_path)
                 partial = None
-                self._place_hash_list(pending)
+                self._place_beside(pending)
         except _ExportCancelled:
             self._logger.info(
                 "ZIP export cancelled by the analyst: %s %s",
@@ -1245,9 +1245,9 @@ class _ExportZipWorker(QObject):
                 partial.unlink(missing_ok=True)
             if split is not None:
                 self._discard_parts(split)
-            if self._pending_hash_list is not None:
-                self._pending_hash_list.unlink(missing_ok=True)
-                self._pending_hash_list = None
+            for temp in self._pending_beside:
+                temp.unlink(missing_ok=True)
+            self._pending_beside = []
         self._logger.info(
             "ZIP export: %d file(s) of %s %s %s",
             self._exported, self._described(),
@@ -1270,7 +1270,7 @@ class _ExportZipWorker(QObject):
         written = split.parts()
         split.close()
         finals = [zip_writer.part_path(self._zip_path, n) for n in range(1, len(written) + 1)]
-        pending = self._prepare_hash_list(written, finals)
+        pending = self._prepare_beside(written, finals)
         for temp, final in zip(written, finals):
             os.replace(temp, final)
         for stale in zip_writer.existing_parts(self._zip_path):
@@ -1281,7 +1281,7 @@ class _ExportZipWorker(QObject):
             "ZIP export: %s split into %d part(s) of up to %d B: %s ... %s",
             self._zip_path, len(finals), self._options.split_size, finals[0].name, finals[-1].name,
         )
-        self._place_hash_list(pending)
+        self._place_beside(pending)
         return finals[0]
 
     def _discard_parts(self, split: zip_writer.SplitWriter) -> None:
@@ -1339,7 +1339,6 @@ class _ExportZipWorker(QObject):
                 self._export_dir_flat(zf, entry.vfs, entry.node, arcname)
             else:
                 self._export_dir(zf, entry.vfs, entry.node, arcname)
-        self._write_sidecars(zf, list_failed=not self._single_file())
 
     def _write_dir_entry(self, zf: Any, node: VFSNode, arcname: str) -> None:
         self._write_folder(zf, arcname, node.modified)
@@ -1465,62 +1464,82 @@ class _ExportZipWorker(QObject):
             original_path, arcname,
         )
 
-    def _write_sidecars(self, zf: Any, list_failed: bool) -> None:
-        """The renamed and the failed files, listed at the top (root) of the
-        archive; numbered (`crush-export-renames (2).txt`) when the archive
-        already holds one, so an earlier list stays with what it lists. The
-        hashes go beside the archive (_prepare_hash_list)."""
-        files: list[tuple[str, str]] = []
-        if self._rename_lines:
-            files.append((
-                "crush-export-renames.txt",
-                "# Names below contained characters invalid on Windows filesystems\n"
-                "# (or were reserved device names), or were already in the archive,\n"
-                "# and were renamed for export.\n"
-                "# original evidence path -> path in the ZIP archive\n"
-                + "\n".join(self._rename_lines) + "\n",
-            ))
-        if self._failed and list_failed:
-            files.append((
-                _EXPORT_FAILED_FILE,
-                "# Files below could not be read from the evidence and were not exported.\n"
-                "# evidence path\treason\n"
-                + "\n".join(f"{path}\t{reason}" for path, reason in self._failed) + "\n",
-            ))
-        for name, text in files:
-            arcname = _unique_arcname(name, self._taken, False)
-            zf.writestr(arcname, text.encode("utf-8"))
-            self._taken.add(arcname)
+    def beside_path(self, kind: str) -> Path:
+        """A list beside the archive, named after it:
+        `name.zip.crush-export-<kind>.txt` (also for a split one)."""
+        return self._zip_path.with_name(f"{self._zip_path.name}.crush-export-{kind}.txt")
 
     def hash_list_path(self) -> Path:
-        """The hash list beside the archive: its name, then
-        `.crush-export-hashes.txt` (also for a split one: `name.zip...`)."""
-        return self._zip_path.with_name(f"{self._zip_path.name}.crush-export-hashes.txt")
+        return self.beside_path("hashes")
 
-    def _prepare_hash_list(self, written: list[Path], names: list[Path]) -> Path | None:
-        """In integrity mode: hash the finished archive (*written*, its parts
-        if split, to be moved to *names*), log it, and write the hash list
-        for beside it to a temporary file -- moved into place with the
-        archive (_place_hash_list). Adding to an archive appends a section
-        to the list already beside it, so the earlier ones stay on record.
+    def _prepare_beside(self, written: list[Path], names: list[Path]) -> list[tuple[Path, Path]]:
+        """The lists that document the export, beside the archive -- the
+        archive holds only the exported files: the hashes (integrity mode),
+        the renamed files and the files that couldn't be read. *written* is
+        the finished archive (its parts if split), to be moved to *names*.
+        Each list is written to a temporary file and moved into place with
+        the archive (_place_beside). Adding to an archive appends a section
+        to a list already beside it, so the earlier ones stay on record;
+        writing it anew replaces the lists, and removes one this export has
+        nothing for, as it described the archive replaced."""
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        verb = "added to" if self._mode == "add" else "written to"
+        header = f"# Crush ZIP export {stamp}: {self._exported} file(s) {verb} {self._zip_path.name}"
+        texts: dict[str, str | None] = {
+            "hashes": self._hash_list_text(written, names, header, stamp),
+            "renames": (
+                "\n".join([
+                    header,
+                    "# Names below contained characters invalid on Windows filesystems (or were",
+                    "# reserved device names), were already in the archive, or were put into one",
+                    "# folder with a file of the same name, and were renamed for export.",
+                    "# original evidence path -> path in the ZIP archive",
+                    *self._rename_lines,
+                ]) + "\n"
+                if self._rename_lines else None
+            ),
+            "failed": (
+                "\n".join([
+                    header,
+                    "# Files below could not be read from the evidence and were not exported.",
+                    "# evidence path\treason",
+                    *(f"{path}\t{reason}" for path, reason in self._failed),
+                ]) + "\n"
+                if self._failed else None
+            ),
+        }
+        pending: list[tuple[Path, Path]] = []
+        for kind, text in texts.items():
+            target = self.beside_path(kind)
+            if text is None:
+                if self._mode != "add" and target.is_file():
+                    self._stale_beside.append(target)
+                continue
+            if self._mode == "add" and target.is_file():
+                text = target.read_text(encoding="utf-8").rstrip("\n") + "\n\n" + text
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f".{target.name}.", suffix=".crush-partial", dir=target.parent
+            )
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            self._pending_beside.append(Path(temp_name))
+            pending.append((Path(temp_name), target))
+        return pending
 
-        Without integrity mode there is no list, but one already beside the
-        archive would no longer match it: when adding, it gets a section
-        saying so; when the archive is written anew, it is removed."""
+    def _hash_list_text(
+        self, written: list[Path], names: list[Path], header: str, stamp: str
+    ) -> str | None:
+        """The hash list's section for this export (logging the archive's
+        hashes too), or None when there is none to write."""
         target = self.hash_list_path()
         if not self._integrity:
-            if not target.is_file():
-                return None
-            if self._mode != "add":
-                self._remove_stale_hash_list = True
-                return None
-            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            return self._write_pending_hash_list(
-                target.read_text(encoding="utf-8").rstrip("\n") + "\n\n"
-                f"# Crush ZIP export {stamp}: {self._exported} file(s) added to "
-                f"{self._zip_path.name} without integrity mode: not hashed.\n"
-                "# The archive hashes above are of the archive as it was before.\n"
-            )
+            if self._mode == "add" and target.is_file():
+                return (
+                    f"# Crush ZIP export {stamp}: {self._exported} file(s) added to "
+                    f"{self._zip_path.name} without integrity mode: not hashed.\n"
+                    "# The archive hashes above are of the archive as it was before.\n"
+                )
+            return None
         import hashlib
 
         whole = hashlib.sha256()
@@ -1549,10 +1568,8 @@ class _ExportZipWorker(QObject):
             "INTEGRITY export archive sha256=%s  size=%d  path=%s%s",
             whole.hexdigest(), whole_size, self._zip_path, split_note,
         )
-        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        verb = "added to" if self._mode == "add" else "written to"
         lines = [
-            f"# Crush ZIP export {stamp}: {self._exported} file(s) {verb} {self._zip_path.name}",
+            header,
             f"# options: {self._options.describe()}",
             f"# archive sha256={whole.hexdigest()}  size={whole_size}  "
             f"{self._zip_path.name}{split_note}",
@@ -1561,43 +1578,28 @@ class _ExportZipWorker(QObject):
         ]
         if self._failed:
             lines.append(
-                f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE} in the archive)"
+                f"# not exported: {len(self._failed)} (see {self.beside_path('failed').name})"
             )
         lines.append("# sha256  size  path in the archive")
         text = "\n".join(lines + self._hash_lines) + "\n"
         if self._mode == "add" and target.is_file():
-            earlier = target.read_text(encoding="utf-8")
             text = (
-                earlier.rstrip("\n") + "\n\n"
                 "# The archive hash of each section above is of the archive as it was\n"
                 "# after that export; the one below is of the archive now.\n" + text
             )
-        return self._write_pending_hash_list(text)
+        return text
 
-    def _write_pending_hash_list(self, text: str) -> Path:
-        target = self.hash_list_path()
-        fd, temp_name = tempfile.mkstemp(
-            prefix=f".{target.name}.", suffix=".crush-partial", dir=target.parent
-        )
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(text)
-        self._pending_hash_list = Path(temp_name)
-        return self._pending_hash_list
-
-    def _place_hash_list(self, pending: Path | None) -> None:
-        if pending is None:
-            if self._remove_stale_hash_list:
-                self.hash_list_path().unlink(missing_ok=True)
-                self._logger.warning(
-                    "ZIP export: removed the hash list of the replaced archive "
-                    "(no integrity mode, so no new one): %s", self.hash_list_path(),
-                )
-            return
-        os.replace(pending, self.hash_list_path())
-        self._pending_hash_list = None
-        self._logger.info(
-            "ZIP export: hash list written beside the archive: %s", self.hash_list_path()
-        )
+    def _place_beside(self, pending: list[tuple[Path, Path]]) -> None:
+        for temp, target in pending:
+            os.replace(temp, target)
+            self._logger.info("ZIP export: written beside the archive: %s", target)
+        self._pending_beside = []
+        for stale in self._stale_beside:
+            stale.unlink(missing_ok=True)
+            self._logger.warning(
+                "ZIP export: removed a list of the replaced archive (nothing to list now): %s",
+                stale,
+            )
 
 
 def _folder_formats(parser: object) -> list[Any]:
@@ -3161,6 +3163,14 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(self._on_export_thread_finished)
         self._export_thread.start()
 
+    def _export_failed_list_name(self) -> str:
+        """Where the running export lists the files it couldn't read: beside
+        a ZIP archive, named after it; in the export folder otherwise."""
+        worker = getattr(self, "_export_worker", None)
+        if isinstance(worker, _ExportZipWorker):
+            return worker.beside_path("failed").name
+        return _EXPORT_FAILED_FILE
+
     def _on_export_finished(self, dest: str, not_exported: int = 0) -> None:
         if hasattr(self, "_export_progress"):
             self._export_progress.close()
@@ -3179,7 +3189,7 @@ class MainWindow(QMainWindow):
                     "{n} files could not be read and were not exported; they are listed with "
                     "the reason in {name}.",
                 )
-            ).format(n=not_exported, name=_EXPORT_FAILED_FILE)
+            ).format(n=not_exported, name=self._export_failed_list_name())
             self._status.showMessage(
                 translate("MainWindow", "Exported to: {dest} — {n} not exported").format(
                     dest=dest, n=not_exported
