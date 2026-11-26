@@ -4021,6 +4021,13 @@ MESSAGES: dict[str, str] = {
         "recovered (content intact)",
         "entry.recovered_intact",
     ),
+    "entry.recovered_unverified": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "recovered, content unverified: nothing on the volume contradicts it, but the "
+        "volume does not record whether its clusters were reused, so the content can be "
+        "another file's",
+        "entry.recovered_unverified",
+    ),
     "entry.recovered_assumed_contiguous": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "recovered on an assumption: the cluster chain is gone, so the content is read "
@@ -4048,6 +4055,16 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "(folder no longer present)",
         "entry.original_folder_gone",
+    ),
+    "entry.orphan_folder": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{path} (an orphaned folder: where it sat in the tree is not recorded)",
+        "entry.orphan_folder",
+    ),
+    "entry.orphan_folder_unnamed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "(not named: no entry on the volume names the folder this entry is in)",
+        "entry.orphan_folder_unnamed",
     ),
     "entry.raw_volume_note": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -4098,6 +4115,110 @@ MESSAGES: dict[str, str] = {
         "{count} part(s) of the volume could not be read or failed a check while it was "
         "listed, first: {first}",
         "entry.raw_volume_damage",
+    ),
+    "entry.raw_file_note": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Filesystem reader note ({issue}): {detail}",
+        "entry.raw_file_note",
+    ),
+    "entry.raw_file_note_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the reader's {check} for this file could not run, so what it reports is not "
+        "known: {detail}",
+        "entry.raw_file_note_failed",
+    ),
+    "entry.raw_note_past_valid_data": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the content past the file's ValidDataLength is read as zeros, not from its "
+        "clusters (reader detail: {detail})",
+        "entry.raw_note_past_valid_data",
+    ),
+    "entry.raw_note_valid_data_damaged": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file's ValidDataLength is larger than its size, so the file is read to its "
+        "size (reader detail: {detail})",
+        "entry.raw_note_valid_data_damaged",
+    ),
+    "entry.raw_note_entry_set_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file's directory entry set fails its checksum, so where its content is read "
+        "from is not vouched for (reader detail: {detail})",
+        "entry.raw_note_entry_set_checksum",
+    ),
+    "entry.raw_note_clusters_marked_free": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "clusters the content is read from are marked free, so they can hold other data "
+        "(reader detail: {detail})",
+        "entry.raw_note_clusters_marked_free",
+    ),
+    "entry.raw_note_fat_copies_differ": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the FAT copies disagree on the file's cluster chain; the content follows the "
+        "table in use and may not be the file's from that point (reader detail: {detail})",
+        "entry.raw_note_fat_copies_differ",
+    ),
+    "entry.raw_note_no_pointer_zeros": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "blocks with no pointer were read as zeros, which a sparse hole and a damaged "
+        "pointer both look like (reader detail: {detail})",
+        "entry.raw_note_no_pointer_zeros",
+    ),
+    "entry.raw_note_previous_size": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file is read at its previous size; bytes stored past it are not in the "
+        "content shown (reader detail: {detail})",
+        "entry.raw_note_previous_size",
+    ),
+    "entry.raw_note_roll_forward": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the content comes in part from the roll-forward log written after the last "
+        "checkpoint (reader detail: {detail})",
+        "entry.raw_note_roll_forward",
+    ),
+    "entry.raw_note_blocks_unreached": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the inode counts more blocks than its map reaches, so the content can hold "
+        "zeros or other bytes where those blocks belonged (reader detail: {detail})",
+        "entry.raw_note_blocks_unreached",
+    ),
+    "entry.raw_note_record_torn": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file's MFT record failed its update sequence check and was read as it "
+        "stands (reader detail: {detail})",
+        "entry.raw_note_record_torn",
+    ),
+    "entry.raw_note_link": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "a link (junction or symbolic link); its stored target and times are in the "
+        "reader detail: {detail}",
+        "entry.raw_note_link",
+    ),
+    "entry.raw_unreached": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not reached from the root folder and not read: {detail}",
+        "entry.raw_unreached",
+    ),
+    "entry.raw_unreached_count": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} entry(ies) the reader found are not reached from the root folder and are "
+        "listed in $Unreached, without content",
+        "entry.raw_unreached_count",
+    ),
+    "entry.raw_volume_state": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Filesystem reader note after listing: {detail}",
+        "entry.raw_volume_state",
+    ),
+    "entry.raw_volume_not_read": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not read, found while listing: {detail}",
+        "entry.raw_volume_not_read",
+    ),
+    "entry.raw_volume_check_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the reader's {check} after listing could not run, so what it checks is not "
+        "known: {detail}",
+        "entry.raw_volume_check_failed",
     ),
     "entry.raw_encrypted_files": QT_TRANSLATE_NOOP(
         "ParseIssue",

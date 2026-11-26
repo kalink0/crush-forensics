@@ -11534,9 +11534,114 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>Lesen nach {count:,} Datensätzen abgebrochen: {detail}</translation>
     </message>
     <message>
+        <source>recovered, content unverified: nothing on the volume contradicts it, but the volume does not record whether its clusters were reused, so the content can be another file&apos;s</source>
+        <comment>entry.recovered_unverified</comment>
+        <translation>wiederhergestellt, Inhalt nicht verifiziert: Auf dem Volume widerspricht nichts, aber das Volume zeichnet nicht auf, ob die Cluster wiederverwendet wurden; der Inhalt kann zu einer anderen Datei gehören</translation>
+    </message>
+    <message>
+        <source>{path} (an orphaned folder: where it sat in the tree is not recorded)</source>
+        <comment>entry.orphan_folder</comment>
+        <translation>{path} (ein verwaister Ordner: wo er im Baum lag, ist nicht aufgezeichnet)</translation>
+    </message>
+    <message>
+        <source>(not named: no entry on the volume names the folder this entry is in)</source>
+        <comment>entry.orphan_folder_unnamed</comment>
+        <translation>(ohne Namen: kein Eintrag auf dem Volume benennt den Ordner, in dem dieser Eintrag liegt)</translation>
+    </message>
+    <message>
         <source>{count} part(s) of the volume could not be read or failed a check while it was listed, first: {first}</source>
         <comment>entry.raw_volume_damage</comment>
         <translation>{count} Teil(e) des Volumes konnten beim Auflisten nicht gelesen werden oder haben eine Prüfung nicht bestanden, erster: {first}</translation>
+    </message>
+    <message>
+        <source>Filesystem reader note ({issue}): {detail}</source>
+        <comment>entry.raw_file_note</comment>
+        <translation>Hinweis des Dateisystem-Readers ({issue}): {detail}</translation>
+    </message>
+    <message>
+        <source>the reader&apos;s {check} for this file could not run, so what it reports is not known: {detail}</source>
+        <comment>entry.raw_file_note_failed</comment>
+        <translation>{check} des Readers für diese Datei konnte nicht laufen; was es meldet, ist daher nicht bekannt: {detail}</translation>
+    </message>
+    <message>
+        <source>the content past the file&apos;s ValidDataLength is read as zeros, not from its clusters (reader detail: {detail})</source>
+        <comment>entry.raw_note_past_valid_data</comment>
+        <translation>Der Inhalt hinter der ValidDataLength der Datei wird als Nullen gelesen, nicht aus ihren Clustern (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the file&apos;s ValidDataLength is larger than its size, so the file is read to its size (reader detail: {detail})</source>
+        <comment>entry.raw_note_valid_data_damaged</comment>
+        <translation>Die ValidDataLength der Datei ist größer als ihre Größe; die Datei wird bis zu ihrer Größe gelesen (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the file&apos;s directory entry set fails its checksum, so where its content is read from is not vouched for (reader detail: {detail})</source>
+        <comment>entry.raw_note_entry_set_checksum</comment>
+        <translation>Das Entry Set der Datei besteht seine Prüfsumme nicht; woher ihr Inhalt gelesen wird, ist daher nicht belegt (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>clusters the content is read from are marked free, so they can hold other data (reader detail: {detail})</source>
+        <comment>entry.raw_note_clusters_marked_free</comment>
+        <translation>Cluster, aus denen der Inhalt gelesen wird, sind als frei markiert und können andere Daten enthalten (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the FAT copies disagree on the file&apos;s cluster chain; the content follows the table in use and may not be the file&apos;s from that point (reader detail: {detail})</source>
+        <comment>entry.raw_note_fat_copies_differ</comment>
+        <translation>Die FAT-Kopien widersprechen sich bei der Cluster-Kette der Datei; der Inhalt folgt der verwendeten Tabelle und gehört ab dieser Stelle womöglich nicht zur Datei (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>blocks with no pointer were read as zeros, which a sparse hole and a damaged pointer both look like (reader detail: {detail})</source>
+        <comment>entry.raw_note_no_pointer_zeros</comment>
+        <translation>Blöcke ohne Zeiger wurden als Nullen gelesen; so sehen ein Sparse-Bereich und ein beschädigter Zeiger gleichermaßen aus (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the file is read at its previous size; bytes stored past it are not in the content shown (reader detail: {detail})</source>
+        <comment>entry.raw_note_previous_size</comment>
+        <translation>Die Datei wird mit ihrer früheren Größe gelesen; Bytes, die dahinter gespeichert sind, gehören nicht zum gezeigten Inhalt (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the content comes in part from the roll-forward log written after the last checkpoint (reader detail: {detail})</source>
+        <comment>entry.raw_note_roll_forward</comment>
+        <translation>Der Inhalt stammt teilweise aus dem Roll-forward-Log, das nach dem letzten Checkpoint geschrieben wurde (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the inode counts more blocks than its map reaches, so the content can hold zeros or other bytes where those blocks belonged (reader detail: {detail})</source>
+        <comment>entry.raw_note_blocks_unreached</comment>
+        <translation>Der Inode zählt mehr Blöcke, als seine Block-Map erreicht; der Inhalt kann dort, wo diese Blöcke hingehörten, Nullen oder fremde Bytes enthalten (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>the file&apos;s MFT record failed its update sequence check and was read as it stands (reader detail: {detail})</source>
+        <comment>entry.raw_note_record_torn</comment>
+        <translation>Der MFT-Record der Datei hat die Update-Sequence-Prüfung nicht bestanden und wurde so gelesen, wie er vorliegt (Reader-Detail: {detail})</translation>
+    </message>
+    <message>
+        <source>a link (junction or symbolic link); its stored target and times are in the reader detail: {detail}</source>
+        <comment>entry.raw_note_link</comment>
+        <translation>ein Link (Junction oder symbolischer Link); gespeichertes Ziel und Zeiten stehen im Reader-Detail: {detail}</translation>
+    </message>
+    <message>
+        <source>not reached from the root folder and not read: {detail}</source>
+        <comment>entry.raw_unreached</comment>
+        <translation>vom Root-Ordner aus nicht erreicht und nicht gelesen: {detail}</translation>
+    </message>
+    <message>
+        <source>{count} entry(ies) the reader found are not reached from the root folder and are listed in $Unreached, without content</source>
+        <comment>entry.raw_unreached_count</comment>
+        <translation>{count} Eintrag/Einträge, die der Reader gefunden hat, sind vom Root-Ordner aus nicht erreicht und stehen ohne Inhalt in $Unreached</translation>
+    </message>
+    <message>
+        <source>Filesystem reader note after listing: {detail}</source>
+        <comment>entry.raw_volume_state</comment>
+        <translation>Hinweis des Dateisystem-Readers nach dem Auflisten: {detail}</translation>
+    </message>
+    <message>
+        <source>Not read, found while listing: {detail}</source>
+        <comment>entry.raw_volume_not_read</comment>
+        <translation>Nicht gelesen, beim Auflisten festgestellt: {detail}</translation>
+    </message>
+    <message>
+        <source>the reader&apos;s {check} after listing could not run, so what it checks is not known: {detail}</source>
+        <comment>entry.raw_volume_check_failed</comment>
+        <translation>{check} des Readers nach dem Auflisten konnte nicht laufen; was es prüft, ist daher nicht bekannt: {detail}</translation>
     </message>
     <message>
         <source>{count} file(s) are flagged encrypted (fscrypt) and are shown as the stored ciphertext, not decrypted</source>

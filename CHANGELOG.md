@@ -4,11 +4,17 @@ All notable changes to Crush will be documented in this file.
 
 ## Unreleased
 
+### New Features
+
+- Added to raw disk images -> Support for exFAT orphan entries (entry sets still in use that no live folder reaches), listed in `$Orphaned`.
+- Added to raw disk images -> Support for what the reader reports beyond the listing: per-file notes on the content (exFAT ValidDataLength and entry-set checks, FAT copies that disagree, APFS previous size, F2FS roll-forward log, NTFS records read despite a failed check, QNX6 blocks without a pointer), the volume's state after listing and its post-listing checks, and the reason a name's inode can't be read; YAFFS objects no listing reaches are listed in `$Unreached`.
+
 ### Changed
 
 - Bundled [qnxprobe](https://github.com/abrignoni/qnxprobe) updated to v1.88 (from v1.87). A deleted NTFS file whose clusters another deleted record also claims, and a deleted FAT32 file whose first cluster the entry no longer pins down, are listed as not recoverable instead of recovered.
 - A file flagged encrypted (fscrypt) on an ext4 or F2FS volume reads as its stored ciphertext through the end of its last block and says so; the volume's status counts such files.
 - A file whose block map or run list no longer reaches part of it is refused with that reason instead of as a file cut off by the end of the image.
+- A recoverable deleted FAT32, FAT16, FAT12 or exFAT file says its content is unverified instead of intact, as these filesystems don't record whether its clusters were reused.
 
 ### Bug Fixes
 

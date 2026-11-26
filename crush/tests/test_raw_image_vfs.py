@@ -819,8 +819,11 @@ class TestDeletedFileRecovery:
                 assert node is not None, f"missing: {name}"
                 assert hashlib.sha256(vfs.read(node)).hexdigest() == digest
                 # exFAT records a contiguous file as such (NoFatChain), so
-                # nothing about its layout is assumed.
-                assert str((vfs.volume_info(node) or {})["note"]) == "recovered (content intact)"
+                # nothing about its layout is assumed; it records nowhere
+                # whether a freed cluster was reused, so the content is a
+                # candidate (qnxprobe 1.88 content_unverified).
+                status = (vfs.volume_info(node) or {})["note"]
+                assert status.code == "entry.recovered_unverified"
         finally:
             vfs.close()
 
