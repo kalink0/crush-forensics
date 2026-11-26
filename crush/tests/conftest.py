@@ -104,21 +104,135 @@ def _no_real_external_open(monkeypatch: pytest.MonkeyPatch) -> None:
     import crush.ui as _crush_ui
     monkeypatch.setattr(_crush_ui, "open_url", lambda url: None)
 
-# NOTE: a companion autouse fixture that force-closed every leftover
-# top-level widget after each test (to plug the general MainWindow-leak
-# problem described in the module docstring at the top of this section) was
-# tried here and reverted -- it made the suite crash the whole pytest
-# process (SIGABRT/segfault) intermittently, not consistently, which points
-# to one or more tests leaving a QThread worker still running when its
-# owning widget gets torn down. That's a real bug worth fixing, but a blind
-# global "close everything" is the wrong way to do it: it does not know
-# which threads are safe to interrupt, and papering over the crash by luck
-# of timing is worse than the leak it was meant to fix. Fixing it properly
-# means going test by test and making sure each worker thread is stopped
-# and joined (not just the widget closed) before the test ends -- see the
-# three tests fixed alongside this fixture (test_cli_focus.py,
-# test_export_overwrite_confirm.py, test_send_biome_to_peach.py) for the
-# pattern to extend elsewhere.
+# Deterministic Qt teardown after every test.
+#
+# Widgets a test leaves behind used to be destroyed whenever the garbage
+# collector got to them: in a later, unrelated test, possibly while a worker
+# thread was still running against them, or during interpreter exit. That
+# crashed the suite intermittently (free() abort in Shiboken::Object::destroy,
+# "double free" at exit) at places that had nothing to do with the cause.
+#
+# An earlier version of this fixture closed every top-level widget blindly
+# and was reverted (#89): deleting a widget whose QThread still runs aborts
+# the process. So the threads go first. After each test:
+#   1. every running QThread under a top-level widget and every Python
+#      thread the test started is waited for, the event loop kept turning so
+#      a worker that hands results back to the GUI thread can finish;
+#   2. a thread still running after _THREAD_SETTLE_SECONDS fails the test by
+#      name, and the widgets are then left alone -- deleting them would be
+#      the crash this fixture exists to prevent;
+#   3. otherwise pending events (deferred deletes included) are delivered and
+#      each parentless top-level widget is closed and deleted, its children
+#      with it, on the GUI thread.
+_THREAD_SETTLE_SECONDS = 30.0
+
+
+def _settle(still_running: Any, app: Any) -> list[str]:
+    """Turn the event loop until ``still_running()`` returns no names or the
+    settle time is up; return the names still running."""
+    import time
+
+    deadline = time.monotonic() + _THREAD_SETTLE_SECONDS
+    names: list[str] = still_running()
+    while names and time.monotonic() < deadline:
+        if app is not None:
+            app.processEvents()
+        time.sleep(0.01)
+        names = still_running()
+    return names
+
+
+@pytest.fixture(autouse=True)
+def _qt_teardown_after_test() -> Any:
+    import sys
+    import threading
+
+    before = set(threading.enumerate())
+    yield
+
+    app = None
+    if "PySide6.QtWidgets" in sys.modules:
+        from PySide6.QtWidgets import QApplication
+
+        instance = QApplication.instance()
+        if isinstance(instance, QApplication):
+            app = instance
+
+    leftovers: list[str] = []
+    if app is not None:
+        import shiboken6
+        from PySide6.QtCore import QThread, QThreadPool
+
+        qthreads = [
+            thread
+            for widget in app.topLevelWidgets()
+            if shiboken6.isValid(widget)
+            for thread in widget.findChildren(QThread)
+        ]
+        for thread in qthreads:
+            if shiboken6.isValid(thread) and thread.isRunning():
+                thread.quit()
+
+        def running_qthreads() -> list[str]:
+            names = [
+                f"QThread {thread.objectName() or type(thread).__name__} "
+                f"(parent {type(thread.parent()).__name__})"
+                for thread in qthreads
+                if shiboken6.isValid(thread) and thread.isRunning()
+            ]
+            pool = QThreadPool.globalInstance()
+            if pool.activeThreadCount():
+                names.append(f"QThreadPool ({pool.activeThreadCount()} active)")
+            return names
+
+        leftovers += _settle(running_qthreads, app)
+
+    def running_python_threads() -> list[str]:
+        return [
+            f"thread {thread.name!r} (target {getattr(thread, '_target', None)!r})"
+            for thread in threading.enumerate()
+            if thread not in before
+            and thread is not threading.main_thread()
+            and not isinstance(thread, threading._DummyThread)
+            and thread.is_alive()
+        ]
+
+    leftovers += _settle(running_python_threads, app)
+
+    if leftovers:
+        pytest.fail(
+            "worker threads still running after the test; its widgets were "
+            "not deleted:\n  " + "\n  ".join(leftovers),
+            pytrace=False,
+        )
+
+    if app is not None:
+        import shiboken6
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        app.processEvents()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        for widget in app.topLevelWidgets():
+            if shiboken6.isValid(widget) and widget.parent() is None:
+                widget.close()
+                if shiboken6.isValid(widget):
+                    shiboken6.delete(widget)
+        app.processEvents()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    # A foreground I/O claim (crush.core.work_priority) outliving every
+    # widget pauses all later background I/O for good: every type scan of
+    # the rest of the session would block. Fail the test that left it; the
+    # claim is then cleared so the failure stays with that one test.
+    from crush.core import work_priority
+
+    if work_priority._foreground_count:
+        work_priority._foreground_count = 0
+        pytest.fail(
+            "a foreground I/O claim is still held after every widget was "
+            "deleted; background I/O would stay paused",
+            pytrace=False,
+        )
 
 
 # Garbage collection on the main thread only, as the app does

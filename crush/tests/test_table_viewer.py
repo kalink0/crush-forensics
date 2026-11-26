@@ -26,6 +26,22 @@ def _make_viewer() -> TableViewer:
     return TableViewer(data, source_name="mydb.sqlite")
 
 
+def test_scroll_claim_is_released_when_viewer_is_deleted_without_close(qapp) -> None:
+    """A viewer deleted with its window gets no closeEvent of its own. The
+    foreground I/O claim its scrolling took must still be released, or the
+    background type scan of every window stays paused for the session."""
+    import shiboken6
+
+    from crush.core import work_priority
+
+    before = work_priority._foreground_count
+    tv = _make_viewer()
+    tv._on_table_scroll_activity()
+    assert work_priority._foreground_count == before + 1
+    shiboken6.delete(tv)
+    assert work_priority._foreground_count == before
+
+
 def test_normal_table_path_and_metadata(qapp) -> None:
     tv = _make_viewer()
     idx = tv._table_view.model().index(0, 2)  # 0=Row, 1=id, 2=data
