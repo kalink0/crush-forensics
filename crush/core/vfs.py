@@ -401,6 +401,7 @@ NO_CONTENT_STATUSES: frozenset[str] = frozenset({
     "entry.symlink_no_target",     # iTunes backup: link without a target
     "entry.no_backup_content",     # iTunes backup: no file in the backup
     "entry.raw_entry_unreadable",  # disk image: entry metadata unreadable
+    "entry.raw_unreached",         # disk image: entry no listing reaches, not read
     "entry.symlink_raw",           # disk image: link target not decoded
     "entry.special_raw",           # disk image: special file
     "entry.streams_unlisted",      # disk image: streams could not be named
@@ -2417,13 +2418,34 @@ class RawImageVFS(VFS):
                 # recognise at all) -- still fully readable as the raw bytes
                 # of that region, never hidden.
                 return read_raw_region(self._region_image(entry), entry.base, entry.size)
-            return read_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
+            data = read_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
+            self._note_after_read(node, entry)
+            return data
+
+    def _stream_then_note(self, node: VFSNode, entry: Any) -> Iterator[bytes]:
+        from crush.core.raw_image import stream_walker_file
+
+        yield from stream_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
+        self._note_after_read(node, entry)
+
+    def _note_after_read(self, node: VFSNode, entry: Any) -> None:
+        """Add to `node`'s status what the reader can say about the file only
+        once it has been read in full (QNX6: blocks read as zeros because they
+        had no pointer), once."""
+        from crush.core.raw_image import after_read_notes
+
+        notes = after_read_notes(entry.walker, entry.node, entry.size)
+        status = node.status
+        shown = (status.params.get("notes", []) if isinstance(status, ParseIssue)
+                 and status.code == "common.notes" else [status])
+        new = [n for n in notes if n not in shown]
+        if new:
+            node.status = join_notes([status, *new])
 
     def open(self, node: VFSNode) -> IO[bytes]:
         from crush.core.raw_image import (
             stream_deleted_file,
             stream_raw_region,
-            stream_walker_file,
         )
 
         entry = self._resolve_entry(node)
@@ -2435,7 +2457,7 @@ class RawImageVFS(VFS):
                 return stream_deleted_file(entry.walker, entry.deleted, entry.size)
             if entry.walker is None:
                 return stream_raw_region(self._region_image(entry), entry.base, entry.size)
-            return stream_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
+            return self._stream_then_note(node, entry)
 
         return buffered(IterStream(make_iter, entry.size, lock=self._lock))
 
@@ -2484,6 +2506,8 @@ class RawImageVFS(VFS):
         unsupported (and recovered-but-uncertain) content must always carry
         an explicit status.
         """
+        from crush.core.raw_image import recovered_label
+
         entry = self._read_map.get(node.path)
         if entry is None or entry.stored is not None:
             return None
@@ -2491,14 +2515,20 @@ class RawImageVFS(VFS):
             deleted = entry.deleted
             # A FAT32/FAT16/FAT12 delete zeroes the chain: qnxprobe then reads
             # the size from the first cluster on and says so in
-            # assumed_contiguous.
-            status: str | ParseIssue = (
-                ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
-                if not deleted.recoverable
-                else ParseIssue("entry.recovered_assumed_contiguous")
-                if getattr(deleted, "assumed_contiguous", False)
-                else ParseIssue("entry.recovered_intact")
-            )
+            # assumed_contiguous. FAT and exFAT record nowhere whether a
+            # cluster was reused after the file let go of it, so qnxprobe
+            # (1.88) flags every recoverable FAT/exFAT entry, orphans included,
+            # content_unverified: its bytes are a candidate.
+            status: str | ParseIssue
+            if not deleted.recoverable:
+                status = ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
+            else:
+                states = []
+                if getattr(deleted, "content_unverified", False):
+                    states.append(ParseIssue("entry.recovered_unverified"))
+                if getattr(deleted, "assumed_contiguous", False):
+                    states.append(ParseIssue("entry.recovered_assumed_contiguous"))
+                status = join_notes(states) if states else ParseIssue("entry.recovered_intact")
             # A flash record's note says what the recovery had to decide
             # that the flash itself doesn't record (YAFFS2's size-0 header).
             recovery_note = getattr(deleted, "note", "")
@@ -2511,10 +2541,18 @@ class RawImageVFS(VFS):
             # node shows 0 bytes, which is not the file's size.
             if getattr(deleted, "size", 0) is None:
                 status = join_notes([status, ParseIssue("entry.recovered_size_unknown")])
-            info: dict[str, Any] = {"kind": "deleted file", "note": status}
+            orphan = recovered_label(deleted) == "orphaned file"
+            info: dict[str, Any] = {"kind": recovered_label(deleted), "note": status}
             # Only the flash records name the folder the file was deleted
             # from: "" is the volume root, None a folder no longer present.
-            if hasattr(deleted, "parent_path"):
+            # An exFAT orphan's path starts at the first orphaned folder, not
+            # at the root, and None there means no entry names its folder.
+            if orphan:
+                info["original_folder"] = (
+                    ParseIssue("entry.orphan_folder_unnamed") if deleted.parent_path is None
+                    else ParseIssue("entry.orphan_folder", {"path": deleted.parent_path})
+                )
+            elif hasattr(deleted, "parent_path"):
                 info["original_folder"] = (
                     ParseIssue("entry.original_folder_gone") if deleted.parent_path is None
                     else "/" + deleted.parent_path

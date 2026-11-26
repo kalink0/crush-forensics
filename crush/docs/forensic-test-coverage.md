@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-308 checks in total.
+312 checks in total.
 
 ### Sources
 
@@ -54,10 +54,10 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 |---|---|---|---|---|---|---|
 | [NTFS](#ntfs) | not tested | not tested | not tested | 6 | not tested | not tested |
 | [FAT32](#fat32) | not tested | not tested | not tested | 2 | not tested | not tested |
-| [FAT16](#fat16) | not tested | not tested | not tested | 3 | not tested | not tested |
+| [FAT16](#fat16) | not tested | not tested | not tested | 4 | not tested | not tested |
 | [FAT12](#fat12) | not tested | not tested | not tested | 2 | not tested | not tested |
-| [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
-| [ext2/3/4](#ext234) | not tested | not tested | not tested | 2 | 1 | not tested |
+| [exFAT](#exfat) | not tested | not tested | not tested | 6 | not tested | not tested |
+| [ext2/3/4](#ext234) | not tested | not tested | not tested | 3 | 1 | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [HFS+](#hfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [APFS](#apfs) | not tested | not tested | not tested | 1 | not tested | not tested |
@@ -342,6 +342,7 @@ No forensic checks.
 - **Known-output Verification** — Every file on a FAT16 and a TFAT16 volume reads back at its path with the bytes hashed from the mounted volume ([test_raw_image_fat.py](../../crush/tests/test_raw_image_fat.py), `test_fat16_every_listed_file_reads_back_as_written`)
 - **Known-output Verification** — Three deliberately deleted files on a FAT16 and a TFAT16 volume must recover content exactly, per reference hashes ([test_raw_image_fat.py](../../crush/tests/test_raw_image_fat.py), `test_fat16_deleted_files_are_recovered`)
 - **Known-output Verification** — The folder a TFAT16 volume keeps its files under is shown as stored, with every file under it ([test_raw_image_fat.py](../../crush/tests/test_raw_image_fat.py), `test_transaction_safe_volume_keeps_its_files_under_one_root_folder`)
+- **Known-output Verification** — A recoverable deleted FAT16 file says its content is a candidate and that its layout is assumed, not that its content is intact ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_fat_recovery_is_marked_unverified`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### FAT12
@@ -352,6 +353,8 @@ No forensic checks.
 
 #### exFAT
 
+- **Known-output Verification** — An exFAT entry set in an allocated cluster no live folder reaches is listed in $Orphaned, not as deleted, with the content its clusters hold and marked unverified ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_exfat_orphan_entry_is_listed_in_orphaned`)
+- **Known-output Verification** — An exFAT file whose ValidDataLength is below its size reads its clusters up to ValidDataLength and zeros after, and says so on the file ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_exfat_past_valid_data_is_on_the_file`)
 - **Known-output Verification** — An empty exFAT file must read as no bytes, never as a cluster of other data from the volume ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_empty_exfat_file_reads_as_no_bytes`)
 - **Known-output Verification** — An exFAT file whose FAT chain ends before its recorded size must fail to read, naming the chain, never read short ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_file_with_a_cut_cluster_chain_is_refused`)
 - **Known-output Verification** — Three deliberately deleted exFAT test files must recover, names and content, to their reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_recovers_all_three_with_intact_names`)
@@ -362,6 +365,7 @@ No forensic checks.
 
 - **Known-output Verification** — A file flagged encrypted (fscrypt) must read as the bytes stored through the end of its last block, matching the image's own blocks, and say on the file and the volume that it is ciphertext as stored ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_flagged_file_reads_as_stored_through_its_last_block`)
 - **Known-output Verification** — A file without the encrypt flag on the same volume must read at its recorded size, with no encryption status ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_unflagged_file_beside_it_reads_at_its_size`)
+- **Known-output Verification** — A name whose ext inode is blank stays listed, without content, with the reason ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_ext_unread_inode_names_its_reason`)
 - **Completeness** — A file whose block map points past the end of the volume, in an image that is whole, must be refused with the map's reason, never as an image that ends early ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_lost_block_map_is_named_not_put_down_to_the_image_end`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Reproducibility
 
