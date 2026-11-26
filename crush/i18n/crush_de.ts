@@ -7623,7 +7623,7 @@ Ersetzen (ein Ordner mit allem, was er enthält) oder den Export daneben unter e
     </message>
     <message>
         <source>Exporting {n} entries…</source>
-        <translation>{n} Einträge werden exportiert…</translation>
+        <translation>{n} Einträge werden exportiert...</translation>
     </message>
     <message>
         <source>Export cancelled: {dest} was not written</source>
@@ -15571,7 +15571,7 @@ Gesamt: {total:.2f} s</translation>
     </message>
     <message>
         <source>Browse…</source>
-        <translation>Durchsuchen…</translation>
+        <translation>Durchsuchen...</translation>
     </message>
     <message>
         <source>Deflate (standard, opens everywhere)</source>
