@@ -365,7 +365,8 @@ def test_split_archive_hash_list_names_each_part(qapp: Any, tmp_path: Path) -> N
     out = tmp_path / "out.zip"
     _export(tmp_path, out, method="stored", split_size=100_000)
 
-    hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+    assert not (tmp_path / "out.zip.crush-export-hashes.txt").exists()  # not the unsplit one's
+    hashes = (tmp_path / "out.zip.split.crush-export-hashes.txt").read_text(encoding="utf-8")
     parts = existing_parts(out)
     for part in parts:
         digest = hashlib.sha256(part.read_bytes()).hexdigest()
@@ -373,3 +374,17 @@ def test_split_archive_hash_list_names_each_part(qapp: Any, tmp_path: Path) -> N
     whole = hashlib.sha256(b"".join(p.read_bytes() for p in parts)).hexdigest()
     assert f"# archive sha256={whole}" in hashes and "put together" in hashes
     assert "split into parts of 100000 B" in hashes
+
+
+def test_split_and_unsplit_archives_keep_their_own_lists(qapp: Any, tmp_path: Path) -> None:
+    out = tmp_path / "out.zip"
+    _export(tmp_path, out)  # unsplit, integrity on
+    unsplit = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+
+    _export(tmp_path, out, "replace", method="stored", split_size=100_000)
+    _export(tmp_path, out, "replace", method="stored", split_size=1_000_000)  # re-split
+
+    assert (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8") == unsplit
+    assert (tmp_path / "out.zip.split.crush-export-hashes.txt").is_file()
+    assert (tmp_path / "out.zip.split.crush-export-times.txt").is_file()
+    assert out.is_file()  # the unsplit archive itself is left alone too

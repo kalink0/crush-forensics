@@ -27,7 +27,7 @@ from crush.ui.main_window import (
     _zip_item,
     _ExportZipWorker,
     _unique_arcname,
-    _zip_date_time,
+    _zip_time,
 )
 
 
@@ -291,9 +291,27 @@ def test_unique_arcname() -> None:
     assert _unique_arcname("a.txt", taken | {"a (2).txt"}, False) == "a (3).txt"
 
 
-def test_zip_date_time_is_utc_and_clamped() -> None:
-    assert _zip_date_time(0.0) == (1980, 1, 1, 0, 0, 0)  # before ZIP's first year
-    assert _zip_date_time(1_700_000_000.0) == (2023, 11, 14, 22, 13, 20)
+def test_zip_time_says_where_it_comes_from() -> None:
+    own = _zip_time(1_700_000_001.5)
+    assert own.kind == "source"
+    assert own.date_time == (2023, 11, 14, 22, 13, 20)  # 2-second steps: 21 -> 20
+    assert own.source == "2023-11-14T22:13:21.5Z"
+    assert own.extra[:4] == b"\x55\x54\x05\x00"
+
+    early = _zip_time(-1.5)  # 1969-12-31T23:59:58.5Z: before 1980, pre-1970 too
+    assert early.kind == "clamped" and early.date_time == (1980, 1, 1, 0, 0, 0)
+    assert early.source == "1969-12-31T23:59:58.5Z"
+    assert int.from_bytes(early.extra[5:], "little", signed=True) == -2  # exact second
+    late = _zip_time(2**31 + 10.0)  # 2038, beyond the extended timestamp
+    assert late.kind == "source" and late.extra == b""
+    beyond = _zip_time(5_000_000_000.0)  # 2128
+    assert beyond.kind == "clamped" and beyond.date_time == (2107, 12, 31, 23, 59, 58)
+
+    for missing, source in ((None, "-"), (float("nan"), "not convertible: nan"),
+                            (1e300, "not convertible: 1e+300")):
+        none = _zip_time(missing)
+        assert none.kind == "none" and none.source == source
+        assert none.date_time == (1980, 1, 1, 0, 0, 0) and none.extra == b""
 
 
 def test_menu_flow_asks_before_adding_to_an_existing_archive(

@@ -10,7 +10,7 @@ from typing import Any
 
 from PySide6.QtWidgets import QMessageBox
 
-from crush.core.vfs import DirectoryVFS
+from crush.core.vfs import DirectoryVFS, VFSNode
 from crush.core.zip_writer import ZipOptions
 from crush.ui.fs_panel import FilesystemPanel
 from crush.ui.main_window import MainWindow, ZipSourceItem, _ExportZipWorker
@@ -118,12 +118,23 @@ def test_flatten_leaves_files_selected_alone_as_they_are(qapp: Any, tmp_path: Pa
     assert _content(entries) == {"img/", "img/style.css", "img/style (2).css", "index.html"}
 
 
-def test_search_result_takes_its_source_path_from_the_result_path(tmp_path: Path) -> None:
+def test_search_result_takes_its_source_path_from_the_sources_nodes(
+    qapp: Any, tmp_path: Path
+) -> None:
     vfs = _source(tmp_path)
-    node = next(c for c in vfs.root().children[0].children[0].children if c.name == "index.html")
-    item = FilesystemPanel._zip_item_from_virtual_path(node, vfs, "/var/www/index.html")
-    assert item[2] == "case"
-    assert item[3] == [("var", None), ("www", None)]
+    var = vfs.root().children[0]
+    www = var.children[0]
+    node = next(c for c in www.children if c.name == "index.html")
+    win = MainWindow()
+    try:
+        item = win._fs_panel._zip_item_from_search(node, vfs)
+        assert item == _item(vfs, "var", "www", "index.html")  # the same as from the tree
+        assert item[3] == [("var", var.modified), ("www", www.modified)]
+        assert var.modified is not None
+        stray = VFSNode(name="gone.txt", path="/nowhere/gone.txt", is_dir=False)
+        assert win._fs_panel._zip_item_from_search(stray, vfs)[3] == []
+    finally:
+        win.close()
 
 
 # -- dialog -----------------------------------------------------------------------------
@@ -213,3 +224,77 @@ def test_integrity_hashes_go_to_the_store_and_empty_content_isnt_hashed(
     _ExportZipWorker([item], str(out2), "new", True).run()
     hashes = (tmp_path / "out2.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
     assert "not hashed: no content read" in hashes
+
+
+# -- entry times -------------------------------------------------------------------------
+
+
+def _times(tmp_path: Path) -> dict[str, tuple[str, str, str]]:
+    """The times list beside out.zip: path in the archive -> (kind, source, stored)."""
+    text = (tmp_path / "out.zip.crush-export-times.txt").read_text(encoding="utf-8")
+    rows = [line.split("\t") for line in text.splitlines() if not line.startswith("#")]
+    return {path: (kind, source, stored) for kind, source, stored, path in rows}
+
+
+def test_every_entry_says_where_its_time_comes_from(qapp: Any, tmp_path: Path) -> None:
+    import os
+
+    vfs = _source(tmp_path)
+    www = tmp_path / "case" / "var" / "www"
+    os.utime(www / "index.html", (0, 1_700_000_000))
+    os.utime(www / "css" / "style.css", (0, 100_000_000))  # 1973: before ZIP's first year
+    vfs = DirectoryVFS(tmp_path / "case")
+
+    entries = _export(tmp_path, [_item(vfs, "var", "www")], source_path=True)
+
+    times = _times(tmp_path)
+    assert set(times) == set(_content(entries))  # every entry written, folders too
+    assert times["var/www/index.html"] == (
+        "source", "2023-11-14T22:13:20Z", "2023-11-14 22:13:20"
+    )
+    assert times["var/www/css/style.css"] == (
+        "clamped", "1973-03-03T09:46:40Z", "1980-01-01 00:00:00"
+    )
+    with zipfile.ZipFile(tmp_path / "out.zip") as zf:
+        assert zf.getinfo("var/www/index.html").date_time == (2023, 11, 14, 22, 13, 20)
+        assert zf.getinfo("var/www/css/style.css").date_time == (1980, 1, 1, 0, 0, 0)
+
+
+def test_no_time_gets_the_placeholder_never_the_export_time(qapp: Any, tmp_path: Path) -> None:
+    from crush.tests.test_export_zip import _MemoryVFS
+    from crush.ui.main_window import _zip_item
+
+    vfs = _MemoryVFS("phone", {"notes.txt": b"n"})  # its nodes carry no time
+    entries = _export(tmp_path, [_zip_item(vfs.root(), vfs)])
+
+    assert _times(tmp_path) == {
+        "phone/": ("none", "-", "1980-01-01 00:00:00"),
+        "phone/notes.txt": ("none", "-", "1980-01-01 00:00:00"),
+    }
+    with zipfile.ZipFile(tmp_path / "out.zip") as zf:
+        for info in zf.infolist():
+            assert info.date_time == (1980, 1, 1, 0, 0, 0)
+            assert b"UT" not in info.extra  # no extended timestamp to read as real
+    assert set(entries) == {"phone/", "phone/notes.txt"}
+
+
+def test_several_sources_their_folder_has_the_roots_own_time(qapp: Any, tmp_path: Path) -> None:
+    import os
+
+    one = _source(tmp_path / "one")
+    two_dir = tmp_path / "two" / "phone"
+    two_dir.mkdir(parents=True)
+    (two_dir / "x.txt").write_bytes(b"x")
+    os.utime(tmp_path / "one" / "case", (0, 1_600_000_000))
+    os.utime(two_dir, (0, 1_650_000_000))
+    one, two = DirectoryVFS(tmp_path / "one" / "case"), DirectoryVFS(two_dir)
+
+    _export(
+        tmp_path,
+        [_item(one, "var", "www", "index.html"), _item(two, "x.txt")],
+        source_path=True,
+    )
+
+    times = _times(tmp_path)
+    assert times["case/"][:2] == ("source", "2020-09-13T12:26:40Z")
+    assert times["phone/"][:2] == ("source", "2022-04-15T05:20:00Z")

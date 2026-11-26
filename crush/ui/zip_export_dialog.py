@@ -58,7 +58,8 @@ class ZipExportDialog(QDialog):
         has_folder: bool = True,
     ) -> None:
         super().__init__(parent)
-        self._example = example or (["var", "www"], "index.html", False)  # i18n: keep -- sample path
+        sample = (["var", "www"], "index.html", False)  # i18n: keep -- sample path
+        self._example = example or sample
         self.setWindowTitle(translate("ZipExportDialog", "Export to ZIP archive"))
         self.setMinimumWidth(600)
         options = options or ZipOptions()
@@ -148,7 +149,9 @@ class ZipExportDialog(QDialog):
             translate("ZipExportDialog", "Folder contents in their folder structure")
         )
         self._flatten = QRadioButton(
-            translate("ZipExportDialog", "All files of a folder in one folder (same names numbered)")
+            translate(
+                "ZipExportDialog", "All files of a folder in one folder (same names numbered)"
+            )
         )
         self._path_group = QButtonGroup(self)
         self._path_group.addButton(self._only_name)
@@ -271,7 +274,9 @@ class ZipExportDialog(QDialog):
     def _accept(self) -> None:
         title = translate("ZipExportDialog", "Export to ZIP archive")
         if not self._path.text().strip():
-            QMessageBox.warning(self, title, translate("ZipExportDialog", "Choose where the archive goes."))
+            QMessageBox.warning(
+                self, title, translate("ZipExportDialog", "Choose where the archive goes.")
+            )
             return
         if not self.archive_path().parent.is_dir():
             QMessageBox.warning(

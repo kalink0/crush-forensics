@@ -996,29 +996,55 @@ _ZIP64_FROM = 0x7FFFFFFF
 _ZIP_CHUNK = 1024 * 1024
 
 
-def _zip_date_time(modified: float | None) -> tuple[int, int, int, int, int, int]:
-    """A node's modification time as ZIP's DOS date and time, in UTC (the
-    format has no time zone); the time of the export when the source gives
-    none. Clamped to what the format can hold."""
-    when = datetime.now(timezone.utc)
-    if modified is not None:
-        try:
-            when = datetime.fromtimestamp(modified, timezone.utc)
-        except (OverflowError, OSError, ValueError):
-            pass
-    stamp = (when.year, when.month, when.day, when.hour, when.minute, when.second)
-    return max(_ZIP_MIN_DATE, min(_ZIP_MAX_DATE, stamp))
+ZipTimeKind = Literal["source", "clamped", "none"]
 
 
-def _zip_extended_timestamp(modified: float | None) -> bytes:
-    """The Info-ZIP extended timestamp field (0x5455): the modification time
-    to the second in UTC, which unzip, 7-Zip and others prefer over the DOS
-    fields. Empty when there is none or it doesn't fit the field."""
+@dataclass(frozen=True)
+class _ZipTime:
+    """The time a ZIP entry gets, and where it comes from (kind):
+    "source" -- the source's own modification time;
+    "clamped" -- the source's, outside what DOS fields hold (1980-2107), so
+      they hold the nearest they can; the extended timestamp keeps the exact
+      second where it fits (1901-2038);
+    "none" -- the source gives none, or it can't be converted: a placeholder,
+      1980-01-01 00:00:00 (the earliest DOS time), and no extended timestamp.
+    Never the time of the export, which would read as a real file time."""
+
+    kind: ZipTimeKind
+    date_time: tuple[int, int, int, int, int, int]  # DOS fields, 2-second steps
+    extra: bytes  # Info-ZIP extended timestamp field, or b""
+    source: str  # the source time for the list beside the archive
+
+    @property
+    def stored(self) -> str:
+        y, mo, d, h, mi, sec = self.date_time
+        return f"{y:04d}-{mo:02d}-{d:02d} {h:02d}:{mi:02d}:{sec:02d}"
+
+
+def _zip_time(modified: float | None) -> _ZipTime:
+    """A node's modification time as a ZIP entry carries it (_ZipTime). The
+    conversion is unix_to_utc(): the same on every OS, pre-1970 included."""
+    import math
     import struct
 
-    if modified is None or not (-(2**31) <= int(modified) < 2**31):
-        return b""
-    return struct.pack("<HHBl", 0x5455, 5, 1, int(modified))
+    from crush.core.ts_decode import unix_to_utc
+
+    if modified is None:
+        return _ZipTime("none", _ZIP_MIN_DATE, b"", "-")
+    when = unix_to_utc(modified)
+    if when is None:
+        return _ZipTime("none", _ZIP_MIN_DATE, b"", f"not convertible: {modified!r}")
+    stamp = (when.year, when.month, when.day, when.hour, when.minute, when.second)
+    held = max(_ZIP_MIN_DATE, min(_ZIP_MAX_DATE, stamp))
+    dos = (*held[:5], held[5] - held[5] % 2)  # DOS times count 2-second steps
+    whole = math.floor(modified)
+    extra = (
+        struct.pack("<HHBl", 0x5455, 5, 1, whole) if -(2**31) <= whole < 2**31 else b""
+    )
+    fraction = f".{when.microsecond:06d}".rstrip("0") if when.microsecond else ""
+    source = when.strftime("%Y-%m-%dT%H:%M:%S") + fraction + "Z"
+    kind: ZipTimeKind = "source" if held == stamp else "clamped"
+    return _ZipTime(kind, dos, extra, source)
 
 
 ZipClashMode = Literal["number", "replace"]
@@ -1066,7 +1092,11 @@ def _zip_layout(items: list[ZipSourceItem], source_path: bool) -> list[_ZipEntry
         steps: list[tuple[str, float | None]] = []
         if source_path:
             if several_sources:
-                steps.append((source, None))
+                try:
+                    root_modified = vfs.root().modified
+                except Exception:
+                    root_modified = None
+                steps.append((source, root_modified))
             steps.extend(folders)
         parts: list[str] = []
         sanitized = False
@@ -1139,6 +1169,7 @@ class _ExportZipWorker(QObject):
         self._hashes = hashes  # the window's store: integrity hashes are kept there
         self._replaced_names: list[str] = []
         self._pending_beside: list[Path] = []
+        self._time_lines: list[str] = []
         self._stale_beside: list[Path] = []
         if not items:
             raise ValueError("nothing to export")
@@ -1196,7 +1227,9 @@ class _ExportZipWorker(QObject):
                 if appending:
                     self._copy_existing(partial)
                 target = partial
-            self._logger.info("ZIP export: writing %s (%s)", self._zip_path, self._options.describe())
+            self._logger.info(
+                "ZIP export: writing %s (%s)", self._zip_path, self._options.describe()
+            )
             with zip_writer.open_archive(target, "a" if appending else "w", self._options) as zf:
                 if replacing:
                     replaced = self._replaced_targets()
@@ -1340,14 +1373,29 @@ class _ExportZipWorker(QObject):
             else:
                 self._export_dir(zf, entry.vfs, entry.node, arcname)
 
+    def _timed_info(self, arcname: str, modified: float | None) -> Any:
+        """A new entry carrying *modified* as _zip_time() says, its time and
+        where it comes from listed for beside the archive."""
+        from crush.core import zip_writer
+
+        when = _zip_time(modified)
+        info = zip_writer.new_info(arcname, when.date_time)
+        info.extra = when.extra
+        self._time_lines.append(f"{when.kind}\t{when.source}\t{when.stored}\t{arcname}")
+        if when.kind != "source":
+            self._logger.info(
+                "ZIP export: entry time %s (source: %s, stored: %s): %s",
+                when.kind, when.source, when.stored, arcname,
+            )
+        return info
+
     def _write_dir_entry(self, zf: Any, node: VFSNode, arcname: str) -> None:
         self._write_folder(zf, arcname, node.modified)
 
     def _write_folder(self, zf: Any, arcname: str, modified: float | None) -> None:
         from crush.core import zip_writer
 
-        info = zip_writer.new_info(f"{arcname}/", _zip_date_time(modified))
-        info.extra = _zip_extended_timestamp(modified)
+        info = self._timed_info(f"{arcname}/", modified)
         info.external_attr = (0o40755 << 16) | 0x10  # a folder, for unzip and Windows
         info.compress_type = zip_writer.METHODS["stored"]
         # A folder holds no bytes to protect; left unencrypted, as 7-Zip and
@@ -1426,10 +1474,9 @@ class _ExportZipWorker(QObject):
                 )
                 return
             staged.seek(0)
-            info = zip_writer.new_info(arcname, _zip_date_time(node.modified))
+            info = self._timed_info(arcname, node.modified)
             info.compress_type = zip_writer.METHODS[self._options.method]
             info._compresslevel = self._options.effective_level
-            info.extra = _zip_extended_timestamp(node.modified)
             info.external_attr = 0o100644 << 16
             info.file_size = total  # so zipfile knows up front whether ZIP64 is needed
             with zf.open(info, "w", force_zip64=total >= _ZIP64_FROM) as dst:
@@ -1466,8 +1513,11 @@ class _ExportZipWorker(QObject):
 
     def beside_path(self, kind: str) -> Path:
         """A list beside the archive, named after it:
-        `name.zip.crush-export-<kind>.txt` (also for a split one)."""
-        return self._zip_path.with_name(f"{self._zip_path.name}.crush-export-{kind}.txt")
+        `name.zip.crush-export-<kind>.txt`, or `name.zip.split.crush-...`
+        for a split one -- so an archive and a split one of the same name
+        never share, overwrite or remove each other's lists."""
+        base = f"{self._zip_path.name}.split" if self._options.split_size else self._zip_path.name
+        return self._zip_path.with_name(f"{base}.crush-export-{kind}.txt")
 
     def hash_list_path(self) -> Path:
         return self.beside_path("hashes")
@@ -1484,7 +1534,9 @@ class _ExportZipWorker(QObject):
         nothing for, as it described the archive replaced."""
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         verb = "added to" if self._mode == "add" else "written to"
-        header = f"# Crush ZIP export {stamp}: {self._exported} file(s) {verb} {self._zip_path.name}"
+        header = (
+            f"# Crush ZIP export {stamp}: {self._exported} file(s) {verb} {self._zip_path.name}"
+        )
         texts: dict[str, str | None] = {
             "hashes": self._hash_list_text(written, names, header, stamp),
             "renames": (
@@ -1497,6 +1549,22 @@ class _ExportZipWorker(QObject):
                     *self._rename_lines,
                 ]) + "\n"
                 if self._rename_lines else None
+            ),
+            "times": (
+                "\n".join([
+                    header,
+                    "# Where each entry's time comes from (its modification time; times in UTC):",
+                    "#   source   the source's own time",
+                    "#   clamped  the source's, outside 1980-2107: the DOS time is the nearest",
+                    "#            it can hold; the extended timestamp keeps the exact second",
+                    "#            where it fits (1901-2038)",
+                    "#   none     the source gives none, or it can't be converted: DOS time",
+                    "#            1980-01-01 00:00:00 as a placeholder, no extended timestamp",
+                    "# DOS times count 2-second steps: an odd second is stored one second earlier.",
+                    "# time\tsource time\tstored DOS time\tpath in the archive",
+                    *self._time_lines,
+                ]) + "\n"
+                if self._time_lines else None
             ),
             "failed": (
                 "\n".join([

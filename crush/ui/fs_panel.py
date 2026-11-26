@@ -3,8 +3,6 @@
 """Filesystem panel — left dock, shows the VFS tree."""
 from __future__ import annotations
 
-import re
-
 import concurrent.futures
 from collections import deque
 import logging
@@ -677,18 +675,21 @@ class FilesystemPanel(QWidget):
         folders = [(step.name, step.modified) for step in chain[1:-1]]
         return (node, vfs, source, folders)
 
-    @staticmethod
-    def _zip_item_from_virtual_path(
-        node: VFSNode, vfs: VFS, virtual_path: str
+    def _zip_item_from_search(
+        self, node: VFSNode, vfs: VFS
     ) -> tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]:
-        """A search result's entry, its source path from the result's path
-        (the folders' times aren't known there)."""
-        parts = [p for p in re.split(r"[\\/]+", virtual_path) if p not in ("", ".")]
-        try:
-            source = vfs.root().name or "export"
-        except Exception:
-            source = "export"
-        return (node, vfs, source, [(name, None) for name in parts[:-1]])
+        """A search result's entry, its source path taken from the source's
+        own nodes (the same as the tree's, folders' times included) rather
+        than from the result's path text. An entry not found below its
+        source's root goes at the top of it."""
+        chain = self._build_node_path(node, vfs)
+        if not chain:
+            logging.getLogger(__name__).warning(
+                "ZIP export: %s not found below its source's root; exported without "
+                "its source path", node.path,
+            )
+            chain = [vfs.root(), node]
+        return self._zip_item_from_chain(node, vfs, chain)
 
     def _collect_tree_selected_items(
         self,
@@ -895,12 +896,9 @@ class FilesystemPanel(QWidget):
         vfs: VFS | None = item.data(_ROLE_VFS)
         if not node or not vfs:
             return
-        path_item = self._search_model.item(index.row(), 1)
         self._show_context_menu(
             node, vfs, global_pos, from_search=True,
-            zip_item=self._zip_item_from_virtual_path(
-                node, vfs, path_item.text() if path_item else node.name
-            ),
+            zip_item=self._zip_item_from_search(node, vfs),
         )
 
     def _show_context_menu(
