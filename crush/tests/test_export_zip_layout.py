@@ -362,3 +362,35 @@ def test_flow_labels_sources_with_what_they_were_opened_from(
         win.close()
     sources = (tmp_path / "out.zip.crush-export-sources.txt").read_text(encoding="utf-8")
     assert f"userdata (2)/\t{tmp_path / 'phone-b' / 'userdata'}" in sources
+
+
+def test_flattening_records_every_moved_files_evidence_path(qapp: Any, tmp_path: Path) -> None:
+    media = tmp_path / "userdata" / "Media"
+    (media / "Downloads").mkdir(parents=True)
+    (media / "Mail" / "Attachments").mkdir(parents=True)
+    (media / "cover.jpg").write_bytes(b"c")  # already in the folder: not moved
+    (media / "Downloads" / "invoice.pdf").write_bytes(b"1")
+    (media / "Mail" / "Attachments" / "invoice.pdf").write_bytes(b"2")
+    (media / "Mail" / "note.txt").write_bytes(b"n")
+    vfs = DirectoryVFS(tmp_path / "userdata")
+
+    entries = _export(tmp_path, [_item(vfs, "Media")], flatten=True)
+
+    assert _content(entries) == {
+        "Media/", "Media/cover.jpg", "Media/invoice.pdf", "Media/invoice (2).pdf", "Media/note.txt",
+    }
+    text = (tmp_path / "out.zip.crush-export-renames.txt").read_text(encoding="utf-8")
+    rows = {
+        arc: (src, why)
+        for src, _arrow, arc, why in (
+            line.split("\t") for line in text.splitlines() if not line.startswith("#")
+        )
+    }
+    assert set(rows) == {"Media/invoice.pdf", "Media/invoice (2).pdf", "Media/note.txt"}
+    moved = {Path(src).relative_to(media).as_posix(): (arc, why) for arc, (src, why) in rows.items()}
+    invoices = {moved["Downloads/invoice.pdf"], moved["Mail/Attachments/invoice.pdf"]}
+    assert invoices == {
+        ("Media/invoice.pdf", "flattened"), ("Media/invoice (2).pdf", "flattened, numbered"),
+    }
+    assert moved["Mail/note.txt"] == ("Media/note.txt", "flattened")
+    assert "cover.jpg" not in text

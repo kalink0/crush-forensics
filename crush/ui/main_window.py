@@ -1403,8 +1403,10 @@ class _ExportZipWorker(QObject):
                 if f"{arc_folder}/" not in self._taken:
                     self._write_folder(zf, arc_folder, modified)
             arcname = _unique_arcname(entry.arcname, self._taken, entry.node.is_dir)
-            if entry.sanitized or arcname != entry.arcname:
-                self._record_rename(entry.node.path, arcname)
+            self._record_rename(
+                entry.node.path, arcname,
+                windows_safe=entry.sanitized, numbered=arcname != entry.arcname,
+            )
             if not entry.node.is_dir:
                 self._export_file(zf, entry.vfs, entry.node, arcname)
             elif self._options.flatten:
@@ -1456,27 +1458,33 @@ class _ExportZipWorker(QObject):
             safe_child, changed = _safe_name(child.name)
             child_arc = f"{arcname}/{safe_child}"
             unique = _unique_arcname(child_arc, self._taken, child.is_dir)
-            if changed or unique != child_arc:
-                self._record_rename(child.path, unique)
+            self._record_rename(
+                child.path, unique, windows_safe=changed, numbered=unique != child_arc
+            )
             if child.is_dir:
                 self._export_dir(zf, vfs, child, unique)
             else:
                 self._export_file(zf, vfs, child, unique)
 
-    def _export_dir_flat(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> None:
+    def _export_dir_flat(
+        self, zf: Any, vfs: VFS, node: VFSNode, arcname: str, moved: bool = False
+    ) -> None:
         """Every file below *node*, at any depth, straight into the folder
-        *arcname*; a name already there gets a number and is listed in the
-        renames with the file's evidence path. Subfolders aren't stored."""
+        *arcname*; a name already there gets a number. Subfolders aren't
+        stored, so every file taken out of one (*moved*) is listed in the
+        renames with its evidence path -- that path is often the finding."""
         for child in node.children:
             self._check_cancel()
             if child.is_dir:
-                self._export_dir_flat(zf, vfs, child, arcname)
+                self._export_dir_flat(zf, vfs, child, arcname, moved=True)
                 continue
             safe_child, changed = _safe_name(child.name)
             child_arc = f"{arcname}/{safe_child}"
             unique = _unique_arcname(child_arc, self._taken, False)
-            if changed or unique != child_arc:
-                self._record_rename(child.path, unique)
+            self._record_rename(
+                child.path, unique,
+                flattened=moved, numbered=unique != child_arc, windows_safe=changed,
+            )
             self._export_file(zf, vfs, child, unique)
 
     def _export_file(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> None:
@@ -1543,12 +1551,25 @@ class _ExportZipWorker(QObject):
             digest, total, self._zip_path, arcname,
         )
 
-    def _record_rename(self, original_path: str, arcname: str) -> None:
-        self._rename_lines.append(f"{original_path}\t->\t{arcname}")
+    def _record_rename(
+        self, original_path: str, arcname: str, *,
+        flattened: bool = False, numbered: bool = False, windows_safe: bool = False,
+    ) -> None:
+        """List an entry whose path in the archive isn't its path in the
+        evidence, with why: taken out of its subfolder (flattened), numbered
+        as the name was taken, and/or given a Windows-safe name. Nothing
+        when none of these applies."""
+        reasons = [
+            reason for reason, applies in (
+                ("flattened", flattened), ("numbered", numbered), ("windows-safe", windows_safe)
+            ) if applies
+        ]
+        if not reasons:
+            return
+        why = ", ".join(reasons)
+        self._rename_lines.append(f"{original_path}\t->\t{arcname}\t{why}")
         self._logger.warning(
-            "Export: renamed in the ZIP archive (Windows-safe name or name already in "
-            "the archive): %s -> %s",
-            original_path, arcname,
+            "Export: path changed in the ZIP archive (%s): %s -> %s", why, original_path, arcname
         )
 
     def beside_path(self, kind: str) -> Path:
@@ -1582,10 +1603,13 @@ class _ExportZipWorker(QObject):
             "renames": (
                 "\n".join([
                     header,
-                    "# Names below contained characters invalid on Windows filesystems (or were",
-                    "# reserved device names), were already in the archive, or were put into one",
-                    "# folder with a file of the same name, and were renamed for export.",
-                    "# original evidence path -> path in the ZIP archive",
+                    "# Entries below are in the archive under another path than in the evidence:",
+                    "#   flattened     taken out of its subfolder into the exported folder",
+                    "#                 (\"All files of a folder in one folder\"); every such file",
+                    "#   numbered      its name was already taken, so it got a number",
+                    "#   windows-safe  characters invalid on Windows (or a reserved device name)",
+                    "#                 replaced",
+                    "# original evidence path\t->\tpath in the ZIP archive\treason",
                     *self._rename_lines,
                 ]) + "\n"
                 if self._rename_lines else None
