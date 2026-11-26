@@ -1205,6 +1205,8 @@ class _ExportZipWorker(QObject):
         super().__init__()
         self._hashes = hashes  # the window's store: integrity hashes are kept there
         self._replaced_names: list[str] = []
+        # What a replaced whole archive held, for the replaced list beside it.
+        self._replaced_whole: list[str] = []
         self._pending_beside: list[Path] = []
         self._time_lines: list[str] = []
         self._stale_beside: list[Path] = []
@@ -1276,6 +1278,8 @@ class _ExportZipWorker(QObject):
             self._logger.info(
                 "ZIP export: writing %s (%s)", self._zip_path, self._options.describe()
             )
+            if self._mode == "replace":
+                self._replaced_whole = self._what_is_replaced()
             with zip_writer.open_archive(target, "a" if appending else "w", self._options) as zf:
                 if replacing:
                     replaced = self._replaced_targets()
@@ -1445,6 +1449,32 @@ class _ExportZipWorker(QObject):
         if len(self._layout) == 1:
             return self._layout[0].node.path
         return f"{len(self._layout)} selected entries"
+
+    def _what_is_replaced(self) -> list[str]:
+        """What "Replace Archive" takes away, for the replaced list: the
+        entries of the archive there, or the parts of a split one."""
+        import zipfile
+
+        from crush.core import zip_writer
+
+        if self._options.split_size:
+            return [part.name for part in zip_writer.existing_parts(self._zip_path)]
+        if not self._zip_path.is_file():
+            return []
+        try:
+            with zipfile.ZipFile(self._zip_path) as old:
+                return old.namelist()
+        except (zipfile.BadZipFile, OSError):
+            return [f"{self._zip_path.name} (not a ZIP archive)"]
+
+    def _replaced_by(self, name: str) -> str:
+        """The evidence path of the exported entry that took the place of
+        the archive entry *name*."""
+        bare = name.rstrip("/")
+        for entry in self._layout:
+            if bare == entry.arcname or bare.startswith(f"{entry.arcname}/"):
+                return entry.node.path
+        return "-"
 
     def _single_file(self) -> bool:
         """One file asked for: its not being readable fails the export."""
@@ -1684,6 +1714,7 @@ class _ExportZipWorker(QObject):
                 ]) + "\n"
                 if self._rename_lines else None
             ),
+            "replaced": self._replaced_list_text(header),
             "sources": (
                 "\n".join([
                     header,
@@ -1738,6 +1769,27 @@ class _ExportZipWorker(QObject):
             pending.append((Path(temp_name), target))
         return pending
 
+    def _replaced_list_text(self, header: str) -> str | None:
+        """What this export took out of the archive, in every mode: the
+        entries it replaced, each with the evidence path that took its
+        place; or, for "Replace Archive", what the archive replaced held."""
+        if self._replaced_names:
+            return "\n".join([
+                header,
+                "# Entries below were in the archive and were taken out: the export put an",
+                "# entry of the same path in their place (a folder with everything in it).",
+                "# entry taken out of the archive\treplaced by (evidence path)",
+                *(f"{name}\t{self._replaced_by(name)}" for name in self._replaced_names),
+            ]) + "\n"
+        if self._replaced_whole:
+            what = "parts" if self._options.split_size else "entries"
+            return "\n".join([
+                header,
+                f"# The whole archive was replaced by a new one. It held these {what}:",
+                *self._replaced_whole,
+            ]) + "\n"
+        return None
+
     def _hash_list_text(
         self, written: list[Path], names: list[Path], header: str, stamp: str
     ) -> str | None:
@@ -1786,8 +1838,12 @@ class _ExportZipWorker(QObject):
             f"# archive sha256={whole.hexdigest()}  size={whole_size}  "
             f"{self._zip_path.name}{split_note}",
             *part_lines,
-            *(f"# replaced in the archive: {name}" for name in self._replaced_names),
         ]
+        replaced = len(self._replaced_names) or len(self._replaced_whole)
+        if replaced:
+            lines.append(
+                f"# replaced: {replaced} (see {self.beside_path('replaced').name})"
+            )
         if self._failed:
             lines.append(
                 f"# not exported: {len(self._failed)} (see {self.beside_path('failed').name})"
@@ -3283,6 +3339,8 @@ class MainWindow(QMainWindow):
                 "export beside them under a numbered name, e.g. \"name (2)\"?",
             ).format(names=shown)
         )
+        # Every name, under "Show Details…", to look through before replacing.
+        box.setDetailedText("\n".join(clashing))
         replace_button = box.addButton(
             translate("MainWindow", "Replace"), QMessageBox.ButtonRole.DestructiveRole
         )

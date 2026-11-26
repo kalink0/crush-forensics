@@ -471,6 +471,7 @@ def test_a_finished_replace_leaves_no_old_or_temporary_file(qapp: Any, tmp_path:
     assert sorted(p.name for p in out_dir.iterdir()) == [
         "out.zip.001",
         "out.zip.split.crush-export-hashes.txt",
+        "out.zip.split.crush-export-replaced.txt",  # the old parts replaced, listed
         "out.zip.split.crush-export-times.txt",
     ]
 

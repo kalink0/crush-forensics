@@ -565,7 +565,7 @@ def test_single_replace_swaps_the_file_and_appends_to_the_list(
         assert zf.read("a.txt") == b"alpha"
     hashes = beside.read_text(encoding="utf-8")
     assert hashes.startswith("# earlier list\n")
-    assert "# replaced in the archive: a.txt" in hashes
+    assert "# replaced: 1 (see out.zip.crush-export-replaced.txt)" in hashes
     assert hashlib.sha256(b"alpha").hexdigest() in hashes
 
 
@@ -652,3 +652,65 @@ def test_lists_beside_are_appended_when_adding_and_replaced_with_the_archive(
 
     _run(_ExportZipWorker([_zip_item(plain, vfs)], str(out), "replace", False))
     assert not renames.exists()  # it listed the archive replaced
+
+
+def test_replaced_entries_are_listed_beside_the_archive_in_every_mode(
+    qapp: Any, tmp_path: Path
+) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("case/a.txt", b"old")
+        zf.writestr("case/gone/stale.txt", b"old")  # inside a folder being replaced
+        zf.writestr("keep.txt", b"keep")
+
+    _run(_ExportZipWorker(
+        [_zip_item(vfs.root(), vfs)], str(out), "add", False, on_clash="replace"
+    ))  # integrity mode off
+
+    assert not (tmp_path / "out.zip.crush-export-hashes.txt").exists()
+    text = (tmp_path / "out.zip.crush-export-replaced.txt").read_text(encoding="utf-8")
+    rows = [line.split("\t") for line in text.splitlines() if not line.startswith("#")]
+    assert sorted(rows) == [
+        ["case/a.txt", vfs.root().path], ["case/gone/stale.txt", vfs.root().path],
+    ]
+
+
+def test_replacing_the_whole_archive_lists_what_it_held(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    out = tmp_path / "out.zip"
+    with zipfile.ZipFile(out, "w") as zf:
+        zf.writestr("theirs/report.pdf", b"x")
+        zf.writestr("notes.txt", b"y")
+
+    a = _child(vfs.root(), "a.txt")
+    _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "replace", False))
+
+    text = (tmp_path / "out.zip.crush-export-replaced.txt").read_text(encoding="utf-8")
+    assert "The whole archive was replaced" in text
+    assert "theirs/report.pdf" in text.splitlines() and "notes.txt" in text.splitlines()
+
+
+def test_clash_dialog_offers_every_name_in_its_details(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    out = tmp_path / "out.zip"
+    planned = [f"file{n:02d}.txt" for n in range(25)]
+    with zipfile.ZipFile(out, "w") as zf:
+        for name in planned:
+            zf.writestr(name, b"x")
+    seen: list[QMessageBox] = []
+
+    def fake_exec(box: QMessageBox) -> int:
+        seen.append(box)
+        return 0  # nothing clicked: cancelled
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    win = MainWindow()
+    try:
+        assert win._ask_zip_clash(out, planned) is None
+        box = seen[0]
+        assert "… and 15 more" in box.informativeText()
+        assert box.detailedText().splitlines() == planned
+    finally:
+        win.close()
