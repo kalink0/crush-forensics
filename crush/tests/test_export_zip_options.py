@@ -13,7 +13,7 @@ from typing import Any
 
 import pyzipper
 import pytest
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from crush.core import zip_writer
 from crush.core.vfs import DirectoryVFS
@@ -388,3 +388,208 @@ def test_split_and_unsplit_archives_keep_their_own_lists(qapp: Any, tmp_path: Pa
     assert (tmp_path / "out.zip.split.crush-export-hashes.txt").is_file()
     assert (tmp_path / "out.zip.split.crush-export-times.txt").is_file()
     assert out.is_file()  # the unsplit archive itself is left alone too
+
+
+# -- replacing files all or nothing ------------------------------------------------------
+
+
+def _snapshot(folder: Path) -> dict[str, bytes]:
+    return {p.name: p.read_bytes() for p in folder.iterdir() if p.is_file()}
+
+
+def _new(src: Path) -> bool:
+    """A file the export wrote, on its way into place."""
+    return src.name.endswith(".crush-partial")
+
+
+def _fail_replace(monkeypatch: Any, when: Any) -> None:
+    """os.replace in the export fails (as for a file open in another program
+    on Windows) when when(source, destination) says so."""
+    from crush.ui import main_window
+
+    real = os.replace
+
+    def replace(src: Any, dst: Any) -> None:
+        if when(Path(src), Path(dst)):
+            raise PermissionError(13, "The process cannot access the file", str(src))
+        real(src, dst)
+
+    monkeypatch.setattr(main_window.os, "replace", replace)
+
+
+@pytest.mark.parametrize("step", ["moving the old part aside", "putting the new part in"])
+def test_a_part_that_cant_be_replaced_leaves_the_old_archive_whole(
+    qapp: Any, tmp_path: Path, monkeypatch: Any, step: str
+) -> None:
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    out = out_dir / "out.zip"
+    assert _export(tmp_path, out, method="stored", split_size=100_000)[0][0] == "finished"
+    before = _snapshot(out_dir)
+    assert len(existing_parts(out)) == 3
+    if step == "moving the old part aside":
+        _fail_replace(monkeypatch, lambda src, dst: src.name == "out.zip.002")
+    else:
+        _fail_replace(monkeypatch, lambda src, dst: _new(src) and dst.name == "out.zip.002")
+
+    (tmp_path / "case" / "a.txt").write_bytes(b"changed")
+    seen = _export(tmp_path, out, "replace", method="stored", split_size=70_000)
+
+    assert seen[0][0] == "failed"
+    assert "out.zip.002 could not be replaced" in seen[0][1]
+    assert "left as they were" in seen[0][1]
+    assert _snapshot(out_dir) == before  # every old part and list, byte for byte; no temp left
+
+
+def test_the_unsplit_archive_and_its_lists_are_replaced_together(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    out = out_dir / "out.zip"
+    _export(tmp_path, out)
+    before = _snapshot(out_dir)
+    _fail_replace(
+        monkeypatch, lambda src, dst: _new(src) and dst.name == "out.zip.crush-export-hashes.txt"
+    )
+
+    (tmp_path / "case" / "a.txt").write_bytes(b"changed")
+    seen = _export(tmp_path, out, "replace")
+
+    assert seen[0][0] == "failed"
+    assert _snapshot(out_dir) == before  # the archive put back too, not only the list
+
+
+def test_a_finished_replace_leaves_no_old_or_temporary_file(qapp: Any, tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    out = out_dir / "out.zip"
+    _export(tmp_path, out, method="stored", split_size=100_000)
+
+    _export(tmp_path, out, "replace", method="stored", split_size=1_000_000)
+
+    assert sorted(p.name for p in out_dir.iterdir()) == [
+        "out.zip.001",
+        "out.zip.split.crush-export-hashes.txt",
+        "out.zip.split.crush-export-times.txt",
+    ]
+
+
+def test_a_failed_split_export_removes_every_temporary_part(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    out = out_dir / "out.zip"
+    _fail_replace(monkeypatch, lambda src, dst: _new(src) and dst.name == "out.zip.002")
+
+    seen = _export(tmp_path, out, method="stored", split_size=100_000)
+
+    assert seen[0][0] == "failed"
+    assert list(out_dir.iterdir()) == []  # part 1 taken back, every temp part gone
+
+
+# -- the archive is always a full path ---------------------------------------------------
+
+
+def test_full_archive_path_never_guesses_a_relative_one(tmp_path: Path) -> None:
+    from crush.ui.zip_export_dialog import full_archive_path
+
+    assert full_archive_path("") is None
+    assert full_archive_path("export.zip") is None  # would go to the working directory
+    assert full_archive_path("sub/export") is None
+    assert full_archive_path(str(tmp_path / "a" / ".." / "b")) == tmp_path / "b.zip"
+    assert full_archive_path("~/x.zip") == Path.home() / "x.zip"
+
+
+def test_dialog_keeps_export_off_until_a_full_path_is_there(qapp: Any, tmp_path: Path) -> None:
+    dialog = ZipExportDialog(None, "evidence.zip")  # no folder used yet in this window
+    try:
+        assert dialog._path.text() == "evidence.zip"
+        assert not dialog._export_button.isEnabled()
+        dialog._path.setText(str(tmp_path / "evidence.zip"))
+        assert dialog._export_button.isEnabled()
+        assert dialog.archive_path() == tmp_path / "evidence.zip"
+        dialog._path.setText("relative/evidence.zip")
+        assert not dialog._export_button.isEnabled()
+    finally:
+        dialog.deleteLater()
+    preset = ZipExportDialog(None, "evidence.zip", folder=tmp_path)
+    try:
+        assert preset._path.text() == str(tmp_path / "evidence.zip")
+        assert preset._export_button.isEnabled()
+    finally:
+        preset.deleteLater()
+
+
+def test_dialog_refuses_a_relative_path(qapp: Any, monkeypatch: Any) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, text, *a: warned.append(text))
+    dialog = ZipExportDialog(None, "evidence.zip")
+    try:
+        dialog._accept()
+        assert dialog.result() != dialog.DialogCode.Accepted
+        assert "full path" in warned[0]
+    finally:
+        dialog.deleteLater()
+
+
+def _window_with_dialog_answer(monkeypatch: Any, answers: list[str]) -> MainWindow:
+    """A window whose ZIP export dialog returns each of *answers* in turn as
+    the entered path (then cancels)."""
+    state = {"calls": 0}
+
+    def exec_(dialog: ZipExportDialog) -> int:
+        if state["calls"] >= len(answers):
+            return QDialog.DialogCode.Rejected
+        dialog._path.setText(answers[state["calls"]])
+        state["calls"] += 1
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(ZipExportDialog, "exec", exec_)
+    return MainWindow()
+
+
+@pytest.mark.parametrize("answer", ["yes", "no"])
+def test_writing_into_a_source_folder_is_asked_about(
+    qapp: Any, tmp_path: Path, monkeypatch: Any, answer: str
+) -> None:
+    vfs = _source(tmp_path)
+    inside = tmp_path / "case" / "sub" / "out.zip"
+    elsewhere = tmp_path / "out.zip"
+    asked: list[str] = []
+    reply = QMessageBox.StandardButton.Yes if answer == "yes" else QMessageBox.StandardButton.No
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda _p, _t, text, *a: asked.append(text) or reply
+    )
+    win = _window_with_dialog_answer(monkeypatch, [str(inside), str(elsewhere)])
+    try:
+        win.session.add_source_vfs(vfs, tmp_path / "case")
+        chosen = win._zip_export_dialog("out.zip", [_zip_item(vfs.root(), vfs)])
+    finally:
+        win.close()
+    assert len(asked) == 1 and str(tmp_path / "case") in asked[0]
+    assert chosen is not None
+    assert chosen[0] == (inside if answer == "yes" else elsewhere)  # "no": back to the dialog
+    assert win._last_zip_folder == chosen[0].parent
+
+
+def test_writing_beside_a_source_file_is_asked_about(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    image = tmp_path / "evidence" / "phone.zip"
+    image.parent.mkdir()
+    image.write_bytes(b"PK")
+    vfs = _source(tmp_path)
+    asked: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        lambda _p, _t, text, *a: asked.append(text) or QMessageBox.StandardButton.Yes,
+    )
+    win = _window_with_dialog_answer(monkeypatch, [str(image.parent / "out.zip")])
+    try:
+        win.session.add_source_vfs(vfs, image)
+        win._zip_export_dialog("out.zip", [_zip_item(vfs.root(), vfs)])
+    finally:
+        win.close()
+    assert len(asked) == 1 and "holds the open source" in asked[0]

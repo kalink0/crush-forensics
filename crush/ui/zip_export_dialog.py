@@ -42,8 +42,27 @@ def with_zip_suffix(path: str) -> Path:
     return target
 
 
+def full_archive_path(text: str) -> Path | None:
+    """What's entered as an archive path, as a full path (`~` expanded,
+    `..` and `.` resolved, `.zip` added), or None when it isn't one: a bare
+    name or relative path would land in the app's working directory, which
+    may be the evidence folder or read-only, so it's never guessed."""
+    import os
+
+    text = text.strip()
+    if not text:
+        return None
+    expanded = Path(os.path.expanduser(text))
+    if not expanded.is_absolute():
+        return None
+    return with_zip_suffix(os.path.normpath(expanded))
+
+
 class ZipExportDialog(QDialog):
-    """Ask for the archive and its options. *options* preset the fields
+    """Ask for the archive and its options. The archive is always a full
+    path: *folder* (the last one used) with *default_name* when known, else
+    only the name, and Export stays off until a full path is there.
+    *options* preset the fields
     (the last ones used, say); their password is never shown. *example* is
     (folders of its source path, name, is a folder) of an entry being
     exported, shown as it would go into the archive; *has_folder* whether a
@@ -52,8 +71,9 @@ class ZipExportDialog(QDialog):
     def __init__(
         self,
         parent: QWidget | None,
-        default_path: str,
+        default_name: str,
         options: ZipOptions | None = None,
+        folder: Path | None = None,
         example: tuple[list[str], str, bool] | None = None,
         has_folder: bool = True,
     ) -> None:
@@ -64,7 +84,10 @@ class ZipExportDialog(QDialog):
         self.setMinimumWidth(600)
         options = options or ZipOptions()
 
-        self._path = QLineEdit(default_path)
+        self._path = QLineEdit(str(folder / default_name) if folder else default_name)
+        self._path.setPlaceholderText(
+            translate("ZipExportDialog", "Full path of the archive, e.g. chosen with Browse…")
+        )
         browse = QPushButton(translate("ZipExportDialog", "Browse…"))
         browse.clicked.connect(self._browse)
         path_row = QHBoxLayout()
@@ -206,11 +229,19 @@ class ZipExportDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        self._export_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        self._path.textChanged.connect(self._path_changed)
+        self._path_changed()
 
     # -- results --
 
     def archive_path(self) -> Path:
-        return with_zip_suffix(self._path.text().strip())
+        """The archive's full path (only once the dialog was accepted, when
+        there is one)."""
+        full = full_archive_path(self._path.text())
+        if full is None:
+            raise ValueError("no full archive path entered")
+        return full
 
     def options(self) -> ZipOptions:
         method: ZipMethod = self._method.currentData()
@@ -260,11 +291,21 @@ class ZipExportDialog(QDialog):
         self._level_label.setEnabled(method in LEVELS)
         self._level_hint.setEnabled(method in LEVELS)
 
+    def _path_changed(self) -> None:
+        self._export_button.setEnabled(full_archive_path(self._path.text()) is not None)
+
     def _browse(self) -> None:
+        # Starts where the entered path is, else in the home folder -- never
+        # in the working directory, which a bare name would mean.
+        entered = full_archive_path(self._path.text())
+        start = (
+            str(entered) if entered is not None
+            else str(Path.home() / with_zip_suffix(self._path.text().strip() or "export").name)
+        )
         path, _ = QFileDialog.getSaveFileName(
             self,
             translate("ZipExportDialog", "Export to ZIP archive"),
-            self._path.text(),
+            start,
             translate("ZipExportDialog", "ZIP archives (*.zip)"),
             options=QFileDialog.Option.DontConfirmOverwrite,
         )
@@ -273,9 +314,13 @@ class ZipExportDialog(QDialog):
 
     def _accept(self) -> None:
         title = translate("ZipExportDialog", "Export to ZIP archive")
-        if not self._path.text().strip():
+        if full_archive_path(self._path.text()) is None:
             QMessageBox.warning(
-                self, title, translate("ZipExportDialog", "Choose where the archive goes.")
+                self, title,
+                translate(
+                    "ZipExportDialog",
+                    "Enter the archive's full path, or choose where it goes with Browse…",
+                ),
             )
             return
         if not self.archive_path().parent.is_dir():

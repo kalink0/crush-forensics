@@ -1157,6 +1157,16 @@ def _unique_arcname(name: str, taken: set[str], is_dir: bool) -> str:
     return f"{parent}{slash}{stem} ({n}){ext}"
 
 
+class _ZipReplaceFailed(Exception):
+    """A file of the archive (a part, the archive, a list) couldn't be put
+    in place or moved aside; everything was put back as it was."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f"{path}: {reason}")
+        self.path = path
+        self.reason = reason
+
+
 class _ExportZipWorker(QObject):
     """Export files and folders into a ZIP archive: a new one, or added to
     one that exists; laid out, compressed, encrypted and split as *options*
@@ -1291,14 +1301,32 @@ class _ExportZipWorker(QObject):
                     )
                     return
             if split is not None:
-                dest = str(self._finish_parts(split))
+                written = split.parts()
+                split.close()
+                finals = [
+                    zip_writer.part_path(self._zip_path, n) for n in range(1, len(written) + 1)
+                ]
+                pending = self._prepare_beside(written, finals)
+                # Parts of an earlier archive of that name beyond the new last
+                # one (the analyst agreed to replace them): taken away, so no
+                # stale part reads as part of this one.
+                stale_parts = [
+                    part for part in zip_writer.existing_parts(self._zip_path)
+                    if part not in finals
+                ]
+                self._commit([*zip(written, finals), *pending], stale_parts + self._stale_beside)
                 split = None
+                self._logger.info(
+                    "ZIP export: %s split into %d part(s) of up to %d B: %s ... %s",
+                    self._zip_path, len(finals), self._options.split_size,
+                    finals[0].name, finals[-1].name,
+                )
+                dest = str(finals[0])
             else:
                 assert partial is not None
                 pending = self._prepare_beside([partial], [self._zip_path])
-                os.replace(partial, self._zip_path)
+                self._commit([(partial, self._zip_path), *pending], self._stale_beside)
                 partial = None
-                self._place_beside(pending)
         except _ExportCancelled:
             self._logger.info(
                 "ZIP export cancelled by the analyst: %s %s",
@@ -1306,14 +1334,29 @@ class _ExportZipWorker(QObject):
             )
             self.cancelled.emit(str(self._zip_path), self._mode)
             return
+        except _ZipReplaceFailed as exc:
+            self.failed.emit(
+                f"{exc.path} could not be replaced ({exc.reason}); is it open in another "
+                "program? The archive and its lists were left as they were.",
+                translate(
+                    "MainWindow",
+                    "{path} could not be replaced ({reason}); is it open in another program? "
+                    "The archive and its lists were left as they were.",
+                ).format(path=exc.path, reason=exc.reason),
+            )
+            return
         except Exception as exc:
             self.failed.emit(str(exc), i18n.exception_text(exc))
             return
         finally:
+            # Every temporary file this export made, whatever has or hasn't
+            # been moved into place: none is left behind.
             if partial is not None:
                 partial.unlink(missing_ok=True)
             if split is not None:
-                self._discard_parts(split)
+                split.close()
+            for temp in (split.created() if split is not None else []):
+                temp.unlink(missing_ok=True)
             for temp in self._pending_beside:
                 temp.unlink(missing_ok=True)
             self._pending_beside = []
@@ -1330,42 +1373,69 @@ class _ExportZipWorker(QObject):
         final = zip_writer.part_path(self._zip_path, number)
         return final.with_name(f".{final.name}.crush-partial")
 
-    def _finish_parts(self, split: zip_writer.SplitWriter) -> Path:
-        """Move the finished parts into place and take away parts of an
-        earlier archive of that name beyond the new last one (the analyst
-        agreed to replace them), so no stale part reads as part of this one."""
-        from crush.core import zip_writer
+    def _commit(self, moves: list[tuple[Path, Path]], removals: list[Path]) -> None:
+        """Put the finished files in place -- each (temporary, final) of
+        *moves* -- and take *removals* away, so that under the archive's
+        name end up either all the new files or, should any step fail, all
+        the old ones as they were; never a mix of new parts and old.
 
-        written = split.parts()
-        split.close()
-        finals = [zip_writer.part_path(self._zip_path, n) for n in range(1, len(written) + 1)]
-        pending = self._prepare_beside(written, finals)
-        for temp, final in zip(written, finals):
-            os.replace(temp, final)
-        for stale in zip_writer.existing_parts(self._zip_path):
-            if stale not in finals:
-                stale.unlink()
-                self._logger.warning("ZIP export: removed part of the replaced archive: %s", stale)
-        self._logger.info(
-            "ZIP export: %s split into %d part(s) of up to %d B: %s ... %s",
-            self._zip_path, len(finals), self._options.split_size, finals[0].name, finals[-1].name,
-        )
-        self._place_beside(pending)
-        return finals[0]
-
-    def _discard_parts(self, split: zip_writer.SplitWriter) -> None:
+        Files can't all be swapped in one step. So each file there now (a
+        final or a removal) is first moved aside under a hidden name; if one
+        can't be (open in 7-Zip on Windows, say), those moved aside come
+        back. Then the new ones go in; if one can't, those placed are taken
+        out and the old ones come back. Only when all is in place are the
+        old ones deleted. One that can't be is left under its hidden
+        `.crush-old` name, which no tool reads as part of the archive."""
+        aside: list[tuple[Path, Path]] = []  # (where it was, where it is now)
+        placed: list[Path] = []
+        current = self._zip_path
         try:
-            written = split.parts() if not split.closed else []
-        except OSError:
-            written = []
-        split.close()
-        number = 1
-        while True:
-            temp = self._partial_part(number)
-            if not temp.exists() and temp not in written:
-                break
-            temp.unlink(missing_ok=True)
-            number += 1
+            for path in [final for _temp, final in moves] + removals:
+                if path.is_file():
+                    current = path
+                    backup = path.with_name(f".{path.name}.crush-old")
+                    n = 2
+                    while backup.exists():
+                        backup = path.with_name(f".{path.name}.{n}.crush-old")
+                        n += 1
+                    os.replace(path, backup)
+                    aside.append((path, backup))
+            for temp, final in moves:
+                current = final
+                os.replace(temp, final)
+                placed.append(final)
+        except OSError as exc:
+            for final in placed:
+                try:
+                    final.unlink()
+                except OSError as undo:
+                    self._logger.error("ZIP export: could not take back %s: %s", final, undo)
+            for path, backup in reversed(aside):
+                try:
+                    os.replace(backup, path)
+                except OSError as undo:
+                    self._logger.error(
+                        "ZIP export: could not put back %s, it is at %s: %s", path, backup, undo
+                    )
+            self._logger.error(
+                "ZIP export: %s could not be replaced, nothing changed: %s", current, exc
+            )
+            raise _ZipReplaceFailed(current, str(exc)) from exc
+        self._pending_beside = []
+        for _temp, final in moves:
+            self._logger.info("ZIP export: in place: %s", final)
+        for path, backup in aside:
+            try:
+                backup.unlink()
+            except OSError as exc:
+                self._logger.warning(
+                    "ZIP export: the replaced %s is left at %s: %s", path, backup, exc
+                )
+        for path, _backup in aside:
+            if path in removals:
+                self._logger.warning(
+                    "ZIP export: removed, it belonged to the archive replaced: %s", path
+                )
 
     @staticmethod
     def _root_name(items: list[ZipSourceItem], key: int) -> str:
@@ -1589,7 +1659,7 @@ class _ExportZipWorker(QObject):
         the renamed files and the files that couldn't be read. *written* is
         the finished archive (its parts if split), to be moved to *names*.
         Each list is written to a temporary file and moved into place with
-        the archive (_place_beside). Adding to an archive appends a section
+        the archive (_commit). Adding to an archive appends a section
         to a list already beside it, so the earlier ones stay on record;
         writing it anew replaces the lists, and removes one this export has
         nothing for, as it described the archive replaced."""
@@ -1730,18 +1800,6 @@ class _ExportZipWorker(QObject):
                 "# after that export; the one below is of the archive now.\n" + text
             )
         return text
-
-    def _place_beside(self, pending: list[tuple[Path, Path]]) -> None:
-        for temp, target in pending:
-            os.replace(temp, target)
-            self._logger.info("ZIP export: written beside the archive: %s", target)
-        self._pending_beside = []
-        for stale in self._stale_beside:
-            stale.unlink(missing_ok=True)
-            self._logger.warning(
-                "ZIP export: removed a list of the replaced archive (nothing to list now): %s",
-                stale,
-            )
 
 
 def _folder_formats(parser: object) -> list[Any]:
@@ -3007,21 +3065,75 @@ class MainWindow(QMainWindow):
     def _zip_export_dialog(
         self, default_name: str, items: list[ZipSourceItem]
     ) -> tuple[Path, ZipOptions] | None:
-        """The archive and its options from the ZIP export dialog, preset
-        with the last options used (not the password); None if cancelled."""
+        """The archive (a full path) and its options from the ZIP export
+        dialog, preset with the last folder and options used in this window
+        (not the password); None if cancelled. An archive inside a source's
+        folder is asked about first."""
         from crush.ui.zip_export_dialog import ZipExportDialog
 
         node, _vfs, _source, folders = items[0]
         dialog = ZipExportDialog(
             self, default_name, getattr(self, "_last_zip_options", None),
+            folder=getattr(self, "_last_zip_folder", None),
             example=([name for name, _modified in folders], node.name, node.is_dir),
             has_folder=any(n.is_dir for n, _v, _s, _f in items),
         )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return None
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return None
+            target = dialog.archive_path()
+            if self._confirm_outside_sources(target):
+                break
         options = dialog.options()
         self._last_zip_options = ZipExportDialog.remembered(options)
-        return dialog.archive_path(), options
+        self._last_zip_folder = target.parent
+        return target, options
+
+    def _confirm_outside_sources(self, target: Path) -> bool:
+        """Whether to write *target* where it is: asked when it would go
+        into an open source's folder (the evidence), or the folder an open
+        source file (an image, an archive) is in."""
+        def real(path: Path) -> Path:
+            try:
+                return path.resolve()
+            except OSError:
+                return path.absolute()
+
+        where = real(target.parent)
+        for vfs in self.session.sources:
+            try:
+                source = real(Path(self.session.source_label(vfs)))
+            except (OSError, ValueError):
+                continue
+            if source.is_dir() and (where == source or source in where.parents):
+                text = translate(
+                    "MainWindow",
+                    "The archive would be written into the folder of the open source "
+                    "{source}:\n{target}\n\nWrite it there anyway?",
+                )
+            elif source.is_file() and where == source.parent:
+                text = translate(
+                    "MainWindow",
+                    "The archive would be written into the folder that holds the open source "
+                    "{source}:\n{target}\n\nWrite it there anyway?",
+                )
+            else:
+                continue
+            reply = QMessageBox.warning(
+                self,
+                translate("MainWindow", "Export to ZIP archive"),
+                text.format(source=source, target=target),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+            self._logger.warning(
+                "ZIP export: the analyst chose to write %s beside the open source %s",
+                target, source,
+            )
+            return True
+        return True
 
     def _ask_zip_export_target(
         self, default_name: str, items: list[ZipSourceItem]

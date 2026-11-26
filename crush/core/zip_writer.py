@@ -277,6 +277,11 @@ class SplitWriter:
                 self._part(number)
         return [self._part_name(n) for n in range(1, count + 1)]
 
+    def created(self) -> list[Path]:
+        """Every part file this writer created, in order -- to take them all
+        away again, whatever was written."""
+        return [self._part_name(n) for n in sorted(self._created)]
+
     def _part(self, number: int) -> IO[bytes]:
         f = self._open.pop(number, None)
         if f is not None:

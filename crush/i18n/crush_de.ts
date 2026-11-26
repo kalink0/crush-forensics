@@ -7042,6 +7042,10 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
         <translation>(Datenträgerabbild)</translation>
     </message>
     <message>
+        <source>{path} could not be replaced ({reason}); is it open in another program? The archive and its lists were left as they were.</source>
+        <translation>{path} konnte nicht ersetzt werden ({reason}); ist die Datei in einem anderen Programm geöffnet? Das Archiv und seine Listen wurden unverändert gelassen.</translation>
+    </message>
+    <message>
         <source>Show open tabs</source>
         <translation>Offene Tabs anzeigen</translation>
     </message>
@@ -7384,6 +7388,26 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
     <message>
         <source>Exporting…</source>
         <translation>Exportiere...</translation>
+    </message>
+    <message>
+        <source>The archive would be written into the folder of the open source {source}:
+{target}
+
+Write it there anyway?</source>
+        <translation>Das Archiv würde in den Ordner der geöffneten Quelle {source} geschrieben:
+{target}
+
+Trotzdem dort speichern?</translation>
+    </message>
+    <message>
+        <source>The archive would be written into the folder that holds the open source {source}:
+{target}
+
+Write it there anyway?</source>
+        <translation>Das Archiv würde in den Ordner geschrieben, in dem die geöffnete Quelle {source} liegt:
+{target}
+
+Trotzdem dort speichern?</translation>
     </message>
     <message>
         <source>Add the export to this archive (its other entries are kept), or replace the archive with a new one?</source>
@@ -15570,6 +15594,10 @@ Gesamt: {total:.2f} s</translation>
         <translation>In ZIP-Archiv exportieren</translation>
     </message>
     <message>
+        <source>Full path of the archive, e.g. chosen with Browse…</source>
+        <translation>Vollständiger Pfad des Archivs, z. B. über Durchsuchen... gewählt</translation>
+    </message>
+    <message>
         <source>Browse…</source>
         <translation>Durchsuchen...</translation>
     </message>
@@ -15670,8 +15698,8 @@ Gesamt: {total:.2f} s</translation>
         <translation>ZIP-Archive (*.zip)</translation>
     </message>
     <message>
-        <source>Choose where the archive goes.</source>
-        <translation>Wählen Sie, wohin das Archiv gespeichert wird.</translation>
+        <source>Enter the archive&apos;s full path, or choose where it goes with Browse…</source>
+        <translation>Geben Sie den vollständigen Pfad des Archivs ein oder wählen Sie über Durchsuchen..., wohin es gespeichert wird.</translation>
     </message>
     <message>
         <source>The folder {folder} doesn&apos;t exist.</source>
