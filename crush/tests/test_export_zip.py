@@ -81,12 +81,16 @@ def test_folder_into_a_new_archive(qapp: Any, tmp_path: Path, integrity: bool) -
         assert {"case/", "case/a.txt", "case/sub/", "case/sub/b.bin", "case/empty/"} <= names
         assert zf.read("case/a.txt") == b"alpha"
         assert zf.read("case/sub/b.bin") == b"\x00\x01\x02" * 1000
-        if integrity:
-            hashes = zf.read("crush-export-hashes.txt").decode()
-            digest = hashlib.sha256(b"alpha").hexdigest()
-            assert f"{digest}  5  case/a.txt" in hashes.splitlines()
-        else:
-            assert "crush-export-hashes.txt" not in names
+        assert not any("crush-export-hashes" in name for name in names)  # beside it
+    beside = tmp_path / "out.zip.crush-export-hashes.txt"
+    if integrity:
+        hashes = beside.read_text(encoding="utf-8")
+        digest = hashlib.sha256(b"alpha").hexdigest()
+        assert f"{digest}  5  case/a.txt" in hashes.splitlines()
+        archive = hashlib.sha256(out.read_bytes()).hexdigest()
+        assert f"# archive sha256={archive}  size={out.stat().st_size}  out.zip" in hashes
+    else:
+        assert not beside.exists()
     assert _no_partials(tmp_path)
 
 
@@ -98,8 +102,9 @@ def test_single_file_into_a_new_archive(qapp: Any, tmp_path: Path) -> None:
 
     assert seen == [("finished", str(out), 0)]
     with zipfile.ZipFile(out) as zf:
-        assert sorted(zf.namelist()) == ["a.txt", "crush-export-hashes.txt"]
+        assert sorted(zf.namelist()) == ["a.txt"]
         assert zf.read("a.txt") == b"alpha"
+    assert (tmp_path / "one.zip.crush-export-hashes.txt").is_file()
 
 
 def test_add_keeps_existing_entries_and_numbers_a_clash(qapp: Any, tmp_path: Path) -> None:
@@ -131,9 +136,15 @@ def test_adding_the_same_file_twice(qapp: Any, tmp_path: Path) -> None:
     assert _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "add", True))[0][0] == "finished"
 
     with zipfile.ZipFile(out) as zf:
-        names = set(zf.namelist())
-        assert {"a.txt", "a (2).txt", "crush-export-hashes.txt", "crush-export-hashes (2).txt"} <= names
+        assert set(zf.namelist()) == {"a.txt", "a (2).txt", "crush-export-renames.txt"}
         assert zf.read("a (2).txt") == b"alpha"
+    hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+    first, second = hashes.split("\n\n")  # one section per export, the earlier kept
+    assert "written to out.zip" in first and "  a.txt" in first
+    assert "added to out.zip" in second and "  a (2).txt" in second
+    assert "the one below is of the archive now" in second
+    archive = hashlib.sha256(out.read_bytes()).hexdigest()
+    assert archive not in first and f"archive sha256={archive}" in second
 
 
 def test_replace_writes_a_new_archive(qapp: Any, tmp_path: Path) -> None:
@@ -184,8 +195,8 @@ def test_an_unreadable_file_is_left_out_and_listed(qapp: Any, tmp_path: Path) ->
         assert zf.read("src/good.txt") == b"good"
         failed = zf.read("crush-export-failed.txt").decode()
         assert "bad.bin\tonly 4 of 9 bytes can be read" in failed
-        hashes = zf.read("crush-export-hashes.txt").decode()
-        assert hashes.startswith("# not exported: 1 (see crush-export-failed.txt)")
+    hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+    assert "# not exported: 1 (see crush-export-failed.txt in the archive)" in hashes
 
 
 def test_a_single_unreadable_file_fails_and_writes_nothing(qapp: Any, tmp_path: Path) -> None:
@@ -349,11 +360,10 @@ def test_selection_keeps_each_path_from_the_source_root(qapp: Any, tmp_path: Pat
             "private/var/mobile/a.db",
             "private/var/logs/", "private/var/logs/x.log",
             "top.txt",
-            "crush-export-hashes.txt",
         }
         assert zf.read("private/var/mobile/a.db") == b"db"
-        hashes = zf.read("crush-export-hashes.txt").decode()
-        assert "private/var/logs/x.log" in hashes and "top.txt" in hashes
+    hashes = (tmp_path / "sel.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+    assert "private/var/logs/x.log" in hashes and "  top.txt" in hashes
 
 
 def test_selection_added_twice_shares_folders_and_numbers_only_the_entries(
@@ -373,7 +383,6 @@ def test_selection_added_twice_shares_folders_and_numbers_only_the_entries(
         assert names.count("private/var/mobile/") == 1  # the folders are shared
         assert zf.read("private/var/mobile/a (2).db") == b"db"
         assert zf.read("top (2).txt") == b"top"
-        assert {"crush-export-hashes.txt", "crush-export-hashes (2).txt"} <= set(names)
 
 
 def test_selection_lists_an_unreadable_file_without_failing(qapp: Any, tmp_path: Path) -> None:
@@ -487,25 +496,42 @@ def test_selection_replace_swaps_the_entries_and_keeps_the_rest(
         assert not any("(2)" in name for name in names)
 
 
-def test_single_replace_swaps_the_file_and_numbers_the_list(qapp: Any, tmp_path: Path) -> None:
+def test_single_replace_swaps_the_file_and_appends_to_the_list(
+    qapp: Any, tmp_path: Path
+) -> None:
     vfs = _source(tmp_path)
     a = _child(vfs.root(), "a.txt")
     out = tmp_path / "out.zip"
     with zipfile.ZipFile(out, "w") as zf:
         zf.writestr("a.txt", b"old")
-        zf.writestr("crush-export-hashes.txt", b"earlier list")
         zf.writestr("b.txt", b"keep")
+    beside = tmp_path / "out.zip.crush-export-hashes.txt"
+    beside.write_text("# earlier list\n", encoding="utf-8")
 
     _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "add", True, on_clash="replace"))
 
     with zipfile.ZipFile(out) as zf:
-        assert sorted(zf.namelist()) == [
-            "a.txt", "b.txt", "crush-export-hashes (2).txt", "crush-export-hashes.txt"
-        ]
+        assert sorted(zf.namelist()) == ["a.txt", "b.txt"]
         assert zf.read("a.txt") == b"alpha"
-        assert zf.read("crush-export-hashes.txt") == b"earlier list"
-        assert hashlib.sha256(b"alpha").hexdigest() in zf.read(
-            "crush-export-hashes (2).txt").decode()
+    hashes = beside.read_text(encoding="utf-8")
+    assert hashes.startswith("# earlier list\n")
+    assert "# replaced in the archive: a.txt" in hashes
+    assert hashlib.sha256(b"alpha").hexdigest() in hashes
+
+
+def test_without_integrity_a_list_beside_is_kept_honest(qapp: Any, tmp_path: Path) -> None:
+    vfs = _source(tmp_path)
+    a = _child(vfs.root(), "a.txt")
+    out = tmp_path / "out.zip"
+    beside = tmp_path / "out.zip.crush-export-hashes.txt"
+    _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "new", True))
+    assert beside.is_file()
+
+    _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "add", False))
+    assert "without integrity mode: not hashed" in beside.read_text(encoding="utf-8")
+
+    _run(_ExportZipWorker([_zip_item(a, vfs)], str(out), "replace", False))
+    assert not beside.exists()  # it described the archive replaced
 
 
 def test_cancelled_replace_leaves_the_archive_unchanged(qapp: Any, tmp_path: Path) -> None:

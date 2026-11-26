@@ -96,7 +96,7 @@ def test_a_folder_flattened_numbers_clashing_names_and_lists_them(
     assert renames.count("->\twww/style (") == 2
     root = str(tmp_path / "case" / "var" / "www")
     assert any(line.startswith(root) for line in renames.splitlines())
-    hashes = entries["crush-export-hashes.txt"].decode()
+    hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
     assert "www/style (3).css" in hashes
 
 
@@ -210,5 +210,5 @@ def test_integrity_hashes_go_to_the_store_and_empty_content_isnt_hashed(
     monkeypatch.setattr(main_window, "has_no_content", lambda node: True)
     out2 = tmp_path / "out2.zip"
     _ExportZipWorker([item], str(out2), "new", True).run()
-    with zipfile.ZipFile(out2) as zf:
-        assert "not hashed: no content read" in zf.read("crush-export-hashes.txt").decode()
+    hashes = (tmp_path / "out2.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+    assert "not hashed: no content read" in hashes

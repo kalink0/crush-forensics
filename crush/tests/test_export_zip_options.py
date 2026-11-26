@@ -109,7 +109,6 @@ def test_password_encrypts_files_with_aes_and_leaves_folders_open(
         infos = {i.filename: i for i in zf.infolist()}
         assert not infos["case/"].flag_bits & 0x1
         assert infos["case/a.txt"].flag_bits & 0x1
-        assert infos["crush-export-hashes.txt"].flag_bits & 0x1
         assert infos["case/a.txt"].wz_aes_strength == 3  # 256-bit key
         with pytest.raises(RuntimeError):
             zf.read("case/a.txt")  # no password
@@ -358,3 +357,19 @@ def test_flow_asks_before_replacing_parts(
             assert zf.read("case/a.txt") == b"alpha " * 5000
     else:
         assert part_path(out, 2).read_bytes() == b"old part"
+
+
+def test_split_archive_hash_list_names_each_part(qapp: Any, tmp_path: Path) -> None:
+    import hashlib
+
+    out = tmp_path / "out.zip"
+    _export(tmp_path, out, method="stored", split_size=100_000)
+
+    hashes = (tmp_path / "out.zip.crush-export-hashes.txt").read_text(encoding="utf-8")
+    parts = existing_parts(out)
+    for part in parts:
+        digest = hashlib.sha256(part.read_bytes()).hexdigest()
+        assert f"# part sha256={digest}  size={part.stat().st_size}  {part.name}" in hashes
+    whole = hashlib.sha256(b"".join(p.read_bytes() for p in parts)).hexdigest()
+    assert f"# archive sha256={whole}" in hashes and "put together" in hashes
+    assert "split into parts of 100000 B" in hashes

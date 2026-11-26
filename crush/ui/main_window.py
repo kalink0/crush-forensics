@@ -1137,6 +1137,9 @@ class _ExportZipWorker(QObject):
     ) -> None:
         super().__init__()
         self._hashes = hashes  # the window's store: integrity hashes are kept there
+        self._replaced_names: list[str] = []
+        self._pending_hash_list: Path | None = None
+        self._remove_stale_hash_list = False
         if not items:
             raise ValueError("nothing to export")
         self._on_clash = on_clash
@@ -1202,6 +1205,7 @@ class _ExportZipWorker(QObject):
                         lambda name: _in_replaced(name.rstrip("/"), replaced),
                         self._check_cancel,
                     )
+                    self._replaced_names = removed
                     for name in removed:
                         self._logger.warning(
                             "ZIP export: replaced in %s: %s", self._zip_path, name
@@ -1222,9 +1226,10 @@ class _ExportZipWorker(QObject):
                 split = None
             else:
                 assert partial is not None
+                pending = self._prepare_hash_list([partial], [self._zip_path])
                 os.replace(partial, self._zip_path)
                 partial = None
-                self._log_archive_hash([self._zip_path])
+                self._place_hash_list(pending)
         except _ExportCancelled:
             self._logger.info(
                 "ZIP export cancelled by the analyst: %s %s",
@@ -1240,6 +1245,9 @@ class _ExportZipWorker(QObject):
                 partial.unlink(missing_ok=True)
             if split is not None:
                 self._discard_parts(split)
+            if self._pending_hash_list is not None:
+                self._pending_hash_list.unlink(missing_ok=True)
+                self._pending_hash_list = None
         self._logger.info(
             "ZIP export: %d file(s) of %s %s %s",
             self._exported, self._described(),
@@ -1262,6 +1270,7 @@ class _ExportZipWorker(QObject):
         written = split.parts()
         split.close()
         finals = [zip_writer.part_path(self._zip_path, n) for n in range(1, len(written) + 1)]
+        pending = self._prepare_hash_list(written, finals)
         for temp, final in zip(written, finals):
             os.replace(temp, final)
         for stale in zip_writer.existing_parts(self._zip_path):
@@ -1272,7 +1281,7 @@ class _ExportZipWorker(QObject):
             "ZIP export: %s split into %d part(s) of up to %d B: %s ... %s",
             self._zip_path, len(finals), self._options.split_size, finals[0].name, finals[-1].name,
         )
-        self._log_archive_hash(finals)
+        self._place_hash_list(pending)
         return finals[0]
 
     def _discard_parts(self, split: zip_writer.SplitWriter) -> None:
@@ -1457,16 +1466,11 @@ class _ExportZipWorker(QObject):
         )
 
     def _write_sidecars(self, zf: Any, list_failed: bool) -> None:
-        """The same lists a folder export writes, at the top (root) of the
-        archive; numbered (`crush-export-hashes (2).txt`) when the archive
-        already holds one, so an earlier list stays with what it lists."""
+        """The renamed and the failed files, listed at the top (root) of the
+        archive; numbered (`crush-export-renames (2).txt`) when the archive
+        already holds one, so an earlier list stays with what it lists. The
+        hashes go beside the archive (_prepare_hash_list)."""
         files: list[tuple[str, str]] = []
-        if self._integrity and (self._hash_lines or self._failed):
-            note = (
-                [f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE})"]
-                if self._failed else []
-            )
-            files.append(("crush-export-hashes.txt", "\n".join(note + self._hash_lines) + "\n"))
         if self._rename_lines:
             files.append((
                 "crush-export-renames.txt",
@@ -1488,33 +1492,111 @@ class _ExportZipWorker(QObject):
             zf.writestr(arcname, text.encode("utf-8"))
             self._taken.add(arcname)
 
-    def _log_archive_hash(self, files: list[Path]) -> None:
-        """SHA-256 of the finished archive in the log -- of each part too
-        when it is split, and of the parts put together (the archive)."""
+    def hash_list_path(self) -> Path:
+        """The hash list beside the archive: its name, then
+        `.crush-export-hashes.txt` (also for a split one: `name.zip...`)."""
+        return self._zip_path.with_name(f"{self._zip_path.name}.crush-export-hashes.txt")
+
+    def _prepare_hash_list(self, written: list[Path], names: list[Path]) -> Path | None:
+        """In integrity mode: hash the finished archive (*written*, its parts
+        if split, to be moved to *names*), log it, and write the hash list
+        for beside it to a temporary file -- moved into place with the
+        archive (_place_hash_list). Adding to an archive appends a section
+        to the list already beside it, so the earlier ones stay on record.
+
+        Without integrity mode there is no list, but one already beside the
+        archive would no longer match it: when adding, it gets a section
+        saying so; when the archive is written anew, it is removed."""
+        target = self.hash_list_path()
         if not self._integrity:
-            return
+            if not target.is_file():
+                return None
+            if self._mode != "add":
+                self._remove_stale_hash_list = True
+                return None
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return self._write_pending_hash_list(
+                target.read_text(encoding="utf-8").rstrip("\n") + "\n\n"
+                f"# Crush ZIP export {stamp}: {self._exported} file(s) added to "
+                f"{self._zip_path.name} without integrity mode: not hashed.\n"
+                "# The archive hashes above are of the archive as it was before.\n"
+            )
         import hashlib
 
         whole = hashlib.sha256()
         whole_size = 0
-        for path in files:
+        part_lines: list[str] = []
+        for path, name in zip(written, names):
             hasher = hashlib.sha256()
             size = 0
             with open(path, "rb") as f:
                 while chunk := f.read(_ZIP_CHUNK):
+                    self._check_cancel()
                     hasher.update(chunk)
                     whole.update(chunk)
                     size += len(chunk)
             whole_size += size
-            if len(files) > 1:
+            if len(names) > 1:
+                part_lines.append(f"# part sha256={hasher.hexdigest()}  size={size}  {name.name}")
                 self._logger.info(
                     "INTEGRITY export archive part sha256=%s  size=%d  path=%s",
-                    hasher.hexdigest(), size, path,
+                    hasher.hexdigest(), size, name,
                 )
+        split_note = (
+            f" (parts {names[0].name} ... {names[-1].name} put together)" if len(names) > 1 else ""
+        )
         self._logger.info(
             "INTEGRITY export archive sha256=%s  size=%d  path=%s%s",
-            whole.hexdigest(), whole_size, self._zip_path,
-            f" (parts {files[0].name} ... {files[-1].name} put together)" if len(files) > 1 else "",
+            whole.hexdigest(), whole_size, self._zip_path, split_note,
+        )
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        verb = "added to" if self._mode == "add" else "written to"
+        lines = [
+            f"# Crush ZIP export {stamp}: {self._exported} file(s) {verb} {self._zip_path.name}",
+            f"# options: {self._options.describe()}",
+            f"# archive sha256={whole.hexdigest()}  size={whole_size}  "
+            f"{self._zip_path.name}{split_note}",
+            *part_lines,
+            *(f"# replaced in the archive: {name}" for name in self._replaced_names),
+        ]
+        if self._failed:
+            lines.append(
+                f"# not exported: {len(self._failed)} (see {_EXPORT_FAILED_FILE} in the archive)"
+            )
+        lines.append("# sha256  size  path in the archive")
+        text = "\n".join(lines + self._hash_lines) + "\n"
+        if self._mode == "add" and target.is_file():
+            earlier = target.read_text(encoding="utf-8")
+            text = (
+                earlier.rstrip("\n") + "\n\n"
+                "# The archive hash of each section above is of the archive as it was\n"
+                "# after that export; the one below is of the archive now.\n" + text
+            )
+        return self._write_pending_hash_list(text)
+
+    def _write_pending_hash_list(self, text: str) -> Path:
+        target = self.hash_list_path()
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".crush-partial", dir=target.parent
+        )
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        self._pending_hash_list = Path(temp_name)
+        return self._pending_hash_list
+
+    def _place_hash_list(self, pending: Path | None) -> None:
+        if pending is None:
+            if self._remove_stale_hash_list:
+                self.hash_list_path().unlink(missing_ok=True)
+                self._logger.warning(
+                    "ZIP export: removed the hash list of the replaced archive "
+                    "(no integrity mode, so no new one): %s", self.hash_list_path(),
+                )
+            return
+        os.replace(pending, self.hash_list_path())
+        self._pending_hash_list = None
+        self._logger.info(
+            "ZIP export: hash list written beside the archive: %s", self.hash_list_path()
         )
 
 
