@@ -390,6 +390,42 @@ def join_notes(notes: list[Any]) -> str | ParseIssue:
     ]})
 
 
+# Statuses of an entry whose content is not read or not stored: its VFS
+# serves no bytes for it (empty bytes, or a read error), so a hash or copy of
+# it never stands for content. Kept next to where the codes are given.
+NO_CONTENT_STATUSES: frozenset[str] = frozenset({
+    "entry.unreadable",            # DirectoryVFS: lstat failed
+    "entry.symlink_unreadable",    # DirectoryVFS: link target unreadable
+    "entry.special_not_read",      # DirectoryVFS: FIFO/device/socket, never read
+    "entry.special_stored",        # TAR: device/FIFO member, no content stored
+    "entry.symlink_no_target",     # iTunes backup: link without a target
+    "entry.no_backup_content",     # iTunes backup: no file in the backup
+    "entry.raw_entry_unreadable",  # disk image: entry metadata unreadable
+    "entry.raw_unreached",         # disk image: entry no listing reaches, not read
+    "entry.symlink_raw",           # disk image: link target not decoded
+    "entry.special_raw",           # disk image: special file
+    "entry.streams_unlisted",      # disk image: streams could not be named
+    "entry.stream_nothing_stored", # disk image: stream is all hole
+    "entry.stream_no_reader",      # disk image: stream listed, not read
+})
+
+
+def has_no_content(node: VFSNode) -> bool:
+    """True when *node*'s status (or one of its joined notes) says its
+    content is not read or not stored -- see NO_CONTENT_STATUSES."""
+    pending: list[Any] = [node.status]
+    while pending:
+        status = pending.pop()
+        if not isinstance(status, ParseIssue):
+            continue
+        if status.code in NO_CONTENT_STATUSES:
+            return True
+        notes = status.params.get("notes") if status.code == "common.notes" else None
+        if isinstance(notes, list):
+            pending.extend(notes)
+    return False
+
+
 def _member_parts(name: str) -> list[str]:
     """Path components of an archive member name as stored: empty and "."
     components are dropped (a leading "./" or "/"), ".." and the leading
@@ -2280,6 +2316,10 @@ class RawImageVFS(VFS):
         )
         self._lock = threading.Lock()
         self._read_map: dict[str, Any] = {}
+        # Entries whose filesystem stores more times than the listing reads
+        # (ext, APFS, HFS+, Btrfs): read on first request, then kept.
+        self._times_map: dict[str, tuple[Any, Any]] = {}
+        self._times_read: dict[str, list[StoredTime] | ParseIssue] = {}
         self._volume_facts: dict[str, Any] = {}
 
         report_phase(PHASE_READ_FILESYSTEMS)
@@ -2288,7 +2328,9 @@ class RawImageVFS(VFS):
         for number, vol in enumerate(volumes, 1):
             report_step(number, len(volumes))
             facts = volume_facts(vol, self._handle)
-            node = build_volume_node(vol, self._read_map, facts, self._handle.size)
+            node = build_volume_node(
+                vol, self._read_map, facts, self._handle.size, times_map=self._times_map,
+            )
             self._volume_facts[node.path] = facts
             root.children.append(node)
         root.children.sort(key=lambda n: (not n.is_dir, n.name.lower()))
@@ -2325,6 +2367,28 @@ class RawImageVFS(VFS):
     def root(self) -> VFSNode:
         return self._tree
 
+    def stored_times(self, node: VFSNode) -> list[StoredTime] | ParseIssue:
+        """Modified, accessed, changed and birth (HFS+ also backup) from the
+        inode or catalog record, on ext, APFS, HFS+ and Btrfs: read on first
+        request, not when the image opens (one record read per entry)."""
+        from crush.core.raw_image import walker_stored_times
+
+        held = self._times_map.get(node.path)
+        if held is None:
+            return node.stored_times
+        cached = self._times_read.get(node.path)
+        if cached is None:
+            try:
+                with self._lock:
+                    times = walker_stored_times(*held)
+            except Exception as exc:  # noqa: BLE001 -- shown, the listing's time stays
+                cached = ParseIssue("time.raw_times_unreadable", detail=str(exc))
+            else:
+                # None: no record holds times for it; the listing's time stands
+                cached = times if times is not None else node.stored_times
+            self._times_read[node.path] = cached
+        return cached
+
     def _resolve_entry(self, node: VFSNode) -> Any:
         from crush.core.raw_image import RawImageFileUnreadableError
 
@@ -2354,13 +2418,34 @@ class RawImageVFS(VFS):
                 # recognise at all) -- still fully readable as the raw bytes
                 # of that region, never hidden.
                 return read_raw_region(self._region_image(entry), entry.base, entry.size)
-            return read_walker_file(entry.walker, entry.node, entry.size)
+            data = read_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
+            self._note_after_read(node, entry)
+            return data
+
+    def _stream_then_note(self, node: VFSNode, entry: Any) -> Iterator[bytes]:
+        from crush.core.raw_image import stream_walker_file
+
+        yield from stream_walker_file(entry.walker, entry.node, entry.size, entry.stored_up_to)
+        self._note_after_read(node, entry)
+
+    def _note_after_read(self, node: VFSNode, entry: Any) -> None:
+        """Add to `node`'s status what the reader can say about the file only
+        once it has been read in full (QNX6: blocks read as zeros because they
+        had no pointer), once."""
+        from crush.core.raw_image import after_read_notes
+
+        notes = after_read_notes(entry.walker, entry.node, entry.size)
+        status = node.status
+        shown = (status.params.get("notes", []) if isinstance(status, ParseIssue)
+                 and status.code == "common.notes" else [status])
+        new = [n for n in notes if n not in shown]
+        if new:
+            node.status = join_notes([status, *new])
 
     def open(self, node: VFSNode) -> IO[bytes]:
         from crush.core.raw_image import (
             stream_deleted_file,
             stream_raw_region,
-            stream_walker_file,
         )
 
         entry = self._resolve_entry(node)
@@ -2372,7 +2457,7 @@ class RawImageVFS(VFS):
                 return stream_deleted_file(entry.walker, entry.deleted, entry.size)
             if entry.walker is None:
                 return stream_raw_region(self._region_image(entry), entry.base, entry.size)
-            return stream_walker_file(entry.walker, entry.node, entry.size)
+            return self._stream_then_note(node, entry)
 
         return buffered(IterStream(make_iter, entry.size, lock=self._lock))
 
@@ -2421,6 +2506,8 @@ class RawImageVFS(VFS):
         unsupported (and recovered-but-uncertain) content must always carry
         an explicit status.
         """
+        from crush.core.raw_image import recovered_label
+
         entry = self._read_map.get(node.path)
         if entry is None or entry.stored is not None:
             return None
@@ -2428,14 +2515,20 @@ class RawImageVFS(VFS):
             deleted = entry.deleted
             # A FAT32/FAT16/FAT12 delete zeroes the chain: qnxprobe then reads
             # the size from the first cluster on and says so in
-            # assumed_contiguous.
-            status: str | ParseIssue = (
-                ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
-                if not deleted.recoverable
-                else ParseIssue("entry.recovered_assumed_contiguous")
-                if getattr(deleted, "assumed_contiguous", False)
-                else ParseIssue("entry.recovered_intact")
-            )
+            # assumed_contiguous. FAT and exFAT record nowhere whether a
+            # cluster was reused after the file let go of it, so qnxprobe
+            # (1.88) flags every recoverable FAT/exFAT entry, orphans included,
+            # content_unverified: its bytes are a candidate.
+            status: str | ParseIssue
+            if not deleted.recoverable:
+                status = ParseIssue("entry.not_recoverable", detail=str(deleted.reason))
+            else:
+                states = []
+                if getattr(deleted, "content_unverified", False):
+                    states.append(ParseIssue("entry.recovered_unverified"))
+                if getattr(deleted, "assumed_contiguous", False):
+                    states.append(ParseIssue("entry.recovered_assumed_contiguous"))
+                status = join_notes(states) if states else ParseIssue("entry.recovered_intact")
             # A flash record's note says what the recovery had to decide
             # that the flash itself doesn't record (YAFFS2's size-0 header).
             recovery_note = getattr(deleted, "note", "")
@@ -2443,10 +2536,23 @@ class RawImageVFS(VFS):
                 status = join_notes([
                     status, ParseIssue("entry.recovery_note", detail=str(recovery_note)),
                 ])
-            info: dict[str, Any] = {"kind": "deleted file", "note": status}
+            # An NTFS record whose data attribute is in an extension record
+            # that was not read holds no size (qnxprobe 1.88: size None); the
+            # node shows 0 bytes, which is not the file's size.
+            if getattr(deleted, "size", 0) is None:
+                status = join_notes([status, ParseIssue("entry.recovered_size_unknown")])
+            orphan = recovered_label(deleted) == "orphaned file"
+            info: dict[str, Any] = {"kind": recovered_label(deleted), "note": status}
             # Only the flash records name the folder the file was deleted
             # from: "" is the volume root, None a folder no longer present.
-            if hasattr(deleted, "parent_path"):
+            # An exFAT orphan's path starts at the first orphaned folder, not
+            # at the root, and None there means no entry names its folder.
+            if orphan:
+                info["original_folder"] = (
+                    ParseIssue("entry.orphan_folder_unnamed") if deleted.parent_path is None
+                    else ParseIssue("entry.orphan_folder", {"path": deleted.parent_path})
+                )
+            elif hasattr(deleted, "parent_path"):
                 info["original_folder"] = (
                     ParseIssue("entry.original_folder_gone") if deleted.parent_path is None
                     else "/" + deleted.parent_path
@@ -2622,7 +2728,7 @@ class LogicalEvidenceVFS(VFS):
     ) -> dict[str, Any]:
         """Recompute the set's own recorded hashes: the image hash (an AD1's
         is FTK Imager's, over its structure and its entries) and every
-        entry's recorded MD5 (and an AD1's SHA-1).
+        entry's recorded MD5 and SHA-1.
 
         An AD1 doesn't hold its image hash: FTK Imager writes it to its log
         beside the image (<first file>.txt). "ad1_log" names the log the
@@ -2632,23 +2738,27 @@ class LogicalEvidenceVFS(VFS):
 
         What the reader doesn't check is counted here, over the entries with
         data shown in the tree, so "all match" is never read as "all
-        checked": "entry_count", "entry_md5_missing" (no recorded MD5),
-        for an AD1 "entry_sha1_missing", and for an L01
-        "entry_sha1_unchecked" (a recorded SHA-1, which the reader doesn't
-        check for an L01: it checks an L01's MD5 only)."""
+        checked": "entry_count", "entry_md5_missing" (no recorded MD5) and
+        "entry_sha1_missing" (no recorded SHA-1). An entry whose content the
+        acquisition didn't collect (an EnCase folder recorded with its MD5
+        but not its content) is skipped by the reader: it is in the reader's
+        "entry_content_not_collected" and in neither missing count, so for
+        each algorithm checked + missing + not collected = entry_count."""
+        from crush.core.raw_image import verify_image
+
         with self._lock:
-            result: dict[str, Any] = self._handle.image.verify(progress=progress)
+            result = verify_image(self._handle.image, progress)
             ad1 = getattr(self._handle.image, "ad1", None)
         if self._handle.kind == "AD1" and ad1 is not None:
             result["ad1_log"] = ad1.get("log")
             result["ad1_log_expected"] = Path(self._handle.image.paths[0]).name + ".txt"
         entries = list({id(e): e for e in self._handle.entries.values()}.values())
+        # Only an L01 entry records whether its content was collected; an
+        # AD1 item always holds it.
+        collected = [e for e in entries if getattr(e, "content_collected", True)]
         result["entry_count"] = len(entries)
-        result["entry_md5_missing"] = sum(1 for e in entries if not e.md5)
-        if self._handle.kind == "AD1":
-            result["entry_sha1_missing"] = sum(1 for e in entries if not e.sha1)
-        else:
-            result["entry_sha1_unchecked"] = sum(1 for e in entries if e.sha1)
+        result["entry_md5_missing"] = sum(1 for e in collected if not e.md5)
+        result["entry_sha1_missing"] = sum(1 for e in collected if not e.sha1)
         return result
 
     def close(self) -> None:
@@ -3250,7 +3360,8 @@ def _tar_suffix(p: Path) -> str:
 # counts too.
 DISK_IMAGE_SUFFIXES = (
     ".img", ".dd", ".raw", ".e01", ".s01", ".ex01", ".aff", ".aff4",
-    ".dmg", ".dmgpart", ".sparseimage", ".vhd", ".vhdx", ".vmdk", ".qcow", ".qcow2",
+    ".dmg", ".dmgpart", ".sparseimage", ".asif", ".vhd", ".vhdx", ".vmdk", ".qcow",
+    ".qcow2",
     ".nand", ".ubi", ".ubifs", ".squashfs", ".sqsh", ".jffs2", ".yaffs2",
 )
 
@@ -3311,6 +3422,7 @@ def looks_like_disk_image(
         CONTAINER_HEAD_SIGNATURES,
         container_format,
         container_label,
+        is_asif_head,
         sparse_bundle_of,
     )
 
@@ -3327,7 +3439,9 @@ def looks_like_disk_image(
             return ParseIssue("vfs.disk_image_hint_bundle", {"bundle": bundle.name})
     elif head.startswith(AD_ENCRYPTED_SIGNATURE):
         return ParseIssue("vfs.disk_image_hint_ad_encrypted")
-    elif head.startswith(CONTAINER_HEAD_SIGNATURES):
+    elif head.startswith(CONTAINER_HEAD_SIGNATURES) or is_asif_head(head):
+        # An ASIF's four signature bytes alone aren't enough (a raw file may
+        # start with them): the reader's rule, with the header version, decides.
         return ParseIssue("vfs.disk_image_hint_acquisition")
     suffix = Path(name).suffix.lower()
     is_segment = len(suffix) == 4 and suffix[1:].isascii() and suffix[1:].isdigit()

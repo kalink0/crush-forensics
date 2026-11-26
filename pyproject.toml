@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crush"
-version = "0.25.0"
+version = "0.26.0"
 description = "Crush — Digital Forensic Analysis Workbench"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -36,6 +36,9 @@ dependencies = [
     "av>=12.0",
     "pyliblzfse>=0.4.1",
     "astc_decomp_faster>=1.1.0",
+    # KTX textures in ETC1/ETC2/EAC, PVRTC and BC1-BC7 (ASTC goes through
+    # astc_decomp_faster).
+    "texture2ddecoder>=1.0.5",
     "py7zr>=0.21",
     "cryptography>=42.0",
     # ewfprobe decrypts Apple disk images, AD-encrypted sets and encrypted

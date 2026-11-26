@@ -345,7 +345,91 @@ class TestL01:
         # files and the own data of 123 entries with entries beneath them).
         assert result["entry_count"] == 9342
         assert result["entry_md5_missing"] == 9342 - 108
-        assert result["entry_sha1_unchecked"] == 0
+        # The reader checks an L01's SHA-1 too; this one records none.
+        assert result["entry_sha1_checked"] == 0
+        assert result["entry_sha1_missing"] == 9342
+        assert result["entry_content_not_collected"] == []
+
+    @pytest.mark.forensic(
+        category="Completeness",
+        subject="EnCase logical evidence (.L01)",
+        desc="An L01 with an unreadable chunk verifies to the end: every unreadable file is "
+             "listed, also those with no recorded hash, and the result is never a clean pass",
+    )
+    def test_damaged_l01_reports_every_unreadable_entry(self, l01: Path) -> None:
+        """The fixture with 64 bytes of its media data zeroed (at 30 % of the
+        file): chunks no longer inflate. The reader goes on past them, and
+        every entry it can't read is in the result -- most of them have no
+        recorded MD5, so no mismatch list would show them."""
+        data = bytearray(l01.read_bytes())
+        at = len(data) * 3 // 10
+        data[at:at + 64] = bytes(64)
+        l01.write_bytes(data)
+        from crush.ui.main_window import verify_status_tag
+        from crush.ui.verify_result_dialog import verify_report_html
+
+        vfs = open_vfs(l01)
+        try:
+            result = vfs.verify_acquisition()  # returned, not raised
+        finally:
+            vfs.close()
+        assert result["unreadable_chunks"]
+        unreadable = result["entry_unreadable"]
+        hashed = set(result["entry_md5_mismatched"])
+        assert hashed and {e["path"] for e in unreadable} - hashed  # some show nowhere else
+        report = verify_report_html(result, [], holds_files=True)
+        assert "Damage found while reading" in report
+        assert f"{len(unreadable):,} file(s) could not be read:" in report
+        for entry in unreadable:
+            assert entry["path"] in report
+        for chunk in result["unreadable_chunks"]:
+            assert f"chunk {chunk['chunk']:,} at byte {chunk['offset']:,}:" in report
+        assert verify_status_tag(result).endswith("[damage found]")
+
+    @pytest.mark.parametrize("kind", ["l01", "ad1"])
+    def test_every_entry_is_checked_or_counted_once(self, kind: str, tmp_path: Path) -> None:
+        """For each hash, the entries checked, those without that hash and
+        those whose content wasn't collected add up to every entry shown."""
+        vfs = open_vfs(_evidence(kind, tmp_path)[0])
+        try:
+            result = vfs.verify_acquisition()
+        finally:
+            vfs.close()
+        for algo in ("md5", "sha1"):
+            assert (result[f"entry_{algo}_checked"] + result[f"entry_{algo}_missing"]
+                    + len(result["entry_content_not_collected"])) == result["entry_count"]
+
+    def test_entry_without_collected_content_is_not_counted_as_missing(
+        self, l01: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Synthetic: no fixture holds a folder EnCase recorded with its MD5
+        but not its content (EnCase Imager 7.10 with "Include contents of
+        folder objects" off). Such an entry is in the tree, has a recorded
+        MD5, and is skipped by the reader: it is counted as not collected,
+        not as missing a hash and not as checked."""
+        vfs = open_vfs(l01)
+        assert isinstance(vfs, LogicalEvidenceVFS)
+        try:
+            image = vfs._handle.image
+            real = image.verify
+            path = next(iter(vfs._handle.entries))
+            vfs._handle.entries[path] = SimpleNamespace(
+                md5="aa" * 16, sha1=None, content_collected=False,
+            )
+
+            def verify(**kwargs: Any) -> dict[str, Any]:
+                assert kwargs.get("keep_going") is True
+                out: dict[str, Any] = real(**kwargs)
+                out["entry_content_not_collected"] = ["Folder"]
+                return out
+
+            monkeypatch.setattr(image, "verify", verify)
+            result = vfs.verify_acquisition()
+        finally:
+            vfs.close()
+        assert result["entry_count"] == 9342
+        assert result["entry_md5_missing"] == 9342 - 108 - 1
+        assert result["entry_sha1_missing"] == 9342 - 1
 
     def test_sparse_entry_reads_from_its_duplicate(self, l01: Path) -> None:
         vfs = open_vfs(l01)

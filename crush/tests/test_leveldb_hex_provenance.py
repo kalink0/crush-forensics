@@ -179,8 +179,8 @@ def test_deleted_log_record_has_an_empty_value_range(tmp_path: Path) -> None:
 
 def test_entry_that_cant_be_read_keeps_the_records_before_it(tmp_path: Path) -> None:
     """A block whose last entry can't be read (it shares more key bytes
-    than the key before it has): the entries before it are still read, then
-    the file is listed as not read to its end."""
+    than the key before it has): the entries before it are still read, and
+    the rest of the block is listed as skipped."""
     plain = _block(_TABLE_ENTRIES[:2])
     broken = plain[:-8] + b"\x7f\x00\x00" + struct.pack("<II", 0, 1)
     stored_len = len(broken)
@@ -196,7 +196,42 @@ def test_entry_that_cant_be_read_keeps_the_records_before_it(tmp_path: Path) -> 
     )
     result = _parse(tmp_path)
     assert [r["user_key_bytes"] for r in result.data["records"]] == [b"user:alpha", b"user:alpine"]
-    assert result.data["manifests"]["Read problems"]["000005.ldb"].code == "leveldb.read_stopped"
+    problem = result.data["manifests"]["Read problems"]["000005.ldb"]
+    assert problem.code == "leveldb.parts_skipped"
+    assert "Block at offset 0" in problem.detail
+    assert "entry 3 can't be read" in problem.detail
+    assert "skipped after 2 records" in problem.detail
+
+
+def test_block_that_cant_be_read_is_skipped_and_the_next_block_read(tmp_path: Path) -> None:
+    """A data block that can't be decompressed, then one that can: the
+    first is named with its offset and checksum, the second's records are
+    read -- as LevelDB's table iterator moves on past a corrupt block."""
+    first = b"\xff\xff\xff\xff\xff\xff"  # not a Snappy stream
+    second = _block(_TABLE_ENTRIES[2:])
+    data = first + bytes([1]) + bytes(4)
+    second_offset = len(data)
+    data += second + bytes(5)
+    index = _block([
+        (_TABLE_ENTRIES[1][0], _varint(0) + _varint(len(first))),
+        (_TABLE_ENTRIES[2][0], _varint(second_offset) + _varint(len(second))),
+    ])
+    index_offset = len(data)
+    data += index + bytes(5)
+    handles = _varint(0) + _varint(0) + _varint(index_offset) + _varint(len(index))
+    db = tmp_path / "db"
+    db.mkdir()
+    (db / "000005.ldb").write_bytes(
+        data + handles.ljust(40, b"\x00") + struct.pack("<Q", _TABLE_MAGIC)
+    )
+    result = _parse(tmp_path)
+    assert [r["user_key_bytes"] for r in result.data["records"]] == [b"user:alps"]
+    problem = result.data["manifests"]["Read problems"]["000005.ldb"]
+    assert problem.code == "leveldb.parts_skipped"
+    assert problem.params["count"] == 1
+    assert f"Block at offset 0 ({len(first)} bytes" in problem.detail
+    assert "the block is skipped" in problem.detail
+    assert "stored checksum doesn't match" in problem.detail
 
 
 def _select(widget: LevelDbRecordsWidget, record: int) -> None:

@@ -9,8 +9,12 @@ stream and map hashes) -- with the stored and the recomputed value on lines
 of their own, every value in full. A recomputed value is marked green when
 it matches the stored one and red when it doesn't. Logical evidence also
 records a hash of each file: how many were checked, every file whose hash
-doesn't match, by path, and how many files have no recorded hash (or one
-the reader doesn't check) and so were not checked.
+doesn't match, by path, how many files have no recorded hash (or one the
+reader doesn't check) and so were not checked, and every file whose content
+the acquisition didn't collect. Damage found while reading (unreadable
+chunks and files, chunk tables failing their checksum, segments of another
+acquisition, AD1 bytes the item tree doesn't reach) is listed in full, and
+the headline never reads as a clean match while there is any.
 """
 from __future__ import annotations
 
@@ -27,6 +31,98 @@ _esc = partial(html.escape, quote=False)
 
 _GREEN = "#2e7d32"
 _RED = "#c62828"
+_AMBER = "#b26a00"
+
+
+def verify_damage_found(result: dict[str, Any]) -> bool:
+    """True when the reader found damage while verifying: chunks that fail
+    their own checksum, hold less data than they cover, or can't be read;
+    pages the acquisition doesn't hold; files that can't be read; chunk
+    tables failing their checksum (with or without a copy that passes);
+    segments recording another acquisition; AD1 bytes the item tree
+    doesn't reach. A hash that matches doesn't make any of these go away."""
+    return bool(
+        result.get("checksum_errors")
+        or result.get("padded_chunks")
+        or result.get("missing_page_count")
+        or result.get("unreadable_chunks")
+        or result.get("entry_unreadable")
+        or result.get("table_errors")
+        or result.get("segment_set_errors")
+        or result.get("logical_unreached_bytes")
+    )
+
+
+def _listing(line: str, items: list[str]) -> str:
+    """*line*, then every one of *items* on a line of its own."""
+    rows = "<br>".join(f"<code>{_esc(i)}</code>" for i in items)
+    return f"<p style='color:{_RED}'>{_esc(line)}<br>{rows}</p>"
+
+
+def _damage_rows(result: dict[str, Any]) -> list[str]:
+    """Every damage the reader found while verifying, each item listed."""
+    parts: list[str] = []
+    chunks: list[dict[str, Any]] = result.get("unreadable_chunks") or []
+    if chunks:
+        parts.append(_listing(
+            translate("VerifyResultDialog", "{count} chunk(s) could not be read:").format(
+                count=f"{len(chunks):,}"),
+            [translate("VerifyResultDialog", "chunk {chunk} at byte {offset}: {error}").format(
+                chunk=f"{int(c.get('chunk') or 0):,}", offset=f"{int(c.get('offset') or 0):,}",
+                error=c.get("error")) for c in chunks],
+        ))
+    entries: list[dict[str, Any]] = result.get("entry_unreadable") or []
+    if entries:
+        parts.append(_listing(
+            translate("VerifyResultDialog", "{count} file(s) could not be read:").format(
+                count=f"{len(entries):,}"),
+            [f"{e.get('path')}: {e.get('error')}" for e in entries],
+        ))
+    tables: list[dict[str, Any]] = result.get("table_errors") or []
+    if tables:
+        rows = []
+        for t in tables:
+            where = dict(file=t.get("file"), offset=f"{int(t.get('offset') or 0):,}")
+            rows.append(
+                translate("VerifyResultDialog", "{file}, chunk table at byte {offset}: its copy "
+                          "(table2) passes and was read in its place").format(**where)
+                if t.get("used") == "table2" else
+                translate("VerifyResultDialog", "{file}, chunk table at byte {offset}: no copy "
+                          "passes; the table was read as stored").format(**where)
+            )
+        parts.append(_listing(
+            translate("VerifyResultDialog", "{count} chunk table(s) fail their checksum:").format(
+                count=f"{len(tables):,}"),
+            rows,
+        ))
+    segments: list[dict[str, Any]] = result.get("segment_set_errors") or []
+    if segments:
+        parts.append(_listing(
+            translate("VerifyResultDialog",
+                      "{count} segment file(s) record a different acquisition:").format(
+                count=f"{len(segments):,}"),
+            [translate("VerifyResultDialog", "{file} records a different acquisition than "
+                       "{expected}").format(file=s.get("file"), expected=s.get("expected_file"))
+             for s in segments],
+        ))
+    unreached = int(result.get("logical_unreached_bytes") or 0)
+    if unreached:
+        spans: list[dict[str, Any]] = result.get("logical_unreached_spans") or []
+        line = translate(
+            "VerifyResultDialog",
+            "{count} byte(s) of the AD1's logical space are not reached from its item tree.",
+        ).format(count=f"{unreached:,}")
+        if spans:
+            parts.append(_listing(
+                line + " " + translate(
+                    "VerifyResultDialog", "Where (the reader lists at most 5 spans):"),
+                [translate("VerifyResultDialog", "{length} byte(s) at byte {offset}").format(
+                    length=f"{int(s.get('length') or 0):,}",
+                    offset=f"{int(s.get('offset') or 0):,}") for s in spans],
+            ))
+        else:
+            parts.append(f"<p style='color:{_RED}'>{_esc(line)}</p>")
+    return parts
 
 
 def _value_rows(stored: object, computed: object, match: bool) -> str:
@@ -83,6 +179,7 @@ def verify_report_html(
     checks: list[dict[str, Any]] = result.get("container_checks") or []
     md5_checked = int(result.get("entry_md5_checked") or 0)
     sha1_checked = int(result.get("entry_sha1_checked") or 0)
+    damaged = verify_damage_found(result)
 
     parts: list[str] = []
     if not stored:
@@ -91,6 +188,10 @@ def verify_report_html(
                 translate("VerifyResultDialog", "This acquisition recorded no hash of its whole "
                           "data; the hashes it recorded of its files were checked.")
                 if md5_checked or sha1_checked else
+                translate("VerifyResultDialog", "This acquisition recorded no hash of its whole "
+                          "data; the files it recorded a hash of hold no collected content "
+                          "and were not checked.")
+                if result.get("entry_content_not_collected") else
                 translate("VerifyResultDialog",
                           "This acquisition recorded no hash to verify against.")
             )
@@ -104,6 +205,16 @@ def verify_report_html(
                 "VerifyResultDialog", "This acquisition recorded no hash to verify against."
             )
         parts.append(f"<p><b>{_esc(headline)}</b></p>")
+    elif result.get("match") and damaged:
+        parts.append(
+            f"<p style='color:{_AMBER}'><b>"
+            + _esc(translate(
+                "VerifyResultDialog",
+                "The acquisition's own recorded hash matches its data, but damage was found "
+                "while reading it (see below)",
+            ))
+            + "</b></p>"
+        )
     elif result.get("match"):
         parts.append(
             f"<p style='color:{_GREEN}'><b>"
@@ -149,6 +260,14 @@ def verify_report_html(
             + "</p>"
         )
 
+    damage = _damage_rows(result)
+    if damage:
+        parts.append(
+            "<h3>" + _esc(translate("VerifyResultDialog", "Damage found while reading"))
+            + "</h3>"
+        )
+        parts.extend(damage)
+
     if stored:
         heading = (
             translate("VerifyResultDialog", "Hash of the whole image")
@@ -165,7 +284,9 @@ def verify_report_html(
             "<h3>" + _esc(translate("VerifyResultDialog", "Recorded hashes of the files"))
             + "</h3>"
         )
-        if not md5_checked and not sha1_checked:
+        # A file recorded with a hash but not its content has one, unchecked:
+        # it is listed below instead.
+        if not md5_checked and not sha1_checked and not result.get("entry_content_not_collected"):
             parts.append(
                 "<p>" + _esc(translate("VerifyResultDialog",
                                        "No file has a recorded hash to check.")) + "</p>"
@@ -189,15 +310,18 @@ def verify_report_html(
                     "{missing} of {total} file(s) have no recorded {algorithm} and were not "
                     "checked against one.",
                 ).format(missing=f"{missing:,}", total=f"{total:,}", algorithm=algorithm))
-        unchecked_sha1 = int(result.get("entry_sha1_unchecked") or 0)
-        if unchecked_sha1:
-            not_checked.append(translate(
-                "VerifyResultDialog",
-                "{count} file(s) have a recorded SHA-1, which was not checked: the reader "
-                "checks an L01's recorded MD5 only.",
-            ).format(count=f"{unchecked_sha1:,}"))
         if not_checked:
             parts.append("<p><b>" + "<br>".join(_esc(t) for t in not_checked) + "</b></p>")
+        # Skipped by the reader, so in none of the counts above.
+        not_collected = [str(p) for p in result.get("entry_content_not_collected") or []]
+        if not_collected:
+            line = translate(
+                "VerifyResultDialog",
+                "{count} of {total} file(s) were not checked against any recorded hash: the "
+                "acquisition did not collect their content:",
+            ).format(count=f"{len(not_collected):,}", total=f"{total:,}")
+            paths = "<br>".join(f"<code>{_esc(p)}</code>" for p in not_collected)
+            parts.append(f"<p><b>{_esc(line)}</b><br>{paths}</p>")
 
     if checks:
         parts.append(

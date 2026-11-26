@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-303 checks in total.
+312 checks in total.
 
 ### Sources
 
@@ -41,7 +41,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [EWF2 acquisition (.Ex01)](#ewf2-acquisition-ex01) | 1 | not tested | not tested | 2 | not tested | not tested |
 | [AFF acquisition (.aff/.afd)](#aff-acquisition-affafd) | 1 | not tested | not tested | 3 | not tested | not tested |
 | [AFF4 acquisition (.aff4)](#aff4-acquisition-aff4) | 1 | not tested | not tested | 1 | not tested | not tested |
-| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 1 | 1 |
+| [EnCase logical evidence (.L01)](#encase-logical-evidence-l01) | 2 | 1 | 1 | 1 | 2 | 1 |
 | [FTK Imager logical evidence (.ad1)](#ftk-imager-logical-evidence-ad1) | 2 | 1 | 1 | 2 | 1 | 1 |
 | [Apple disk image (.dmg/.sparseimage/.sparsebundle)](#apple-disk-image-dmgsparseimagesparsebundle) | 2 | not tested | not tested | 7 | not tested | not tested |
 | [VHD/VHDX virtual disk](#vhdvhdx-virtual-disk) | 1 | not tested | not tested | 4 | not tested | not tested |
@@ -54,17 +54,17 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 |---|---|---|---|---|---|---|
 | [NTFS](#ntfs) | not tested | not tested | not tested | 6 | not tested | not tested |
 | [FAT32](#fat32) | not tested | not tested | not tested | 2 | not tested | not tested |
-| [FAT16](#fat16) | not tested | not tested | not tested | 3 | not tested | not tested |
+| [FAT16](#fat16) | not tested | not tested | not tested | 4 | not tested | not tested |
 | [FAT12](#fat12) | not tested | not tested | not tested | 2 | not tested | not tested |
-| [exFAT](#exfat) | not tested | not tested | not tested | 4 | not tested | not tested |
-| [ext2/3/4](#ext234) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [exFAT](#exfat) | not tested | not tested | not tested | 6 | not tested | not tested |
+| [ext2/3/4](#ext234) | not tested | not tested | not tested | 3 | 1 | not tested |
 | [F2FS](#f2fs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [HFS+](#hfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [APFS](#apfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [XFS](#xfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [Btrfs](#btrfs) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [ReFS](#refs) | not tested | not tested | not tested | 1 | not tested | not tested |
-| [QNX6](#qnx6) | not tested | not tested | not tested | not tested | not tested | not tested |
+| [QNX6](#qnx6) | not tested | not tested | not tested | 1 | not tested | not tested |
 | [QNX4](#qnx4) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [QNX IFS](#qnx-ifs) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [ETFS](#etfs) | not tested | not tested | not tested | not tested | not tested | not tested |
@@ -269,6 +269,7 @@ No forensic checks.
 - **Read-only Media** — An L01 opens, reads and verifies when its file is chmod 0o444 ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_works_on_readonly_media`)
 - **Known-output Verification** — Every MD5 EnCase recorded for a file of the L01 matches the file as read ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_recorded_md5s_match`)
 - **Completeness** — Every entry of the L01 that holds data is in the tree exactly once, an entry with data and entries beneath it as well ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_every_entry_with_data_is_shown_once`)
+- **Completeness** — An L01 with an unreadable chunk verifies to the end: every unreadable file is listed, also those with no recorded hash, and the result is never a clean pass ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_damaged_l01_reports_every_unreadable_entry`)
 - **Reproducibility** — Opening an L01 twice gives the same tree and the same bytes ([test_logical_evidence.py](../../crush/tests/test_logical_evidence.py), `test_l01_reproducible`)
 
 #### FTK Imager logical evidence (.ad1)
@@ -323,7 +324,7 @@ No forensic checks.
 #### NTFS
 
 - **Known-output Verification** — raw_ntfs.img.gz's 475 live files must all read back to their committed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_single_volume_content_matches`)
-- **Known-output Verification** — Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_recovers_known_deleted_files`)
+- **Known-output Verification** — Of two deliberately deleted NTFS test files, the resident one must recover to its reference hash, and the one whose clusters another deleted record also claims must be listed and refuse to read with the reason ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_ntfs_deleted_files_recover_or_say_why`)
 - **Known-output Verification** — Every alternate data stream of raw_ntfs_streams.img.gz that stores data must be listed beside its file and read back to The Sleuth Kit's reference hash ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_every_stream_matches_the_sleuth_kit`)
 - **Known-output Verification** — Every file of raw_ntfs_windows.img.gz that Windows hashed and the reader decodes (sparse, NTFS-compressed, overlay-compressed with XPRESS) must read back to the SHA-256 Windows itself reported ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_content_matches_what_windows_hashed`)
 - **Known-output Verification** — The three online-only cloud placeholders of raw_ntfs_windows.img.gz, which Windows itself refused to read, must be listed at their recorded size and refuse to read with the reason, never read back as zeros ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_cloud_placeholders_are_listed_and_say_why_they_cannot_be_read`)
@@ -332,7 +333,7 @@ No forensic checks.
 
 #### FAT32
 
-- **Known-output Verification** — Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_recovers_content_with_first_character_lost`)
+- **Known-output Verification** — Three deliberately deleted FAT32 test files whose first cluster is ambiguous (zeroed high word on a volume with cluster numbers of 0x10000 or above) must be listed and refuse to read with the reason ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_fat32_deleted_files_with_an_ambiguous_first_cluster_are_refused`)
 - **Known-output Verification** — FAT32 entries show their stored date/time as stored, with no time zone ([test_stored_times.py](../../crush/tests/test_stored_times.py), `test_fat32`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
@@ -341,6 +342,7 @@ No forensic checks.
 - **Known-output Verification** — Every file on a FAT16 and a TFAT16 volume reads back at its path with the bytes hashed from the mounted volume ([test_raw_image_fat.py](../../crush/tests/test_raw_image_fat.py), `test_fat16_every_listed_file_reads_back_as_written`)
 - **Known-output Verification** — Three deliberately deleted files on a FAT16 and a TFAT16 volume must recover content exactly, per reference hashes ([test_raw_image_fat.py](../../crush/tests/test_raw_image_fat.py), `test_fat16_deleted_files_are_recovered`)
 - **Known-output Verification** — The folder a TFAT16 volume keeps its files under is shown as stored, with every file under it ([test_raw_image_fat.py](../../crush/tests/test_raw_image_fat.py), `test_transaction_safe_volume_keeps_its_files_under_one_root_folder`)
+- **Known-output Verification** — A recoverable deleted FAT16 file says its content is a candidate and that its layout is assumed, not that its content is intact ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_fat_recovery_is_marked_unverified`)
 - *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### FAT12
@@ -351,6 +353,8 @@ No forensic checks.
 
 #### exFAT
 
+- **Known-output Verification** — An exFAT entry set in an allocated cluster no live folder reaches is listed in $Orphaned, not as deleted, with the content its clusters hold and marked unverified ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_exfat_orphan_entry_is_listed_in_orphaned`)
+- **Known-output Verification** — An exFAT file whose ValidDataLength is below its size reads its clusters up to ValidDataLength and zeros after, and says so on the file ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_exfat_past_valid_data_is_on_the_file`)
 - **Known-output Verification** — An empty exFAT file must read as no bytes, never as a cluster of other data from the volume ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_empty_exfat_file_reads_as_no_bytes`)
 - **Known-output Verification** — An exFAT file whose FAT chain ends before its recorded size must fail to read, naming the chain, never read short ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_file_with_a_cut_cluster_chain_is_refused`)
 - **Known-output Verification** — Three deliberately deleted exFAT test files must recover, names and content, to their reference hashes ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_exfat_recovers_all_three_with_intact_names`)
@@ -359,7 +363,11 @@ No forensic checks.
 
 #### ext2/3/4
 
-No forensic checks.
+- **Known-output Verification** — A file flagged encrypted (fscrypt) must read as the bytes stored through the end of its last block, matching the image's own blocks, and say on the file and the volume that it is ciphertext as stored ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_flagged_file_reads_as_stored_through_its_last_block`)
+- **Known-output Verification** — A file without the encrypt flag on the same volume must read at its recorded size, with no encryption status ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_unflagged_file_beside_it_reads_at_its_size`)
+- **Known-output Verification** — A name whose ext inode is blank stays listed, without content, with the reason ([test_raw_image_reader_notes.py](../../crush/tests/test_raw_image_reader_notes.py), `test_ext_unread_inode_names_its_reason`)
+- **Completeness** — A file whose block map points past the end of the volume, in an image that is whole, must be refused with the map's reason, never as an image that ends early ([test_raw_image_ext.py](../../crush/tests/test_raw_image_ext.py), `test_lost_block_map_is_named_not_put_down_to_the_image_end`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Reproducibility
 
 #### F2FS
 
@@ -392,7 +400,8 @@ No forensic checks.
 
 #### QNX6
 
-No forensic checks.
+- **Known-output Verification** — A QNX6 volume with 4, 8, 16 or 32 KiB blocks must list its files and read back the bytes written, through one and two levels of block pointers ([test_raw_image_vfs.py](../../crush/tests/test_raw_image_vfs.py), `test_files_are_listed_and_read_back`)
+- *Not tested:* Source Immutability, No Side Effects, Read-only Media, Completeness, Reproducibility
 
 #### QNX4
 

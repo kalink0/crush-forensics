@@ -22,7 +22,7 @@ import shutil
 import tempfile
 
 from PySide6.QtCore import (
-    QObject, QSize, QThread, Qt, Signal, QUrl, QSettings, QTimer,
+    QEvent, QObject, QPoint, QRect, QSize, QThread, Qt, Signal, QUrl, QSettings, QTimer,
 )
 from PySide6.QtGui import (
     QCloseEvent,
@@ -66,7 +66,8 @@ from PySide6.QtWidgets import (
 
 import crush
 from crush.core import tempdir
-from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS
+from crush.core.hashing import HashStore
+from crush.core.vfs import VFS, VFSNode, DirectoryVFS, FileVFS, has_no_content
 from crush.core.vfs_stream import CopyCancelledError
 from crush.parsers.hex_fallback import HexFallbackParser
 from crush.ui import extract_dialog, i18n, relaunch
@@ -151,7 +152,7 @@ class _LoadSourceWorker(QObject):
                 from crush.core.mounted import ZipWithITunesBackupVFS
 
                 vfs = self._session.add_source_vfs(
-                    ZipWithITunesBackupVFS(self._path, password=self._password)
+                    ZipWithITunesBackupVFS(self._path, password=self._password), self._path,
                 )
             else:
                 vfs = self._session.add_source(
@@ -328,6 +329,142 @@ class _DockTitleBar(QWidget):
             mw._dock_to_default(self._dock)  # type: ignore[attr-defined]
 
 
+_NO_EDGE = Qt.Edge(0)
+_EDGE_CURSORS: dict[int, Qt.CursorShape] = {
+    Qt.Edge.LeftEdge.value: Qt.CursorShape.SizeHorCursor,
+    Qt.Edge.RightEdge.value: Qt.CursorShape.SizeHorCursor,
+    Qt.Edge.TopEdge.value: Qt.CursorShape.SizeVerCursor,
+    Qt.Edge.BottomEdge.value: Qt.CursorShape.SizeVerCursor,
+    (Qt.Edge.TopEdge | Qt.Edge.LeftEdge).value: Qt.CursorShape.SizeFDiagCursor,
+    (Qt.Edge.BottomEdge | Qt.Edge.RightEdge).value: Qt.CursorShape.SizeFDiagCursor,
+    (Qt.Edge.TopEdge | Qt.Edge.RightEdge).value: Qt.CursorShape.SizeBDiagCursor,
+    (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge).value: Qt.CursorShape.SizeBDiagCursor,
+}
+
+
+class _FloatingDockResizer(QObject):
+    """Resizes a floating panel from its edges and corners.
+
+    A floating panel with our title bar is a frameless window, so the
+    window system draws no resize border and Qt's own few-pixel frame is
+    hard to hit (and resizes by grabbing the mouse, which Wayland does not
+    allow). This filters the panel window's mouse events at the window
+    level, so it sees them whatever child is under the pointer, and hands
+    a press on an edge to the window system (startSystemResize), falling
+    back to resizing by the mouse delta where that is not supported.
+    Installed on the application only while the panel floats."""
+
+    MARGIN = 6
+
+    def __init__(self, dock: QDockWidget) -> None:
+        super().__init__(dock)
+        self._dock = dock
+        self._active = False
+        self._hover = _NO_EDGE
+        # Manual fallback: (edges, press position, geometry at press).
+        self._drag: tuple[Qt.Edge, QPoint, QRect] | None = None
+
+    @classmethod
+    def for_dock(cls, dock: QDockWidget) -> "_FloatingDockResizer":
+        found = dock.findChild(cls)
+        return found if found is not None else cls(dock)
+
+    def set_active(self, active: bool) -> None:
+        app = QApplication.instance()
+        if active == self._active or app is None:
+            return
+        self._active = active
+        if active:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
+            self._drag = None
+            self._set_hover(_NO_EDGE)
+
+    def edges_at(self, global_pos: QPoint) -> Qt.Edge:
+        pos = self._dock.mapFromGlobal(global_pos)
+        rect = self._dock.rect()
+        if not rect.contains(pos):
+            return _NO_EDGE
+        m = self.MARGIN
+        edges = _NO_EDGE
+        if pos.x() < m:
+            edges |= Qt.Edge.LeftEdge
+        elif pos.x() >= rect.width() - m:
+            edges |= Qt.Edge.RightEdge
+        if pos.y() < m:
+            edges |= Qt.Edge.TopEdge
+        elif pos.y() >= rect.height() - m:
+            edges |= Qt.Edge.BottomEdge
+        return edges
+
+    def _set_hover(self, edges: Qt.Edge) -> None:
+        if edges == self._hover:
+            return
+        self._hover = edges
+        shape = _EDGE_CURSORS.get(edges.value)
+        if shape is None:
+            self._dock.unsetCursor()
+        else:
+            self._dock.setCursor(shape)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        etype = event.type()
+        if etype not in (
+            QEvent.Type.MouseMove,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+            QEvent.Type.Leave,
+        ):
+            return False
+        if not self._dock.isFloating() or obj is not self._dock.windowHandle():
+            return False
+        if etype == QEvent.Type.Leave:
+            if self._drag is None:
+                self._set_hover(_NO_EDGE)
+            return False
+        global_pos = event.globalPosition().toPoint()  # type: ignore[attr-defined]
+        if etype == QEvent.Type.MouseMove:
+            if self._drag is not None:
+                self._drag_to(global_pos)
+                return True
+            if event.buttons() == Qt.MouseButton.NoButton:  # type: ignore[attr-defined]
+                self._set_hover(self.edges_at(global_pos))
+            return False
+        if etype == QEvent.Type.MouseButtonRelease:
+            if self._drag is not None:
+                self._drag = None
+                return True
+            return False
+        # MouseButtonPress
+        if event.button() != Qt.MouseButton.LeftButton:  # type: ignore[attr-defined]
+            return False
+        edges = self.edges_at(global_pos)
+        if edges == _NO_EDGE:
+            return False
+        handle = self._dock.windowHandle()
+        if handle is not None and handle.startSystemResize(edges):
+            return True
+        self._drag = (edges, global_pos, self._dock.geometry())
+        return True
+
+    def _drag_to(self, global_pos: QPoint) -> None:
+        assert self._drag is not None
+        edges, start, geo = self._drag
+        delta = global_pos - start
+        minimum = self._dock.minimumSizeHint().expandedTo(self._dock.minimumSize())
+        rect = QRect(geo)
+        if edges & Qt.Edge.LeftEdge:
+            rect.setLeft(min(geo.left() + delta.x(), geo.right() + 1 - minimum.width()))
+        if edges & Qt.Edge.RightEdge:
+            rect.setRight(max(geo.right() + delta.x(), geo.left() - 1 + minimum.width()))
+        if edges & Qt.Edge.TopEdge:
+            rect.setTop(min(geo.top() + delta.y(), geo.bottom() + 1 - minimum.height()))
+        if edges & Qt.Edge.BottomEdge:
+            rect.setBottom(max(geo.bottom() + delta.y(), geo.top() - 1 + minimum.height()))
+        self._dock.setGeometry(rect)
+
+
 class _RecentFileButton(QWidget):
     opened = Signal(str)
 
@@ -441,6 +578,14 @@ def _copy_export_file(
     return (hasher.hexdigest() if hasher is not None else None), total
 
 
+def _no_content_hash_field(node: VFSNode) -> str:
+    """What crush-export-hashes.txt holds instead of a digest for an entry
+    whose status says no content is read or stored (vfs.has_no_content):
+    its file is exported (empty), but the SHA-256 of no bytes would pass
+    for the hash of real content. English, as the rest of the file."""
+    return f"not hashed: no content read ({node.status})"
+
+
 def _write_export_failed_file(base: Path, failed: list[tuple[str, str]]) -> None:
     """The files an export could not read, beside its hash list: one line
     each, evidence path and reason."""
@@ -464,13 +609,15 @@ class _ExportWorker(QObject):
     cancelled = Signal(str, int)
 
     def __init__(
-        self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None
+        self, vfs: VFS, node: VFSNode, dest_dir: str, integrity: bool, window_id: str | None = None,
+        hashes: HashStore | None = None,
     ) -> None:
         super().__init__()
         self._vfs = vfs
         self._node = node
         self._dest_dir = Path(dest_dir)
         self._integrity = integrity
+        self._hashes = hashes  # the window's store: integrity hashes are kept there
         self._hash_lines: list[str] = []
         self._hash_base: Path | None = None
         self._rename_lines: list[str] = []
@@ -600,6 +747,12 @@ class _ExportWorker(QObject):
                 rel_path = str(target.relative_to(self._hash_base))
             except Exception:
                 rel_path = target.name
+        if has_no_content(node):
+            self._hash_lines.append(f"{_no_content_hash_field(node)}  {total}  {rel_path}")
+            self._logger.info("INTEGRITY export not hashed: no content read  path=%s", target)
+            return
+        if self._hashes is not None:
+            self._hashes.record(self._vfs, node, {"sha256": bytes.fromhex(digest)})
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
@@ -697,11 +850,13 @@ class _ExportMultiWorker(QObject):
         integrity: bool,
         filter_text: str,
         window_id: str | None = None,
+        hashes: HashStore | None = None,
     ) -> None:
         super().__init__()
         self._entries = entries
         self._dest_dir = Path(dest_dir)
         self._integrity = integrity
+        self._hashes = hashes  # as _ExportWorker._hashes
         self._filter_text = filter_text
         self._hash_lines: list[str] = []
         self._rename_lines: list[str] = []
@@ -798,6 +953,12 @@ class _ExportMultiWorker(QObject):
         self._exported += 1
         if digest is None:
             return
+        if has_no_content(node):
+            self._hash_lines.append(f"{_no_content_hash_field(node)}  {total}  {rel_path}")
+            self._logger.info("INTEGRITY export not hashed: no content read  path=%s", target)
+            return
+        if self._hashes is not None:
+            self._hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})
         self._hash_lines.append(f"{digest}  {total}  {rel_path}")
         self._logger.info("INTEGRITY export sha256=%s  size=%d  path=%s", digest, total, target)
 
@@ -1522,6 +1683,7 @@ class MainWindow(QMainWindow):
         self._apply_saved_theme()
         self._apply_saved_integrity_mode()
         self._apply_saved_prescan_workers()
+        self._apply_saved_container_names()
 
     # ------------------------------------------------------------------
     # Layout
@@ -1638,6 +1800,7 @@ class MainWindow(QMainWindow):
             lambda node, vfs: self._open_in_new_window(node, vfs, as_disk_image=True)
         )
         self._fs_panel.send_to_peach_batch_requested.connect(self._send_to_peach_batch)
+        self._fs_panel.hash_requested.connect(self._compute_hashes)
         self._fs_dock = QDockWidget(translate("MainWindow", "Filesystem"), self)
         self._fs_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._fs_dock.setFeatures(
@@ -1656,6 +1819,10 @@ class MainWindow(QMainWindow):
         # Right dock: properties panel
         self._props_panel = PropertiesPanel(self)
         self._props_panel.format_info_requested.connect(self._show_format_info)
+        self._props_panel.hash_requested.connect(
+            lambda node, vfs, algorithms: self._compute_hashes([(node, vfs)], algorithms)
+        )
+        self._props_panel.set_hash_lookup(self.session.hashes.get)
         self._props_dock = QDockWidget(translate("MainWindow", "Properties"), self)
         self._props_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self._props_dock.setFeatures(
@@ -1807,6 +1974,21 @@ class MainWindow(QMainWindow):
         )
         self._always_hex_action.toggled.connect(self._set_always_hex)
         view_menu.addAction(self._always_hex_action)
+        self._container_names_action = QAction(
+            translate("MainWindow", "Show iOS Container Identifiers"),
+            self,
+            checkable=True,
+        )
+        self._container_names_action.setToolTip(
+            translate(
+                "MainWindow",
+                "Show iOS container folders (apps, app groups, extensions, "
+                "system containers) by the identifier of their owner in their "
+                "metadata plist instead of their GUID folder name",
+            )
+        )
+        self._container_names_action.toggled.connect(self._set_show_container_names)
+        view_menu.addAction(self._container_names_action)
         view_menu.addAction(translate("MainWindow", "Close all tabs"), self._close_all_tabs)
         view_menu.addSeparator()
         theme_menu = view_menu.addMenu(translate("MainWindow", "Theme"))
@@ -2346,7 +2528,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Show a source another window loaded (_hand_over_to_new_window)
         as if this window had loaded it."""
-        self.session.add_source_vfs(vfs)
+        self.session.add_source_vfs(vfs, path)
         self._logger.info("Loading source: %s", path)
         if source_hash is not None:
             # Hashed while loading, in the window that loaded it; said here
@@ -2590,7 +2772,8 @@ class MainWindow(QMainWindow):
         self._status.showMessage(translate("MainWindow", "Exporting…"))
         self._logger.info("Export requested: %s -> %s", node.path, dest_dir)
         export_worker = _ExportWorker(
-            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id
+            vfs, node, dest_dir, self.session.integrity_mode, window_id=self._window_id,
+            hashes=self.session.hashes,
         )
         self._export_progress = _CancellableProgress(
             translate("MainWindow", "Exporting…"), translate("MainWindow", "Export"),
@@ -2904,7 +3087,7 @@ class MainWindow(QMainWindow):
         self._logger.info("Multi-export: %d files, filter=%r -> %s", n, filter_text, dest_dir)
         multi_worker = _ExportMultiWorker(
             entries, dest_dir, self.session.integrity_mode, filter_text,
-            window_id=self._window_id,
+            window_id=self._window_id, hashes=self.session.hashes,
         )
         self._export_progress = _CancellableProgress(
             exporting, translate("MainWindow", "Export filtered results"),
@@ -3162,9 +3345,7 @@ class MainWindow(QMainWindow):
             self._warn_unreadable(node, exc)
             return
         if parser is None:
-            self._status.showMessage(
-                translate("MainWindow", "No parser found for {name}").format(name=node.name)
-            )
+            self._warn_unrecognised_folder(node)
             return
 
         try:
@@ -3616,100 +3797,11 @@ class MainWindow(QMainWindow):
             if "recorded_files" in result:  # type: ignore[operator]
                 _on_recorded_files_done(result)  # type: ignore[arg-type]
                 return
-            stored: dict[str, str] = result.get("stored") or {}  # type: ignore[attr-defined]
-            match = result.get("match")  # type: ignore[attr-defined]
-            checksum_errors = result.get("checksum_errors") or []  # type: ignore[attr-defined]
-            missing_pages = result.get("missing_page_count") or 0  # type: ignore[attr-defined]
-            padded = result.get("padded_chunks") or []  # type: ignore[attr-defined]
-            # Found while reading, whether or not a hash was stored: chunks whose
-            # own checksum fails, pages the acquisition declares but doesn't hold.
-            findings = []
-            if checksum_errors:
-                findings.append(translate(
-                    "MainWindow", "{count} chunk(s) fail their own checksum."
-                ).format(count=f"{len(checksum_errors):,}"))
-            if padded:
-                findings.append(translate(
-                    "MainWindow",
-                    "{count} chunk(s) hold less data than the bytes they cover; zeros are "
-                    "read in their place.",
-                ).format(count=f"{len(padded):,}"))
-            if missing_pages:
-                findings.append(translate(
-                    "MainWindow",
-                    "{count} page(s) are not in the acquisition's files; they read as the "
-                    "bad-sector marker.",
-                ).format(count=f"{missing_pages:,}"))
-            # What a container records about its own data besides a hash of
-            # the disk (a UDIF image's checksums, an AFF4's stream, chunk and
-            # map hashes), recomputed by the reader -- every one listed.
-            container_checks: list[dict[str, Any]] = (
-                result.get("container_checks") or []  # type: ignore[attr-defined]
+            # Found while reading, whether or not a hash was stored.
+            findings = verify_findings(result)  # type: ignore[arg-type]
+            self._status.showMessage(
+                verify_status_tag(result).format(path=node.path)  # type: ignore[arg-type]
             )
-            container_bad = [c for c in container_checks if not c.get("match")]
-            if container_bad:
-                findings.append(translate(
-                    "MainWindow", "{count} of the container's own checks do not match."
-                ).format(count=f"{len(container_bad):,}"))
-            # Logical evidence also records a hash of each file it holds.
-            files_checked = (
-                (result.get("entry_md5_checked") or 0)  # type: ignore[attr-defined]
-                + (result.get("entry_sha1_checked") or 0)  # type: ignore[attr-defined]
-            )
-            files_bad = sorted(set(
-                list(result.get("entry_md5_mismatched") or [])  # type: ignore[attr-defined]
-                + list(result.get("entry_sha1_mismatched") or [])  # type: ignore[attr-defined]
-            ))
-            if files_bad:
-                findings.append(translate(
-                    "MainWindow", "{count} file(s) do not match their recorded hash."
-                ).format(count=f"{len(files_bad):,}"))
-            if files_checked:
-                if not stored:
-                    tag = (
-                        translate("MainWindow", "{path}  [verify: no stored hash, file hash "
-                                  "MISMATCH]")
-                        if files_bad else
-                        translate("MainWindow", "{path}  [verify: no stored hash, file hashes "
-                                  "match]")
-                    )
-                elif match:
-                    tag = (
-                        translate("MainWindow", "{path}  [verify: MATCH, file hash MISMATCH]")
-                        if files_bad else
-                        translate("MainWindow", "{path}  [verify: MATCH, file hashes match]")
-                    )
-                else:
-                    tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
-                # "match" must not read as "all checked".
-                not_checked = int(
-                    result.get("entry_md5_missing") or 0  # type: ignore[attr-defined]
-                )
-                if not_checked:
-                    tag = translate(
-                        "MainWindow", "{tag} [{count} file(s) without a recorded MD5, not checked]"
-                    ).format(tag=tag, count=f"{not_checked:,}")
-            elif not stored:
-                if container_checks:
-                    tag = (
-                        translate("MainWindow", "{path}  [verify: no stored hash, container "
-                                  "check MISMATCH]")
-                        if container_bad else
-                        translate("MainWindow", "{path}  [verify: no stored hash, container "
-                                  "checks match]")
-                    )
-                else:
-                    tag = translate("MainWindow", "{path}  [verify: no stored hash]")
-            elif match:
-                tag = (
-                    translate("MainWindow", "{path}  [verify: MATCH, container check "
-                              "MISMATCH]")
-                    if container_bad else
-                    translate("MainWindow", "{path}  [verify: MATCH]")
-                )
-            else:
-                tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
-            self._status.showMessage(tag.format(path=node.path))
             # One block per check, stored and recomputed value on lines of
             # their own; "no hash recorded" is said plainly, never shown as
             # a silent success.
@@ -4259,11 +4351,14 @@ class MainWindow(QMainWindow):
                 return None
             if outcome.status != "ok":
                 raise OSError(outcome.message or "copy failed")
-            if self.session.integrity_mode:
+            if self.session.integrity_mode and has_no_content(node):
+                self._logger.info("INTEGRITY not hashed: no content read  path=%s", node.path)
+            elif self.session.integrity_mode:
                 self._logger.info(
                     "INTEGRITY sha256=%s  size=%d  path=%s",
                     outcome.sha256, outcome.bytes_copied, node.path,
                 )
+                self._record_integrity_hash(vfs, node, outcome.sha256)
             self._external_temp_paths.append(tmp_path)
             return tmp_path
         except Exception as exc:
@@ -5615,11 +5710,13 @@ class MainWindow(QMainWindow):
         # included: Qt's own drag of a floating dock grabs the mouse and
         # move()s the window, neither of which Wayland allows, so the panel
         # stuck after its first move. The title bar hands the move to the
-        # window system (_DockTitleBar.mousePressEvent).
+        # window system (_DockTitleBar.mousePressEvent). Being frameless, it
+        # also gets our edge resizing (_FloatingDockResizer).
         if floating:
             dock.setTitleBarWidget(_DockTitleBar(dock.windowTitle(), dock))
         else:
             dock.setTitleBarWidget(None)
+        _FloatingDockResizer.for_dock(dock).set_active(floating)
 
     def _dock_to_default(self, dock: QDockWidget) -> None:
         area = self._dock_defaults.get(dock, Qt.DockWidgetArea.LeftDockWidgetArea)
@@ -5816,6 +5913,7 @@ class MainWindow(QMainWindow):
 
     def _on_export_thread_finished(self) -> None:
         self._export_thread = None
+        self._props_panel.refresh_hashes()  # integrity hashes of exported files
 
     def _setup_logging(self) -> None:
         self._raw_logger = logging.getLogger("crush")
@@ -6146,6 +6244,18 @@ class MainWindow(QMainWindow):
         self._settings.setValue("theme", "system")
         self._logger.info("Theme set to system default")
 
+    def _apply_saved_container_names(self) -> None:
+        enabled = self._settings.value("show_ios_container_names", True, type=bool)
+        self._container_names_action.setChecked(enabled)
+        # setChecked emits toggled only on a change: apply it either way.
+        self._fs_panel.set_show_container_names(enabled)
+
+    def _set_show_container_names(self, enabled: bool) -> None:
+        self._fs_panel.set_show_container_names(enabled)
+        self._settings.setValue("show_ios_container_names", enabled)
+        if hasattr(self, "_logger"):
+            self._logger.info("Show iOS container identifiers for container folders: %s", enabled)
+
     def _set_always_hex(self, enabled: bool) -> None:
         self._always_hex = enabled
         if hasattr(self, "_logger"):
@@ -6189,8 +6299,44 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_logger"):
             self._logger.info("Integrity mode %s", state)
 
+    def _compute_hashes(self, entries: list, algorithms: object) -> None:
+        """Compute Hash: hash *entries* (folders all the way down) with the
+        analyst's *algorithms*, keep the values, show the result."""
+        from crush.ui.hash_dialog import HashResultDialog, compute_hashes_with_progress
+
+        entries = [(node, vfs) for node, vfs in entries if node is not None and vfs is not None]
+        if not entries:
+            return
+        algs = tuple(algorithms)  # type: ignore[call-overload]
+        self._logger.info(
+            "HASH requested (%s): %s", ", ".join(algs),
+            entries[0][0].path if len(entries) == 1 else f"{len(entries)} entries",
+        )
+        source_names = {id(vfs): self.session.source_label(vfs) for _, vfs in entries}
+        run = compute_hashes_with_progress(
+            self, entries, algs, self.session.hashes, window_id=self._window_id,
+            source_names=source_names,
+        )
+        self._props_panel.refresh_hashes()
+        dialog = HashResultDialog(run, self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _record_integrity_hash(self, vfs: VFS, node: VFSNode, digest: str | None) -> None:
+        """An integrity SHA-256 covers the same bytes as Compute Hash: keep
+        it, so the Properties panel shows it; a later Compute Hash reads the
+        entry again and is compared against it."""
+        if not digest:
+            return
+        self.session.hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})
+        self._props_panel.refresh_hashes()
+
     def _hash_node_if_integrity(self, node: VFSNode, vfs: VFS) -> None:
         if not self.session.integrity_mode or node.is_dir:
+            return
+        if has_no_content(node):
+            # The SHA-256 of no bytes would pass for the hash of real content.
+            self._logger.info("INTEGRITY not hashed: no content read  path=%s", node.path)
             return
         import hashlib
 
@@ -6218,6 +6364,7 @@ class MainWindow(QMainWindow):
             else:
                 digest, total = _hash()
             self._logger.info("INTEGRITY sha256=%s  size=%d  path=%s", digest, total, node.path)
+            self._record_integrity_hash(vfs, node, digest)
         except LoadCancelled:
             # As for a source: the file opens, only its hash is missing.
             self._logger.warning(
@@ -6239,6 +6386,19 @@ class MainWindow(QMainWindow):
         )
         self._status.showMessage(text)
         QMessageBox.warning(self, translate("MainWindow", "Cannot open file"), text)
+
+    def _warn_unrecognised_folder(self, node: VFSNode) -> None:
+        """No folder format recognises the folder *node*: say so in a box,
+        not only in the status bar -- an Open that does nothing visible
+        reads as a missed click. (A file always has a parser: the hex
+        fallback.)"""
+        text = translate(
+            "MainWindow",
+            "No viewer recognises the folder {path!r} by its files; "
+            "open a file or subfolder inside it.",
+        ).format(path=node.path)
+        self._status.showMessage(text)
+        QMessageBox.warning(self, translate("MainWindow", "Cannot open folder"), text)
 
     def _read_hex_bytes(self, vfs: VFS, node: VFSNode) -> tuple[bytes | None, str]:
         """The node's bytes, or None and why they couldn't be read."""
@@ -6902,6 +7062,128 @@ def _regular_file_path(node: VFSNode, vfs: VFS) -> Path | None:
         return path if stat.S_ISREG(path.lstat().st_mode) else None
     except OSError:
         return None
+
+
+def verify_findings(result: dict[str, Any]) -> list[str]:
+    """What the reader found while verifying, beside the hashes, worded for
+    the top of the report: chunks whose own checksum fails or that hold less
+    data than they cover, pages the acquisition declares but doesn't hold,
+    container checks and file hashes that don't match. The damage
+    verify_report_html() lists item by item is not repeated here."""
+    checksum_errors = result.get("checksum_errors") or []
+    missing_pages = result.get("missing_page_count") or 0
+    padded = result.get("padded_chunks") or []
+    findings = []
+    if checksum_errors:
+        findings.append(translate(
+            "MainWindow", "{count} chunk(s) fail their own checksum."
+        ).format(count=f"{len(checksum_errors):,}"))
+    if padded:
+        findings.append(translate(
+            "MainWindow",
+            "{count} chunk(s) hold less data than the bytes they cover; zeros are "
+            "read in their place.",
+        ).format(count=f"{len(padded):,}"))
+    if missing_pages:
+        findings.append(translate(
+            "MainWindow",
+            "{count} page(s) are not in the acquisition's files; they read as the "
+            "bad-sector marker.",
+        ).format(count=f"{missing_pages:,}"))
+    # What a container records about its own data besides a hash of the
+    # disk (a UDIF image's checksums, an AFF4's stream, chunk and map
+    # hashes), recomputed by the reader -- every one listed.
+    container_bad = [c for c in result.get("container_checks") or [] if not c.get("match")]
+    if container_bad:
+        findings.append(translate(
+            "MainWindow", "{count} of the container's own checks do not match."
+        ).format(count=f"{len(container_bad):,}"))
+    files_bad = _verify_files_bad(result)
+    if files_bad:
+        findings.append(translate(
+            "MainWindow", "{count} file(s) do not match their recorded hash."
+        ).format(count=f"{len(files_bad):,}"))
+    return findings
+
+
+def _verify_files_bad(result: dict[str, Any]) -> list[str]:
+    """Every file of logical evidence whose recorded hash doesn't match."""
+    return sorted(set(
+        list(result.get("entry_md5_mismatched") or [])
+        + list(result.get("entry_sha1_mismatched") or [])
+    ))
+
+
+def verify_status_tag(result: dict[str, Any]) -> str:
+    """The status bar's summary of ewfprobe's verify() *result*, with a
+    "{path}" placeholder for the source. Never a clean "MATCH" while
+    anything was left unchecked or damage was found."""
+    from crush.ui.verify_result_dialog import verify_damage_found
+
+    stored = result.get("stored") or {}
+    match = result.get("match")
+    container_checks = result.get("container_checks") or []
+    container_bad = [c for c in container_checks if not c.get("match")]
+    # Logical evidence also records a hash of each file it holds.
+    files_checked = (result.get("entry_md5_checked") or 0) + (result.get("entry_sha1_checked") or 0)
+    files_bad = _verify_files_bad(result)
+    if files_checked:
+        if not stored:
+            tag = (
+                translate("MainWindow", "{path}  [verify: no stored hash, file hash "
+                          "MISMATCH]")
+                if files_bad else
+                translate("MainWindow", "{path}  [verify: no stored hash, file hashes "
+                          "match]")
+            )
+        elif match:
+            tag = (
+                translate("MainWindow", "{path}  [verify: MATCH, file hash MISMATCH]")
+                if files_bad else
+                translate("MainWindow", "{path}  [verify: MATCH, file hashes match]")
+            )
+        else:
+            tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+    elif not stored:
+        if container_checks:
+            tag = (
+                translate("MainWindow", "{path}  [verify: no stored hash, container "
+                          "check MISMATCH]")
+                if container_bad else
+                translate("MainWindow", "{path}  [verify: no stored hash, container "
+                          "checks match]")
+            )
+        else:
+            tag = translate("MainWindow", "{path}  [verify: no stored hash]")
+    elif match:
+        tag = (
+            translate("MainWindow", "{path}  [verify: MATCH, container check "
+                      "MISMATCH]")
+            if container_bad else
+            translate("MainWindow", "{path}  [verify: MATCH]")
+        )
+    else:
+        tag = translate("MainWindow", "{path}  [verify: MISMATCH]")
+    if "entry_count" in result:
+        # "match" must not read as "all checked": for each hash, every file
+        # without one, and every file whose content wasn't collected.
+        for count, text in (
+            (result.get("entry_md5_missing"),
+             translate("MainWindow",
+                       "{tag} [{count} file(s) without a recorded MD5, not checked]")),
+            (result.get("entry_sha1_missing"),
+             translate("MainWindow",
+                       "{tag} [{count} file(s) without a recorded SHA-1, not checked]")),
+            (len(result.get("entry_content_not_collected") or []),
+             translate("MainWindow",
+                       "{tag} [{count} file(s) whose content was not collected, not checked]")),
+        ):
+            if count:
+                tag = text.format(tag=tag, count=f"{int(count):,}")
+    if verify_damage_found(result):
+        # Nor must "match" read as "undamaged".
+        tag = translate("MainWindow", "{tag} [damage found]").format(tag=tag)
+    return tag
 
 
 def _disk_image_hint(node: VFSNode, vfs: VFS) -> _SourceHint | None:

@@ -86,6 +86,9 @@ def _detect_type(peek: bytes, ext: str) -> str:
         # Apple ATX texture archive
         if peek[:8] == b"AAPL\r\n\x1a\n":
             return "image"
+        # Khronos KTX 1.1 texture
+        if peek[:12] == b"\xabKTX 11\xbb\r\n\x1a\n":
+            return "image"
         # PNG
         if peek[:8] == b"\x89PNG\r\n\x1a\n":
             return "image"
@@ -461,7 +464,7 @@ _TYPE_EXTENSIONS: dict[str, set[str]] = {
     "sqlite":  {"db", "sqlite", "sqlite3", "db3"},
     "image":   {
         "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif",
-        "heic", "heif", "avif", "jxl", "atx",
+        "heic", "heif", "avif", "jxl", "atx", "ktx",
     },
     # The Media viewer's extensions (MediaParser.SUPPORTED_EXTENSIONS).
     "media":   {

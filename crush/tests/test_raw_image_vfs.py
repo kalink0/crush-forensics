@@ -750,16 +750,22 @@ class TestDeletedFileRecovery:
     @pytest.mark.forensic(
         category="Known-output Verification",
         subject="NTFS",
-        desc="Two deliberately deleted NTFS test files must recover to their pre-computed reference hashes",
+        desc="Of two deliberately deleted NTFS test files, the resident one must recover to its reference hash, and the one whose clusters another deleted record also claims must be listed and refuse to read with the reason",
     )
-    def test_ntfs_recovers_known_deleted_files(self, raw_ntfs_image: Path) -> None:
+    def test_ntfs_deleted_files_recover_or_say_why(self, raw_ntfs_image: Path) -> None:
         """raw_ntfs.img.gz carries two deliberately deleted test files
         alongside a large amount of incidental deleted residue from the
         fixture's own construction history (thousands of leftover MFT
         records) -- all of it must be listed, per this project's rule that
         recoverable/uncertain content is never silently absent, but this
-        test only checks the two files independently verified by name."""
+        test only checks the two files independently verified by name.
+
+        recording.bin shares a cluster with another deleted record. The
+        volume does not record which of the two wrote it last, so qnxprobe
+        (from 1.88) recovers neither and names the other record."""
         import hashlib
+
+        from crush.core.raw_image import RawImageFileUnreadableError
 
         expected = _expected_from("raw_ntfs.deleted.sha256")
         assert set(expected) == {"resident-note.txt", "recording.bin"}
@@ -770,13 +776,23 @@ class TestDeletedFileRecovery:
             recovered = next(c for c in volume.children if c.name == "$Recovered")
             assert len(recovered.children) > 0
 
-            for name, digest in expected.items():
+            nodes = {}
+            for name in expected:
                 node = next((c for c in recovered.children if c.name == name), None)
                 assert node is not None, f"missing: {name}"
                 info = vfs.volume_info(node)
                 assert info is not None and info["kind"] == "deleted file"
-                assert str(info["note"]) == "recovered (content intact)"
-                assert hashlib.sha256(vfs.read(node)).hexdigest() == digest
+                nodes[name] = (node, str(info["note"]))
+
+            node, note = nodes["resident-note.txt"]
+            assert note == "recovered (content intact)"
+            assert hashlib.sha256(vfs.read(node)).hexdigest() == expected["resident-note.txt"]
+
+            node, note = nodes["recording.bin"]
+            assert note.startswith("not recoverable"), note
+            assert "also claimed by deleted record" in note, note
+            with pytest.raises(RawImageFileUnreadableError):
+                vfs.read(node)
         finally:
             vfs.close()
 
@@ -803,24 +819,33 @@ class TestDeletedFileRecovery:
                 assert node is not None, f"missing: {name}"
                 assert hashlib.sha256(vfs.read(node)).hexdigest() == digest
                 # exFAT records a contiguous file as such (NoFatChain), so
-                # nothing about its layout is assumed.
-                assert str((vfs.volume_info(node) or {})["note"]) == "recovered (content intact)"
+                # nothing about its layout is assumed; it records nowhere
+                # whether a freed cluster was reused, so the content is a
+                # candidate (qnxprobe 1.88 content_unverified).
+                status = (vfs.volume_info(node) or {})["note"]
+                assert status.code == "entry.recovered_unverified"
         finally:
             vfs.close()
 
     @pytest.mark.forensic(
         category="Known-output Verification",
         subject="FAT32",
-        desc="Three deliberately deleted FAT32 test files must recover content exactly, per reference hashes",
+        desc="Three deliberately deleted FAT32 test files whose first cluster is ambiguous (zeroed high word on a volume with cluster numbers of 0x10000 or above) must be listed and refuse to read with the reason",
     )
-    def test_fat32_recovers_content_with_first_character_lost(self, tmp_path: Path) -> None:
+    def test_fat32_deleted_files_with_an_ambiguous_first_cluster_are_refused(
+        self, tmp_path: Path
+    ) -> None:
         """FAT32's delete mechanism overwrites the short-name entry's first
         byte, permanently destroying the name's first character -- qnxprobe
         marks this with the classic leading-underscore convention rather
-        than guessing. Content is still recovered exactly; only the name of
-        two of the three known files is affected (the third apparently
-        reconstructs cleanly from intact long-name fragments)."""
-        import hashlib
+        than guessing (the third name reconstructs cleanly from intact
+        long-name fragments).
+
+        A Windows delete also zeroes the high word of the first cluster.
+        This volume has cluster numbers of 0x10000 or above, so the low word
+        alone does not say where the file started, and qnxprobe (from 1.88)
+        refuses the file rather than return another file's bytes."""
+        from crush.core.raw_image import RawImageFileUnreadableError
 
         dst = tmp_path / "fat32.img"
         dst.write_bytes(gzip.decompress((FIXTURES_DIR / "raw_fat32_deleted.img.gz").read_bytes()))
@@ -830,21 +855,15 @@ class TestDeletedFileRecovery:
         try:
             volume = vfs.root().children[0]
             recovered = next(c for c in volume.children if c.name == "$Recovered")
-            by_hash = {}
-            for c in recovered.children:
-                info = vfs.volume_info(c)
-                if info and str(info["note"]).startswith("recovered"):
-                    # FAT32 zeroes the chain on delete: every read here
-                    # rests on the file having been laid out in one run.
-                    assert str(info["note"]).startswith("recovered on an assumption"), c.name
-                    by_hash[hashlib.sha256(vfs.read(c)).hexdigest()] = c.name
-
-            for name, digest in expected.items():
-                assert digest in by_hash, f"content for {name} not recovered at all"
-                recovered_name = by_hash[digest]
-                assert recovered_name == name or recovered_name == "_" + name[1:], (
-                    f"unexpected recovered name for {name}: {recovered_name!r}"
-                )
+            by_name = {c.name: c for c in recovered.children}
+            for name in expected:
+                node = by_name.get(name) or by_name.get("_" + name[1:])
+                assert node is not None, f"missing: {name}"
+                note = str((vfs.volume_info(node) or {}).get("note", ""))
+                assert note.startswith("not recoverable"), (name, note)
+                assert "first cluster is ambiguous" in note, (name, note)
+                with pytest.raises(RawImageFileUnreadableError):
+                    vfs.read(node)
         finally:
             vfs.close()
 
@@ -1091,7 +1110,7 @@ class TestOnlyOpenedWhenAskedFor:
     @pytest.mark.parametrize("name", [
         "disk.img", "disk.dd", "disk.raw", "case.001", "case.002", "case.E01",
         "flash.nand", "rootfs.ubi", "data.ubifs", "fw.squashfs", "fw.sqsh", "cfg.jffs2",
-        "data.yaffs2",
+        "data.yaffs2", "disk.sparseimage", "disk.asif",
     ])
     def test_image_name_gets_a_hint(self, tmp_path: Path, name: str) -> None:
         dst = tmp_path / name
@@ -1144,6 +1163,48 @@ class TestOnlyOpenedWhenAskedFor:
             assert "EWF container" in str(vfs.fallback_note)
         finally:
             vfs.close()
+
+    # Synthetic: no real ASIF image is available (one is made only on macOS
+    # 26); these headers are the signature and a version, nothing more. They
+    # show the hint's recognition, not that an ASIF reads.
+    _ASIF_HEAD = b"shdw\x00\x00\x00\x01" + bytes(4088)
+    _SHDW_NO_VERSION = b"shdw\x00\x00\x00\x00" + bytes(4088)
+
+    def test_asif_header_gets_its_label_whatever_the_name(self, tmp_path: Path) -> None:
+        """Synthetic ASIF header, on disk, with no extension: the reader's
+        own recognition names it."""
+        dst = tmp_path / "image_no_extension"
+        dst.write_bytes(self._ASIF_HEAD)
+        vfs = open_vfs(dst)
+        try:
+            assert isinstance(vfs, FileVFS)
+            assert "Apple Sparse Image Format (ASIF)" in str(vfs.fallback_note)
+        finally:
+            vfs.close()
+
+    def test_asif_signature_without_a_version_gets_no_hint(self, tmp_path: Path) -> None:
+        """Synthetic: a file that starts with the four signature bytes and
+        version 0 is a raw file to the reader, so it gets no hint."""
+        dst = tmp_path / "image_no_extension"
+        dst.write_bytes(self._SHDW_NO_VERSION)
+        vfs = open_vfs(dst)
+        try:
+            assert str(vfs.fallback_note) == ""
+        finally:
+            vfs.close()
+
+    def test_asif_head_in_an_archive_follows_the_readers_rule(self) -> None:
+        """Synthetic: an archive member is judged by its first bytes -- the
+        signature with a version from 1 to 255, as the reader decides."""
+        from crush.core.raw_image import is_asif_head
+        from crush.core.vfs import looks_like_disk_image
+
+        hint = looks_like_disk_image("member", self._ASIF_HEAD)
+        assert hint is not None and hint.code == "vfs.disk_image_hint_acquisition"
+        assert looks_like_disk_image("member", self._SHDW_NO_VERSION) is None
+        assert is_asif_head(b"shdw\x00\x00\x00\xff")
+        assert not is_asif_head(b"shdw\x00\x00\x01\x00")  # version 256
+        assert not is_asif_head(b"shdw")  # too short to hold a version
 
     def test_normal_open_never_calls_the_image_reader(
         self, raw_ntfs_image: Path, monkeypatch: pytest.MonkeyPatch
@@ -1727,3 +1788,40 @@ def test_a_bitlocker_volume_opens_with_its_startup_key_file(tmp_path: Path) -> N
         )
     finally:
         vfs.close()
+
+
+class TestQnx6BlockSizes:
+    """A QNX6 volume's data area starts after the boot block and the superblock
+    area, rounded up to a whole block. qnxprobe before 1.79 rounded it down, so
+    a volume with 8, 16 or 32 KiB blocks listed no files."""
+
+    @pytest.mark.forensic(
+        category="Known-output Verification",
+        subject="QNX6",
+        desc="A QNX6 volume with 4, 8, 16 or 32 KiB blocks must list its files and read back the bytes written, "
+        "through one and two levels of block pointers",
+    )
+    @pytest.mark.parametrize("block_size", [4096, 8192, 16384, 32768])
+    def test_files_are_listed_and_read_back(self, tmp_path: Path, block_size: int) -> None:
+        # qnxprobe's own self-test builds this volume, so it is written from
+        # QNX's sys/fs_qnx6.h and checked against qnxmount there, not here.
+        from crush.third_party.qnxprobe import qnxprobe
+
+        image, tree, _older, _free = qnxprobe._qnx6_test_volume(block_size)
+        dst = tmp_path / f"qnx6_{block_size}.img"
+        dst.write_bytes(image)
+
+        vfs = open_vfs(dst, as_disk_image=True)
+        try:
+            assert len(vfs.root().children) == 1
+            volume = vfs.root().children[0]
+            names = [path for path, _kind, _data in tree]
+            assert "big.bin" in names and "deep.bin" in names
+            for path, kind, data in tree:
+                node = _find(volume, path.split("/"))
+                assert node is not None, f"missing from tree: {path}"
+                assert node.is_dir == (kind == "d")
+                if kind == "f":
+                    assert vfs.read(node) == data, f"content mismatch: {path}"
+        finally:
+            vfs.close()

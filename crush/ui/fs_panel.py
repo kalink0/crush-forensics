@@ -10,13 +10,16 @@ import os
 import queue
 import threading
 import time
-from typing import overload
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Generic, TypeVar, overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
-from PySide6.QtGui import QGuiApplication, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QAction, QGuiApplication, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCompleter,
+    QLabel,
     QLineEdit,
     QMenu,
     QStackedWidget,
@@ -26,17 +29,29 @@ from PySide6.QtWidgets import (
 )
 
 
+from crush.core import ios_containers
+from crush.core.issues import ParseIssue
+from crush.core.hashing import (
+    DISPLAY_NAMES,
+    QUERY_NOT_HEX,
+    QUERY_TOO_LONG,
+    HashQuery,
+    parse_hash_query,
+    query_can_match,
+    query_matches,
+)
 from crush.core.session import Session
 from crush.core.vfs import VFS, VFSNode
 from crush.core.magic import detect_fast_label
 from crush.core.work_priority import background_io
 from crush.ui.column_fit import ColumnFitter
+from crush.ui.hash_dialog import add_hash_menu
 from crush.ui.log_scope import window_log_scope
 from crush.ui.wheel_scroll import install_horizontal_wheel_scroll
 from crush.ui.i18n import translate
 
 _IMAGE_TYPE_LABELS: frozenset[str] = frozenset({
-    "image", "heic", "heif", "avif", "jxl", "atx",
+    "image", "heic", "heif", "avif", "jxl", "atx", "ktx",
     "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif",
 })
 _MEDIA_TYPE_LABELS: frozenset[str] = frozenset({
@@ -52,6 +67,66 @@ def _type_matches(type_filter: str, type_label: str) -> bool:
     if type_filter == "media":
         return label_lower in _MEDIA_TYPE_LABELS
     return type_filter in label_lower
+
+
+_HASH_NEGATED = "negated"  # -hash: -- not supported (see _hash_search_info)
+
+
+@dataclass
+class _HashSearch:
+    """A hash: search and what it could be matched against: *checked*
+    files passed the other filter terms, *hashed* of them have a computed
+    value the query is compared with (see hashing.query_can_match)."""
+
+    query: HashQuery
+    problem: str = ""
+    checked: int = 0
+    hashed: int = 0
+
+
+def _hash_search_info(tokens: dict[str, str]) -> _HashSearch | None:
+    if "-hash" in tokens:
+        # A file without a computed hash would read as "doesn't match".
+        return _HashSearch(parse_hash_query(tokens["-hash"]), _HASH_NEGATED)
+    if "hash" not in tokens:
+        return None
+    query = parse_hash_query(tokens["hash"])
+    return _HashSearch(query, query.problem)
+
+
+def _hash_search_text(info: _HashSearch) -> str:
+    """The note shown with every hash: search: what it was matched against
+    or why nothing could match."""
+    if info.problem == _HASH_NEGATED:
+        return translate(
+            "FilesystemPanel",
+            "-hash: is not supported: a file without a computed hash would read as not "
+            "matching. Nothing is listed.",
+        )
+    if info.problem == QUERY_NOT_HEX:
+        return translate(
+            "FilesystemPanel", "hash: takes hexadecimal digits (0-9, a-f). Nothing is listed."
+        )
+    if info.problem == QUERY_TOO_LONG:
+        return translate(
+            "FilesystemPanel",
+            "hash: takes at most 64 hexadecimal digits (a SHA-256). Nothing is listed.",
+        )
+    if info.query.algorithm is not None:
+        return translate(
+            "FilesystemPanel",
+            "Matched against computed {algorithm} hashes: {hashed} of {checked} files have "
+            "one — files without one can't match.",
+        ).format(
+            algorithm=DISPLAY_NAMES[info.query.algorithm],
+            hashed=f"{info.hashed:,}", checked=f"{info.checked:,}",
+        )
+    return translate(
+        "FilesystemPanel",
+        "Matched against computed hashes (prefix, any algorithm): {hashed} of {checked} "
+        "files hashed — files without a hash can't match.",
+    ).format(hashed=f"{info.hashed:,}", checked=f"{info.checked:,}")
+
 
 # Shown in the Type column until the background type scan has read the head
 # of an entry that can't be read without waiting on its source.
@@ -79,6 +154,52 @@ def _format_size(size: int) -> str:
     return f"{value:.1f} {_SIZE_UNITS[unit_index]}"
 
 
+_T = TypeVar("_T")
+
+
+class _OnDemandWorker(Generic[_T]):
+    """Runs *handle* for each item put, one at a time, on a thread started
+    when an item arrives and ended after *idle* seconds without one.
+
+    put() and the thread's end decide under one lock whether a thread runs,
+    so an item put while the thread is ending is never left in the queue.
+    """
+
+    def __init__(
+        self, handle: Callable[[_T], None], window_id: str | None, idle: float = 5.0,
+    ) -> None:
+        self._handle = handle
+        self._window_id = window_id
+        self._idle = idle
+        self._queue: queue.SimpleQueue[_T] = queue.SimpleQueue()
+        self._lock = threading.Lock()
+        self._running = False
+
+    def put(self, item: _T) -> None:
+        self._queue.put(item)
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        with window_log_scope(self._window_id):
+            while True:
+                try:
+                    item = self._queue.get(timeout=self._idle)
+                except queue.Empty:
+                    with self._lock:
+                        if self._queue.empty():
+                            self._running = False
+                            return
+                    continue
+                try:
+                    self._handle(item)
+                except Exception as exc:  # noqa: BLE001 -- the next item still runs
+                    _logger.debug("Background read failed: %s", exc)
+
+
 class _FilterLineEdit(QLineEdit):
     """QLineEdit that shows the completer dropdown on click/focus."""
 
@@ -99,6 +220,11 @@ def _activity_label(name: str) -> str:
     return labels.get(name, name)
 
 
+def _identifier_of(result: str | ParseIssue | None) -> str | None:
+    """The container identifier a plist read gave (a ParseIssue: none)."""
+    return result if isinstance(result, str) else None
+
+
 class FilesystemPanel(QWidget):
     """Left-dock panel that displays the VFS as a tree."""
 
@@ -117,14 +243,17 @@ class FilesystemPanel(QWidget):
     open_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
     open_disk_image_in_new_window_requested = Signal(object, object)  # (VFSNode, VFS)
     send_to_peach_batch_requested = Signal(object)  # list[(VFSNode, VFS)]
+    # (list[(VFSNode, VFS)], algorithms) -- folders are hashed all the way down
+    hash_requested = Signal(object, object)
     load_finished = Signal()
     background_status = Signal(str)
     # The type indexing: "running", "stopped" (by the analyst, not finished)
     # or "idle" (finished, or nothing to index), for the stop/resume button.
     type_indexing_state = Signal(str)
-    _search_results_ready = Signal(object)  # internal: list of result dicts
+    _search_results_ready = Signal(object)  # internal: (list of result dicts, _HashSearch | None)
     _prescan_activity = Signal(str, bool)   # internal: (activity_name, is_start)
     _prescan_count = Signal(int, int)       # internal: (files indexed, files to index)
+    _container_name_ready = Signal(object, object, int)  # internal: (key, identifier, gen)
 
     def __init__(
         self, session: Session, parent: QWidget | None = None, window_id: str | None = None
@@ -200,10 +329,27 @@ class FilesystemPanel(QWidget):
         self._prescan_stopped: tuple[int, int] | None = None
         self._indexing_state = "idle"
         # With the indexing stopped, the pending labels of rows shown are
-        # read one by one on a thread of their own (_read_pending_types).
-        self._ondemand_queue: queue.SimpleQueue[tuple[VFSNode, VFS, int]] = queue.SimpleQueue()
+        # read one by one on a thread of their own (_read_pending_type).
+        self._ondemand_worker: _OnDemandWorker[tuple[VFSNode, VFS, int]] = _OnDemandWorker(
+            self._read_pending_type, window_id
+        )
         self._ondemand_keys: set[tuple[int, str]] = set()
-        self._ondemand_thread: threading.Thread | None = None
+        # iOS container folders (named by a GUID) can be shown by the
+        # identifier in their metadata plist instead. The plists are read on
+        # a thread of their own; a folder shows its GUID until then.
+        # _container_names keeps each plist read (a ParseIssue: read, no
+        # identifier), written from the UI thread and from search threads
+        # under the lock.
+        self._show_container_names = True
+        self._container_gen = 0
+        self._container_lock = threading.Lock()
+        self._container_names: dict[tuple[int, str], str | ParseIssue] = {}
+        self._container_items: dict[tuple[int, str], list[QStandardItem]] = {}
+        self._container_requested: set[tuple[int, str]] = set()
+        self._container_worker: _OnDemandWorker[
+            tuple[VFSNode, VFS, tuple[int, str], int]
+        ] = _OnDemandWorker(self._read_container_name, window_id)
+        self._container_name_ready.connect(self._on_container_name_ready)
         self.background_status.emit("")
         self._build_ui()
 
@@ -213,7 +359,9 @@ class FilesystemPanel(QWidget):
         layout.setSpacing(0)
 
         self._filter = _FilterLineEdit()
-        self._filter.setPlaceholderText(translate("FilesystemPanel", "Filter… (name:x  type:x)"))
+        self._filter.setPlaceholderText(
+            translate("FilesystemPanel", "Filter… (name:x  type:x  hash:x)")
+        )
         self._filter.setClearButtonEnabled(True)
         self._filter.textChanged.connect(self._on_filter_text_changed)
         self._filter.returnPressed.connect(self._on_filter_return)
@@ -253,7 +401,19 @@ class FilesystemPanel(QWidget):
         self._tree.expanded.connect(self._on_expanded)
         self._stack.addWidget(self._tree)
 
-        # Page 1: flat search results view
+        # Page 1: flat search results view, below a note on what a hash:
+        # search could be matched against (shown only for one).
+        search_page = QWidget()
+        search_layout = QVBoxLayout(search_page)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(0)
+        self._search_note = QLabel()
+        self._search_note.setTextFormat(Qt.TextFormat.PlainText)
+        self._search_note.setWordWrap(True)
+        self._search_note.setContentsMargins(4, 3, 4, 3)
+        self._search_note.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._search_note.setVisible(False)
+        search_layout.addWidget(self._search_note)
         self._search_view = QTreeView()
         self._search_view.setModel(self._search_model)
         self._search_view.setRootIsDecorated(False)
@@ -269,7 +429,8 @@ class FilesystemPanel(QWidget):
         self._search_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._search_view.customContextMenuRequested.connect(self._on_search_context_menu)
         self._search_view.selectionModel().selectionChanged.connect(self._on_search_selection_changed)
-        self._stack.addWidget(self._search_view)
+        search_layout.addWidget(self._search_view)
+        self._stack.addWidget(search_page)
 
         layout.addWidget(self._stack)
 
@@ -288,6 +449,7 @@ class FilesystemPanel(QWidget):
         self._prescan_stopped = None
         self._ondemand_keys.clear()
         self._prescan_gen += 1
+        self._reset_container_names()
         self._emit_background_status()
 
         # Recreate model to avoid slow row-by-row clears on large trees.
@@ -376,6 +538,7 @@ class FilesystemPanel(QWidget):
         self._prescan_stopped = None
         self._ondemand_keys.clear()
         self._prescan_gen += 1
+        self._reset_container_names()
         self._emit_background_status()
 
         self._model = QStandardItemModel()
@@ -440,6 +603,8 @@ class FilesystemPanel(QWidget):
 
         if node.is_dir and node.children:
             self._add_placeholder(name_item)
+            if ios_containers.is_container(node):
+                self._register_container(name_item, node, vfs)
         if not node.is_dir:
             self._type_queue.append((type_item, node, vfs))
             if not self._type_timer.isActive():
@@ -516,8 +681,11 @@ class FilesystemPanel(QWidget):
             if not any(id(step) in selected for step in chain[:-1])
         ]
 
-    def _collect_tree_selected_entries(self) -> list[tuple[VFSNode, VFS]]:
-        """Return (node, vfs) for each selected file row in the main tree (skips dirs)."""
+    def _collect_tree_selected_entries(
+        self, include_dirs: bool = False,
+    ) -> list[tuple[VFSNode, VFS]]:
+        """Return (node, vfs) for each selected row in the main tree; folders
+        only with *include_dirs*."""
         entries: list[tuple[VFSNode, VFS]] = []
         for index in self._tree.selectionModel().selectedIndexes():
             if index.column() != 0:
@@ -528,7 +696,7 @@ class FilesystemPanel(QWidget):
                 continue
             node: VFSNode | None = item.data(_ROLE_NODE)
             vfs: VFS | None = item.data(_ROLE_VFS)
-            if not node or not vfs or node.is_dir:
+            if not node or not vfs or (node.is_dir and not include_dirs):
                 continue
             entries.append((node, vfs))
         return entries
@@ -548,36 +716,109 @@ class FilesystemPanel(QWidget):
             return
 
         global_pos = self._tree.viewport().mapToGlobal(pos)
-        selected_entries = self._collect_tree_selected_entries()
-        selected_items = self._collect_tree_selected_items()
-        if len(selected_items) > 1 and self._tree.selectionModel().isSelected(proxy_index):
-            # Right-clicked inside an active multi-selection of 2+ entries —
-            # a minimal batch menu instead of the full single-node one,
-            # same pattern as the search view's multi-select export menu.
-            menu = QMenu(self)
-            send_action = None
-            if len(selected_entries) > 1:
-                send_action = menu.addAction(
-                    translate(
-                        "FilesystemPanel", "Send {selected_entries_count} files to Peach"
-                    ).format(selected_entries_count=len(selected_entries))
-                )
-            export_zip_action = menu.addAction(
-                translate(
-                    "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
-                ).format(selected_items_count=len(selected_items))
-            )
-            action = menu.exec(global_pos)
-            if send_action is not None and action == send_action:
-                self.send_to_peach_batch_requested.emit(selected_entries)
-            elif action == export_zip_action:
-                self.export_zip_selection_requested.emit(selected_items)
+        batch = self._tree_batch_menu(
+            self._collect_tree_selected_entries(),
+            self._collect_tree_selected_entries(include_dirs=True),
+            self._tree.selectionModel().isSelected(proxy_index),
+        )
+        if batch is not None:
+            menu, actions = batch
+            chosen = menu.exec(global_pos)
+            if chosen in actions:
+                actions[chosen]()
             return
 
         self._show_context_menu(node, vfs, global_pos)
 
-    def _collect_result_entries(self, rows: object) -> list[tuple[VFSNode, VFS, str]]:
-        """Return (node, vfs, virtual_path) for each file row in rows (skips dirs)."""
+    def _tree_batch_menu(
+        self,
+        files: list[tuple[VFSNode, VFS]],
+        entries: list[tuple[VFSNode, VFS]],
+        clicked_selected: bool,
+    ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
+        """The batch menu for a right-click inside a selection of 2+ entries
+        (files and folders), or None for the single-entry menu. Send to
+        Peach takes files only and is offered for 2+ of them; Compute Hash
+        takes every selected entry, folders all the way down."""
+        if len(entries) < 2 or not clicked_selected:
+            return None
+        menu = QMenu(self)
+        actions: dict[QAction, Callable[[], None]] = {}
+        if len(files) > 1:
+            send_action = menu.addAction(
+                translate("FilesystemPanel", "Send {selected_entries_count} files to Peach").format(
+                    selected_entries_count=len(files)
+                )
+            )
+            actions[send_action] = lambda: self.send_to_peach_batch_requested.emit(files)
+        self._add_batch_hash_menu(menu, actions, entries)
+        export_zip_action = menu.addAction(
+            translate(
+                "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
+            ).format(selected_items_count=len(entries))
+        )
+        actions[export_zip_action] = lambda: self.export_zip_selection_requested.emit(
+            self._collect_tree_selected_items()
+        )
+        return menu, actions
+
+    def _add_batch_hash_menu(
+        self,
+        menu: QMenu,
+        actions: dict[QAction, Callable[[], None]],
+        entries: list[tuple[VFSNode, VFS]],
+    ) -> None:
+        hash_actions = add_hash_menu(
+            menu,
+            translate("FilesystemPanel", "Compute Hash of {count} selected entries").format(
+                count=len(entries)
+            ),
+        )
+        for action, algorithms in hash_actions.items():
+            actions[action] = lambda algs=algorithms: self.hash_requested.emit(entries, algs)
+
+    def _search_batch_menu(
+        self,
+        files: list[tuple[VFSNode, VFS, str]],
+        entries: list[tuple[VFSNode, VFS]],
+        all_files: Callable[[], list[tuple[VFSNode, VFS, str]]],
+    ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
+        """The search results' batch menu for 2+ selected entries, or None.
+        Export takes files only and is offered for 2+ of them, as before;
+        Compute Hash takes every selected entry."""
+        if len(entries) < 2:
+            return None
+        menu = QMenu(self)
+        actions: dict[QAction, Callable[[], None]] = {}
+        if len(files) > 1:
+            every = all_files()
+            export_sel = menu.addAction(
+                translate(
+                    "FilesystemPanel", "Export {selected_entries_count} selected files…"
+                ).format(selected_entries_count=len(files))
+            )
+            actions[export_sel] = lambda: self.export_multi_requested.emit(
+                files, self._filter.text().strip()
+            )
+            if len(every) > len(files):
+                menu.addSeparator()
+                export_all = menu.addAction(
+                    translate("FilesystemPanel", "Export all {all_entries_count} results…").format(
+                        all_entries_count=len(every)
+                    )
+                )
+                actions[export_all] = lambda: self.export_multi_requested.emit(
+                    every, self._filter.text().strip()
+                )
+            menu.addSeparator()
+        self._add_batch_hash_menu(menu, actions, entries)
+        return menu, actions
+
+    def _collect_result_entries(
+        self, rows: object, include_dirs: bool = False,
+    ) -> list[tuple[VFSNode, VFS, str]]:
+        """Return (node, vfs, virtual_path) for each row in rows; folders
+        only with *include_dirs*."""
         entries: list[tuple[VFSNode, VFS, str]] = []
         for row in rows:
             name_item = self._search_model.item(row, 0)
@@ -586,7 +827,7 @@ class FilesystemPanel(QWidget):
                 continue
             node: VFSNode | None = name_item.data(_ROLE_NODE)
             vfs: VFS | None = name_item.data(_ROLE_VFS)
-            if not node or not vfs or node.is_dir:
+            if not node or not vfs or (node.is_dir and not include_dirs):
                 continue
             virtual_path = path_item.text() if path_item else node.name
             entries.append((node, vfs, virtual_path))
@@ -597,30 +838,16 @@ class FilesystemPanel(QWidget):
         global_pos = self._search_view.viewport().mapToGlobal(pos)
 
         selected_rows = sorted({idx.row() for idx in self._search_view.selectedIndexes()})
-        selected_entries = self._collect_result_entries(selected_rows)
-
-        if len(selected_entries) > 1:
-            all_entries = self._collect_result_entries(range(self._search_model.rowCount()))
-            menu = QMenu(self)
-            export_sel = menu.addAction(
-                translate(
-                    "FilesystemPanel", "Export {selected_entries_count} selected files…"
-                ).format(selected_entries_count=len(selected_entries))
-            )
-            export_all = None
-            if len(all_entries) > len(selected_entries):
-                menu.addSeparator()
-                export_all = menu.addAction(
-                    translate("FilesystemPanel", "Export all {all_entries_count} results…").format(
-                        all_entries_count=len(all_entries)
-                    )
-                )
-            action = menu.exec(global_pos)
-            filter_text = self._filter.text().strip()
-            if action == export_sel:
-                self.export_multi_requested.emit(selected_entries, filter_text)
-            elif export_all is not None and action == export_all:
-                self.export_multi_requested.emit(all_entries, filter_text)
+        batch = self._search_batch_menu(
+            self._collect_result_entries(selected_rows),
+            [(n, v) for n, v, _ in self._collect_result_entries(selected_rows, include_dirs=True)],
+            lambda: self._collect_result_entries(range(self._search_model.rowCount())),
+        )
+        if batch is not None:
+            menu, actions = batch
+            chosen = menu.exec(global_pos)
+            if chosen in actions:
+                actions[chosen]()
             return
 
         if not index.isValid():
@@ -742,6 +969,7 @@ class FilesystemPanel(QWidget):
         copy_name_action = copy_menu.addAction(translate("FilesystemPanel", "Copy File Name"))
         menu.addSeparator()
         format_info_action = menu.addAction(translate("FilesystemPanel", "Show Format Info"))
+        hash_actions = add_hash_menu(menu)
         menu.addSeparator()
         export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
         export_zip_action = menu.addAction(translate("FilesystemPanel", "Export to ZIP…"))
@@ -817,6 +1045,8 @@ class FilesystemPanel(QWidget):
             QGuiApplication.clipboard().setText(node.name)
         elif action == format_info_action:
             self.format_info_requested.emit(node, vfs)
+        elif action in hash_actions:
+            self.hash_requested.emit([(node, vfs)], hash_actions[action])
         elif action == export_action:
             self.export_requested.emit(node, vfs)
         elif action == export_zip_action:
@@ -906,35 +1136,65 @@ class FilesystemPanel(QWidget):
         vfs_list = list(self._vfs_list)
         threading.Thread(
             target=self._search_worker,
-            args=(vfs_list, tokens, gen),
+            args=(vfs_list, tokens, gen, self._show_container_names),
             daemon=True,
         ).start()
 
-    def _search_worker(self, vfs_list: list[VFS], tokens: dict[str, str], gen: int) -> None:
+    def _search_worker(
+        self, vfs_list: list[VFS], tokens: dict[str, str], gen: int,
+        container_names: bool = False,
+    ) -> None:
         results: list[dict] = []
+        hash_info = _hash_search_info(tokens)
+        if hash_info is not None and hash_info.problem:
+            # Nothing can match: say why instead of showing an empty list.
+            if self._search_gen == gen:
+                self._search_results_ready.emit((results, hash_info))
+            return
         for vfs in vfs_list:
-            self._collect_matches(vfs.root(), vfs, tokens, "", results, gen)
+            self._collect_matches(vfs.root(), vfs, tokens, "", results, gen, container_names, hash_info)
             if self._search_gen != gen:
                 return
         if self._search_gen == gen:
-            self._search_results_ready.emit(results)
+            self._search_results_ready.emit((results, hash_info))
 
     def _collect_matches(
         self, node: VFSNode, vfs: VFS, tokens: dict[str, str],
         parent_path: str, results: list[dict], gen: int,
+        container_names: bool = False,
+        hash_info: _HashSearch | None = None,
     ) -> None:
         if self._search_gen != gen:
             return
         path = f"{parent_path}/{node.name}" if parent_path else node.name
+        self._match_node(node, vfs, tokens, path, results, hash_info, container_names)
+        for child in node.children:
+            self._collect_matches(
+                child, vfs, tokens, path, results, gen, container_names, hash_info
+            )
+
+    def _match_node(
+        self, node: VFSNode, vfs: VFS, tokens: dict[str, str], path: str,
+        results: list[dict], hash_info: _HashSearch | None,
+        container_names: bool = False,
+    ) -> None:
 
         name_filter = tokens.get('name')
         name_exclude = tokens.get('-name')
         type_filter = tokens.get('type')
         type_exclude = tokens.get('-type')
 
+        # A container folder shown by its identifier is found by either name.
+        identifier = (
+            self._container_identifier_blocking(node, vfs)
+            if container_names and node.is_dir else None
+        )
+        names = [node.name.lower()]
+        if identifier:
+            names.append(identifier.lower())
         name_match = (
-            (name_filter is None or name_filter in node.name.lower())
-            and (name_exclude is None or name_exclude not in node.name.lower())
+            (name_filter is None or any(name_filter in n for n in names))
+            and (name_exclude is None or not any(name_exclude in n for n in names))
         )
 
         if type_filter is not None or type_exclude is not None:
@@ -953,16 +1213,34 @@ class FilesystemPanel(QWidget):
             type_label = None
             type_match = True
 
-        if name_match and type_match:
-            results.append({
-                'node': node, 'vfs': vfs,
-                'path': path, 'type_label': type_label,
-            })
+        if not (name_match and type_match):
+            return
+        if hash_info is not None:
+            # Files only, and only against hashes already computed in this
+            # window: a file without one is counted, never a non-match.
+            if node.is_dir:
+                return
+            hash_info.checked += 1
+            computed = self._session.hashes.get(vfs, node)
+            if not query_can_match(hash_info.query, computed):
+                return
+            hash_info.hashed += 1
+            if not query_matches(hash_info.query, computed):
+                return
+        results.append({
+            'node': node, 'vfs': vfs,
+            'path': path, 'type_label': type_label,
+            'identifier': identifier,
+        })
 
-        for child in node.children:
-            self._collect_matches(child, vfs, tokens, path, results, gen)
+    def _show_search_note(self, hash_info: _HashSearch | None) -> None:
+        text = _hash_search_text(hash_info) if hash_info is not None else ""
+        self._search_note.setText(text)
+        self._search_note.setVisible(bool(text))
 
-    def _on_search_results_ready(self, results: list[dict]) -> None:
+    def _on_search_results_ready(self, payload: object) -> None:
+        results, hash_info = payload  # type: ignore[misc]
+        self._show_search_note(hash_info)
         self._type_queue.clear()
         self._search_model.setRowCount(0)
         self._search_fit.clear_content()
@@ -971,12 +1249,15 @@ class FilesystemPanel(QWidget):
             vfs: VFS = r['vfs']
             type_label: str | None = r['type_label']
 
+            identifier: str | None = r.get('identifier')
             name_item = QStandardItem(node.name)
             name_item.setData(node, _ROLE_NODE)
             name_item.setData(vfs, _ROLE_VFS)
-            name_item.setData(node.name.lower(), _ROLE_SORT)
+            name_item.setData((identifier or node.name).lower(), _ROLE_SORT)
             name_item.setEditable(False)
             name_item.setToolTip(node.name)
+            if identifier:
+                self._apply_container_label(name_item, node, identifier)
 
             path_item = QStandardItem(r['path'])
             path_item.setData(r['path'].lower(), _ROLE_SORT)
@@ -1158,8 +1439,7 @@ class FilesystemPanel(QWidget):
                 key = (id(vfs), node.path)
                 if key not in self._ondemand_keys:
                     self._ondemand_keys.add(key)
-                    self._ondemand_queue.put((node, vfs, self._prescan_gen))
-            self._ensure_ondemand_thread()
+                    self._ondemand_worker.put((node, vfs, self._prescan_gen))
         self._type_queue.extend(pending)
         if not self._type_timer.isActive():
             self._activity_start("Type detection")
@@ -1204,33 +1484,18 @@ class FilesystemPanel(QWidget):
         self._type_cache[cache_key] = label
         return label
 
-    def _ensure_ondemand_thread(self) -> None:
-        if self._ondemand_thread is not None and self._ondemand_thread.is_alive():
-            return
-        window_id = self._window_id
-
-        def _run() -> None:
-            with window_log_scope(window_id):
-                self._read_pending_types()
-
-        self._ondemand_thread = threading.Thread(target=_run, daemon=True)
-        self._ondemand_thread.start()
-
-    def _read_pending_types(self) -> None:
-        """Read the type label of each row queued while the indexing is
-        stopped (_retry_pending_types picks it up from the cache)."""
-        while True:
-            try:
-                node, vfs, gen = self._ondemand_queue.get(timeout=5)
-            except queue.Empty:
-                return
-            if gen != self._prescan_gen:
-                continue  # sources changed or indexing resumed meanwhile
-            try:
-                with background_io():
-                    self._detect_type_label(node, vfs)
-            except Exception as exc:  # noqa: BLE001 -- the label stays pending
-                self._logger.debug("Type read failed for %s: %s", node.path, exc)
+    def _read_pending_type(self, request: tuple[VFSNode, VFS, int]) -> None:
+        """Read the type label of a row queued while the indexing is
+        stopped (_retry_pending_types picks it up from the cache). Runs on
+        the on-demand worker's thread."""
+        node, vfs, gen = request
+        if gen != self._prescan_gen:
+            return  # sources changed or indexing resumed meanwhile
+        try:
+            with background_io():
+                self._detect_type_label(node, vfs)
+        except Exception as exc:  # noqa: BLE001 -- the label stays pending
+            self._logger.debug("Type read failed for %s: %s", node.path, exc)
 
     def has_running_activity(self) -> bool:
         """Something runs in the background (the status text may also only
@@ -1459,6 +1724,131 @@ class FilesystemPanel(QWidget):
         self.background_status.emit(
             translate("FilesystemPanel", "Background: {items}").format(items=items)
         )
+
+    # ------------------------------------------------------------------
+    # iOS container folders shown by their identifier
+    # ------------------------------------------------------------------
+
+    def set_show_container_names(self, enabled: bool) -> None:
+        """Show iOS container folders by the identifier in
+        their metadata plist (True) or by their GUID folder name (False)."""
+        if enabled == self._show_container_names:
+            return
+        self._show_container_names = enabled
+        for key, items in self._container_items.items():
+            for item in items:
+                node: VFSNode | None = item.data(_ROLE_NODE)
+                vfs: VFS | None = item.data(_ROLE_VFS)
+                if node is None or vfs is None:
+                    continue
+                self._apply_container_label(
+                    item, node, _identifier_of(self._container_names.get(key))
+                )
+                if enabled:
+                    self._request_container_name(node, vfs, key)
+        # Search results show (and match) names as the setting says: anew.
+        if self._stack.currentIndex() == 1 and self._pending_filter.strip():
+            self._populate_search_results(self._pending_filter.strip())
+
+    def _reset_container_names(self) -> None:
+        """Forget the container folders of the tree replaced (a name still
+        being read for one of them is dropped on arrival)."""
+        with self._container_lock:
+            self._container_gen += 1
+            self._container_names.clear()
+        self._container_items.clear()
+        self._container_requested.clear()
+
+    def _register_container(self, item: QStandardItem, node: VFSNode, vfs: VFS) -> None:
+        key = (id(vfs), node.path)
+        self._container_items.setdefault(key, []).append(item)
+        if not self._show_container_names:
+            return
+        if key in self._container_names:
+            self._apply_container_label(item, node, _identifier_of(self._container_names[key]))
+        else:
+            self._request_container_name(node, vfs, key)
+
+    def _apply_container_label(
+        self, item: QStandardItem, node: VFSNode, identifier: str | None
+    ) -> None:
+        """The identifier as *item*'s text (italic: not the folder's real
+        name, which the tooltip keeps) while shown, else the folder name."""
+        shown = identifier if self._show_container_names and identifier else None
+        try:
+            item.setText(shown or node.name)
+            item.setToolTip(
+                translate("FilesystemPanel", "{identifier}\nFolder: {name}").format(
+                    identifier=shown, name=node.name
+                )
+                if shown else node.name
+            )
+            font = item.font()
+            font.setItalic(bool(shown))
+            item.setFont(font)
+        except RuntimeError:
+            pass  # item was deleted (e.g. search results refreshed)
+
+    def _request_container_name(
+        self, node: VFSNode, vfs: VFS, key: tuple[int, str]
+    ) -> None:
+        if key in self._container_names or key in self._container_requested:
+            return
+        self._container_requested.add(key)
+        self._container_worker.put((node, vfs, key, self._container_gen))
+
+    def _read_container_name(
+        self, request: tuple[VFSNode, VFS, tuple[int, str], int]
+    ) -> None:
+        """Read the metadata plist of a container folder queued, unless a
+        search read it already. Runs on the container worker's thread: a
+        disk image may keep a read waiting."""
+        node, vfs, key, gen = request
+        with self._container_lock:
+            if gen != self._container_gen:
+                return  # the tree was replaced meanwhile
+            cached = self._container_names.get(key)
+        if cached is None:
+            with background_io():
+                result = ios_containers.read_identifier(node, vfs)
+            if result is None:
+                return  # no container (any more): nothing to show
+            cached = result
+        self._container_name_ready.emit(key, cached, gen)
+
+    def _on_container_name_ready(
+        self, key: tuple[int, str], result: str | ParseIssue, gen: int
+    ) -> None:
+        with self._container_lock:
+            if gen != self._container_gen:
+                return
+            self._container_names[key] = result
+        identifier = _identifier_of(result)
+        if identifier is None:
+            return
+        for item in self._container_items.get(key, []):
+            node: VFSNode | None = item.data(_ROLE_NODE)
+            if node is not None:
+                self._apply_container_label(item, node, identifier)
+
+    def _container_identifier_blocking(self, node: VFSNode, vfs: VFS) -> str | None:
+        """The identifier of container folder *node* (None for any other
+        folder or when its plist gives none), read from the source when not
+        read yet and kept for the next search: background only."""
+        key = (id(vfs), node.path)
+        with self._container_lock:
+            gen = self._container_gen
+            if key in self._container_names:
+                return _identifier_of(self._container_names[key])
+        if not ios_containers.is_container(node):
+            return None
+        result = ios_containers.read_identifier(node, vfs)
+        if result is None:
+            return None
+        with self._container_lock:
+            if gen == self._container_gen:  # else the tree was replaced meanwhile
+                self._container_names.setdefault(key, result)
+        return _identifier_of(result)
 
     def _add_placeholder(self, parent_item: QStandardItem) -> None:
         if parent_item.rowCount() > 0:

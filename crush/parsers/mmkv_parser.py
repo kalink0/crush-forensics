@@ -43,6 +43,9 @@ _META_VERSION_ACTUAL_SIZE = 3  # from this meta version, actualSize is meaningfu
 # Why a non-zero .crc vector was overridden -- one wording, shown both in the
 # parse metadata and in the viewer's Overview tab.
 _FALSE_POSITIVE_NOTE = ParseIssue("mmkv.false_positive_note")
+# Why a store with a vector but a recorded data size of 0 is neither read as
+# encrypted nor as plaintext.
+_NOTHING_RECORDED_NOTE = ParseIssue("mmkv.nothing_recorded_note")
 
 
 def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
@@ -77,18 +80,19 @@ def _read_meta_info(crc_bytes: bytes | None) -> dict[str, Any] | None:
 
 
 def _try_plain_walk(raw: bytes) -> list[tuple[str, bytes]] | None:
-    """Attempt to read *raw* as an unencrypted MMKV store, ignoring the .crc
-    meta file's encryption flag entirely.
+    """Attempt to read *raw* as an unencrypted MMKV store, whatever the .crc
+    meta file's AES vector holds.
 
-    The .crc file's "non-zero vector means AES-encrypted" heuristic is only
-    as good as the MMKVMetaInfo layout it's read against — seen false-
-    positive in the field on a real react-native-mmkv store whose meta
-    "version" field was far higher than anything this layout has been
-    verified against (61, vs. the 1-4 range the known struct evolution
-    covers), producing a non-zero vector for a demonstrably plaintext store.
-    Rather than trust the flag blindly, confirm it: a genuinely encrypted
-    store fed through here as if it weren't will, per read_entries()'s own
-    documented invariant, either yield nothing or leave a tail unread.
+    A non-zero vector doesn't mean the store is encrypted: MMKV::clearAll
+    writes one for every store it clears, encrypted or not, and nothing
+    zeroes it again (vendored mmkv_parser, "Decryption is opt-in"); it was
+    first seen here on a react-native-mmkv store with meta version 61.
+    Whether the region is encrypted is decided by reading it, as the
+    vendored read_entries() does: a region whose entries account for every
+    byte is plaintext. Ciphertext walked as if it weren't yields nothing or
+    leaves a tail unread. The region is the one the header gives: the
+    version-61 store had a meta file this layout isn't verified for, so its
+    size field isn't relied on here.
     """
     if len(raw) < _HEADER_LENGTH:
         return None
@@ -288,8 +292,21 @@ class MMKVParser(AbstractParser):
         meta_flagged_encrypted = meta_info is not None and meta_info["encrypted"]
         false_positive_encrypted_flag = False
 
-        if meta_flagged_encrypted and password is None:
-            plain_entries = _try_plain_walk(raw)
+        # A store with a vector is read as plaintext first, with or without a
+        # key -- as the vendored read_entries() does, which ignores the key for
+        # a region that reads as plaintext.
+        plain_entries = _try_plain_walk(raw) if meta_flagged_encrypted else None
+        # A recorded data size of 0 with a vector: MMKV::clearAll leaves exactly
+        # this for any store it clears. There are no records to tell plaintext
+        # from ciphertext by (and none to decrypt), so it is shown as an empty
+        # store whose encryption is unknown, not refused as encrypted.
+        nothing_recorded = bool(
+            meta_flagged_encrypted and len(raw) >= _HEADER_LENGTH
+            and _region_size(raw, None) == 0  # type: ignore[no-untyped-call]
+        )
+        if nothing_recorded:
+            entries = []
+        elif meta_flagged_encrypted and (password is None or plain_entries is not None):
             if plain_entries is None:
                 return ParseResult(
                     viewer_type="tree",
@@ -355,7 +372,9 @@ class MMKVParser(AbstractParser):
         # real on-disk span. The false-positive-flag path already proved this
         # store is plaintext despite meta_info's vector, so treat it as
         # unencrypted here too rather than re-triggering the "need a key" guard.
-        offsets_meta_info = None if false_positive_encrypted_flag else meta_info
+        offsets_meta_info = (
+            None if false_positive_encrypted_flag or nothing_recorded else meta_info
+        )
         offsets = _compute_entry_offsets(raw, offsets_meta_info, password, aes256)
         offsets_issue: ParseIssue | None = None
         if offsets is not None and len(offsets) == len(records):
@@ -390,7 +409,13 @@ class MMKVParser(AbstractParser):
             meta["Meta file"] = meta_status_long
         if offsets_issue is not None:
             meta["Hex offsets"] = offsets_issue
-        if password is not None:
+        if nothing_recorded:
+            meta["Encrypted"] = ParseIssue("mmkv.encrypted_unknown", {"note": _NOTHING_RECORDED_NOTE})
+        elif password is not None and false_positive_encrypted_flag:
+            meta["Encrypted"] = ParseIssue(
+                "mmkv.key_ignored_plaintext", {"note": _FALSE_POSITIVE_NOTE},
+            )
+        elif password is not None:
             if meta_info is not None and meta_info["encrypted"]:
                 meta["Encrypted"] = ParseIssue("mmkv.encrypted_decrypted")
             elif meta_info is None:
@@ -413,6 +438,9 @@ class MMKVParser(AbstractParser):
         viewer_meta_info = meta_info
         if false_positive_encrypted_flag and meta_info is not None:
             viewer_meta_info = {**meta_info, "encrypted": False, "encrypted_note": _FALSE_POSITIVE_NOTE}
+        elif nothing_recorded and meta_info is not None:
+            # None: unknown, with the reason
+            viewer_meta_info = {**meta_info, "encrypted": None, "encrypted_note": _NOTHING_RECORDED_NOTE}
 
         text_parts: list[str] = []
         for r in records:

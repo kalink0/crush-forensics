@@ -5,6 +5,7 @@ from __future__ import annotations
 import plistlib
 import sqlite3
 import struct
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1830,24 +1831,30 @@ def _make_ktx_bytes(
     compressed: bool = False,
     key_values: bytes = b"",
     little_endian: bool = True,
+    payload: bytes | None = None,
+    gl_type: int = 0,
+    gl_format: int = 0,
 ) -> bytes:
     """Build a KTX 1.1 file the way iOS writes them.
 
     Layout follows the Khronos KTX 1.1 specification. The Apple LZFSE variant
     carries `imageSize`, then an `LZFS` marker, then the compressed block size,
-    then the LZFSE block itself.
+    then the LZFSE block itself. Without `payload`, the texture is ASTC 4x4
+    void-extent blocks.
     """
-    blocks = -(-width // 4) * (-(-height // 4))
-    astc = _KTX_VOID_EXTENT_BLOCK * blocks
+    if payload is None:
+        blocks = -(-width // 4) * (-(-height // 4))
+        payload = _KTX_VOID_EXTENT_BLOCK * blocks
+    astc = payload
     order = "<" if little_endian else ">"
     header = (
         b"\xabKTX 11\xbb\r\n\x1a\n"
         + (b"\x01\x02\x03\x04" if little_endian else b"\x04\x03\x02\x01")
         + struct.pack(
             order + "12I",
-            0,                    # glType (0 for compressed textures)
+            gl_type,              # glType (0 for compressed textures)
             1,                    # glTypeSize
-            0,                    # glFormat
+            gl_format,            # glFormat (0 for compressed textures)
             gl_internal_format,
             0x1908,               # glBaseInternalFormat (GL_RGBA)
             width,
@@ -2118,6 +2125,285 @@ def test_image_parser_ktx_unsupported_pixel_format_is_metadata_only(tmp_path: Pa
     assert result.metadata["Format"] == "KTX"
     assert str(result.metadata["Pixel format"]) == "Unsupported (glInternalFormat 0x881A)"
     assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
+
+
+def _parse_ktx_file(tmp_path: Path, data: bytes):
+    ktx_path = tmp_path / "texture.ktx"
+    ktx_path.write_bytes(data)
+    vfs = DirectoryVFS(tmp_path)
+    node = next(c for c in vfs.root().children if c.name == "texture.ktx")
+    return ImageParser().parse(node, vfs)
+
+
+def _decoded_pixel(result, xy: tuple[int, int] = (0, 0)) -> tuple[int, ...]:
+    import io
+    from PIL import Image
+
+    with Image.open(io.BytesIO(result.data)) as image:
+        return image.convert("RGBA").getpixel(xy)
+
+
+def test_image_parser_ktx_astc_6x6_decode(tmp_path: Path) -> None:
+    # A void-extent block is valid at every ASTC block size; 0x93B4 is 6x6.
+    pytest.importorskip("astc_decomp_faster")
+    blocks = 2 * 1  # 12x6 pixels
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=12, height=6, gl_internal_format=0x93B4, payload=_KTX_VOID_EXTENT_BLOCK * blocks,
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "ASTC 6x6 (GL_COMPRESSED_RGBA_ASTC_6x6_KHR)"
+    assert result.metadata["Payload"] == "ASTC"
+    assert _decoded_pixel(result, (11, 5)) == _KTX_VOID_EXTENT_RGBA8
+
+
+_GRID_COLOURS = ((255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255), (255, 255, 255, 128))
+
+
+def _grid_payload(block_for: Callable[[tuple[int, int, int, int]], bytes]) -> bytes:
+    """Four blocks, two by two in row order, each one colour of _GRID_COLOURS."""
+    return b"".join(block_for(c) for c in _GRID_COLOURS)
+
+
+def _assert_grid(tmp_path: Path, data: bytes, size: tuple[int, int], block: tuple[int, int],
+                 colours: tuple[tuple[int, ...], ...] = _GRID_COLOURS) -> None:
+    """Every pixel of the decoded texture is the colour of the block it lies
+    in, and the image is the texture's own size."""
+    import io
+    from PIL import Image
+
+    result = _parse_ktx_file(tmp_path, data)
+    assert result.viewer_type == "image", result.metadata.get("KTX warnings")
+    with Image.open(io.BytesIO(result.data)) as image:
+        rgba = image.convert("RGBA")
+        assert rgba.size == size
+        for y in range(size[1]):
+            for x in range(size[0]):
+                quadrant = (y >= block[1]) * 2 + (x >= block[0])
+                assert rgba.getpixel((x, y)) == colours[quadrant], (x, y)
+
+
+def _astc_void_extent(rgba: tuple[int, int, int, int]) -> bytes:
+    return bytes.fromhex("fcfdffffffffffff") + struct.pack("<4H", *(v * 257 for v in rgba))
+
+
+@pytest.mark.parametrize("bw,bh", [
+    (4, 4), (5, 4), (5, 5), (6, 5), (6, 6), (8, 5), (8, 6), (8, 8),
+    (10, 5), (10, 6), (10, 8), (10, 10), (12, 10), (12, 12),
+])
+def test_image_parser_ktx_astc_size_not_a_block_multiple(
+    tmp_path: Path, bw: int, bh: int
+) -> None:
+    """A texture whose width and height aren't multiples of the ASTC block
+    size: two by two blocks of known constant colours (void-extent) must
+    land each in its own quadrant, cut to the texture's size."""
+    pytest.importorskip("astc_decomp_faster")
+    from crush.parsers.apple_ktx import _ASTC_BLOCK_SIZES
+
+    size = (bw + bw // 2 + 1, bh + bh // 2 + 1)
+    code = 0x93B0 + _ASTC_BLOCK_SIZES.index((bw, bh))
+    _assert_grid(tmp_path, _make_ktx_bytes(
+        width=size[0], height=size[1], gl_internal_format=code,
+        payload=_grid_payload(_astc_void_extent),
+    ), size, (bw, bh))
+
+
+def _rgb565(rgba: tuple[int, int, int, int]) -> int:
+    r, g, b, _a = rgba
+    return (r >> 3) << 11 | (g >> 2) << 5 | b >> 3
+
+
+@pytest.mark.parametrize("code,block_for,opaque,red_only", [
+    # BC1 (texture2ddecoder): both endpoints the colour, every index 0.
+    (0x83F0, lambda c: struct.pack("<HHI", _rgb565(c), _rgb565(c), 0), True, False),
+    # BC1 RGBA (Pillow's bcn decoder): the same.
+    (0x83F1, lambda c: struct.pack("<HHI", _rgb565(c), _rgb565(c), 0), True, False),
+    # BC3: an alpha block of one value, then the BC1 colour block.
+    (0x83F3, lambda c: bytes([c[3], c[3]]) + bytes(6)
+     + struct.pack("<HHI", _rgb565(c), _rgb565(c), 0), False, False),
+    # BC4: both red endpoints the value, every index 0.
+    (0x8DBB, lambda c: bytes([c[0], c[0]]) + bytes(6), True, True),
+])
+def test_image_parser_ktx_bc_size_not_a_block_multiple(
+    tmp_path: Path, code: int, block_for: Callable[[tuple[int, int, int, int]], bytes],
+    opaque: bool, red_only: bool,
+) -> None:
+    """The BC decoders at a size that isn't a multiple of their 4x4 block:
+    constant-colour blocks each in their own quadrant."""
+    pytest.importorskip("texture2ddecoder")
+    colours = tuple(
+        (c[0], 0, 0, 255) if red_only else (c[0], c[1], c[2], 255) if opaque else c
+        for c in _GRID_COLOURS
+    )
+    _assert_grid(tmp_path, _make_ktx_bytes(
+        width=7, height=5, gl_internal_format=code, payload=_grid_payload(block_for),
+    ), (7, 5), (4, 4), colours)
+
+
+def _block_formats_but_astc() -> list[int]:
+    from crush.parsers.apple_ktx import _BLOCK_FORMATS
+
+    return [code for code, fmt in sorted(_BLOCK_FORMATS.items()) if fmt.family != "ASTC"]
+
+
+@pytest.mark.parametrize("code", _block_formats_but_astc())
+def test_image_parser_ktx_every_block_format_crops_from_the_padded_texture(
+    tmp_path: Path, code: int
+) -> None:
+    """Every other block format at a size that isn't a multiple of its
+    block (for PVRTC 2bpp, also below its minimum of two blocks a side):
+    the same stored blocks show as the top-left corner of the texture they
+    pad to. Deterministic pseudo-random blocks; ASTC is left out, as an
+    arbitrary ASTC block may be an invalid encoding, which doesn't decode
+    the same way twice on every platform (see _KTX_VOID_EXTENT_BLOCK)."""
+    import io
+    import random
+
+    from PIL import Image
+
+    from crush.parsers.apple_ktx import _BLOCK_FORMATS
+
+    pytest.importorskip("texture2ddecoder")
+    fmt = _BLOCK_FORMATS[code]
+    width, height = 6, 6
+    padded = fmt.padded_size(width, height)
+    assert padded != (width, height)
+    payload = random.Random(code).randbytes(fmt.data_size(width, height))
+
+    def pixels(w: int, h: int, name: str) -> Image.Image:
+        (tmp_path / name).mkdir()
+        result = _parse_ktx_file(tmp_path / name, _make_ktx_bytes(
+            width=w, height=h, gl_internal_format=code, payload=payload,
+        ))
+        assert result.viewer_type == "image", result.metadata.get("KTX warnings")
+        with Image.open(io.BytesIO(result.data)) as image:
+            return image.convert("RGBA")
+
+    small = pixels(width, height, "small")
+    whole = pixels(*padded, "whole")
+    assert small.size == (width, height)
+    assert small.tobytes() == whole.crop((0, 0, width, height)).tobytes()
+
+
+def test_image_parser_ktx_bc1_decode_is_rgba_not_bgra(tmp_path: Path) -> None:
+    # BC1 block with both endpoint colours pure red (RGB565 0xF800): every
+    # pixel decodes to red, which catches a BGRA/RGBA channel swap.
+    pytest.importorskip("texture2ddecoder")
+    red_block = struct.pack("<HHI", 0xF800, 0xF800, 0)
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=8, height=4, gl_internal_format=0x83F0, payload=red_block * 2,
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Payload"] == "BC1"
+    assert _decoded_pixel(result, (7, 3)) == (255, 0, 0, 255)
+
+
+def test_image_parser_ktx_etc1_decode(tmp_path: Path) -> None:
+    pytest.importorskip("texture2ddecoder")
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=4, gl_internal_format=0x8D64, payload=bytes(8),
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "ETC1 RGB (GL_ETC1_RGB8_OES)"
+    assert result.metadata["Decode status"].code == "ktx.decoded"
+
+
+def test_image_parser_ktx_uncompressed_rgb_rows_are_padded(tmp_path: Path) -> None:
+    # 3x2 RGB8: each 9-byte row is padded to 12 bytes (GL_UNPACK_ALIGNMENT 4).
+    row0 = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255]) + b"\x00" * 3
+    row1 = bytes([10, 20, 30, 40, 50, 60, 70, 80, 90]) + b"\x00" * 3
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=3, height=2, gl_internal_format=0x8051, gl_type=0x1401, gl_format=0x1907,
+        payload=row0 + row1,
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "RGB8 (GL_RGB, GL_UNSIGNED_BYTE)"
+    assert result.metadata["Payload"] == "RGB8"
+    assert _decoded_pixel(result, (2, 0)) == (0, 0, 255, 255)
+    assert _decoded_pixel(result, (0, 1)) == (10, 20, 30, 255)
+
+
+def test_image_parser_ktx_uncompressed_bgra_decode(tmp_path: Path) -> None:
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=1, height=1, gl_internal_format=0x93A1, gl_type=0x1401, gl_format=0x80E1,
+        payload=bytes([10, 20, 30, 40]),
+    ))
+
+    assert result.viewer_type == "image"
+    assert _decoded_pixel(result) == (30, 20, 10, 40)
+
+
+def test_image_parser_ktx_truncated_payload_is_not_decoded(tmp_path: Path) -> None:
+    # 8x8 BC1 needs four 8-byte blocks; only one is present. The decoder would
+    # read past the buffer, so the parser must refuse before calling it.
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=8, height=8, gl_internal_format=0x83F0, payload=bytes(8),
+    ))
+
+    assert result.viewer_type == "text"
+    assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
+    failure = next(w for w in result.metadata["KTX warnings"] if w.code == "ktx.decode_failed")
+    assert "needs 32" in str(failure)
+
+
+def test_image_parser_ktx_texture_the_decoder_rejects_keeps_metadata(tmp_path: Path) -> None:
+    # PVRTC 1 needs power-of-two block counts; 12x8 at 4bpp is 3x2 blocks.
+    # texture2ddecoder refuses it, which must end as a reason, not a crash.
+    pytest.importorskip("texture2ddecoder")
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=12, height=8, gl_internal_format=0x8C00, payload=bytes(48),
+    ))
+
+    assert result.viewer_type == "text"
+    assert result.metadata["Pixel format"] == "PVRTC RGB 4bpp (GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG)"
+    assert result.metadata["Decode status"].code == "ktx.decode_unavailable"
+    failure = next(w for w in result.metadata["KTX warnings"] if w.code == "ktx.decode_failed")
+    assert failure.params["reason"].code == "ktx.decoder_rejected"
+
+
+def test_image_parser_ktx_bc1_rgba_keeps_transparency(tmp_path: Path) -> None:
+    # c0 (black) <= c1 (red) selects BC1's 3-colour mode, where index 3 is
+    # transparent black. Pixel (0, 0) uses index 1 (red), all others index 3.
+    block = struct.pack("<HHI", 0x0000, 0xF800, 0xFFFFFFFD)
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=4, gl_internal_format=0x83F1, payload=block,
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "BC1 (DXT1) RGBA (GL_COMPRESSED_RGBA_S3TC_DXT1_EXT)"
+    assert _decoded_pixel(result, (0, 0)) == (255, 0, 0, 255)
+    assert _decoded_pixel(result, (3, 3)) == (0, 0, 0, 0)
+
+
+def test_image_parser_ktx_alpha_only_is_greyscale_and_labelled(tmp_path: Path) -> None:
+    # GL_ALPHA has no colour: shown as greyscale, with a row saying so, so an
+    # alpha mask isn't taken for image content. 4x1 needs no row padding.
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=1, gl_internal_format=0x803C, gl_type=0x1401, gl_format=0x1906,
+        payload=bytes([0, 85, 170, 255]),
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "A8 (GL_ALPHA, GL_UNSIGNED_BYTE)"
+    assert result.metadata["Shown as"].code == "ktx.alpha_as_greyscale"
+    assert _decoded_pixel(result, (0, 0)) == (0, 0, 0, 255)
+    assert _decoded_pixel(result, (2, 0)) == (170, 170, 170, 255)
+
+
+def test_image_parser_ktx_red_only_is_red_like_bc4(tmp_path: Path) -> None:
+    # GL_RED reads as (r, 0, 0, 1), as BC4 and EAC R11 decode; not greyscale.
+    result = _parse_ktx_file(tmp_path, _make_ktx_bytes(
+        width=4, height=1, gl_internal_format=0x8229, gl_type=0x1401, gl_format=0x1903,
+        payload=bytes([0, 85, 170, 255]),
+    ))
+
+    assert result.viewer_type == "image"
+    assert result.metadata["Pixel format"] == "R8 (GL_RED, GL_UNSIGNED_BYTE)"
+    assert "Shown as" not in result.metadata
+    assert _decoded_pixel(result, (2, 0)) == (170, 0, 0, 255)
 
 
 def _tiny_jpeg() -> bytes:

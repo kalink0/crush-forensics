@@ -1477,6 +1477,21 @@ MESSAGES: dict[str, str] = {
         "Unexpected KTX mipmap count {count}; decoding first level",
         "ktx.unexpected_mipmaps",
     ),
+    "ktx.payload_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Texture data is {present} bytes; a {width}x{height} image needs {needed}",
+        "ktx.payload_short",
+    ),
+    "ktx.alpha_as_greyscale": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Alpha values shown as greyscale: black is transparent, white is opaque",
+        "ktx.alpha_as_greyscale",
+    ),
+    "ktx.decoder_rejected": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The {format} decoder rejected the texture data: {detail}",
+        "ktx.decoder_rejected",
+    ),
     "ktx.lzfse_failed": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "LZFSE decompression failed: {detail}",
@@ -2945,7 +2960,8 @@ MESSAGES: dict[str, str] = {
     # -- MMKV -------------------------------------------------------------
     "mmkv.encrypted_error": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "This MMKV store is AES-encrypted.",
+        "This MMKV store doesn't read as plaintext and its .crc meta file holds an AES "
+        "vector: it is encrypted or damaged.",
         "mmkv.encrypted_error",
     ),
     "mmkv.encrypted_hint": QT_TRANSLATE_NOOP(
@@ -2955,10 +2971,12 @@ MESSAGES: dict[str, str] = {
     ),
     "mmkv.format_encrypted": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "MMKV Key-Value Store (encrypted)",
+        "MMKV Key-Value Store (encrypted or damaged)",
         "mmkv.format_encrypted",
     ),
-    "mmkv.encrypted_yes": QT_TRANSLATE_NOOP("ParseIssue", "yes", "mmkv.encrypted_yes"),
+    "mmkv.encrypted_yes": QT_TRANSLATE_NOOP(
+        "ParseIssue", "yes, or the store is damaged", "mmkv.encrypted_yes"
+    ),
     "mmkv.read_failed": QT_TRANSLATE_NOOP("ParseIssue", "{detail}", "mmkv.read_failed"),
     "mmkv.read_failed_hint": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -3025,6 +3043,23 @@ MESSAGES: dict[str, str] = {
         "zero, so the store is not encrypted",
         "mmkv.key_ignored_zero_vector",
     ),
+    "mmkv.encrypted_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "unknown — {note}",
+        "mmkv.encrypted_unknown",
+    ),
+    "mmkv.nothing_recorded_note": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the recorded data size is 0, so there are no records to tell it by; the "
+        ".crc meta file's AES vector is non-zero, which MMKV also writes when it "
+        "clears a store",
+        "mmkv.nothing_recorded_note",
+    ),
+    "mmkv.key_ignored_plaintext": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "no — a key was supplied but ignored: {note}",
+        "mmkv.key_ignored_plaintext",
+    ),
     "mmkv.encrypted_false_positive": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "no — {note}",
@@ -3032,9 +3067,8 @@ MESSAGES: dict[str, str] = {
     ),
     "mmkv.false_positive_note": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        ".crc meta file's vector field is non-zero, which normally flags AES "
-        "encryption, but the store read cleanly as plaintext anyway, so that flag "
-        "is treated as a false positive here",
+        "the store reads as plaintext; the .crc meta file's AES vector is non-zero, "
+        "which MMKV also writes when it clears a store",
         "mmkv.false_positive_note",
     ),
     "mmkv.offsets_unavailable": QT_TRANSLATE_NOOP(
@@ -3813,6 +3847,17 @@ MESSAGES: dict[str, str] = {
         "UTC offset {offset} stored beside it, not applied",
         "time.offset_not_applied",
     ),
+    "time.ext_inode": QT_TRANSLATE_NOOP("ParseIssue", "ext inode", "time.ext_inode"),
+    "time.apfs_inode": QT_TRANSLATE_NOOP("ParseIssue", "APFS inode record", "time.apfs_inode"),
+    "time.hfsplus_catalog": QT_TRANSLATE_NOOP(
+        "ParseIssue", "HFS+ catalog record", "time.hfsplus_catalog"
+    ),
+    "time.btrfs_inode": QT_TRANSLATE_NOOP("ParseIssue", "Btrfs inode item", "time.btrfs_inode"),
+    "time.raw_times_unreadable": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The times stored for this entry could not be read: {detail}",
+        "time.raw_times_unreadable",
+    ),
     # -- Entries in a browsed source (Properties: Entry status) --------------------
     "entry.duplicate": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -3976,6 +4021,13 @@ MESSAGES: dict[str, str] = {
         "recovered (content intact)",
         "entry.recovered_intact",
     ),
+    "entry.recovered_unverified": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "recovered, content unverified: nothing on the volume contradicts it, but the "
+        "volume does not record whether its clusters were reused, so the content can be "
+        "another file's",
+        "entry.recovered_unverified",
+    ),
     "entry.recovered_assumed_contiguous": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "recovered on an assumption: the cluster chain is gone, so the content is read "
@@ -3988,6 +4040,12 @@ MESSAGES: dict[str, str] = {
         "not recoverable: {detail}",
         "entry.not_recoverable",
     ),
+    "entry.recovered_size_unknown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "size not recorded: the record's data attribute is in an extension record that "
+        "was not read, so the 0 bytes shown are not the file's size",
+        "entry.recovered_size_unknown",
+    ),
     "entry.recovery_note": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "recovery note: {detail}",
@@ -3997,6 +4055,16 @@ MESSAGES: dict[str, str] = {
         "ParseIssue",
         "(folder no longer present)",
         "entry.original_folder_gone",
+    ),
+    "entry.orphan_folder": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{path} (an orphaned folder: where it sat in the tree is not recorded)",
+        "entry.orphan_folder",
+    ),
+    "entry.orphan_folder_unnamed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "(not named: no entry on the volume names the folder this entry is in)",
+        "entry.orphan_folder_unnamed",
     ),
     "entry.raw_volume_note": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -4044,9 +4112,125 @@ MESSAGES: dict[str, str] = {
     ),
     "entry.raw_volume_damage": QT_TRANSLATE_NOOP(
         "ParseIssue",
-        "{count} damaged structure(s) recorded and skipped while the volume was listed, "
-        "first: {first}",
+        "{count} part(s) of the volume could not be read or failed a check while it was "
+        "listed, first: {first}",
         "entry.raw_volume_damage",
+    ),
+    "entry.raw_file_note": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Filesystem reader note ({issue}): {detail}",
+        "entry.raw_file_note",
+    ),
+    "entry.raw_file_note_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the reader's {check} for this file could not run, so what it reports is not "
+        "known: {detail}",
+        "entry.raw_file_note_failed",
+    ),
+    "entry.raw_note_past_valid_data": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the content past the file's ValidDataLength is read as zeros, not from its "
+        "clusters (reader detail: {detail})",
+        "entry.raw_note_past_valid_data",
+    ),
+    "entry.raw_note_valid_data_damaged": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file's ValidDataLength is larger than its size, so the file is read to its "
+        "size (reader detail: {detail})",
+        "entry.raw_note_valid_data_damaged",
+    ),
+    "entry.raw_note_entry_set_checksum": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file's directory entry set fails its checksum, so where its content is read "
+        "from is not vouched for (reader detail: {detail})",
+        "entry.raw_note_entry_set_checksum",
+    ),
+    "entry.raw_note_clusters_marked_free": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "clusters the content is read from are marked free, so they can hold other data "
+        "(reader detail: {detail})",
+        "entry.raw_note_clusters_marked_free",
+    ),
+    "entry.raw_note_fat_copies_differ": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the FAT copies disagree on the file's cluster chain; the content follows the "
+        "table in use and may not be the file's from that point (reader detail: {detail})",
+        "entry.raw_note_fat_copies_differ",
+    ),
+    "entry.raw_note_no_pointer_zeros": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "blocks with no pointer were read as zeros, which a sparse hole and a damaged "
+        "pointer both look like (reader detail: {detail})",
+        "entry.raw_note_no_pointer_zeros",
+    ),
+    "entry.raw_note_previous_size": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file is read at its previous size; bytes stored past it are not in the "
+        "content shown (reader detail: {detail})",
+        "entry.raw_note_previous_size",
+    ),
+    "entry.raw_note_roll_forward": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the content comes in part from the roll-forward log written after the last "
+        "checkpoint (reader detail: {detail})",
+        "entry.raw_note_roll_forward",
+    ),
+    "entry.raw_note_blocks_unreached": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the inode counts more blocks than its map reaches, so the content can hold "
+        "zeros or other bytes where those blocks belonged (reader detail: {detail})",
+        "entry.raw_note_blocks_unreached",
+    ),
+    "entry.raw_note_record_torn": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the file's MFT record failed its update sequence check and was read as it "
+        "stands (reader detail: {detail})",
+        "entry.raw_note_record_torn",
+    ),
+    "entry.raw_note_link": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "a link (junction or symbolic link); its stored target and times are in the "
+        "reader detail: {detail}",
+        "entry.raw_note_link",
+    ),
+    "entry.raw_unreached": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "not reached from the root folder and not read: {detail}",
+        "entry.raw_unreached",
+    ),
+    "entry.raw_unreached_count": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} entry(ies) the reader found are not reached from the root folder and are "
+        "listed in $Unreached, without content",
+        "entry.raw_unreached_count",
+    ),
+    "entry.raw_volume_state": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Filesystem reader note after listing: {detail}",
+        "entry.raw_volume_state",
+    ),
+    "entry.raw_volume_not_read": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not read, found while listing: {detail}",
+        "entry.raw_volume_not_read",
+    ),
+    "entry.raw_volume_check_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "the reader's {check} after listing could not run, so what it checks is not "
+        "known: {detail}",
+        "entry.raw_volume_check_failed",
+    ),
+    "entry.raw_encrypted_files": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count} file(s) are flagged encrypted (fscrypt) and are shown as the stored "
+        "ciphertext, not decrypted",
+        "entry.raw_encrypted_files",
+    ),
+    "entry.raw_encrypted_as_stored": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "flagged encrypted (fscrypt) and not decrypted: the content is the stored "
+        "ciphertext, which can run past the recorded size to the end of its last block",
+        "entry.raw_encrypted_as_stored",
     ),
     "entry.raw_volume_damage_listed": QT_TRANSLATE_NOOP(
         "ParseIssue",
@@ -4082,6 +4266,28 @@ MESSAGES: dict[str, str] = {
         "The parser found the format {name}, which has no entry in the format "
         "database; shown with the general format's knowledge",
         "entry.format_entry_missing",
+    ),
+    # -- iOS container folders (Properties: Container Identifier) ------------------
+    "ios_container.plist_too_large": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not read: the metadata plist is {size:,} bytes, larger than the "
+        "{limit:,} bytes read for it",
+        "ios_container.plist_too_large",
+    ),
+    "ios_container.read_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The metadata plist could not be read: {detail}",
+        "ios_container.read_failed",
+    ),
+    "ios_container.not_a_plist": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The metadata plist is not a valid plist: {detail}",
+        "ios_container.not_a_plist",
+    ),
+    "ios_container.no_identifier": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The metadata plist holds no {key} string",
+        "ios_container.no_identifier",
     ),
     # -- UFDR ------------------------------------------------------------------------
     "ufdr.not_recorded": QT_TRANSLATE_NOOP("ParseIssue", "(not recorded)", "ufdr.not_recorded"),

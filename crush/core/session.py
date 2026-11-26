@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from crush.core.hashing import HashStore
 from crush.core.vfs import VFS, VFSNode, open_vfs
 
 
@@ -26,6 +27,11 @@ class Session:
         self.integrity_mode: bool = False
         self.sources: list[VFS] = []
         self.open_artifacts: list[OpenArtifact] = []
+        # Hashes computed in this window, per source; kept while the source is open.
+        self.hashes = HashStore()
+        # id(vfs) -> (vfs, the path it was opened from); see source_label.
+        # The VFS is held so its id can't be reused for another source.
+        self._source_paths: dict[int, tuple[VFS, str]] = {}
         self._db = sqlite3.connect(":memory:")
         self._init_db()
 
@@ -50,24 +56,43 @@ class Session:
             private_key=private_key,
         )
         self.sources.append(vfs)
+        self._source_paths[id(vfs)] = (vfs, str(path))
         return vfs
 
-    def add_source_vfs(self, vfs: VFS) -> VFS:
+    def add_source_vfs(self, vfs: VFS, path: str | Path | None = None) -> VFS:
         """Attach an already-constructed VFS (e.g. built outside open_vfs() after a
-        user confirmation, like opening a zipped iTunes backup as such)."""
+        user confirmation, like opening a zipped iTunes backup as such);
+        *path*: what it was opened from."""
         self.sources.append(vfs)
+        if path is not None:
+            self._source_paths[id(vfs)] = (vfs, str(path))
         return vfs
+
+    def source_label(self, vfs: VFS) -> str:
+        """What *vfs* was opened from (the image, archive or folder path),
+        else its root's name."""
+        held = self._source_paths.get(id(vfs))
+        if held is not None and held[0] is vfs:
+            return held[1]
+        return vfs.root().name
 
     def detach_source(self, vfs: VFS) -> VFS:
         """Hand an open source to another session (another window) without
-        closing it."""
+        closing it. Its computed hashes are dropped here; the other window
+        starts without them."""
         self.sources = [item for item in self.sources if item is not vfs]
+        self.hashes.forget(vfs)
+        self._source_paths.pop(id(vfs), None)
         return vfs
 
     def replace_source(self, old: VFS, new: VFS) -> None:
         """Put *new* in *old*'s place and close *old* (the same source read
         again, e.g. with an encrypted volume opened)."""
         self.sources = [new if item is old else item for item in self.sources]
+        self.hashes.forget(old)
+        held = self._source_paths.pop(id(old), None)
+        if held is not None:
+            self._source_paths[id(new)] = (new, held[1])
         try:
             old.close()
         except Exception:
@@ -76,6 +101,8 @@ class Session:
     def remove_source(self, vfs: VFS) -> None:
         if vfs in self.sources:
             self.sources = [item for item in self.sources if item is not vfs]
+        self.hashes.forget(vfs)
+        self._source_paths.pop(id(vfs), None)
         try:
             vfs.close()
         except Exception:
@@ -106,6 +133,8 @@ class Session:
         return [{"path": r[0], "type": r[1], "snippet": r[2]} for r in rows]
 
     def close(self) -> None:
+        self.hashes.clear()
+        self._source_paths.clear()
         self._db.close()
         for vfs in self.sources:
             vfs.close()

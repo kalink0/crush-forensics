@@ -1,6 +1,6 @@
 # Vendored, byte-for-byte and UNMODIFIED, from:
 #   https://github.com/abrignoni/mmkv-parser
-#   commit 035b92dec07bb207af6ca5a05da796aa9d893f30 (2026-09-04)
+#   commit d9c0f2199ab8ec1ffcf10e4f9af777ffe98038be (2026-09-07)
 #   mmkv_parser/__init__.py, MIT License (see LICENSE in this directory)
 #
 # Crush's own wrapper lives in crush/parsers/mmkv_parser.py — it adapts this
@@ -59,9 +59,36 @@ value fits inside the file, and falls back to the header otherwise. Measured on 
 stores from 55 iOS and Android extractions, the two agreed on every one, so the
 preference changes nothing on stores written by any release to date.
 
+**A recorded size of zero does not mean the records are gone.** When MMKV clears a
+store, and when it loads one whose CRC does not check out, it writes a size of zero
+into the meta file and leaves the data region untouched: ``MMKV::clearAll`` truncates
+to the expected capacity and calls ``writeActualSize(0, 0, ...)``, and the load path's
+"file not valid or empty, discard everything" branch does the same. Neither zeroes the
+records. Such a store reads as empty, which is what the app sees and what this module
+returns by default. ``recover=True`` walks the region anyway, and returns entries only
+when the walk consumes whole entries and then meets nothing but the zero padding, so a
+region that does not account for itself is left alone rather than guessed at. This is a
+walk of the ordinary layout, not a search: no offset is scanned and no record is
+inferred. Measured on 16 such stores from one iOS extraction, every one walked to clean
+padding, recovering 1 to 46 entries each.
+**What sits past the recorded size is the store's own former content.** MMKV
+compacts by moving the surviving entries to the front of the region with a memmove
+and lowering the recorded size (``MMKV_IO.cpp``, ``memmoveDictionary`` and
+``doFullWriteBack``); nothing zeroes what the move leaves behind, and growth is the
+only operation that zero-fills, so the bytes between the recorded size and the end
+of the file are earlier generations of this store and never another file's.
+``carve_slack`` reads records out of that space. It is inference rather than
+parsing: see its docstring for what it can and cannot establish.
+
 **Decryption is opt-in and needs the key.** MMKV supports an AES-CFB mode; the
 initialisation vector for it is kept in the meta file at bytes 12 to 28, and the key
-is not in either file. With no ``key`` argument an encrypted store raises MMKVError
+is not in either file. That vector is an input to decryption and not a flag saying a
+store is encrypted: ``MMKV::clearAll`` fills it with random bytes for every store it
+clears, encrypted or not, and nothing ever zeroes it again, so a plaintext store that
+has been cleared carries one for the rest of its life. Whether a region is encrypted
+is therefore decided by reading it, not by that field. A region whose records account
+for every byte of the recorded size is plaintext and is returned as such. With no
+``key`` argument a region that does not read that way raises MMKVError
 rather than returning the garbage keys an encrypted region decodes to. Given a
 ``key``, the region is decrypted and read, and a key that does not produce a
 structurally complete store raises rather than returning a partial garbage read.
@@ -70,6 +97,8 @@ encrypted. Decryption needs `pycryptodome` or `cryptography` installed; the read
 itself has no dependencies and everything else works without them.
 """
 
+import collections
+import re
 import struct
 
 
@@ -109,7 +138,7 @@ def _read_varint(data, offset):
     raise MMKVError('varint longer than 5 bytes')
 
 
-def read_entries(path, key=None, aes256=False):
+def read_entries(path, key=None, aes256=False, recover=False):
     """Return every (key, raw_value_container) entry in file order.
 
     Every entry is returned, including repeats of the same key. Later entries
@@ -120,9 +149,14 @@ def read_entries(path, key=None, aes256=False):
     that is not encrypted. ``aes256`` selects AES-256 for a store the application
     created that way; the MMKV default is AES-128 and so is this one.
 
+    ``recover`` applies only to a store whose recorded size is zero, the state MMKV
+    leaves behind when it clears a store or fails a store's CRC. It walks the
+    surviving region and returns what it finds, and returns nothing when the region
+    does not walk cleanly to its zero padding. It changes nothing for any other store.
+
     Raises MMKVError for a file that is not a readable MMKV store, for an
-    encrypted store with no key, for a key that does not decrypt the store, and
-    for an encrypted store when no crypto backend is installed.
+    encrypted store with no key, for a key that does not decrypt the store, and for an
+    encrypted store when no crypto backend is installed.
     """
     with open(path, 'rb') as handle:
         data = handle.read()
@@ -131,24 +165,44 @@ def read_entries(path, key=None, aes256=False):
     meta = _read_meta(path)
     region_size = _region_size(data, meta)
     if region_size == 0:
-        return []
+        if not recover:
+            return []
+        # No vector check here. A reset store always carries a vector, because
+        # clearAll writes one whether or not the store is encrypted, so gating on it
+        # refused exactly the cleared plaintext stores recover exists to read. An
+        # encrypted region is excluded by _recover_reset_region's own requirement that
+        # the walk account for the region, which ciphertext does not.
+        return _recover_reset_region(data)
     if _HEADER_LENGTH + region_size > len(data):
         raise MMKVError('recorded data size runs past the end of the file')
     region = data[_HEADER_LENGTH:_HEADER_LENGTH + region_size]
 
     vector = meta['vector'] if meta else b''
-    if vector:
-        if key is None:
-            raise MMKVError('store is AES-encrypted (non-zero vector in the .crc meta file)')
-        region = _decrypt(region, _key_material(key, aes256), vector)
-        entries, unread = _walk(region)
-        # Every one of the 846 readable stores measured across 55 extractions was
-        # walked to its last byte, so a decryption that leaves a tail unread, or
-        # yields nothing at all, did not produce an MMKV store and the key is wrong.
-        if not entries or unread:
-            raise MMKVError('the supplied key did not decrypt this store')
+
+    # Whether this region is ciphertext is answered by reading it. A region whose
+    # records account for every one of its bytes is plaintext, whatever the meta
+    # file's vector holds: every one of the 846 readable stores measured across 55
+    # extractions walked to its last byte, and over 2500 trials no AES-CFB ciphertext
+    # did. A key is ignored here, as it is for any store that is not encrypted.
+    entries, unread = _walk(region)
+    if not unread:
         return entries
-    return _walk(region)[0]
+
+    # The region does not read as plaintext. Encryption always writes a vector, so a
+    # zero vector rules it out and a short walk is just a short walk, kept as read.
+    if not vector:
+        return entries
+    if key is None:
+        raise MMKVError(
+            'this store does not read as plaintext MMKV and the meta file carries an AES '
+            'vector, so it is encrypted or damaged; the walk read %d entries and left %d '
+            'of %d bytes unread. Supply a key to decrypt it.'
+            % (len(entries), unread, len(region)))
+    region = _decrypt(region, _key_material(key, aes256), vector)
+    entries, unread = _walk(region)
+    if not entries or unread:
+        raise MMKVError('the supplied key did not decrypt this store')
+    return entries
 
 
 def _walk(region):
@@ -183,11 +237,31 @@ def _walk(region):
     return entries, end - offset
 
 
+def _recover_reset_region(data):
+    """Return the entries of a store whose recorded size is zero but whose region survives.
+
+    Only returned when the walk accounts for the whole region: whole entries followed by
+    nothing but the zero padding MMKV pads the file out to. A region carrying anything
+    else is the leftover of a rewrite rather than an intact abandoned store, and reading
+    it needs the record-by-record tests of a carve, not this walk, so nothing is returned
+    for it here.
+    """
+    body = data[_HEADER_LENGTH:]
+    if not any(body):
+        return []
+    entries, unread = _walk(body)
+    if not entries or any(body[len(body) - unread:]):
+        return []
+    return entries
+
+
 def _read_meta(path):
     """Return the sibling .crc meta file's fields, or None when it is absent or short.
 
     MMKVMetaInfo lays out: crc u32, version u32, sequence u32, aesVector[16],
-    actualSize u32. A vector of all zeros means the store is not encrypted.
+    actualSize u32. The vector is the AES initialisation vector. It is written by
+    encryption and also, unguarded, by ``MMKV::clearAll``, so a non-zero vector does
+    not mean the store is encrypted and callers must not read it that way.
     """
     try:
         with open(path + '.crc', 'rb') as handle:
@@ -299,14 +373,133 @@ def decode_value(container):
     return container
 
 
-def read_dict(path, key=None, aes256=False):
+# A carved record is accepted only when its key looks like a key. The bounds and
+# the character set come from the shape MMKV keys actually take: measured over
+# 91,462 live records from four extractions, 1.4% of keys are shorter than 5 bytes
+# and 2.0% longer than 64, which is the recall this window gives up. The space is
+# deliberately absent. A space is byte 0x20, which is 32, so in running text it can
+# serve as the key-length field and the 32 bytes after it read as a key; every one
+# of the 2,469 false records a space-permitting version of this test produced on a
+# megabyte of prose had a space in its key, and only 25 of those 91,462 real keys
+# contain one.
+_CARVE_KEY = re.compile(r'^[0-9\w\-\$\./:]+$')
+_CARVE_KEY_MIN = 5
+_CARVE_KEY_MAX = 64
+
+CarvedRecord = collections.namedtuple('CarvedRecord', 'offset key container live_key')
+
+
+def _carve_at(data, offset):
+    """Return (key, container, end) if a record starts at ``offset``, else None."""
+    end = len(data)
+    try:
+        key_length, position = _read_varint(data, offset)
+    except MMKVError:
+        return None
+    if not _CARVE_KEY_MIN <= key_length <= _CARVE_KEY_MAX or position + key_length > end:
+        return None
+    try:
+        key = data[position:position + key_length].decode('utf-8')
+    except UnicodeDecodeError:
+        return None
+    if not _CARVE_KEY.match(key):
+        return None
+    position += key_length
+    try:
+        container_length, position = _read_varint(data, position)
+    except MMKVError:
+        return None
+    if position + container_length > end:
+        return None
+    container = data[position:position + container_length]
+    if container_length == 0:
+        return key, container, position          # a removal marker
+    try:
+        inner, consumed = _read_varint(container, 0)
+    except MMKVError:
+        inner = None
+    if inner is not None and (consumed == container_length
+                              or inner == container_length - consumed):
+        return key, container, position + container_length
+    # MMKV writes float and double as raw little-endian, so those containers are
+    # neither a length prefix nor a bare varint (CodedOutputData::writeFloat and
+    # writeDouble); their width is the only thing that identifies them.
+    if container_length in (4, 8):
+        return key, container, position + container_length
+    return None
+
+
+def carve_slack(path):
+    """Return records carved from the space past the recorded data region.
+
+    Each result is a CarvedRecord: the record's absolute offset in the file, its
+    key, its raw value container, and whether that key also exists in the live
+    region. Results are in file order.
+
+    **These are inferences, not parsed records, and some will be wrong.** The space
+    holds earlier generations of this store, but a compaction overwrites the front
+    of it, so the first surviving record rarely begins where the space does and the
+    records are not contiguous. There is no marker to synchronise on, so every
+    offset is tested on its own and anything structurally record-shaped is returned.
+
+    What that costs, measured on data with no MMKV structure in it at all: zero
+    false records per KiB on zero-filled, random, natural-language and JSON input,
+    and about 1.2 per KiB on base64 and hex text, which no test here rules out. A
+    store whose values are encoded blobs will therefore carve dirty. The signal that
+    separates the two in practice is repetition: real carved records repeat a key,
+    because that is what a superseded write is, and they overlap the live set, while
+    the false ones are each unique and match nothing live. ``live_key`` carries that
+    corroboration per record.
+
+    Nothing returned here should reach a reader as an ordinary record. It is
+    separate from read_entries for that reason, and read_dict never calls it.
+
+    Raises MMKVError for a file that is not a readable MMKV store, and for a store
+    whose recorded region does not read as plaintext, whose slack is ciphertext or
+    damage this does not attempt to read.
+    """
+    with open(path, 'rb') as handle:
+        data = handle.read()
+    if len(data) < _HEADER_LENGTH:
+        raise MMKVError('file shorter than an MMKV header')
+    meta = _read_meta(path)
+    region_size = _region_size(data, meta)
+    # Decided by reading the recorded region, not by the meta file's vector, which
+    # clearAll writes for plaintext stores too. A region that does not account for
+    # itself is ciphertext or damage, and the space past it is not readable either.
+    # A reset store has no region to test and is carved, which is what it is for.
+    if region_size and _walk(data[_HEADER_LENGTH:_HEADER_LENGTH + region_size])[1]:
+        raise MMKVError('cannot carve this store: its recorded region does not read as '
+                        'plaintext MMKV records, so it is encrypted or damaged and the '
+                        'space past it is not readable either')
+    start = _HEADER_LENGTH + region_size
+    if start >= len(data):
+        return []
+    live = set()
+    if region_size and start <= len(data):
+        live = {entry_key for entry_key, _ in _walk(data[_HEADER_LENGTH:start])[0]}
+
+    records = []
+    offset = start
+    while offset < len(data):
+        found = _carve_at(data, offset)
+        if found is None:
+            offset += 1
+            continue
+        key, container, _ = found
+        records.append(CarvedRecord(offset, key, container, key in live))
+        offset += 1
+    return records
+
+
+def read_dict(path, key=None, aes256=False, recover=False):
     """Return {key: decoded value} using the last occurrence of each key.
 
     Removed keys are omitted. Use read_entries when the superseded values
-    matter. ``key`` and ``aes256`` are passed through to read_entries.
+    matter. ``key``, ``aes256`` and ``recover`` are passed through to read_entries.
     """
     result = {}
-    for entry_key, container in read_entries(path, key=key, aes256=aes256):
+    for entry_key, container in read_entries(path, key=key, aes256=aes256, recover=recover):
         value = decode_value(container)
         if value is None:
             result.pop(entry_key, None)
