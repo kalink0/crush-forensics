@@ -10,6 +10,19 @@ readable, as the ZIP format has no way to hide them.
 Split archives are cut into plain parts -- `name.zip.001`, `name.zip.002` ... --
 byte for byte: put together again (`copy /b`, `cat`) they are the archive;
 7-Zip opens `.001` directly.
+
+pyzipper internals. Beyond its public API this module and the ZIP export use:
+`AESZipInfo.encode_central_directory` (`_ZipInfo`, to keep an entry's own
+central-directory extras -- stripped with our own strip_extra_fields, as
+pyzipper's `_strip_extra` loses fields); the open
+archive's `fp`, `start_dir`, `filelist`, `NameToInfo` and `_didModify`
+(`copy_entries_raw`, which appends entries as they are stored); `pwd` and
+`encryption` (folder entries left unencrypted); and `ZipInfo._compresslevel`
+(the level per entry). A release may change any of them without notice, and
+a wrong offset would write a broken archive rather than fail. So pyproject.toml
+caps pyzipper at the versions tested (0.3.6 and 0.4.0), and
+test_zip_writer_pyzipper.py checks each of these is still there and behaves:
+raise the cap only once it, and the ZIP export tests, pass with the new one.
 """
 from __future__ import annotations
 
@@ -19,7 +32,6 @@ from pathlib import Path
 from typing import IO, Any, Callable, Literal
 
 import pyzipper
-from pyzipper import zipfile as _pz_zipfile
 from pyzipper.zipfile_aes import AESZipInfo
 
 ZipMethod = Literal["stored", "deflate", "bzip2", "lzma"]
@@ -91,6 +103,26 @@ class ZipOptions:
         return ", ".join(parts)
 
 
+def strip_extra_fields(extra: bytes, ids: tuple[int, ...]) -> bytes:
+    """*extra* (a ZIP entry's extra fields: 2-byte id, 2-byte length, data)
+    without the fields of the given ids. pyzipper's own `_strip_extra`
+    drops every field after a stripped one at the start, so it isn't used:
+    a ZIP64 field first would take an entry's timestamp with it. Bytes left
+    after the last whole field are kept as they are."""
+    import struct
+
+    kept: list[bytes] = []
+    i = 0
+    while i + 4 <= len(extra):
+        field_id, length = struct.unpack("<HH", extra[i:i + 4])
+        end = i + 4 + length
+        if field_id not in ids:
+            kept.append(extra[i:end])
+        i = end
+    kept.append(extra[i:])
+    return b"".join(kept)
+
+
 class _ZipInfo(AESZipInfo):  # type: ignore[misc]
     """pyzipper's entry, keeping an entry's own extra fields (its times, for
     one) in the central directory as zipfile does -- pyzipper writes only
@@ -99,7 +131,7 @@ class _ZipInfo(AESZipInfo):  # type: ignore[misc]
     __slots__ = ()
 
     def encode_central_directory(self, *, extra_data: bytes, **kwargs: Any) -> Any:
-        own = _pz_zipfile._strip_extra(self.extra, (_EXTRA_ZIP64, _EXTRA_WZ_AES))
+        own = strip_extra_fields(self.extra, (_EXTRA_ZIP64, _EXTRA_WZ_AES))
         return super().encode_central_directory(extra_data=extra_data + own, **kwargs)
 
 

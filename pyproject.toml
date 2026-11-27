@@ -48,7 +48,10 @@ dependencies = [
     # Argon2 (cryptsetup's default); without it such a container stays locked.
     "argon2-cffi>=23.1",
     "crush-analyze @ git+https://github.com/kalink0/crush-analyze.git@645cb2a414c172ad0710b7eb571dde27543f5278",
-    "pyzipper>=0.3.6",
+    # Capped: crush/core/zip_writer.py uses pyzipper internals (see the note there),
+    # which a new release may change without notice. Raise the cap only after
+    # test_zip_writer_pyzipper.py and the ZIP export tests pass with it.
+    "pyzipper>=0.3.6,<0.5",
     "sqlcipher3>=0.6.2",
     "pgdumplib>=4.0",
     # Chromium Disk Cache: bodies declared Brotli- or zstd-encoded, and
