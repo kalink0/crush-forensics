@@ -141,7 +141,7 @@ class ZipExportDialog(QDialog):
             "ZipExportDialog",
             "Parts are named {name}.001, .002 …, cut byte for byte (1 MB = 1,000,000 bytes). "
             "7-Zip opens .001 directly; other tools need the parts joined first "
-            "(copy /b, cat). A split archive can't be added to later.",
+            "(copy /b, cat). A later export can replace a split archive, but not add to it.",
         ).format(name="export.zip"))  # i18n: keep -- example file name
         split_note.setWordWrap(True)
         self._split_size.setValue(4)

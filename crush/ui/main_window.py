@@ -990,9 +990,6 @@ ZipExportMode = Literal["new", "add", "replace"]
 # ZIP stores no year before 1980 or after 2107 in its DOS date fields.
 _ZIP_MIN_DATE = (1980, 1, 1, 0, 0, 0)
 _ZIP_MAX_DATE = (2107, 12, 31, 23, 59, 58)
-# Above this a ZIP entry needs ZIP64 records; decided before the size is
-# written, so a little below zipfile's own limit.
-_ZIP64_FROM = 0x7FFFFFFF
 _ZIP_CHUNK = 1024 * 1024
 
 
@@ -1678,8 +1675,12 @@ class _ExportZipWorker(QObject):
             info.compress_type = zip_writer.METHODS[self._options.method]
             info._compresslevel = self._options.effective_level
             info.external_attr = 0o100644 << 16
-            info.file_size = total  # so zipfile knows up front whether ZIP64 is needed
-            with zf.open(info, "w", force_zip64=total >= _ZIP64_FROM) as dst:
+            # The size, known as the file is staged, set before writing: zipfile
+            # decides from it whether the entry needs ZIP64 records -- when it
+            # could pass ZIP64_LIMIT (2 GiB - 1) even if compressing makes it
+            # 5 % larger -- as it must decide before the data is written.
+            info.file_size = total
+            with zf.open(info, "w") as dst:
                 while chunk := staged.read(_ZIP_CHUNK):
                     self._check_cancel()
                     dst.write(chunk)

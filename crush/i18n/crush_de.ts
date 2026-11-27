@@ -15650,8 +15650,8 @@ Gesamt: {total:.2f} s</translation>
         <translation>In Teile aufteilen zu je</translation>
     </message>
     <message>
-        <source>Parts are named {name}.001, .002 …, cut byte for byte (1 MB = 1,000,000 bytes). 7-Zip opens .001 directly; other tools need the parts joined first (copy /b, cat). A split archive can&apos;t be added to later.</source>
-        <translation>Die Teile heißen {name}.001, .002 … und sind Byte für Byte zerschnitten (1 MB = 1.000.000 Bytes). 7-Zip öffnet .001 direkt; andere Programme brauchen die Teile zuerst zusammengefügt (copy /b, cat). Zu einem geteilten Archiv kann später nichts hinzugefügt werden.</translation>
+        <source>Parts are named {name}.001, .002 …, cut byte for byte (1 MB = 1,000,000 bytes). 7-Zip opens .001 directly; other tools need the parts joined first (copy /b, cat). A later export can replace a split archive, but not add to it.</source>
+        <translation>Die Teile heißen {name}.001, .002 … und sind Byte für Byte zerschnitten (1 MB = 1.000.000 Bytes). 7-Zip öffnet .001 direkt; andere Programme brauchen die Teile zuerst zusammengefügt (copy /b, cat). Ein späterer Export kann ein geteiltes Archiv ersetzen, aber nichts hinzufügen.</translation>
     </message>
     <message>
         <source>Structure in the archive</source>
