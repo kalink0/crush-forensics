@@ -132,6 +132,7 @@ METADATA_LABELS = (
     QT_TRANSLATE_NOOP("MetadataLabel", "Parse error"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Parse warning"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Parser support"),
+    QT_TRANSLATE_NOOP("MetadataLabel", "Partly decoded"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Past image end"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Payload"),
     QT_TRANSLATE_NOOP("MetadataLabel", "Payload bytes"),
