@@ -31,6 +31,8 @@
   "raw_fat32_deleted.sha256": "3c7ebc6eb1cd59fb84a80cb21563e334708ecad43f02ff02a12e96be005423cf",
   "raw_exfat_deleted.img.gz": "77814a9c262a2a7edb57af23f132f520ca581448dae734fe765554e9aa9fcbe0",
   "raw_exfat_deleted.sha256": "3c7ebc6eb1cd59fb84a80cb21563e334708ecad43f02ff02a12e96be005423cf",
+  "raw_ext4_encrypt_flag.img.gz": "6c927ee7ad6648b360c3905957826c9535fc6cd99504da05915d8a8b2801c62e",
+  "raw_ext_indirect_lost.img.gz": "5648ae4e26c46d01b655127bb6778710dd12a02fab5fcac4b25aefa5a882cbf1",
   "raw_ntfs.deleted.sha256": "345aac3513a72bd9efb9b47d6ac23b2dadb109b2b6865eae0d5332032580a230",
   "raw_ntfs_streams.img.gz": "2452a5b8e901f246287a129feefc85660711db9447895cbef785486f601ace56",
   "raw_ntfs_streams.sha256": "25415fc71ccdd78a0558722dc6e38383305617d654730410f61fb132f664f555",

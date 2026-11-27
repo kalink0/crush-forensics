@@ -105,14 +105,23 @@ def test_image_without_partition_table_is_one_volume(tmp_path: Path) -> None:
 )
 def test_zstd_squashfs_without_zstd_says_why_it_is_empty(tmp_path: Path) -> None:
     """On a Python without zstd the walker exists but lists nothing; the
-    volume must carry the reader's reason, not look like an empty filesystem."""
+    volume must carry the reader's reason, not look like an empty filesystem.
+    From qnxprobe 1.88 the walker also records the root folder it could not
+    read; that line names the missing zstd and does not call it damage."""
     vfs = _open(tmp_path, "squashfs-zstd.img.gz")
     try:
         (volume,) = vfs.root().children
         assert volume.is_dir
         assert volume.status
-        assert volume.status.code == "entry.raw_volume_note"  # type: ignore[union-attr]
-        assert "zstd" in str(volume.status)
+        status = volume.status
+        notes = status.params["notes"] if status.code == "common.notes" else [status]  # type: ignore[union-attr]
+        codes = [n.code for n in notes]
+        assert codes[0] == "entry.raw_volume_note"
+        assert "zstd" in str(notes[0])
+        for note in notes[1:]:
+            assert note.code == "entry.raw_volume_damage"
+            assert "zstd" in str(note)
+            assert "damaged" not in str(note)
     finally:
         vfs.close()
 
