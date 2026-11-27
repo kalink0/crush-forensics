@@ -514,6 +514,43 @@ def decompress(data: bytes) -> bytes:
     raise EseError(ParseIssue("ese.compression_unsupported", {"scheme": name}))
 
 
+class _PartialText:
+    """Text whose last character is incomplete: (text before it, all raw
+    bytes) as shown, plus why the end was left out."""
+
+    __slots__ = ("value", "issue")
+
+    def __init__(self, value: tuple[str, bytes], issue: ParseIssue) -> None:
+        self.value = value
+        self.issue = issue
+
+
+# Longest incomplete character at the end of a value: a UTF-8 sequence missing
+# its last byte (3), or a UTF-16 surrogate pair missing its low half plus an
+# odd byte (3).
+_MAX_CUT_TAIL = 3
+_CUT_REASONS = ("truncated data", "unexpected end of data")
+
+
+def _text_cut_at_end(
+    raw: bytes, encoding: str, exc: UnicodeDecodeError, codepage: int,
+) -> _PartialText | None:
+    """A value valid up to an incomplete last character -- an odd-sized fixed
+    Unicode column, or text cut at a byte limit inside a surrogate pair (as
+    Windows Search does) -- is shown up to there. Invalid bytes anywhere
+    else keep the whole value undecoded."""
+    tail = len(raw) - exc.start
+    if exc.end != len(raw) or tail > _MAX_CUT_TAIL or exc.reason not in _CUT_REASONS:
+        return None
+    try:
+        text = raw[:exc.start].decode(encoding)
+    except UnicodeDecodeError:
+        return None
+    return _PartialText((text, raw), ParseIssue(
+        "ese.text_cut", {"codepage": codepage, "count": tail, "hex": raw[exc.start:].hex(" ")},
+    ))
+
+
 def _decode_typed(col: Column, raw: bytes) -> Any:
     """Bytes of one value -> Python value by the column's declared type."""
     t = col.coltyp
@@ -555,6 +592,9 @@ def _decode_typed(col: Column, raw: bytes) -> Any:
         try:
             return raw.decode(encoding)
         except UnicodeDecodeError as exc:
+            partial = _text_cut_at_end(raw, encoding, exc, col.codepage)
+            if partial is not None:
+                return partial
             return _Undecoded(raw, ParseIssue(
                 "ese.text_decode_failed", {"codepage": col.codepage}, detail=str(exc),
             ))
@@ -889,3 +929,12 @@ def is_undecoded(value: Any) -> bool:
 def undecoded_parts(value: Any) -> tuple[bytes, ParseIssue]:
     assert isinstance(value, _Undecoded)
     return value.raw, value.issue
+
+
+def is_partial_text(value: Any) -> bool:
+    return isinstance(value, _PartialText)
+
+
+def partial_text_parts(value: Any) -> tuple[tuple[str, bytes], ParseIssue]:
+    assert isinstance(value, _PartialText)
+    return value.value, value.issue

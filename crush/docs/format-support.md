@@ -124,6 +124,7 @@ Limitations
 - A **[Schema]** table lists every column of every table with its ESE type, codepage and flags; columns a table takes from a template table are marked.
 - The first 10,000 rows of each table are shown; every row is also in a temporary SQLite copy for SQL queries and loading more.
 - The Properties panel shows the format version, page size, database state, creation time and record counts. A database in **dirty shutdown** state says so: changes may still be only in its transaction logs.
+- Text that ends in an incomplete character (an odd-sized fixed Unicode column, or text cut at a byte limit inside a UTF-16 surrogate pair, as Windows Search does with `System_Search_AutoSummary`) is shown up to that character with all stored bytes kept, and listed under **Partly decoded**. Text with invalid bytes anywhere else is shown as raw bytes under **Not decoded**.
 - Decoding is written against Microsoft's open-source ESE engine and the libyal/libesedb format documentation, and checked against databases written by Windows' own `esent.dll`.
 
 Limitations

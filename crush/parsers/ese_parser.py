@@ -38,7 +38,9 @@ from crush.parsers.ese_reader import (
     Column,
     EseDatabase,
     EseError,
+    is_partial_text,
     is_undecoded,
+    partial_text_parts,
     undecoded_parts,
 )
 
@@ -123,6 +125,8 @@ def _parse(node: VFSNode, stream: Any) -> ParseResult:
     text_len = 0
     not_decoded: Counter[tuple[str, str]] = Counter()
     first_issue: dict[tuple[str, str], ParseIssue] = {}
+    partly_decoded: Counter[str] = Counter()
+    first_cut: dict[str, ParseIssue] = {}
     table_problems: list[ParseIssue] = list(db.catalog_problems)
     total_records = 0
     total_deleted = 0
@@ -158,15 +162,20 @@ def _parse(node: VFSNode, stream: Any) -> ParseResult:
             row: list[Any] = [STATE_DELETED if record.deleted else STATE_LIVE, record.page]
             for col in columns:
                 key = -col.id if col.from_template and col.id >= 256 else col.id
-                value = _display(record.values.get(key))
-                for issue in _issues_in(record.values.get(key)):
+                stored = record.values.get(key)
+                value = _display(stored)
+                for issue in _issues_in(stored):
                     k = (table.name, issue.code)
                     not_decoded[k] += 1
                     first_issue.setdefault(k, issue)
+                for issue in _cut_issues_in(stored):
+                    partly_decoded[table.name] += 1
+                    first_cut.setdefault(table.name, issue)
                 row.append(value)
-                if text_len < _TEXT_INDEX_LIMIT and isinstance(value, str) and value.strip():
-                    text_parts.append(value)
-                    text_len += len(value)
+                text = value[0] if is_partial_text(stored) else value
+                if text_len < _TEXT_INDEX_LIMIT and isinstance(text, str) and text.strip():
+                    text_parts.append(text)
+                    text_len += len(text)
             if len(rows) <= _ROW_LIMIT:
                 rows.append(row)
             if sql_ok:
@@ -208,6 +217,13 @@ def _parse(node: VFSNode, stream: Any) -> ParseResult:
             })
             for (tname, code), n in sorted(not_decoded.items())
         ]
+    if partly_decoded:
+        meta["Partly decoded"] = [
+            ParseIssue("ese.partly_decoded", {
+                "table": tname, "count": n, "reason": first_cut[tname],
+            })
+            for tname, n in sorted(partly_decoded.items())
+        ]
     if table_problems:
         meta["Parse warning"] = table_problems
     return ParseResult(
@@ -242,6 +258,9 @@ def _display(value: Any) -> Any:
     if is_undecoded(value):
         raw, _issue = undecoded_parts(value)
         return raw
+    if is_partial_text(value):
+        # (text up to the incomplete last character, all stored bytes)
+        return partial_text_parts(value)[0]
     if isinstance(value, list):
         return [_display(v) for v in value]
     return value
@@ -252,6 +271,14 @@ def _issues_in(value: Any) -> list[ParseIssue]:
         return [undecoded_parts(value)[1]]
     if isinstance(value, list):
         return [i for v in value for i in _issues_in(v)]
+    return []
+
+
+def _cut_issues_in(value: Any) -> list[ParseIssue]:
+    if is_partial_text(value):
+        return [partial_text_parts(value)[1]]
+    if isinstance(value, list):
+        return [i for v in value for i in _cut_issues_in(v)]
     return []
 
 

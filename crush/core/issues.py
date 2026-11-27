@@ -3159,6 +3159,18 @@ MESSAGES: dict[str, str] = {
         "Text is not valid in its declared codepage {codepage}: {detail}",
         "ese.text_decode_failed",
     ),
+    "ese.text_cut": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Text ends in {count} byte(s) that are not a complete character in codepage "
+        "{codepage} ({hex}); shown up to them, all stored bytes kept",
+        "ese.text_cut",
+    ),
+    "ese.partly_decoded": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table {table}: {count:,} text value(s) end in an incomplete character and are "
+        "shown up to it, e.g. {reason}",
+        "ese.partly_decoded",
+    ),
     "ese.decompress_failed": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Compressed value could not be decompressed: {detail}",

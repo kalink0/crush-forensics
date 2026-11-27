@@ -217,6 +217,81 @@ def test_dirty_shutdown_reported() -> None:
     assert meta["Status"].code == "ese.dirty_shutdown"
 
 
+# -- Text cut inside its last character ----------------------------------------
+
+def _text_col(coltyp: int, codepage: int, size: int = 0) -> ese_reader.Column:
+    return ese_reader.Column(
+        id=1, name="T", coltyp=coltyp, size=size, flags=0, codepage=codepage, record_offset=0,
+    )
+
+
+def test_odd_sized_fixed_unicode_text_shown_up_to_last_byte() -> None:
+    # A fixed Unicode column of an odd size (255 bytes): space-padded, the
+    # last byte is half a UTF-16 code unit.
+    raw = "Fixed".encode("utf-16-le") + " ".encode("utf-16-le") * 122 + b"\x20"
+    assert len(raw) == 255
+    value = ese_reader._decode_typed(_text_col(ese_reader.COLTYP_TEXT, 1200, 255), raw)
+    assert ese_reader.is_partial_text(value)
+    (text, stored), issue = ese_reader.partial_text_parts(value)
+    assert text == "Fixed" + " " * 122 and stored == raw
+    assert issue.code == "ese.text_cut"
+    assert issue.params == {"codepage": 1200, "count": 1, "hex": "20"}
+
+
+def test_text_cut_inside_surrogate_pair_shown_up_to_it() -> None:
+    # Windows Search cuts System_Search_AutoSummary at 2048 bytes, which can
+    # leave the high half of a surrogate pair at the end.
+    raw = "a".encode("utf-16-le") * 1021 + "\U0001F600".encode("utf-16-le")[:2]
+    value = ese_reader._decode_typed(_text_col(ese_reader.COLTYP_LONG_TEXT, 1200), raw)
+    (text, stored), issue = ese_reader.partial_text_parts(value)
+    assert text == "a" * 1021 and stored == raw
+    assert issue.params["count"] == 2 and issue.params["hex"] == "3d d8"
+
+
+def test_utf8_text_cut_inside_last_character() -> None:
+    raw = "café €".encode("utf-8")[:-1]
+    value = ese_reader._decode_typed(_text_col(ese_reader.COLTYP_TEXT, 65001), raw)
+    (text, _), issue = ese_reader.partial_text_parts(value)
+    assert text == "café " and issue.params["count"] == 2
+
+
+@pytest.mark.parametrize("codepage, raw", [
+    (1200, "ab".encode("utf-16-le") + b"\x3d\xd8" + "cd".encode("utf-16-le")),  # lone surrogate mid-text
+    (65001, b"ab\xffcd"),       # invalid byte mid-text
+    (65001, b"abc\xff"),        # invalid (not incomplete) last byte
+    (20127, b"abc\x80"),        # ASCII: a byte that is never valid
+])
+def test_invalid_text_stays_undecoded(codepage: int, raw: bytes) -> None:
+    value = ese_reader._decode_typed(_text_col(ese_reader.COLTYP_TEXT, codepage), raw)
+    assert ese_reader.is_undecoded(value)
+    stored, issue = ese_reader.undecoded_parts(value)
+    assert stored == raw and issue.code == "ese.text_decode_failed"
+
+
+@pytest.mark.parametrize("fixture", FIXTURES)
+def test_cut_text_shown_and_listed(fixture: str) -> None:
+    data = bytearray(_load(fixture))
+    stored = "Grüße, 世界".encode("utf-16-le")
+    at = data.index(stored)
+    # Same length, so the record layout stays valid: the last character
+    # becomes the high half of a surrogate pair.
+    data[at + len(stored) - 2:at + len(stored)] = b"\x3d\xd8"
+    result = _parse(bytes(data))
+    table = result.data["AllTypes"]
+    row = dict(zip(table["columns"], table["rows"][0]))
+    text, raw = row["TextUnicodeCol"]
+    assert text == "Grüße, 世" and raw == bytes(data[at:at + len(stored)])
+    [summary] = result.metadata["Partly decoded"]
+    assert summary.code == "ese.partly_decoded"
+    assert summary.params["table"] == "AllTypes" and summary.params["count"] == 1
+    assert summary.params["reason"].code == "ese.text_cut"
+    assert "Not decoded" not in result.metadata
+    assert "Grüße, 世" in result.text_index
+    with sqlite3.connect(result.data["__db_path"]) as conn:
+        [(sql_text,)] = conn.execute('SELECT "TextUnicodeCol" FROM "AllTypes" WHERE "Id" = 1')
+    assert sql_text == "Grüße, 世"
+
+
 # -- Damage ---------------------------------------------------------------------
 
 @pytest.mark.parametrize("fixture", FIXTURES)
