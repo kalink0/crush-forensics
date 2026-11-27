@@ -235,9 +235,11 @@ def test_only_plain_data_parsers_run_off_the_ui_thread() -> None:
     off_thread = {type(p).__name__ for p in ParserRegistry._parsers if p.PARSE_OFF_UI_THREAD}
     # ChromiumCacheParser's result keeps the VFS to read an entry's details
     # later; a VFS is already read from several threads (the type prescan).
+    # EseParser writes its SQL copy through a connection it opens and closes
+    # inside parse(); the result holds only the file's path.
     assert off_thread == {
         "HexFallbackParser", "JsonParser", "XmlParser", "PlistParser", "ChromiumCacheParser",
-        "FlatBuffersParser", "MediaParser",
+        "FlatBuffersParser", "MediaParser", "EseParser",
     }
 
 

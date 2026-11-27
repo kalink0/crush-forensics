@@ -1,0 +1,149 @@
+{
+ "AllTypes": {
+  "columns": [
+   "Id",
+   "BitCol",
+   "ByteCol",
+   "ShortCol",
+   "CurrencyCol",
+   "SingleCol",
+   "DoubleCol",
+   "DateTimeCol",
+   "ULongCol",
+   "LongLongCol",
+   "GuidCol",
+   "UShortCol",
+   "FixedBinCol",
+   "BinCol",
+   "TextUnicodeCol",
+   "TextAnsiCol",
+   "TaggedLongCol",
+   "LongBinCol",
+   "LongTextCol",
+   "CompressedTextCol",
+   "CompressedAnsiCol",
+   "MultiLongCol",
+   "MultiTextCol"
+  ],
+  "rows": [
+   {
+    "Id": 1,
+    "BitCol": true,
+    "ByteCol": 255,
+    "ShortCol": -1234,
+    "CurrencyCol": -9000000000000,
+    "SingleCol": 1.5,
+    "DoubleCol": -2.25,
+    "DateTimeCol": "2024-02-29T13:37:42",
+    "ULongCol": 4000000000,
+    "LongLongCol": -4611686018427387904,
+    "GuidCol": "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+    "UShortCol": 65000,
+    "FixedBinCol": {
+     "sha256": "7192385c3c0605de55bb9476ce1d90748190ecb32a8eed7f5207b30cf6a1fe89",
+     "size": 6
+    },
+    "BinCol": {
+     "sha256": "5f78c33274e43fa9de5659265c1d917e25c03722dcb0b8d27db8d5feaa813953",
+     "size": 4
+    },
+    "TextUnicodeCol": "Grüße, 世界",
+    "TextAnsiCol": "café",
+    "TaggedLongCol": 42,
+    "LongBinCol": {
+     "sha256": "00a09a20479d68ba67afbd7664a112dfce8b2299ee5bcd262fb0e700259812d0",
+     "size": 20000
+    },
+    "LongTextCol": "short tagged text",
+    "CompressedTextCol": {
+     "sha256_utf8": "59e199e0d98936db1bf32d808661f43007c974541e0819e826a8d43c69f1fe70",
+     "length": 18000
+    },
+    "CompressedAnsiCol": "seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only seven bit ascii only ",
+    "MultiLongCol": [
+     10,
+     20,
+     30
+    ],
+    "MultiTextCol": [
+     "alpha",
+     "beta"
+    ]
+   },
+   {
+    "Id": 2,
+    "BitCol": false,
+    "ByteCol": 0,
+    "ShortCol": 0,
+    "CurrencyCol": 0,
+    "SingleCol": 0.0,
+    "DoubleCol": 0.0,
+    "DateTimeCol": "1999-12-31T23:59:59",
+    "ULongCol": 0,
+    "LongLongCol": 0,
+    "GuidCol": "00000000-0000-0000-0000-000000000001",
+    "UShortCol": 0,
+    "FixedBinCol": {
+     "sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+     "size": 6
+    },
+    "BinCol": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "size": 0
+    },
+    "TextUnicodeCol": "",
+    "TextAnsiCol": null,
+    "TaggedLongCol": null,
+    "LongBinCol": {
+     "sha256": "f59a26549f1671f301113043bd973a1c84a85418e0d2da38ad7fa6143dc5a2a4",
+     "size": 17
+    },
+    "LongTextCol": null,
+    "CompressedTextCol": "tiny",
+    "CompressedAnsiCol": null,
+    "MultiLongCol": [
+     7
+    ],
+    "MultiTextCol": [
+     "one",
+     "two",
+     "three"
+    ]
+   },
+   {
+    "Id": 3,
+    "BitCol": null,
+    "ByteCol": null,
+    "ShortCol": null,
+    "CurrencyCol": null,
+    "SingleCol": null,
+    "DoubleCol": null,
+    "DateTimeCol": null,
+    "ULongCol": null,
+    "LongLongCol": null,
+    "GuidCol": null,
+    "UShortCol": null,
+    "FixedBinCol": null,
+    "BinCol": null,
+    "TextUnicodeCol": null,
+    "TextAnsiCol": null,
+    "TaggedLongCol": null,
+    "LongBinCol": null,
+    "LongTextCol": null,
+    "CompressedTextCol": null,
+    "CompressedAnsiCol": null,
+    "MultiLongCol": null,
+    "MultiTextCol": null
+   }
+  ]
+ },
+ "ManyRows": {
+  "columns": [
+   "Id",
+   "Name",
+   "Payload"
+  ],
+  "row_count": 600,
+  "rows_sha256": "20c47ab624cfe181cf462ca80cd70c5f27ad382a8a86afb88deffa943d8436ac"
+ }
+}

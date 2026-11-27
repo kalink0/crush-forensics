@@ -18,7 +18,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 
 ## Overview
 
-312 checks in total.
+318 checks in total.
 
 ### Sources
 
@@ -84,6 +84,7 @@ In the tables, a number is how many checks exist; **not tested** means there is 
 | [SQLite WAL](#sqlite-wal) | not tested | not tested | not tested | not tested | not tested | not tested |
 | [SQLite rollback journal](#sqlite-rollback-journal) | not tested | 1 | not tested | not tested | not tested | not tested |
 | [Realm database](#realm-database) | 2 | 1 | 1 | 7 | 1 | 1 |
+| [ESE database](#ese-database) | 2 | 1 | 1 | 1 | not tested | 1 |
 | [LevelDB](#leveldb) | 2 | 1 | 1 | 4 | 4 | 1 |
 | [Chromium Disk Cache](#chromium-disk-cache) | 2 | 1 | 1 | 6 | 8 | 1 |
 | [MMKV](#mmkv) | 2 | 1 | 1 | 1 | not tested | 1 |
@@ -482,6 +483,16 @@ No forensic checks.
 - **Known-output Verification** — format9_alltypes.realm (real file format 9, realm-core v5.23.9's own public API output, donated by the issue #55 reporter) must decode every old ColumnType correctly against the accompanying expected.json, including Mixed and a populated Table/subtable -- the two pieces this parser's own test suite could previously only cover synthetically ([test_forensic.py](../../crush/tests/test_forensic.py), `test_realm_format9_alltypes_fixture_known_output`)
 - **Completeness** — Strings in arrays only the inactive snapshot reaches, lying in freed blocks, are listed and attributed to the previous snapshot ([test_realm_strings.py](../../crush/tests/test_realm_strings.py), `test_previous_snapshot_strings_are_attributed`)
 - **Reproducibility** — Parsing the same Realm file twice must produce structurally identical results ([test_forensic.py](../../crush/tests/test_forensic.py), `test_realm_parse_is_reproducible`)
+
+#### ESE database
+
+- **Source Immutability** — EseParser must not alter the content of the source file ([test_forensic.py](../../crush/tests/test_forensic.py), `test_ese_parser_does_not_modify_source`)
+- **Source Immutability** — EseParser must not change mtime or ctime of source files ([test_forensic.py](../../crush/tests/test_forensic.py), `test_ese_parser_does_not_change_timestamps`)
+- **No Side Effects** — EseParser must not create any sibling files (its SQL copy goes to the temp directory) ([test_forensic.py](../../crush/tests/test_forensic.py), `test_ese_parse_creates_no_sibling_files`)
+- **Read-only Media** — EseParser must succeed when evidence directory is 0o555 and file is 0o444 ([test_forensic.py](../../crush/tests/test_forensic.py), `test_ese_parser_works_on_readonly_media`)
+- **Known-output Verification** — An ESE database written by esent.dll must decode to exactly the values written into it ([test_forensic.py](../../crush/tests/test_forensic.py), `test_ese_fixture_known_output`)
+- **Reproducibility** — Parsing the same ESE database twice must produce identical tables and metadata ([test_forensic.py](../../crush/tests/test_forensic.py), `test_ese_parse_is_reproducible`)
+- *Not tested:* Completeness
 
 #### LevelDB
 

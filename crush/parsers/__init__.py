@@ -26,6 +26,7 @@ from crush.parsers.protobuf_parser import ProtobufParser
 from crush.parsers.flatbuffers_parser import FlatBuffersParser
 from crush.parsers.mmkv_parser import MMKVParser
 from crush.parsers.coredata_omo_parser import CoreDataOmoParser
+from crush.parsers.ese_parser import EseParser
 
 __all__ = ["ParserRegistry"]
 
@@ -44,6 +45,7 @@ ParserRegistry.register(MediaParser())
 ParserRegistry.register(JsonParser())
 ParserRegistry.register(PDFParser())
 ParserRegistry.register(CoreDataOmoParser())
+ParserRegistry.register(EseParser())
 ParserRegistry.register(ProtobufParser())  # explicit-only (can_parse=False), registered for DISPLAY_NAME lookup
 ParserRegistry.register(FlatBuffersParser())  # explicit-only (no reliable magic), as Protobuf
 ParserRegistry.register(MMKVParser())  # explicit-only (can_parse=False, no magic bytes to detect)

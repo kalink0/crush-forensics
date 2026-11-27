@@ -4,7 +4,7 @@ This page lists what Crush can parse and how each viewer behaves, plus the curre
 
 ## Contents
 
-**Parsers** — [SQLite Database](#sqlite-database) · [Property List (plist)](#property-list-plist) · [XML](#xml) · [JSON](#json) · [Protobuf](#protobuf-explicit-only) · [FlatBuffers](#flatbuffers-explicit-only) · [Android Binary XML (ABX)](#android-binary-xml-abx) · [SEGB (Biome)](#segb-biome) · [LevelDB](#leveldb) · [Chromium Disk Cache](#chromium-disk-cache) · [MMKV](#mmkv-explicit-only) · [Realm Database](#realm-database) · [Images](#images) · [Media (Audio/Video)](#media-audiovideo) · [PDF](#pdf) · [Log Files](#log-files-explicit-only) · [Hex Fallback](#hex-fallback)
+**Parsers** — [SQLite Database](#sqlite-database) · [Property List (plist)](#property-list-plist) · [XML](#xml) · [JSON](#json) · [Protobuf](#protobuf-explicit-only) · [FlatBuffers](#flatbuffers-explicit-only) · [Android Binary XML (ABX)](#android-binary-xml-abx) · [SEGB (Biome)](#segb-biome) · [ESE Database](#ese-database-jet-blue) · [LevelDB](#leveldb) · [Chromium Disk Cache](#chromium-disk-cache) · [MMKV](#mmkv-explicit-only) · [Realm Database](#realm-database) · [Images](#images) · [Media (Audio/Video)](#media-audiovideo) · [PDF](#pdf) · [Log Files](#log-files-explicit-only) · [Hex Fallback](#hex-fallback)
 
 **Viewers** — [Table](#table-viewer) · [Tree](#tree-viewer) · [Text](#text-viewer) · [Hex](#hex-viewer) · [Image](#image-viewer) · [Media](#media-viewer) · [ABX](#abx-viewer) · [LevelDB](#leveldb-viewer) · [Chromium Disk Cache](#chromium-disk-cache-viewer) · [MMKV](#mmkv-viewer) · [Multi-Log Studio](#multi-log-studio) · [Realm](#realm-viewer) · [Protobuf](#protobuf-viewer) · [FlatBuffers](#flatbuffers-viewer)
 
@@ -116,6 +116,24 @@ Limitations
 - Payloads that cannot be decoded as protobuf are stored as raw bytes accessible via the Blob Inspector.
 - The inline protobuf decode stops at the first field with an unsupported wire type (a deprecated group, or anything outside varint/fixed64/length-delimited/fixed32); the Payload text then ends with `[not decoded from byte N on]`, and a `Payload decoding` row counts the affected records.
 - The inline rendering is schema-less and heuristic (marked by the `Payload rendering` row): valid UTF-8 is shown as text even where it could be a nested message, and 64/32-bit fields as double/float, never as integers. The exact bytes are always in the cell (Blob Inspector / **Open as** → Protobuf, which shows every candidate interpretation).
+
+### ESE Database (JET Blue)
+- Detects ESE (Extensible Storage Engine) databases by the file header: signature `0x89ABCDEF` at offset 4, file type *database* and a page size ESE uses — e.g. `SRUDB.dat` (SRUM), `Windows.edb` (Windows Search up to Windows 10), `WebCacheV01.dat`, `ntds.dit`, Exchange `.edb`. Transaction logs, checkpoint files and streaming files share the signature but are not opened as databases.
+- Every table in the catalog (`MSysObjects`, system tables included) opens in the Table Viewer, each row with its **Record state** and the **Page** it is stored on in front of the table's own columns. **Live** is a normal record; **Deleted** is a record ESE has flagged deleted in the B+-tree but not yet removed from the page.
+- Values are decoded by each column's declared type and codepage from the catalog: integers, floats, Currency, GUID, Bit, Binary, Text (UTF-16 / Windows-1252 / ASCII / UTF-8 codepages), and DateTime as an OLE Automation date (days since 1899-12-30) shown as ISO text, with the 8 stored bytes kept with the cell. Multi-valued columns are lists. Long values stored in the separate long-value tree are reassembled from their chunks; compressed values and chunks are decompressed (7-bit ASCII/Unicode, Xpress (plain LZ77) and LZ4 — current Windows uses LZ4).
+- A **[Schema]** table lists every column of every table with its ESE type, codepage and flags; columns a table takes from a template table are marked.
+- The first 10,000 rows of each table are shown; every row is also in a temporary SQLite copy for SQL queries and loading more.
+- The Properties panel shows the format version, page size, database state, creation time and record counts. A database in **dirty shutdown** state says so: changes may still be only in its transaction logs.
+- Decoding is written against Microsoft's open-source ESE engine and the libyal/libesedb format documentation, and checked against databases written by Windows' own `esent.dll`.
+
+Limitations
+- Transaction logs (`.log`) are not replayed: for a dirty database, what is only in the logs is not shown.
+- Page checksums are not verified.
+- Records ESE has already removed from a page (after a deleted record was cleaned up, or space reused) are not carved from free space.
+- Not decoded (the raw bytes are shown and the reason is listed under **Not decoded**): encrypted values, the Xpress9/Xpress10 compression schemes (Exchange), codepages other than the four above. The pre-Windows XP SP3 tagged-column format (format revision below 9) is not supported.
+- DateTime columns are shown as OLE Automation dates as the type declares; an application that stores a FILETIME or another epoch in a DateTime, LongLong or Binary column needs **Decode column as timestamp**. Times in the file header are the writing system's local time.
+- Tested on databases from current Windows 11 (format 0x620, revision 0x12c) with 8 KiB and 32 KiB pages; older revisions follow the same documented layout but have no fixture yet.
+- No hex provenance pane for ESE cells yet.
 
 ### LevelDB
 - Parses LevelDB directories (`.ldb`/`.log`/`.sst` data files, `MANIFEST-*`, `CURRENT`, `LOG`) into a dedicated LevelDB Viewer.
@@ -268,7 +286,7 @@ Limitations
 
 Limitations
 - Read-only; write queries are blocked.
-- Large datasets are capped by parser limits (e.g., SQLite 10,000 rows).
+- Large datasets are capped by parser limits (e.g., SQLite and ESE: 10,000 rows per table without SQL).
 
 ### Tree Viewer
 - Hierarchical view for plist/XML/JSON structures with search and copy.
@@ -387,5 +405,4 @@ Format/viewer content gaps only — planned parsing or display work, not general
 
 - Extended EXIF/metadata viewer.
 - General XMP metadata (creation/editing history, software chain, beyond the IPTC Digital Source Type tag — see the Images section above) is not extracted for images or media.
-- ESE database (`.edb`) has no parser or viewer yet.
 - Embedded Show Hex byte-provenance is not yet extended to every viewer — done so far: Protobuf, FlatBuffers, Plist/XML Tree, SQLite Table (cells, WAL Frames, File Structure), SEGB/Biome, Realm (Tables, File Structure), MMKV, and Chromium Disk Cache (each entry's Structure tabs). Not yet covered: Plist's binary form specifically (an on-disk offset table exists but not for NSKeyedArchiver-wrapped plists, the common real-world case, whose displayed tree comes from a separate resolution pass with no 1:1 relationship to those offsets) and ABX (its decoder builds a flat XML string with no tree at all; the tree shown is from re-parsing that reconstructed text, which has no relationship to the original binary offsets either). Not planned for JSON, XML, or Multi-Log Studio/Log Viewer — their content is already plain readable text, so a byte-offset hex highlight adds nothing a text position wouldn't already show. Also not planned for the Blob Inspector (it only ever shows already-extracted, isolated blob bytes, never the source file's own bytes in context, which is the entire point of this feature) or LevelDB (real-world `.ldb`/`.sst` files are Snappy-compressed by default, and a compressed value's bytes only exist post-decompression, not as a byte range in the file — most records would get no real provenance either way).

@@ -6,6 +6,7 @@ All notable changes to Crush will be documented in this file.
 
 ### New Features
 
+- Added a parser for ESE (Extensible Storage Engine / JET Blue) databases — SRUM `SRUDB.dat`, Windows Search `Windows.edb`, `WebCacheV01.dat`, `ntds.dit` and others: every table in the Table Viewer with each record's state (Live, or Deleted for a record ESE flagged but has not removed yet) and page, values decoded by the catalog's declared column types and codepages, multi-valued columns, long values, 7-bit/Xpress/LZ4-compressed values, a [Schema] table, and a temporary SQLite copy for SQL. Pure Python, written against Microsoft's open-source ESE engine; tested with databases written by Windows' own esent.dll.
 - Added to raw disk images -> Support for exFAT orphan entries (entry sets still in use that no live folder reaches), listed in `$Orphaned`.
 - Added to raw disk images -> Support for what the reader reports beyond the listing: per-file notes on the content (exFAT ValidDataLength and entry-set checks, FAT copies that disagree, APFS previous size, F2FS roll-forward log, NTFS records read despite a failed check, QNX6 blocks without a pointer), the volume's state after listing and its post-listing checks, and the reason a name's inode can't be read; YAFFS objects no listing reaches are listed in `$Unreached`.
 

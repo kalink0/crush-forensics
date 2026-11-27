@@ -3082,6 +3082,176 @@ MESSAGES: dict[str, str] = {
         "is unavailable",
         "mmkv.offsets_mismatch",
     ),
+    # -- ESE (Extensible Storage Engine) --------------------------------
+    "ese.not_ese": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Not an ESE database: no file header signature 0x89ABCDEF at offset 4",
+        "ese.not_ese",
+    ),
+    "ese.bad_page_size": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The file header gives a page size of {size:,} B, which ESE does not use",
+        "ese.bad_page_size",
+    ),
+    "ese.streaming_file": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "ESE streaming file (.stm), not a database: its content is not decoded",
+        "ese.streaming_file",
+    ),
+    "ese.parse_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The ESE database could not be read: {detail}",
+        "ese.parse_failed",
+    ),
+    "ese.page_out_of_range": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Page {page:,} is referenced but lies outside the file",
+        "ese.page_out_of_range",
+    ),
+    "ese.bad_page_tags": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Page {page:,}: its tag array points outside the page; the page is skipped",
+        "ese.bad_page_tags",
+    ),
+    "ese.bad_node": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Page {page:,}, tag {tag}: the node's key sizes run past its data; the node is skipped",
+        "ese.bad_node",
+    ),
+    "ese.page_loop": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Page {page:,} is referenced a second time in the same B+-tree; not read again",
+        "ese.page_loop",
+    ),
+    "ese.no_fdp": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The catalog gives no root page for table {table}",
+        "ese.no_fdp",
+    ),
+    "ese.template_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table {table} is derived from template table {template}, which is not in the "
+        "catalog: the template's columns are not decoded",
+        "ese.template_missing",
+    ),
+    "ese.table_problem": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table {table}: {problem}",
+        "ese.table_problem",
+    ),
+    "ese.date_out_of_range": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "DateTime value {value} is outside the range of dates that can be shown",
+        "ese.date_out_of_range",
+    ),
+    "ese.value_too_short": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "A {type} value is only {size} B long",
+        "ese.value_too_short",
+    ),
+    "ese.codepage_unsupported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Text column with codepage {codepage}, which is not decoded",
+        "ese.codepage_unsupported",
+    ),
+    "ese.text_decode_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Text is not valid in its declared codepage {codepage}: {detail}",
+        "ese.text_decode_failed",
+    ),
+    "ese.decompress_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Compressed value could not be decompressed: {detail}",
+        "ese.decompress_failed",
+    ),
+    "ese.compression_unsupported": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Value compressed with {scheme}, which is not supported",
+        "ese.compression_unsupported",
+    ),
+    "ese.scrubbed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Value was scrubbed (overwritten) by ESE; it holds no data",
+        "ese.scrubbed",
+    ),
+    "ese.encrypted": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Value is encrypted by ESE; it is not decrypted",
+        "ese.encrypted",
+    ),
+    "ese.fixed_out_of_record": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Fixed column {column}: its catalog offset lies outside the record",
+        "ese.fixed_out_of_record",
+    ),
+    "ese.unknown_column": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Tagged column id {id} is not in the catalog",
+        "ese.unknown_column",
+    ),
+    "ese.bad_multi_value": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Multi-valued column {column}: the value list is cut off",
+        "ese.bad_multi_value",
+    ),
+    "ese.bad_lv_reference": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Long value reference of {size} B (expected 4 or 8)",
+        "ese.bad_lv_reference",
+    ),
+    "ese.lv_missing": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Long value {lid} is not in the table's long-value tree",
+        "ese.lv_missing",
+    ),
+    "ese.lv_no_root": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Long value {lid}: its chunks are present but its root (total size) is not",
+        "ese.lv_no_root",
+    ),
+    "ese.lv_gap": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Long value {lid}: no chunk before offset {offset:,}",
+        "ese.lv_gap",
+    ),
+    "ese.lv_size_mismatch": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Long value {lid}: its chunks give {actual:,} B, its root says {size:,} B",
+        "ese.lv_size_mismatch",
+    ),
+    "ese.not_decoded": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Table {table}: {count:,} value(s) shown as raw bytes, e.g. {reason}",
+        "ese.not_decoded",
+    ),
+    "ese.deleted_records": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "{count:,} record(s) are flagged deleted but still stored; shown with record "
+        "state Deleted",
+        "ese.deleted_records",
+    ),
+    "ese.dirty_shutdown": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Dirty shutdown: changes may still be only in the transaction logs (.log), "
+        "which are not applied here",
+        "ese.dirty_shutdown",
+    ),
+    "ese.times_local": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Header times are the writing system's local time, without a time zone; "
+        "DateTime columns are shown as stored (OLE Automation dates, time zone not recorded)",
+        "ese.times_local",
+    ),
+    "ese.checksums_not_verified": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Page checksums are not verified",
+        "ese.checksums_not_verified",
+    ),
+    "ese.sql_failed": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "The SQL copy of the tables could not be written: {detail}",
+        "ese.sql_failed",
+    ),
     # -- SEGB -------------------------------------------------------------
     "segb.unrecognized": QT_TRANSLATE_NOOP(
         "ParseIssue",
