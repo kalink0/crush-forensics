@@ -13,6 +13,10 @@ The orientation with the smaller brightness jump at those boundaries is used.
 In simpler terms: if one block order leaves a checkerboard/grid artifact and the
 other looks smooth, the smoother one wins. This is a heuristic based on observed
 iOS PosterBoard samples, not a fully documented Apple format flag.
+
+A raw payload of exactly one block per 4x4 pixels that is shorter than the
+macro-tile surface can only be raster order and is decoded as such; the
+result's *block_order* says so with both sizes.
 """
 
 from __future__ import annotations
@@ -79,6 +83,10 @@ class AtxHeader:
             return "ASTC 4x4"
         if (self.pixel_format_a, self.pixel_format_b) in INFERRED_ASTC_4X4_FORMATS:
             return ParseIssue("atx.pixel_format_inferred_label", pair)
+        if self.gl_internal_format == GL_COMPRESSED_RGBA_ASTC_4X4:
+            return ParseIssue(
+                "atx.pixel_format_gl_inferred_label", {**pair, "gl": self.gl_internal_format},
+            )
         return ParseIssue("atx.pixel_format_unknown", pair)
 
 
@@ -280,6 +288,9 @@ def _decode_image(
         # stored in raster order. A size of whole macro tiles stays on the tiled path.
         padded_width, padded_height = linear_width, linear_height
         image = decode_astc_4x4(payload.data, padded_width, padded_height)
+        block_order = ParseIssue("atx.block_order_raster", {
+            "size": len(payload.data), "tiled": _macro_tiled_byte_count(header),
+        })
     else:
         image, padded_width, padded_height, block_order = _decode_macro_tiled_payload(
             header, payload,

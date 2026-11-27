@@ -2079,12 +2079,20 @@ def _make_atx_raw_linear_bytes(format_words: tuple[int, int], gl_internal_format
 
 def test_image_parser_atx_raw_linear_with_gl_astc_format_decodes(tmp_path: Path) -> None:
     pytest.importorskip("astc_decomp_faster")
+    from crush.core.issues import ParseIssue
     from crush.parsers.apple_atx import decode_atx
     result = decode_atx(_make_atx_raw_linear_bytes((1, 5), 0x93B0))
     assert result.image is not None
     assert (result.image.width, result.image.height) == (8, 4)
     assert tuple(result.image.pixels[:4]) == _KTX_VOID_EXTENT_RGBA8
     assert [w.code for w in result.warnings] == ["atx.pixel_format_inferred"]
+    assert result.header is not None
+    assert result.header.pixel_format == ParseIssue(
+        "atx.pixel_format_gl_inferred_label", {"a": 1, "b": 5, "gl": 0x93B0},
+    )
+    assert result.block_order == ParseIssue(
+        "atx.block_order_raster", {"size": 2 * 16, "tiled": 32 * 32 * 16},
+    )
 
 
 def test_image_parser_atx_unknown_format_without_gl_astc_is_refused() -> None:

@@ -1324,6 +1324,11 @@ MESSAGES: dict[str, str] = {
         "Inferred ASTC 4x4 ({a}, {b})",
         "atx.pixel_format_inferred_label",
     ),
+    "atx.pixel_format_gl_inferred_label": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Inferred ASTC 4x4 ({a}, {b}) from GL internal format 0x{gl:04X}",
+        "atx.pixel_format_gl_inferred_label",
+    ),
     "atx.pixel_format_unknown": QT_TRANSLATE_NOOP(
         "ParseIssue",
         "Unknown ({a}, {b})",
@@ -1392,6 +1397,12 @@ MESSAGES: dict[str, str] = {
         "(seam score {other_score:.2f}). Lower score = smaller brightness jumps "
         "at the 128-pixel macro-tile boundaries",
         "atx.block_order_heuristic",
+    ),
+    "atx.block_order_raster": QT_TRANSLATE_NOOP(
+        "ParseIssue",
+        "Raster order, derived from the payload size — the file does not record it: "
+        "{size:,} B is one block per 4x4 pixels; 128-pixel macro tiles would need {tiled:,} B",
+        "atx.block_order_raster",
     ),
     "atx.morton_as_stored": QT_TRANSLATE_NOOP("ParseIssue", "as stored", "atx.morton_as_stored"),
     "atx.morton_swapped": QT_TRANSLATE_NOOP("ParseIssue", "swapped", "atx.morton_swapped"),

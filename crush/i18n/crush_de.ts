@@ -9939,6 +9939,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <translation>ASTC 4x4 abgeleitet ({a}, {b})</translation>
     </message>
     <message>
+        <source>Inferred ASTC 4x4 ({a}, {b}) from GL internal format 0x{gl:04X}</source>
+        <comment>atx.pixel_format_gl_inferred_label</comment>
+        <translation>ASTC 4x4 abgeleitet ({a}, {b}) aus GL-Internal-Format 0x{gl:04X}</translation>
+    </message>
+    <message>
         <source>Unknown ({a}, {b})</source>
         <comment>atx.pixel_format_unknown</comment>
         <translation>Unbekannt ({a}, {b})</translation>
@@ -10007,6 +10012,11 @@ Wenn Sie &quot;Nein&quot; wählen, wird er stattdessen als normaler Ordner geöf
         <source>Heuristic — the file does not record it. Used: Morton X/Y {chosen} (seam score {chosen_score:.2f}); other candidate: Morton X/Y {other} (seam score {other_score:.2f}). Lower score = smaller brightness jumps at the 128-pixel macro-tile boundaries</source>
         <comment>atx.block_order_heuristic</comment>
         <translation>Heuristik — die Datei hält dies nicht fest. Verwendet: Morton X/Y {chosen} (Naht-Score {chosen_score:.2f}); anderer Kandidat: Morton X/Y {other} (Seam-Score {other_score:.2f}). Niedrigerer Score = kleinere Helligkeitssprünge an den Grenzen der 128-Pixel-Makrokacheln</translation>
+    </message>
+    <message>
+        <source>Raster order, derived from the payload size — the file does not record it: {size:,} B is one block per 4x4 pixels; 128-pixel macro tiles would need {tiled:,} B</source>
+        <comment>atx.block_order_raster</comment>
+        <translation>Rasterreihenfolge, abgeleitet aus der Nutzdatengröße — die Datei hält dies nicht fest: {size:,} B sind ein Block pro 4x4 Pixel; 128-Pixel-Makrokacheln bräuchten {tiled:,} B</translation>
     </message>
     <message>
         <source>as stored</source>

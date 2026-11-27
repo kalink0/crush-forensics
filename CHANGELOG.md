@@ -2,6 +2,12 @@
 
 All notable changes to Crush will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- ATX textures from iOS 18 and 26 whose header gives an unlisted pixel-format pair next to the ASTC 4x4 GL format, or whose payload is stored in raster order, now decode instead of showing "image decode unavailable". ([@abrignoni](https://github.com/abrignoni), [#205](https://github.com/kalink0/crush-forensics/pull/205))
+
 ## v0.26.0 - 2026-11-23
 
 **Focus: Compute Hash for files and folders; cancelling opening, unlocking, exports and type indexing; iOS container folders by their identifier; KTX textures in more formats; bundled qnxprobe v1.87 and ewfprobe v0.17.3 add ASIF images, L01 SHA-1 verification and a stricter Verify Acquisition Hash.**
