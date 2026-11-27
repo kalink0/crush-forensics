@@ -1049,16 +1049,67 @@ def _zip_time(modified: float | None) -> _ZipTime:
 
 ZipClashMode = Literal["number", "replace"]
 
-def _arcname_clashes(name: str, taken: set[str]) -> bool:
+def _folders_above(name: str) -> list[str]:
+    """`a/b/c.txt` -> [`a`, `a/b`]; `a/b/` (a folder entry) -> [`a`, `a/b`]."""
+    parts = name.rstrip("/").split("/")
+    folders = [parts[0]]
+    for part in parts[1:-1]:
+        folders.append(f"{folders[-1]}/{part}")
+    return folders[:-1] if len(parts) == 1 else folders
+
+
+class _ArchiveNames:
+    """The names an archive holds, and every folder path they make up, so
+    that whether a name is taken -- as a file, or as a folder (its own
+    entry or entries below it) -- is one lookup, however many entries the
+    archive has. Names are compared as they are, case included: a source
+    can hold `Report.pdf` and `report.pdf` side by side, and both keep
+    their names. Also remembers the next number to try for each name."""
+
+    def __init__(self, names: Any = ()) -> None:
+        self._names: set[str] = set()
+        self._folders: set[str] = set()
+        self._next: dict[str, int] = {}
+        for name in names:
+            self.add(name)
+
+    def add(self, name: str) -> None:
+        self._names.add(name)
+        self._folders.update(_folders_above(name))
+        if name.endswith("/"):
+            self._folders.add(name.rstrip("/"))
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._names
+
+    def __iter__(self) -> Any:
+        return iter(self._names)
+
+    def __len__(self) -> int:
+        return len(self._names)
+
+    def clashes(self, name: str) -> bool:
+        return name in self._names or name.rstrip("/") in self._folders
+
+    def next_number(self, base: str) -> int:
+        return self._next.get(base, 2)
+
+    def numbered(self, base: str, n: int) -> None:
+        self._next[base] = n + 1
+
+
+def _arcname_clashes(name: str, taken: _ArchiveNames | set[str]) -> bool:
     """Whether *name* is in the archive already: as a file, or as a folder
     (its own entry or entries below it)."""
-    prefix = f"{name}/"
-    return name in taken or any(t.startswith(prefix) for t in taken)
+    if not isinstance(taken, _ArchiveNames):
+        taken = _ArchiveNames(taken)
+    return taken.clashes(name)
 
 
 def _in_replaced(name: str, replaced: set[str]) -> bool:
-    """Whether the archive entry *name* is one of *replaced*, or inside one."""
-    return any(name == r or name.startswith(f"{r}/") for r in replaced)
+    """Whether the archive entry *name* is one of *replaced*, or inside one
+    (looked up for it and each folder above it, not each one replaced)."""
+    return name in replaced or any(folder in replaced for folder in _folders_above(name))
 
 
 # What the filesystem panel hands over for each entry to export into a ZIP
@@ -1137,13 +1188,13 @@ def _zip_layout(items: list[ZipSourceItem], source_path: bool) -> list[_ZipEntry
     return layout
 
 
-def _unique_arcname(name: str, taken: set[str], is_dir: bool) -> str:
+def _unique_arcname(name: str, taken: _ArchiveNames | set[str], is_dir: bool) -> str:
     """*name*, or `name (2)`, `name (3)` ... -- the first that names nothing
-    in the archive yet (as a file, or as a folder with entries below it)."""
-    def clashes(candidate: str) -> bool:
-        return _arcname_clashes(candidate, taken)
-
-    if not clashes(name):
+    in the archive yet (as a file, or as a folder with entries below it).
+    Counting goes on from the last number given for that name, so many
+    files of one name don't each count up from 2 again."""
+    names = taken if isinstance(taken, _ArchiveNames) else _ArchiveNames(taken)
+    if not names.clashes(name):
         return name
     parent, slash, leaf = name.rpartition("/")
     stem, ext = leaf, ""
@@ -1151,9 +1202,10 @@ def _unique_arcname(name: str, taken: set[str], is_dir: bool) -> str:
         dot = leaf.rfind(".")
         if dot > 0:
             stem, ext = leaf[:dot], leaf[dot:]
-    n = 2
-    while clashes(f"{parent}{slash}{stem} ({n}){ext}"):
+    n = names.next_number(name)
+    while names.clashes(f"{parent}{slash}{stem} ({n}){ext}"):
         n += 1
+    names.numbered(name, n)
     return f"{parent}{slash}{stem} ({n}){ext}"
 
 
@@ -1234,7 +1286,7 @@ class _ExportZipWorker(QObject):
         self._hash_lines: list[str] = []
         self._rename_lines: list[str] = []
         self._failed: list[tuple[str, str]] = []
-        self._taken: set[str] = set()
+        self._taken = _ArchiveNames()
         self._exported = 0
         self._cancel = threading.Event()
         self._logger = logging.getLogger(__name__)
@@ -1293,7 +1345,7 @@ class _ExportZipWorker(QObject):
                         self._logger.warning(
                             "ZIP export: replaced in %s: %s", self._zip_path, name
                         )
-                self._taken = set(zf.namelist())
+                self._taken = _ArchiveNames(zf.namelist())
                 self._export(zf)
                 if self._single_file() and self._failed:
                     path, reason = self._failed[0]
@@ -3308,7 +3360,7 @@ class MainWindow(QMainWindow):
 
         try:
             with zipfile.ZipFile(target) as zf:
-                taken = set(zf.namelist())
+                taken = _ArchiveNames(zf.namelist())
         except Exception as exc:
             QMessageBox.critical(
                 self, translate("MainWindow", "Export to ZIP archive"), i18n.exception_text(exc)

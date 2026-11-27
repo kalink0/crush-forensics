@@ -714,3 +714,41 @@ def test_clash_dialog_offers_every_name_in_its_details(
         assert box.detailedText().splitlines() == planned
     finally:
         win.close()
+
+
+def test_names_keep_their_case(qapp: Any, tmp_path: Path) -> None:
+    vfs = _MemoryVFS("src", {"Report.pdf": b"upper", "report.pdf": b"lower"})
+    out = tmp_path / "out.zip"
+
+    _run(_ExportZipWorker([_zip_item(vfs.root(), vfs)], str(out), "new", False))
+
+    with zipfile.ZipFile(out) as zf:  # compared case included: both keep their names
+        assert zf.read("src/Report.pdf") == b"upper"
+        assert zf.read("src/report.pdf") == b"lower"
+    assert not (tmp_path / "out.zip.crush-export-renames.txt").exists()
+
+
+def test_clash_checks_stay_fast_for_large_archives() -> None:
+    import time
+
+    from crush.ui.main_window import _ArchiveNames, _in_replaced
+
+    # 100,000 entries in nested folders, then 20,000 clash checks -- most of
+    # them of one name, as when flattening a folder of thumbnails. Checking
+    # each name against every entry made this take hours; now well under a
+    # second, so the limit only catches a return to that.
+    names = _ArchiveNames(
+        f"data/app{n % 50}/cache/{n // 50}/thumb{n}.jpg" for n in range(100_000)
+    )
+    start = time.perf_counter()
+    for n in range(20_000):
+        name = "Media/thumb.jpg" if n % 4 else f"data/app{n % 50}"
+        unique = _unique_arcname(name, names, is_dir=not n % 4)
+        names.add(unique if n % 4 else f"{unique}/")
+    replaced = {f"data/app{n}" for n in range(50)}
+    hits = sum(_in_replaced(name, replaced) for name in names)
+    elapsed = time.perf_counter() - start
+
+    assert "Media/thumb (15000).jpg" in names
+    assert hits >= 100_000
+    assert elapsed < 10, f"clash checks took {elapsed:.1f} s"
