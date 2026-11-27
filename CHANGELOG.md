@@ -19,6 +19,7 @@ All notable changes to Crush will be documented in this file.
 ### Bug Fixes
 
 - Type indexing no longer stays paused for the rest of the session when a window is closed right after scrolling a table in it.
+- ATX textures from iOS 18 and 26 whose header gives an unlisted pixel-format pair next to the ASTC 4x4 GL format, or whose payload is stored in raster order, now decode instead of showing "image decode unavailable". ([@abrignoni](https://github.com/abrignoni), [#205](https://github.com/kalink0/crush-forensics/pull/205))
 
 ## v0.26.0 - 2026-11-23
 
