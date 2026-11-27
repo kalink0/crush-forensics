@@ -1067,10 +1067,16 @@ class _ArchiveNames:
         self._names: set[str] = set()
         self._folders: set[str] = set()
         self._next: dict[str, int] = {}
+        # Numbered names handed out but not yet used: name -> (base, number).
+        self._handed_out: dict[str, tuple[str, int]] = {}
         for name in names:
             self.add(name)
 
     def add(self, name: str) -> None:
+        handed_out = self._handed_out.pop(name.rstrip("/"), None)
+        if handed_out is not None:  # counting goes on only once a number is used
+            base, n = handed_out
+            self._next[base] = n + 1
         self._names.add(name)
         self._folders.update(_folders_above(name))
         if name.endswith("/"):
@@ -1091,8 +1097,8 @@ class _ArchiveNames:
     def next_number(self, base: str) -> int:
         return self._next.get(base, 2)
 
-    def numbered(self, base: str, n: int) -> None:
-        self._next[base] = n + 1
+    def numbered(self, base: str, n: int, name: str) -> None:
+        self._handed_out[name] = (base, n)
 
 
 def _arcname_clashes(name: str, taken: _ArchiveNames | set[str]) -> bool:
@@ -1202,8 +1208,9 @@ def _unique_arcname(name: str, taken: _ArchiveNames | set[str], is_dir: bool) ->
     n = names.next_number(name)
     while names.clashes(f"{parent}{slash}{stem} ({n}){ext}"):
         n += 1
-    names.numbered(name, n)
-    return f"{parent}{slash}{stem} ({n}){ext}"
+    unique = f"{parent}{slash}{stem} ({n}){ext}"
+    names.numbered(name, n, unique)
+    return unique
 
 
 class _ZipReplaceFailed(Exception):
@@ -1552,17 +1559,25 @@ class _ExportZipWorker(QObject):
                 if f"{arc_folder}/" not in self._taken:
                     self._write_folder(zf, arc_folder, modified)
             arcname = _unique_arcname(entry.arcname, self._taken, entry.node.is_dir)
-            self._record_rename(
-                entry.node.path, arcname,
-                windows_safe=entry.sanitized, numbered=arcname != entry.arcname,
-            )
+
+            def renamed(entry: _ZipEntry = entry, arcname: str = arcname) -> None:
+                self._record_rename(
+                    entry.node.path, arcname,
+                    windows_safe=entry.sanitized, numbered=arcname != entry.arcname,
+                )
+
+            # A rename is recorded only once the entry is written: an
+            # unreadable file isn't in the archive, and its name may then
+            # go to another file.
             if not entry.node.is_dir:
-                self._export_file(zf, entry.vfs, entry.node, arcname)
+                if self._export_file(zf, entry.vfs, entry.node, arcname):
+                    renamed()
             elif self._options.flatten:
                 self._write_dir_entry(zf, entry.node, arcname)
+                renamed()
                 self._export_dir_flat(zf, entry.vfs, entry.node, arcname)
             else:
-                self._export_dir(zf, entry.vfs, entry.node, arcname)
+                self._export_dir(zf, entry.vfs, entry.node, arcname, on_written=renamed)
 
     def _timed_info(self, arcname: str, modified: float | None) -> Any:
         """A new entry carrying *modified* as _zip_time() says, its time and
@@ -1599,21 +1614,32 @@ class _ExportZipWorker(QObject):
             zf.encryption, zf.pwd = encryption, password
         self._taken.add(info.filename)
 
-    def _export_dir(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> None:
+    def _export_dir(
+        self, zf: Any, vfs: VFS, node: VFSNode, arcname: str,
+        on_written: Callable[[], None] | None = None,
+    ) -> None:
         self._check_cancel()
         self._write_dir_entry(zf, node, arcname)
+        if on_written is not None:
+            on_written()
         for child in node.children:
             self._check_cancel()
             safe_child, changed = _safe_name(child.name)
             child_arc = f"{arcname}/{safe_child}"
             unique = _unique_arcname(child_arc, self._taken, child.is_dir)
-            self._record_rename(
-                child.path, unique, windows_safe=changed, numbered=unique != child_arc
-            )
+
+            def renamed(
+                child: VFSNode = child, unique: str = unique,
+                child_arc: str = child_arc, changed: bool = changed,
+            ) -> None:
+                self._record_rename(
+                    child.path, unique, windows_safe=changed, numbered=unique != child_arc
+                )
+
             if child.is_dir:
-                self._export_dir(zf, vfs, child, unique)
-            else:
-                self._export_file(zf, vfs, child, unique)
+                self._export_dir(zf, vfs, child, unique, on_written=renamed)
+            elif self._export_file(zf, vfs, child, unique):
+                renamed()
 
     def _export_dir_flat(
         self, zf: Any, vfs: VFS, node: VFSNode, arcname: str, moved: bool = False
@@ -1630,13 +1656,15 @@ class _ExportZipWorker(QObject):
             safe_child, changed = _safe_name(child.name)
             child_arc = f"{arcname}/{safe_child}"
             unique = _unique_arcname(child_arc, self._taken, False)
-            self._record_rename(
-                child.path, unique,
-                flattened=moved, numbered=unique != child_arc, windows_safe=changed,
-            )
-            self._export_file(zf, vfs, child, unique)
+            if self._export_file(zf, vfs, child, unique):  # recorded once it is written
+                self._record_rename(
+                    child.path, unique,
+                    flattened=moved, numbered=unique != child_arc, windows_safe=changed,
+                )
 
-    def _export_file(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> None:
+    def _export_file(self, zf: Any, vfs: VFS, node: VFSNode, arcname: str) -> bool:
+        """Write *node* as the entry *arcname*; False when it couldn't be
+        read (listed as failed, nothing written)."""
         from crush.core import zip_writer
 
         import hashlib
@@ -1669,7 +1697,7 @@ class _ExportZipWorker(QObject):
                 self._logger.warning(
                     "Export: not exported, could not be read: %s: %s", node.path, exc
                 )
-                return
+                return False
             staged.seek(0)
             info = self._timed_info(arcname, node.modified)
             info.compress_type = zip_writer.METHODS[self._options.method]
@@ -1687,14 +1715,14 @@ class _ExportZipWorker(QObject):
         self._taken.add(arcname)
         self._exported += 1
         if hasher is None:
-            return
+            return True
         if has_no_content(node):
             self._hash_lines.append(f"{_no_content_hash_field(node)}  {total}  {arcname}")
             self._logger.info(
                 "INTEGRITY export not hashed: no content read  path=%s!/%s",
                 self._zip_path, arcname,
             )
-            return
+            return True
         digest = hasher.hexdigest()
         if self._hashes is not None:
             self._hashes.record(vfs, node, {"sha256": bytes.fromhex(digest)})
@@ -1703,6 +1731,7 @@ class _ExportZipWorker(QObject):
             "INTEGRITY export sha256=%s  size=%d  path=%s!/%s",
             digest, total, self._zip_path, arcname,
         )
+        return True
 
     def _record_rename(
         self, original_path: str, arcname: str, *,
@@ -3187,13 +3216,19 @@ class MainWindow(QMainWindow):
             example=([name for name, _modified in folders], node.name, node.is_dir),
             has_folder=any(n.is_dir for n, _v, _s, _f in items),
         )
-        while True:
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return None
-            target = dialog.archive_path()
-            if self._confirm_outside_sources(target):
-                break
-        options = dialog.options()
+        try:
+            while True:
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    return None
+                target = dialog.archive_path()
+                if self._confirm_outside_sources(target):
+                    break
+            options = dialog.options()
+        finally:
+            # The dialog is the window's child: freed, with the password typed
+            # into it cleared first, rather than kept until the window closes.
+            dialog.forget_password()
+            dialog.deleteLater()
         self._last_zip_options = ZipExportDialog.remembered(options)
         self._last_zip_folder = target.parent
         return target, options

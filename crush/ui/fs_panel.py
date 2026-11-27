@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar, overload
+from typing import Any, Generic, TypeVar, overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
 from PySide6.QtGui import QAction, QGuiApplication, QStandardItem, QStandardItemModel
@@ -797,7 +797,7 @@ class FilesystemPanel(QWidget):
 
         self._show_context_menu(
             node, vfs, global_pos,
-            zip_item=self._zip_item_from_chain(node, vfs, self._tree_chain(item)),
+            zip_item_for=lambda: self._zip_item_from_chain(node, vfs, self._tree_chain(item)),
         )
 
     def _tree_batch_menu(
@@ -852,18 +852,19 @@ class FilesystemPanel(QWidget):
         files: list[tuple[VFSNode, VFS, str]],
         entries: list[tuple[VFSNode, VFS]],
         all_files: Callable[[], list[tuple[VFSNode, VFS, str]]],
-        all_entries: Callable[[], list[tuple[VFSNode, VFS]]] | None = None,
     ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
         """The search results' batch menu for 2+ selected entries, or None.
         Export takes files only and is offered for 2+ of them, as before;
-        Compute Hash takes every selected entry. Export to ZIP, as in the
-        tree's batch menu, takes every selected entry -- or every result."""
+        Compute Hash takes every selected entry. Export to ZIP takes every
+        selected entry, as in the tree's batch menu; "all results" takes the
+        matching files only, as the folder export's does -- a folder among
+        the results would bring files the search didn't match."""
         if len(entries) < 2:
             return None
         menu = QMenu(self)
         actions: dict[QAction, Callable[[], None]] = {}
+        every = all_files()
         if len(files) > 1:
-            every = all_files()
             export_sel = menu.addAction(
                 translate(
                     "FilesystemPanel", "Export {selected_entries_count} selected files…"
@@ -889,20 +890,31 @@ class FilesystemPanel(QWidget):
                 "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
             ).format(selected_items_count=len(entries))
         )
+        # Resolving source paths walks each source on this (the UI) thread:
+        # a busy cursor while it does.
         actions[zip_selected] = lambda: self.export_zip_selection_requested.emit(
-            self._zip_items_from_search(entries)
+            self._busy(lambda: self._zip_items_from_search(entries))
         )
-        every_entry = all_entries() if all_entries is not None else entries
-        if len(every_entry) > len(entries):
+        if len(every) > len(files):
+            every_file = [(n, v) for n, v, _path in every]
             zip_all = menu.addAction(
                 translate(
                     "FilesystemPanel", "Export all {all_entries_count} results to ZIP…"
-                ).format(all_entries_count=len(every_entry))
+                ).format(all_entries_count=len(every_file))
             )
             actions[zip_all] = lambda: self.export_zip_selection_requested.emit(
-                self._zip_items_from_search(every_entry)
+                self._busy(lambda: self._zip_items_from_search(every_file))
             )
         return menu, actions
+
+    @staticmethod
+    def _busy(work: Callable[[], Any]) -> Any:
+        """*work*'s result, with the busy cursor shown while it runs."""
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            return work()
+        finally:
+            QGuiApplication.restoreOverrideCursor()
 
     def _collect_result_entries(
         self, rows: object, include_dirs: bool = False,
@@ -932,11 +944,6 @@ class FilesystemPanel(QWidget):
             self._collect_result_entries(selected_rows),
             [(n, v) for n, v, _ in self._collect_result_entries(selected_rows, include_dirs=True)],
             lambda: self._collect_result_entries(range(self._search_model.rowCount())),
-            lambda: [
-                (n, v) for n, v, _ in self._collect_result_entries(
-                    range(self._search_model.rowCount()), include_dirs=True
-                )
-            ],
         )
         if batch is not None:
             menu, actions = batch
@@ -954,9 +961,11 @@ class FilesystemPanel(QWidget):
         vfs: VFS | None = item.data(_ROLE_VFS)
         if not node or not vfs:
             return
+        # Resolving the result's source path walks its source: only once
+        # "Export to ZIP…" is chosen, not on every right-click.
         self._show_context_menu(
             node, vfs, global_pos, from_search=True,
-            zip_item=self._zip_item_from_search(node, vfs),
+            zip_item_for=lambda: self._busy(lambda: self._zip_item_from_search(node, vfs)),
         )
 
     def _show_context_menu(
@@ -965,7 +974,9 @@ class FilesystemPanel(QWidget):
         vfs: VFS,
         global_pos: object,
         from_search: bool = False,
-        zip_item: tuple[VFSNode, VFS, str, list[tuple[str, float | None]]] | None = None,
+        zip_item_for: Callable[
+            [], tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]
+        ] | None = None,
     ) -> None:
         menu = QMenu(self)
         open_action = menu.addAction(translate("FilesystemPanel", "Open"))
@@ -1149,9 +1160,10 @@ class FilesystemPanel(QWidget):
         elif action == export_action:
             self.export_requested.emit(node, vfs)
         elif action == export_zip_action:
-            self.export_zip_selection_requested.emit(
-                [zip_item or self._zip_item_from_chain(node, vfs, [node])]
-            )
+            self.export_zip_selection_requested.emit([
+                zip_item_for() if zip_item_for is not None
+                else self._zip_item_from_chain(node, vfs, [node])
+            ])
         elif action == export_logarchive_action:
             self.export_logarchive_requested.emit(node, vfs)
         elif action == verify_acquisition_action:

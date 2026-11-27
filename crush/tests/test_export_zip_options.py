@@ -594,3 +594,31 @@ def test_writing_beside_a_source_file_is_asked_about(
     finally:
         win.close()
     assert len(asked) == 1 and "holds the open source" in asked[0]
+
+
+def test_the_dialog_is_freed_and_its_password_cleared(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    seen: list[ZipExportDialog] = []
+
+    def exec_(dialog: ZipExportDialog) -> int:
+        seen.append(dialog)
+        dialog._path.setText(str(tmp_path / "out.zip"))
+        dialog._encrypt.setChecked(True)
+        dialog._password.setText("s3cret")
+        dialog._confirm.setText("s3cret")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(ZipExportDialog, "exec", exec_)
+    win = MainWindow()
+    try:
+        vfs = _source(tmp_path)
+        chosen = win._zip_export_dialog("out.zip", [_zip_item(vfs.root(), vfs)])
+        assert chosen is not None and chosen[1].password == "s3cret"  # for the export
+        assert seen[0]._password.text() == "" and seen[0]._confirm.text() == ""
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert win.findChildren(ZipExportDialog) == []  # none left behind
+    finally:
+        win.close()

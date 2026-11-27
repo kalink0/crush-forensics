@@ -399,7 +399,7 @@ def test_flattening_records_every_moved_files_evidence_path(qapp: Any, tmp_path:
 # -- several search results -------------------------------------------------------------
 
 
-def test_search_batch_menu_exports_selected_or_all_results_to_zip(
+def test_search_batch_menu_exports_selected_or_all_matching_files_to_zip(
     qapp: Any, tmp_path: Path, monkeypatch: Any
 ) -> None:
     vfs = _source(tmp_path)
@@ -407,7 +407,8 @@ def test_search_batch_menu_exports_selected_or_all_results_to_zip(
     index = next(c for c in www.children if c.name == "index.html")
     css = next(c for c in www.children if c.name == "css")
     style = css.children[0]
-    img_style = next(c for c in www.children if c.name == "img").children
+    img = next(c for c in www.children if c.name == "img")
+    img_style = next(c for c in img.children if c.name == "style.css")
     emitted: list[Any] = []
     monkeypatch.setattr(
         MainWindow, "_export_selection_zip", lambda self, items: emitted.append(items)
@@ -415,27 +416,110 @@ def test_search_batch_menu_exports_selected_or_all_results_to_zip(
     win = MainWindow()
     panel = win._fs_panel
     try:
-        selected = [(index, vfs), (style, vfs)]
-        every = [*selected, (css, vfs), *((n, vfs) for n in img_style if not n.is_dir)]
+        # Selected: a file and a folder. All results: the files the search
+        # matched -- not the css folder's other content.
+        files = [(index, vfs, "/var/www/index.html")]
+        matching = [*files, (img_style, vfs, "/var/www/img/style.css"),
+                    (style, vfs, "/var/www/css/style.css")]
         menu, actions = panel._search_batch_menu(
-            [(index, vfs, "/var/www/index.html"), (style, vfs, "/var/www/css/style.css")],
-            selected, lambda: [], lambda: every,
+            files, [(index, vfs), (css, vfs)], lambda: matching,
         )
         texts = [a.text() for a in menu.actions() if not a.isSeparator()]
         assert "Export 2 selected entries to ZIP…" in texts
-        assert f"Export all {len(every)} results to ZIP…" in texts
+        assert "Export all 3 results to ZIP…" in texts  # N: exactly the files exported
         by_text = {a.text(): f for a, f in actions.items()}
 
         by_text["Export 2 selected entries to ZIP…"]()
         assert emitted[-1] == [
-            _item(vfs, "var", "www", "index.html"), _item(vfs, "var", "www", "css", "style.css"),
-        ]  # source paths from the source's nodes, as from the tree
+            _item(vfs, "var", "www", "index.html"), _item(vfs, "var", "www", "css"),
+        ]  # source paths from the source's nodes, as from the tree; the folder whole
 
-        by_text[f"Export all {len(every)} results to ZIP…"]()
-        paths = ["/".join([*(n for n, _m in f), node.name]) for node, _v, _s, f in emitted[-1]]
-        assert "var/www/css" in paths
-        assert "var/www/css/style.css" not in paths  # the folder brings it along
-        assert "var/www/index.html" in paths
+        by_text["Export all 3 results to ZIP…"]()
+        assert [item[0] for item in emitted[-1]] == [index, img_style, style]
+        assert all(not item[0].is_dir for item in emitted[-1])
         menu.deleteLater()
     finally:
         win.close()
+
+
+def test_right_click_on_a_search_result_doesnt_walk_the_source(
+    qapp: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    from crush.ui.fs_panel import FilesystemPanel as Panel
+
+    vfs = _source(tmp_path)
+    index = next(
+        c for c in vfs.root().children[0].children[0].children if c.name == "index.html"
+    )
+    walks: list[Any] = []
+    real_walk = Panel._build_node_path
+    monkeypatch.setattr(
+        Panel, "_build_node_path", lambda self, *a: walks.append(a) or real_walk(self, *a)
+    )
+    emitted: list[Any] = []
+    monkeypatch.setattr(
+        MainWindow, "_export_selection_zip", lambda self, items: emitted.append(items)
+    )
+    chosen: list[str] = []
+    from PySide6.QtWidgets import QMenu
+
+    from crush.ui import fs_panel
+
+    class _Menu(QMenu):  # QMenu.exec itself can't be patched in PySide6
+        def exec(self, *_a: Any) -> Any:  # type: ignore[override]
+            return next((a for a in self.actions() if a.text() in chosen), None)
+
+    monkeypatch.setattr(fs_panel, "QMenu", _Menu)
+    win = MainWindow()
+    try:
+        panel = win._fs_panel
+        panel._show_context_menu(
+            index, vfs, None, from_search=True,
+            zip_item_for=lambda: panel._busy(lambda: panel._zip_item_from_search(index, vfs)),
+        )
+        assert walks == [] and emitted == []  # menu opened, nothing chosen: no walk
+        chosen.append("Export to ZIP…")
+        panel._show_context_menu(
+            index, vfs, None, from_search=True,
+            zip_item_for=lambda: panel._busy(lambda: panel._zip_item_from_search(index, vfs)),
+        )
+        assert len(walks) == 1
+        assert emitted == [[_item(vfs, "var", "www", "index.html")]]
+    finally:
+        win.close()
+
+def test_a_rename_is_recorded_only_once_the_file_is_written(qapp: Any, tmp_path: Path) -> None:
+    from crush.tests.test_export_zip import _OneUnreadable
+
+    d = tmp_path / "src" / "d"
+    (d / "sub1").mkdir(parents=True)
+    (d / "sub2").mkdir()
+    (d / "sub1" / "bad.bin").write_bytes(b"unreadable")  # _OneUnreadable fails it
+    (d / "sub2" / "bad.bin").write_bytes(b"readable")
+    vfs = _OneUnreadable(tmp_path / "src")
+    # The unreadable copy comes first, so it is the one handed the name first.
+    assert [c.name for c in vfs.root().children[0].children] == ["sub1", "sub2"]
+    original_open = vfs.open
+
+    def open_(node: Any) -> Any:  # only sub1's copy is unreadable
+        if node.name == "bad.bin" and "sub2" in node.path:
+            return DirectoryVFS.open(vfs, node)
+        return original_open(node)
+
+    vfs.open = open_  # type: ignore[method-assign]
+    out = tmp_path / "out.zip"
+    _ExportZipWorker(
+        [_item(vfs, "d")], str(out), "new", False, options=ZipOptions(flatten=True)
+    ).run()
+
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("d/bad.bin") == b"readable"  # the name went to the readable one
+        assert "d/bad (2).bin" not in zf.namelist()
+    renames = (tmp_path / "out.zip.crush-export-renames.txt").read_text(encoding="utf-8")
+    lines = [line for line in renames.splitlines() if not line.startswith("#")]
+    assert len(lines) == 1
+    source, _arrow, arcname, why = lines[0].split("\t")
+    assert source.endswith("sub2/bad.bin") or source.endswith("sub2\\bad.bin")
+    assert (arcname, why) == ("d/bad.bin", "flattened")
+    failed = (tmp_path / "out.zip.crush-export-failed.txt").read_text(encoding="utf-8")
+    assert "sub1" in failed and "sub2" not in failed

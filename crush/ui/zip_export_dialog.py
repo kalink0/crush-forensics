@@ -257,6 +257,12 @@ class ZipExportDialog(QDialog):
             flatten=self._flatten.isChecked() and self._flatten.isEnabled(),
         )
 
+    def forget_password(self) -> None:
+        """Clear the password fields (the options read keep it until the
+        export has used it)."""
+        self._password.clear()
+        self._confirm.clear()
+
     @staticmethod
     def remembered(options: ZipOptions) -> ZipOptions:
         """*options* to preset the next time: all but the password."""
