@@ -36,6 +36,7 @@ from crush.core.vfs import (
     open_vfs,
 )
 from crush.parsers.abx_parser import AbxParser
+from crush.parsers.ese_parser import EseParser
 from crush.parsers.flatbuffers_parser import FlatBuffersParser
 from crush.parsers.flatbuffers_schema import decode_with_schema as decode_with_flatbuffers_schema
 from crush.parsers.flatbuffers_schema import load_schema as load_flatbuffers_schema
@@ -3319,3 +3320,123 @@ def test_flatbuffers_schema_decode_is_reproducible(flatbuffers_fixture: dict) ->
     assert decode_with_flatbuffers_schema(schema, _FB_ROOT, raw) == decode_with_flatbuffers_schema(
         schema, _FB_ROOT, raw
     )
+
+
+# ---------------------------------------------------------------------------
+# ESE database parser forensic tests
+# ---------------------------------------------------------------------------
+
+_ESE_EXPECTED = FIXTURES_DIR / "ese_alltypes.expected.json"
+
+
+@pytest.fixture
+def ese_fixture(tmp_path: Path) -> Path:
+    """Writable copy of the 8 KiB-page ESE fixture, decompressed, in tmp_path."""
+    dst = tmp_path / "ese_alltypes_8k.edb"
+    dst.write_bytes(gzip.decompress((FIXTURES_DIR / "ese_alltypes_8k.edb.gz").read_bytes()))
+    return dst
+
+
+def _ese_parse(path: Path):  # type: ignore[no-untyped-def]
+    vfs = DirectoryVFS(path.parent)
+    node = next(c for c in vfs.root().children if c.name == path.name)
+    return EseParser().parse(node, vfs)
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    subject="ESE database",
+    desc="EseParser must not alter the content of the source file",
+)
+def test_ese_parser_does_not_modify_source(ese_fixture: Path) -> None:
+    digest_before = _sha256_file(ese_fixture)
+    _ese_parse(ese_fixture)
+    assert _sha256_file(ese_fixture) == digest_before, "EseParser modified the source file"
+
+
+@pytest.mark.forensic(
+    category="Source Immutability",
+    subject="ESE database",
+    desc="EseParser must not change mtime or ctime of source files",
+)
+def test_ese_parser_does_not_change_timestamps(ese_fixture: Path) -> None:
+    ts_before = _timestamps(ese_fixture)
+    _ese_parse(ese_fixture)
+    _assert_timestamps_unchanged(ts_before, _timestamps(ese_fixture), "EseParser")
+
+
+@pytest.mark.forensic(
+    category="No Side Effects",
+    subject="ESE database",
+    desc="EseParser must not create any sibling files (its SQL copy goes to the temp directory)",
+)
+def test_ese_parse_creates_no_sibling_files(ese_fixture: Path) -> None:
+    files_before = set(ese_fixture.parent.iterdir())
+    result = _ese_parse(ese_fixture)
+    new_files = set(ese_fixture.parent.iterdir()) - files_before
+    assert new_files == set(), f"Parser left unexpected files next to evidence: {new_files}"
+    assert Path(result.data["__db_path"]).parent != ese_fixture.parent
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+@pytest.mark.forensic(
+    category="Read-only Media",
+    subject="ESE database",
+    desc="EseParser must succeed when evidence directory is 0o555 and file is 0o444",
+)
+def test_ese_parser_works_on_readonly_media(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    edb = evidence_dir / "SRUDB.dat"
+    edb.write_bytes(gzip.decompress((FIXTURES_DIR / "ese_alltypes_8k.edb.gz").read_bytes()))
+    edb.chmod(0o444)
+    evidence_dir.chmod(0o555)
+    try:
+        result = _ese_parse(edb)
+        assert result.viewer_type == "table"
+        assert len(result.data["ManyRows"]["rows"]) == 600
+    finally:
+        evidence_dir.chmod(0o755)
+        edb.chmod(0o644)
+
+
+@pytest.mark.forensic(
+    category="Known-output Verification",
+    subject="ESE database",
+    desc="An ESE database written by esent.dll must decode to exactly the values written into it",
+)
+def test_ese_fixture_known_output(ese_fixture: Path) -> None:
+    import json
+
+    expected = json.loads(_ESE_EXPECTED.read_text(encoding="utf-8"))["AllTypes"]
+    table = _ese_parse(ese_fixture).data["AllTypes"]
+    rows = table["rows"]
+    assert table["columns"][2:] == expected["columns"]
+    assert len(rows) == len(expected["rows"])
+    for row, exp in zip(rows, expected["rows"]):
+        got = dict(zip(table["columns"][2:], row[2:]))
+        for col in ("Id", "ShortCol", "LongLongCol", "TextUnicodeCol", "TextAnsiCol",
+                    "TaggedLongCol", "MultiLongCol", "MultiTextCol"):
+            assert got[col] == exp[col], col
+        dt = got["DateTimeCol"]
+        assert (dt[0] if dt is not None else None) == exp["DateTimeCol"]
+        lv = got["LongBinCol"]
+        if exp["LongBinCol"] is None:
+            assert lv is None
+        else:
+            assert hashlib.sha256(lv).hexdigest() == exp["LongBinCol"]["sha256"]
+
+
+@pytest.mark.forensic(
+    category="Reproducibility",
+    subject="ESE database",
+    desc="Parsing the same ESE database twice must produce identical tables and metadata",
+)
+def test_ese_parse_is_reproducible(ese_fixture: Path) -> None:
+    r1 = _ese_parse(ese_fixture)
+    r2 = _ese_parse(ese_fixture)
+    assert r1.metadata == r2.metadata
+    keys = [k for k in r1.data if not k.startswith("__")]
+    assert keys == [k for k in r2.data if not k.startswith("__")]
+    for k in keys:
+        assert r1.data[k] == r2.data[k]

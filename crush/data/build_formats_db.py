@@ -7363,7 +7363,7 @@ FORMATS: list[dict[str, Any]] = [
             "Extensible Storage Engine (ESE) Database",
         ),
         "platforms": ["Windows"],
-        "parser_class": None,
+        "parser_class": "EseParser",
         "magic": [
             {
                 "offset": 4,

@@ -96,6 +96,7 @@ PARSER_SUBJECTS: dict[str, tuple[str, ...]] = {
     "SQLiteWALParser": ("SQLite WAL",),
     "SQLiteJournalParser": ("SQLite rollback journal",),
     "RealmParser": ("Realm database",),
+    "EseParser": ("ESE database",),
     "LeveldbParser": ("LevelDB",),
     "ChromiumCacheParser": ("Chromium Disk Cache",),
     "MMKVParser": ("MMKV",),

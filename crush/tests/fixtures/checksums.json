@@ -151,5 +151,9 @@
   "flatbuffers_record_sizeprefixed.bin": "0e3447167e0c6484285eab5a1a5e1e983b513bb78d186dd731a60f3be7eaaec2",
   "flatbuffers_record_vector64.bin": "36ba48d626e3a7785dff16126017fde40f72456809d4dbdc9a9ac57025401d4a",
   "flatbuffers_record.expected.json": "9dbb26f22e8641c7444e485d3d23eb9af9553e5893e99c48f48c676e6634d742",
-  "generate_flatbuffers_fixtures.py": "c60a06b89902145bf23339967057ce9a6f663ddb6f040344f2022a59fc33d156"
+  "generate_flatbuffers_fixtures.py": "c60a06b89902145bf23339967057ce9a6f663ddb6f040344f2022a59fc33d156",
+  "ese_alltypes_8k.edb.gz": "fada2413b91c98cb410ea63b09dd1b85b201696216a0854d3a078f7baa8fb5ff",
+  "ese_alltypes_32k.edb.gz": "73a6ab6462d4269f1bc66f392cb7a17c299950f80a10b0f53a47b37fdb309e37",
+  "ese_alltypes.expected.json": "55248b8354f57262e9d641a2d5f8d42cdf84b14f6ad8bc6c616e4584eaffc7bc",
+  "generate_ese_fixtures.py": "6975c51f8a1b0c84d32b4ea36784f0a922f608820d1e1d9288a048259fbdcec7"
 }
