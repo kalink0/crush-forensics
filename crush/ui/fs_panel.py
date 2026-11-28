@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar, overload
+from typing import Any, Generic, TypeVar, overload
 
 from PySide6.QtCore import QModelIndex, QSettings, QStringListModel, Qt, Signal, QSortFilterProxyModel, QTimer
 from PySide6.QtGui import QAction, QGuiApplication, QStandardItem, QStandardItemModel
@@ -233,6 +233,10 @@ class FilesystemPanel(QWidget):
     open_requested = Signal(object, object, str)  # (VFSNode, VFS, mode)
     open_external_requested = Signal(object, object, str)  # (VFSNode, VFS, mode)
     export_requested = Signal(object, object)  # (VFSNode, VFS)
+    # list[(VFSNode, VFS, source name, folders)] for "Export to ZIP…":
+    # folders = (name, mtime) of each folder between the source's root and
+    # the entry (its source path; see main_window.ZipSourceItem)
+    export_zip_selection_requested = Signal(object)
     export_multi_requested = Signal(object, str)  # (list[(VFSNode, VFS, str)], filter_text)
     export_logarchive_requested = Signal(object, object)  # (VFSNode, VFS)
     format_info_requested = Signal(object, object)  # (VFSNode, VFS)
@@ -647,6 +651,103 @@ class FilesystemPanel(QWidget):
         if node and vfs:
             self._ensure_children_loaded(item, node, vfs)
 
+    @staticmethod
+    def _tree_chain(item: QStandardItem) -> list[VFSNode]:
+        """The nodes from the source's root down to *item*'s, as the tree
+        shows them."""
+        chain: list[VFSNode] = []
+        current: QStandardItem | None = item
+        while current is not None:
+            step = current.data(_ROLE_NODE)
+            if step is not None:
+                chain.append(step)
+            current = current.parent()
+        chain.reverse()
+        return chain
+
+    @staticmethod
+    def _zip_item_from_chain(
+        node: VFSNode, vfs: VFS, chain: list[VFSNode]
+    ) -> tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]:
+        if not chain or chain[-1] is not node:
+            chain = [*chain, node]
+        source = chain[0].name or "export"
+        folders = [(step.name, step.modified) for step in chain[1:-1]]
+        return (node, vfs, source, folders)
+
+    def _zip_item_from_search(
+        self, node: VFSNode, vfs: VFS
+    ) -> tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]:
+        """A search result's entry, its source path taken from the source's
+        own nodes (the same as the tree's, folders' times included) rather
+        than from the result's path text. An entry not found below its
+        source's root goes at the top of it."""
+        chain = self._build_node_path(node, vfs)
+        if not chain:
+            logging.getLogger(__name__).warning(
+                "ZIP export: %s not found below its source's root; exported without "
+                "its source path", node.path,
+            )
+            chain = [vfs.root(), node]
+        return self._zip_item_from_chain(node, vfs, chain)
+
+    def _zip_items_from_search(
+        self, entries: list[tuple[VFSNode, VFS]]
+    ) -> list[tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]]:
+        """ZIP export items for search results, each with its source path
+        from the source's own nodes (as _zip_item_from_search), found in one
+        walk of each source rather than one per result. An entry inside a
+        folder that is among them is left out: the folder brings it along."""
+        chains: dict[int, list[VFSNode]] = {}
+        for vfs in {id(v): v for _n, v in entries}.values():
+            wanted = {id(n) for n, v in entries if v is vfs}
+            stack: list[tuple[VFSNode, list[VFSNode]]] = [(vfs.root(), [])]
+            while stack and len(chains) < len(entries):
+                node, above = stack.pop()
+                chain = [*above, node]
+                if id(node) in wanted:
+                    chains[id(node)] = chain
+                if node.is_dir:
+                    stack.extend((child, chain) for child in node.children)
+        items: list[tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]] = []
+        selected = {id(n) for n, _v in entries}
+        for node, vfs in entries:
+            chain = chains.get(id(node))
+            if chain is None:
+                logging.getLogger(__name__).warning(
+                    "ZIP export: %s not found below its source's root; exported without "
+                    "its source path", node.path,
+                )
+                chain = [vfs.root(), node]
+            elif any(id(step) in selected for step in chain[:-1]):
+                continue
+            items.append(self._zip_item_from_chain(node, vfs, chain))
+        return items
+
+    def _collect_tree_selected_items(
+        self,
+    ) -> list[tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]]:
+        """A ZIP export item (node, vfs, source name, folders) for each
+        selected file or folder in the main tree. An entry inside a selected
+        folder is left out: the folder brings it along."""
+        found: list[tuple[VFSNode, VFS, list[VFSNode]]] = []
+        for index in self._tree.selectionModel().selectedIndexes():
+            if index.column() != 0:
+                continue
+            item = self._model.itemFromIndex(self._proxy.mapToSource(index))
+            if item is None:
+                continue
+            node: VFSNode | None = item.data(_ROLE_NODE)
+            vfs: VFS | None = item.data(_ROLE_VFS)
+            if not node or not vfs:
+                continue
+            found.append((node, vfs, self._tree_chain(item)))
+        selected = {id(node) for node, _vfs, _chain in found}
+        return [
+            self._zip_item_from_chain(node, vfs, chain) for node, vfs, chain in found
+            if not any(id(step) in selected for step in chain[:-1])
+        ]
+
     def _collect_tree_selected_entries(
         self, include_dirs: bool = False,
     ) -> list[tuple[VFSNode, VFS]]:
@@ -694,7 +795,10 @@ class FilesystemPanel(QWidget):
                 actions[chosen]()
             return
 
-        self._show_context_menu(node, vfs, global_pos)
+        self._show_context_menu(
+            node, vfs, global_pos,
+            zip_item_for=lambda: self._zip_item_from_chain(node, vfs, self._tree_chain(item)),
+        )
 
     def _tree_batch_menu(
         self,
@@ -718,6 +822,14 @@ class FilesystemPanel(QWidget):
             )
             actions[send_action] = lambda: self.send_to_peach_batch_requested.emit(files)
         self._add_batch_hash_menu(menu, actions, entries)
+        export_zip_action = menu.addAction(
+            translate(
+                "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
+            ).format(selected_items_count=len(entries))
+        )
+        actions[export_zip_action] = lambda: self.export_zip_selection_requested.emit(
+            self._collect_tree_selected_items()
+        )
         return menu, actions
 
     def _add_batch_hash_menu(
@@ -743,13 +855,16 @@ class FilesystemPanel(QWidget):
     ) -> tuple[QMenu, dict[QAction, Callable[[], None]]] | None:
         """The search results' batch menu for 2+ selected entries, or None.
         Export takes files only and is offered for 2+ of them, as before;
-        Compute Hash takes every selected entry."""
+        Compute Hash takes every selected entry. Export to ZIP takes every
+        selected entry, as in the tree's batch menu; "all results" takes the
+        matching files only, as the folder export's does -- a folder among
+        the results would bring files the search didn't match."""
         if len(entries) < 2:
             return None
         menu = QMenu(self)
         actions: dict[QAction, Callable[[], None]] = {}
+        every = all_files()
         if len(files) > 1:
-            every = all_files()
             export_sel = menu.addAction(
                 translate(
                     "FilesystemPanel", "Export {selected_entries_count} selected files…"
@@ -770,7 +885,36 @@ class FilesystemPanel(QWidget):
                 )
             menu.addSeparator()
         self._add_batch_hash_menu(menu, actions, entries)
+        zip_selected = menu.addAction(
+            translate(
+                "FilesystemPanel", "Export {selected_items_count} selected entries to ZIP…"
+            ).format(selected_items_count=len(entries))
+        )
+        # Resolving source paths walks each source on this (the UI) thread:
+        # a busy cursor while it does.
+        actions[zip_selected] = lambda: self.export_zip_selection_requested.emit(
+            self._busy(lambda: self._zip_items_from_search(entries))
+        )
+        if len(every) > len(files):
+            every_file = [(n, v) for n, v, _path in every]
+            zip_all = menu.addAction(
+                translate(
+                    "FilesystemPanel", "Export all {all_entries_count} results to ZIP…"
+                ).format(all_entries_count=len(every_file))
+            )
+            actions[zip_all] = lambda: self.export_zip_selection_requested.emit(
+                self._busy(lambda: self._zip_items_from_search(every_file))
+            )
         return menu, actions
+
+    @staticmethod
+    def _busy(work: Callable[[], Any]) -> Any:
+        """*work*'s result, with the busy cursor shown while it runs."""
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            return work()
+        finally:
+            QGuiApplication.restoreOverrideCursor()
 
     def _collect_result_entries(
         self, rows: object, include_dirs: bool = False,
@@ -817,7 +961,12 @@ class FilesystemPanel(QWidget):
         vfs: VFS | None = item.data(_ROLE_VFS)
         if not node or not vfs:
             return
-        self._show_context_menu(node, vfs, global_pos, from_search=True)
+        # Resolving the result's source path walks its source: only once
+        # "Export to ZIP…" is chosen, not on every right-click.
+        self._show_context_menu(
+            node, vfs, global_pos, from_search=True,
+            zip_item_for=lambda: self._busy(lambda: self._zip_item_from_search(node, vfs)),
+        )
 
     def _show_context_menu(
         self,
@@ -825,6 +974,9 @@ class FilesystemPanel(QWidget):
         vfs: VFS,
         global_pos: object,
         from_search: bool = False,
+        zip_item_for: Callable[
+            [], tuple[VFSNode, VFS, str, list[tuple[str, float | None]]]
+        ] | None = None,
     ) -> None:
         menu = QMenu(self)
         open_action = menu.addAction(translate("FilesystemPanel", "Open"))
@@ -930,6 +1082,7 @@ class FilesystemPanel(QWidget):
         hash_actions = add_hash_menu(menu)
         menu.addSeparator()
         export_action = menu.addAction(translate("FilesystemPanel", "Export…"))
+        export_zip_action = menu.addAction(translate("FilesystemPanel", "Export to ZIP…"))
         unlock_volume_action = None
         if vfs.is_locked_volume(node):
             menu.addSeparator()
@@ -1006,6 +1159,11 @@ class FilesystemPanel(QWidget):
             self.hash_requested.emit([(node, vfs)], hash_actions[action])
         elif action == export_action:
             self.export_requested.emit(node, vfs)
+        elif action == export_zip_action:
+            self.export_zip_selection_requested.emit([
+                zip_item_for() if zip_item_for is not None
+                else self._zip_item_from_chain(node, vfs, [node])
+            ])
         elif action == export_logarchive_action:
             self.export_logarchive_requested.emit(node, vfs)
         elif action == verify_acquisition_action:

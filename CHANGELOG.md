@@ -8,6 +8,7 @@ All notable changes to Crush will be documented in this file.
 
 - Added to raw disk images -> Support for exFAT orphan entries (entry sets still in use that no live folder reaches), listed in `$Orphaned`.
 - Added to raw disk images -> Support for what the reader reports beyond the listing: per-file notes on the content (exFAT ValidDataLength and entry-set checks, FAT copies that disagree, APFS previous size, F2FS roll-forward log, NTFS records read despite a failed check, QNX6 blocks without a pointer), the volume's state after listing and its post-listing checks, and the reason a name's inode can't be read; YAFFS objects no listing reaches are listed in `$Unreached`.
+- Added to exports -> Support for exporting files and folders into a ZIP archive (right-click → **Export to ZIP…**, also for several entries in the tree or the search results), new or added to an existing one; a dialog sets the structure, the compression, an AES-256 password and splitting into parts. The archive holds only the exported files; lists beside it record the hashes, the renamed, replaced and unreadable files, the sources and where each entry's time comes from. ([@BrunoFischerGermany](https://github.com/BrunoFischerGermany), [#209](https://github.com/kalink0/crush-forensics/pull/209))
 
 ### Changed
 

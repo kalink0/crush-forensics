@@ -554,7 +554,9 @@ def test_tree_batch_menu_hashes_two_folders(qapp, widgets, tree: Path) -> None:
     batch = panel._tree_batch_menu([], folders, True)
     assert batch is not None
     menu, actions = batch
-    assert _menu_texts(menu) == ["Compute Hash of 2 selected entries"]  # no Peach: no files
+    assert _menu_texts(menu) == [  # no Peach: no files
+        "Compute Hash of 2 selected entries", "Export 2 selected entries to ZIP…",
+    ]
     _trigger(menu, actions, "Compute Hash of 2 selected entries", "SHA-1")
     assert got == [(folders, ("sha1",))]
     menu.deleteLater()
@@ -569,7 +571,9 @@ def test_tree_batch_menu_for_a_file_and_a_folder(qapp, widgets, tree: Path) -> N
     panel = widgets(FilesystemPanel(Session()))
     batch = panel._tree_batch_menu([file_entry], mixed, True)
     assert batch is not None
-    assert _menu_texts(batch[0]) == ["Compute Hash of 2 selected entries"]
+    assert _menu_texts(batch[0]) == [
+        "Compute Hash of 2 selected entries", "Export 2 selected entries to ZIP…",
+    ]
     batch[0].deleteLater()
     # Outside the selection, or one entry only: the single-entry menu.
     assert panel._tree_batch_menu([file_entry], mixed, False) is None
@@ -587,6 +591,7 @@ def test_tree_batch_menu_keeps_send_to_peach_for_two_files(qapp, widgets, tree: 
     assert batch is not None
     assert _menu_texts(batch[0]) == [
         "Send 2 files to Peach", "Compute Hash of 3 selected entries",
+        "Export 3 selected entries to ZIP…",
     ]
     batch[0].deleteLater()
 
@@ -603,7 +608,9 @@ def test_search_batch_menu_hashes_folders_and_exports_files_only(
     folders = [(_child(vfs, "sub"), vfs), (_child(vfs, "sub2"), vfs)]
     batch = panel._search_batch_menu([], folders, lambda: [])
     assert batch is not None
-    assert _menu_texts(batch[0]) == ["Compute Hash of 2 selected entries"]
+    assert _menu_texts(batch[0]) == [
+        "Compute Hash of 2 selected entries", "Export 2 selected entries to ZIP…",
+    ]
     batch[0].deleteLater()
 
     files = [(_child(vfs, n), vfs, f"/{n}") for n in ("a.txt", "c.txt")]
@@ -611,6 +618,7 @@ def test_search_batch_menu_hashes_folders_and_exports_files_only(
     assert batch is not None
     assert _menu_texts(batch[0]) == [
         "Export 2 selected files…", "Compute Hash of 2 selected entries",
+        "Export 2 selected entries to ZIP…",
     ]
     batch[0].deleteLater()
     assert panel._search_batch_menu([], folders[:1], lambda: []) is None

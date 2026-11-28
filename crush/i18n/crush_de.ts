@@ -975,6 +975,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
         <translation>{selected_entries_count} Dateien an Peach senden</translation>
     </message>
     <message>
+        <source>Export {selected_items_count} selected entries to ZIP…</source>
+        <translation>{selected_items_count} ausgewählte Einträge als ZIP exportieren...</translation>
+    </message>
+    <message>
         <source>Compute Hash of {count} selected entries</source>
         <translation>Hash der {count} ausgewählten Einträge berechnen</translation>
     </message>
@@ -985,6 +989,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
     <message>
         <source>Export all {all_entries_count} results…</source>
         <translation>Alle {all_entries_count} Ergebnisse exportieren...</translation>
+    </message>
+    <message>
+        <source>Export all {all_entries_count} results to ZIP…</source>
+        <translation>Alle {all_entries_count} Ergebnisse als ZIP exportieren...</translation>
     </message>
     <message>
         <source>Open</source>
@@ -1109,6 +1117,10 @@ Ein anderes Verzeichnis auf der Festplatte ist sicherer.</translation>
     <message>
         <source>Export…</source>
         <translation>Exportieren...</translation>
+    </message>
+    <message>
+        <source>Export to ZIP…</source>
+        <translation>Als ZIP exportieren...</translation>
     </message>
     <message>
         <source>Unlock Volume…</source>
@@ -7034,6 +7046,10 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
         <translation>(Datenträgerabbild)</translation>
     </message>
     <message>
+        <source>{path} could not be replaced ({reason}); is it open in another program? The archive and its lists were left as they were.</source>
+        <translation>{path} konnte nicht ersetzt werden ({reason}); ist die Datei in einem anderen Programm geöffnet? Das Archiv und seine Listen wurden unverändert gelassen.</translation>
+    </message>
+    <message>
         <source>Show open tabs</source>
         <translation>Offene Tabs anzeigen</translation>
     </message>
@@ -7378,6 +7394,30 @@ Da die Datei nicht sicher in den Arbeitsspeicher geladen werden kann, wird sie h
         <translation>Exportiere...</translation>
     </message>
     <message>
+        <source>The archive would be written into the folder of the open source {source}:
+{target}
+
+Write it there anyway?</source>
+        <translation>Das Archiv würde in den Ordner der geöffneten Quelle {source} geschrieben:
+{target}
+
+Trotzdem dort speichern?</translation>
+    </message>
+    <message>
+        <source>The archive would be written into the folder that holds the open source {source}:
+{target}
+
+Write it there anyway?</source>
+        <translation>Das Archiv würde in den Ordner geschrieben, in dem die geöffnete Quelle {source} liegt:
+{target}
+
+Trotzdem dort speichern?</translation>
+    </message>
+    <message>
+        <source>Add the export to this archive (its other entries are kept), or replace the archive with a new one?</source>
+        <translation>Den Export zu diesem Archiv hinzufügen (seine übrigen Einträge bleiben erhalten) oder das Archiv durch ein neues ersetzen?</translation>
+    </message>
+    <message>
         <source>Export filtered results to folder</source>
         <translation>Gefilterte Ergebnisse in einen Ordner exportieren</translation>
     </message>
@@ -7540,6 +7580,86 @@ Speicherort öffnen?</translation>
     <message>
         <source>not hashed: hashing was cancelled</source>
         <translation>nicht gehasht: Hashen wurde abgebrochen</translation>
+    </message>
+    <message>
+        <source>Export to ZIP archive</source>
+        <translation>In ZIP-Archiv exportieren</translation>
+    </message>
+    <message>
+        <source>{path} is a folder, not a ZIP archive.</source>
+        <translation>{path} ist ein Ordner, kein ZIP-Archiv.</translation>
+    </message>
+    <message>
+        <source>{path} already exists and is not a ZIP archive, so nothing can be added to it. Overwrite it with a new archive?</source>
+        <translation>{path} existiert bereits und ist kein ZIP-Archiv, daher kann nichts hinzugefügt werden. Mit einem neuen Archiv überschreiben?</translation>
+    </message>
+    <message>
+        <source>{path} already exists.</source>
+        <translation>{path} existiert bereits.</translation>
+    </message>
+    <message>
+        <source>Add to Archive</source>
+        <translation>Zum Archiv hinzufügen</translation>
+    </message>
+    <message>
+        <source>Replace Archive</source>
+        <translation>Archiv ersetzen</translation>
+    </message>
+    <message>
+        <source>A part of a split archive by that name is already there:
+{first}
+
+Replace it with the new archive&apos;s parts?</source>
+        <translation>Ein Teil eines geteilten Archivs mit diesem Namen ist bereits vorhanden:
+{first}
+
+Durch die Teile des neuen Archivs ersetzen?</translation>
+    </message>
+    <message>
+        <source>{n} parts of a split archive by that name are already there:
+{first} … {last}
+
+Replace them all with the new archive&apos;s parts?</source>
+        <translation>{n} Teile eines geteilten Archivs mit diesem Namen sind bereits vorhanden:
+{first} … {last}
+
+Alle durch die Teile des neuen Archivs ersetzen?</translation>
+    </message>
+    <message>
+        <source>… and {n} more</source>
+        <translation>… und {n} weitere</translation>
+    </message>
+    <message>
+        <source>1 entry is already in the archive:</source>
+        <translation>1 Eintrag ist bereits im Archiv:</translation>
+    </message>
+    <message>
+        <source>{n} entries are already in the archive:</source>
+        <translation>{n} Einträge sind bereits im Archiv:</translation>
+    </message>
+    <message>
+        <source>{names}
+
+Replace them (a folder with everything in it), or add the export beside them under a numbered name, e.g. &quot;name (2)&quot;?</source>
+        <translation>{names}
+
+Ersetzen (ein Ordner mit allem, was er enthält) oder den Export daneben unter einem nummerierten Namen einfügen, z. B. „name (2)“?</translation>
+    </message>
+    <message>
+        <source>Add Beside</source>
+        <translation>Daneben einfügen</translation>
+    </message>
+    <message>
+        <source>Exporting {n} entries…</source>
+        <translation>{n} Einträge werden exportiert...</translation>
+    </message>
+    <message>
+        <source>Export cancelled: {dest} was not written</source>
+        <translation>Export abgebrochen: {dest} wurde nicht geschrieben</translation>
+    </message>
+    <message>
+        <source>Export cancelled: {dest} was left unchanged</source>
+        <translation>Export abgebrochen: {dest} blieb unverändert</translation>
     </message>
     <message>
         <source>1 file could not be read and was not exported; it is listed with the reason in {name}.</source>
@@ -15479,6 +15599,133 @@ Gesamt: {total:.2f} s</translation>
     <message>
         <source>Some texts on this page are not translated yet and are shown in the English original.</source>
         <translation>Einige Texte auf dieser Seite sind noch nicht übersetzt und werden im englischen Original angezeigt.</translation>
+    </message>
+</context>
+<context>
+    <name>ZipExportDialog</name>
+    <message>
+        <source>Export to ZIP archive</source>
+        <translation>In ZIP-Archiv exportieren</translation>
+    </message>
+    <message>
+        <source>Full path of the archive, e.g. chosen with Browse…</source>
+        <translation>Vollständiger Pfad des Archivs, z. B. über Durchsuchen... gewählt</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>Durchsuchen...</translation>
+    </message>
+    <message>
+        <source>Deflate (standard, opens everywhere)</source>
+        <translation>Deflate (Standard, überall lesbar)</translation>
+    </message>
+    <message>
+        <source>No compression (store)</source>
+        <translation>Ohne Kompression (nur speichern)</translation>
+    </message>
+    <message>
+        <source>BZIP2 (smaller; not in Windows Explorer)</source>
+        <translation>BZIP2 (kleiner; nicht im Windows-Explorer)</translation>
+    </message>
+    <message>
+        <source>LZMA (smallest; not in Windows Explorer)</source>
+        <translation>LZMA (am kleinsten; nicht im Windows-Explorer)</translation>
+    </message>
+    <message>
+        <source>Level:</source>
+        <translation>Stufe:</translation>
+    </message>
+    <message>
+        <source>1 = fastest, 9 = smallest</source>
+        <translation>1 = am schnellsten, 9 = am kleinsten</translation>
+    </message>
+    <message>
+        <source>Encrypt with a password (AES-256)</source>
+        <translation>Mit Passwort verschlüsseln (AES-256)</translation>
+    </message>
+    <message>
+        <source>Password</source>
+        <translation>Passwort</translation>
+    </message>
+    <message>
+        <source>Repeat password</source>
+        <translation>Passwort wiederholen</translation>
+    </message>
+    <message>
+        <source>The contents are encrypted, not the names of files and folders. Opens in 7-Zip, WinRAR, WinZip and others; Windows Explorer can&apos;t reliably open AES-encrypted ZIP archives.</source>
+        <translation>Verschlüsselt werden die Inhalte, nicht die Namen der Dateien und Ordner. Öffnen mit 7-Zip, WinRAR, WinZip u. a.; der Windows-Explorer kann AES-verschlüsselte ZIP-Archive nicht zuverlässig öffnen.</translation>
+    </message>
+    <message>
+        <source>Split into parts of</source>
+        <translation>In Teile aufteilen zu je</translation>
+    </message>
+    <message>
+        <source>Parts are named {name}.001, .002 …, cut byte for byte (1 MB = 1,000,000 bytes). 7-Zip opens .001 directly; other tools need the parts joined first (copy /b, cat). A later export can replace a split archive, but not add to it.</source>
+        <translation>Die Teile heißen {name}.001, .002 … und sind Byte für Byte zerschnitten (1 MB = 1.000.000 Bytes). 7-Zip öffnet .001 direkt; andere Programme brauchen die Teile zuerst zusammengefügt (copy /b, cat). Ein späterer Export kann ein geteiltes Archiv ersetzen, aber nichts hinzufügen.</translation>
+    </message>
+    <message>
+        <source>Structure in the archive</source>
+        <translation>Struktur im Archiv</translation>
+    </message>
+    <message>
+        <source>Only the file or folder itself, at the top</source>
+        <translation>Nur die Datei bzw. der Ordner selbst, oben im Archiv</translation>
+    </message>
+    <message>
+        <source>With its source path (the folders above it)</source>
+        <translation>Mit Quellpfad (die Ordner darüber)</translation>
+    </message>
+    <message>
+        <source>Folder contents in their folder structure</source>
+        <translation>Ordnerinhalt in seiner Ordnerstruktur</translation>
+    </message>
+    <message>
+        <source>All files of a folder in one folder (same names numbered)</source>
+        <translation>Alle Dateien eines Ordners in einen Ordner (gleiche Namen nummeriert)</translation>
+    </message>
+    <message>
+        <source>Archive:</source>
+        <translation>Archiv:</translation>
+    </message>
+    <message>
+        <source>Compression:</source>
+        <translation>Kompression:</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Exportieren</translation>
+    </message>
+    <message>
+        <source>file</source>
+        <translation>Datei</translation>
+    </message>
+    <message>
+        <source>subfolder</source>
+        <translation>Unterordner</translation>
+    </message>
+    <message>
+        <source>For example: {path}</source>
+        <translation>Zum Beispiel: {path}</translation>
+    </message>
+    <message>
+        <source>ZIP archives (*.zip)</source>
+        <translation>ZIP-Archive (*.zip)</translation>
+    </message>
+    <message>
+        <source>Enter the archive&apos;s full path, or choose where it goes with Browse…</source>
+        <translation>Geben Sie den vollständigen Pfad des Archivs ein oder wählen Sie über Durchsuchen..., wohin es gespeichert wird.</translation>
+    </message>
+    <message>
+        <source>The folder {folder} doesn&apos;t exist.</source>
+        <translation>Der Ordner {folder} existiert nicht.</translation>
+    </message>
+    <message>
+        <source>Enter a password.</source>
+        <translation>Geben Sie ein Passwort ein.</translation>
+    </message>
+    <message>
+        <source>The passwords don&apos;t match.</source>
+        <translation>Die Passwörter stimmen nicht überein.</translation>
     </message>
 </context>
 <context>
